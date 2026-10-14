@@ -1,5 +1,5 @@
 import { Server as Engine } from '@socket.io/bun-engine'
-import { Server, type DefaultEventsMap } from 'socket.io'
+import { Server, type DefaultEventsMap, type Socket } from 'socket.io'
 import { jwtVerify } from 'jose'
 import { z } from 'zod'
 import type { Store } from '../store'
@@ -14,6 +14,8 @@ import type { SyncEvent } from '../sync/syncEngine'
 import { TerminalRegistry } from './terminalRegistry'
 import { clearUserTerminalBuffer } from './userTerminalBuffer'
 import type { CliSocketWithData, SocketData, SocketServer } from './socketTypes'
+import type { EvolvedStore } from '../evolved/store'
+import { authenticateRunner, verifyProjectToken } from '../evolved/bridge'
 
 const jwtPayloadSchema = z.object({
     uid: z.number(),
@@ -22,6 +24,15 @@ const jwtPayloadSchema = z.object({
 
 const DEFAULT_IDLE_TIMEOUT_MS = 15 * 60_000
 const DEFAULT_MAX_TERMINALS = 4
+
+export function installLiveAuthorization(socket: Socket, valid: () => boolean): void {
+    socket.data.isAuthorized = valid
+    socket.use((_packet, done) => valid() ? done() : (socket.disconnect(true), done(new Error('Access revoked'))))
+    // Socket.IO notifies this listener before both direct and room packets reach
+    // the transport. Closing the Engine connection immediately drops that packet,
+    // including broadcasts, rather than waiting for the periodic idle sweep.
+    socket.onAnyOutgoing(() => { if (!valid()) socket.disconnect(true) })
+}
 
 function resolveEnvNumber(name: string, fallback: number): number {
     const raw = process.env[name]
@@ -35,6 +46,7 @@ function resolveEnvNumber(name: string, fallback: number): number {
 export type SocketServerDeps = {
     store: Store
     jwtSecret: Uint8Array
+    evolved?: EvolvedStore
     corsOrigins?: string[]
     getSession?: (sessionId: string) => { active: boolean; namespace: string } | null
     onWebappEvent?: (event: SyncEvent) => void
@@ -53,6 +65,7 @@ export function createSocketServer(deps: SocketServerDeps): {
     io: SocketServer
     engine: Engine
     rpcRegistry: RpcRegistry
+    stopAuthGuard: () => void
 } {
     const configuration = getConfiguration()
     const corsOrigins = deps.corsOrigins ?? configuration.corsOrigins
@@ -114,6 +127,13 @@ export function createSocketServer(deps: SocketServerDeps): {
     cliNs.use((socket, next) => {
         const auth = socket.handshake.auth as Record<string, unknown> | undefined
         const token = typeof auth?.token === 'string' ? auth.token : null
+        if (deps.evolved) {
+            const access = token ? authenticateRunner(token, deps.evolved) : null
+            if (!access) return next(new Error('Runner capability expired or revoked'))
+            socket.data.namespace = access.project.namespace
+            installLiveAuthorization(socket, access.valid)
+            return next()
+        }
         const parsedToken = token ? parseAccessToken(token) : null
         if (!parsedToken || !constantTimeEquals(parsedToken.baseToken, configuration.cliApiToken)) {
             return next(new Error('Invalid token'))
@@ -146,6 +166,15 @@ export function createSocketServer(deps: SocketServerDeps): {
         }
 
         try {
+            if (deps.evolved) {
+                const access = await verifyProjectToken(token, deps.jwtSecret, deps.evolved, true)
+                if (access.project.profile === 'restricted') return next(new Error('Terminal requires workspace or extended profile'))
+                const valid = () => access.valid() && deps.evolved!.requireProject(access.principal.user.id, access.project.id).profile !== 'restricted'
+                socket.data.userId = access.userId
+                socket.data.namespace = access.project.namespace
+                installLiveAuthorization(socket, () => { try { return valid() } catch { return false } })
+                return next()
+            }
             const verified = await jwtVerify(token, deps.jwtSecret, { algorithms: ['HS256'] })
             const parsed = jwtPayloadSchema.safeParse(verified.payload)
             if (!parsed.success) {
@@ -169,5 +198,11 @@ export function createSocketServer(deps: SocketServerDeps): {
         maxTerminalsPerSession
     }))
 
-    return { io, engine, rpcRegistry }
+    const authGuard = deps.evolved ? setInterval(() => {
+        for (const namespace of [cliNs, terminalNs]) for (const socket of namespace.sockets.values()) {
+            if (socket.data.isAuthorized && !socket.data.isAuthorized()) socket.disconnect(true)
+        }
+    }, 1000) : null
+    authGuard?.unref()
+    return { io, engine, rpcRegistry, stopAuthGuard: () => { if (authGuard) clearInterval(authGuard) } }
 }

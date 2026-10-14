@@ -13,6 +13,8 @@ import { constantTimeEquals } from '../../utils/crypto'
 import { parseAccessToken } from '../../utils/accessToken'
 import type { Machine, Session, SyncEngine } from '../../sync/syncEngine'
 import { SessionIdentityConflictError, SessionNotAdoptableError } from '../../store/sessions'
+import type { EvolvedStore } from '../../evolved/store'
+import { authenticateRunner, withinProject, type EvolvedAccess } from '../../evolved/bridge'
 
 const bearerSchema = z.string().regex(/^Bearer\s+(.+)$/i)
 
@@ -24,6 +26,7 @@ const getMessagesQuerySchema = z.object({
 type CliEnv = {
     Variables: {
         namespace: string
+        evolvedAccess?: EvolvedAccess
     }
 }
 
@@ -65,7 +68,7 @@ function clearErrorStatus(code: string): 403 | 404 | 409 | 500 {
                 : 500
 }
 
-export function createCliRoutes(getSyncEngine: () => SyncEngine | null): Hono<CliEnv> {
+export function createCliRoutes(getSyncEngine: () => SyncEngine | null, evolved?: EvolvedStore): Hono<CliEnv> {
     const app = new Hono<CliEnv>()
 
     app.use('*', async (c, next) => {
@@ -82,6 +85,13 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null): Hono<Cl
         }
 
         const token = parsed.data.replace(/^Bearer\s+/i, '')
+        if (evolved) {
+            const access = authenticateRunner(token, evolved)
+            if (!access) return c.json({ error: 'Runner capability expired or revoked.' }, 401)
+            c.set('namespace', access.project.namespace)
+            c.set('evolvedAccess', access)
+            return next()
+        }
         const configuration = getConfiguration()
         const parsedToken = parseAccessToken(token)
         if (!parsedToken || !constantTimeEquals(parsedToken.baseToken, configuration.cliApiToken)) {
@@ -101,6 +111,13 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null): Hono<Cl
         const parsed = CreateOrLoadSessionRequestSchema.safeParse(json)
         if (!parsed.success) {
             return c.json({ error: 'Invalid body' }, 400)
+        }
+
+        const project = c.get('evolvedAccess')?.project
+        if (project) {
+            const metadata = parsed.data.metadata as Record<string, unknown> | null
+            if (!metadata || typeof metadata.path !== 'string' || !withinProject(project, metadata.path)) return c.json({ error: 'Session directory is outside this project.' }, 403)
+            if (metadata.flavor !== undefined && !['claude', 'codex'].includes(String(metadata.flavor))) return c.json({ error: 'v1 supports Claude and Codex.' }, 400)
         }
 
         const namespace = c.get('namespace')

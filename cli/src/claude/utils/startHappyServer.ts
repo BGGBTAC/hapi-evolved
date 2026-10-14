@@ -4,6 +4,8 @@
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerEvolvedTools, EVOLVED_TOOL_NAMES } from '@/evolved/mcp';
+import { evolvedClientFromEnvironment } from '@/evolved/client';
 import { createServer, type IncomingMessage } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { AddressInfo } from "node:net";
@@ -90,6 +92,7 @@ function createHapiMcpServer(
         name: "HAPI MCP",
         version: "1.0.0",
     });
+    if (process.env.HAPI_EVOLVED_CAPABILITY_FILE || process.env.HAPI_EVOLVED_PROXY === '1') registerEvolvedTools(mcp, evolvedClientFromEnvironment());
 
     const changeTitleInputSchema: z.ZodTypeAny = z.object({
         title: z.string().describe('The new title for the chat session'),
@@ -546,6 +549,8 @@ export async function startHappyServer(client: ApiSessionClient, options: StartH
     if (options.skillLookup) {
         toolNames.push('skill_lookup');
     }
+
+    if (process.env.HAPI_EVOLVED_CAPABILITY_FILE || process.env.HAPI_EVOLVED_PROXY === '1') toolNames.push(...EVOLVED_TOOL_NAMES);
 
     return {
         url: mcpUrl,

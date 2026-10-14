@@ -1,4 +1,22 @@
-# HAPI
+# HAPI evolved
+
+Private Weiterentwicklung von [tiann/hapi](https://github.com/tiann/hapi), Version **0.1.0**.
+Teams und Passkeys, eigener lokaler Vault/Broker, persistentes Projektwissen mit
+Graphiti/Neo4j, Codegraph und isolierte Projekt-Runner. Eigenständige Neuinstallation.
+
+- [Installation und Betrieb](docs/evolved/DEPLOYMENT.md)
+- [Bedienung](docs/evolved/USER_GUIDE.md)
+- [Umfang und Architektur](docs/evolved/PROJECT.md)
+- [Abnahme und verbleibende Grenzen](docs/evolved/VALIDATION.md)
+- [Upstream-Issue-Analyse](docs/evolved/upstream-issues-2026-10-14.csv)
+
+Für diese Version den Quellcode und die Compose-Dateien dieses Repositories verwenden.
+Die nachfolgende ursprüngliche HAPI-Dokumentation beschreibt weiterhin Upstream;
+dessen npm-Pakete installieren keine Evolved-Funktionen. Die AGPL-Lizenz bleibt erhalten.
+
+---
+
+# HAPI (Upstream)
 
 Run official Claude Code / Codex / Cursor Agent / Grok Build / OpenCode / Kimi / Copilot / Antigravity / Pi / DeepSeek Harness sessions and control them remotely through native iOS / Android apps, Web / PWA, or Telegram Mini App.
 

@@ -3,16 +3,35 @@ import { Hono } from 'hono'
 import type { Session, SyncEngine } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
 import { createGitRoutes } from './git'
+import { mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 
-function buildApp(engine: Partial<SyncEngine>): Hono<WebAppEnv> {
+function buildApp(engine: Partial<SyncEngine>, rootPath?: string): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
     app.use('*', async (c, next) => {
         c.set('namespace', 'default')
+        if (rootPath) c.set('evolvedAccess', { project: { rootPath } } as NonNullable<WebAppEnv['Variables']['evolvedAccess']>)
         await next()
     })
     app.route('/api', createGitRoutes(() => engine as SyncEngine))
     return app
 }
+
+it('Evolved file reads deny absolute paths, traversal and symlinks outside the current project', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'evolved-git-test-'))
+    try {
+        symlinkSync(tmpdir(), join(root, 'outside'))
+        const session = { id: 'session-1', namespace: 'default', active: true, metadata: { path: root } } as Session
+        let reads = 0
+        const app = buildApp({ resolveSessionAccess: () => ({ ok: true, sessionId: session.id, session }), readSessionFile: async () => { reads++; return { success: true, content: '' } } }, root)
+        expect((await app.request('/api/sessions/session-1/file?path=inside.txt')).status).toBe(200)
+        for (const path of ['/etc/passwd', '../outside.txt', 'outside/private.txt']) expect((await app.request(`/api/sessions/session-1/file?path=${encodeURIComponent(path)}`)).status).toBe(403)
+        expect(reads).toBe(1)
+        session.metadata!.path = tmpdir()
+        expect((await app.request('/api/sessions/session-1/file?path=file.txt')).status).toBe(403)
+    } finally { rmSync(root, { recursive: true, force: true }) }
+})
 
 describe('generated images route', () => {
     it('serves generated images with an immutable cache header instead of no-store', async () => {

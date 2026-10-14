@@ -4,6 +4,7 @@ import { SessionSchema } from '@hapi/protocol/schemas'
 import { Store } from '../store'
 import { RpcRegistry } from '../socket/rpcRegistry'
 import { SyncEngine } from './syncEngine'
+import { SessionCache } from './sessionCache'
 
 function createEngine(store: Store, events: SyncEvent[]) {
     const io = { of: () => ({ adapter: { rooms: new Map() }, to: () => ({ emit() {} }) }) }
@@ -70,4 +71,29 @@ describe('session conversation content', () => {
             store.close()
         }
     })
+})
+
+
+it('invalidates content memo after a rewind reuses seq and after a merge empties the source', () => {
+    const store = new Store(':memory:')
+    const cache = new SessionCache(store, { emit() {} } as never)
+    try {
+        const source = store.sessions.getOrCreateSession('content-cache-source', { path: '/tmp', host: 'test' }, null, 'default')
+        const target = store.sessions.getOrCreateSession('content-cache-target', { path: '/tmp', host: 'test' }, null, 'default')
+        const bookkeeping = { role: 'agent', content: { type: 'event', data: { type: 'message', message: 'Session started' } } }
+        store.messages.addMessage(source.id, bookkeeping, 'first')
+        let scans = 0
+        const scan = store.messages.hasConversationContent.bind(store.messages)
+        store.messages.hasConversationContent = id => { scans++; return scan(id) }
+        expect(cache.refreshSession(source.id)?.hasConversationContent).toBe(false)
+        expect(cache.refreshSession(source.id)?.hasConversationContent).toBe(false)
+        expect(scans).toBe(1)
+        store.messages.truncateMessagesFromLocalId(source.id, 'first', [])
+        store.messages.addMessage(source.id, { role: 'user', content: 'Hello' }, 'replacement')
+        expect(store.messages.getMaxSeq(source.id)).toBe(1)
+        expect(cache.refreshSession(source.id)?.hasConversationContent).toBe(true)
+        store.messages.mergeSessionMessages(source.id, target.id)
+        expect(cache.refreshSession(source.id)?.hasConversationContent).toBe(false)
+        expect(cache.refreshSession(target.id)?.hasConversationContent).toBe(true)
+    } finally { store.close() }
 })

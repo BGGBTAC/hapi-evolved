@@ -13,7 +13,7 @@ vi.mock('@/ui/logger', () => ({
 }))
 
 vi.mock('./utils/claudeCheckSession', () => ({
-    claudeCheckSession: () => true
+    claudeCheckSession: () => false
 }))
 
 vi.mock('./utils/path', () => ({
@@ -59,6 +59,13 @@ function getSpawnArgs(): string[] {
 describe('claudeLocal model arguments', () => {
     beforeEach(() => {
         harness.spawn.mockClear()
+    })
+
+    it('preserves an explicit native resume even when the local transcript probe has no history', async () => {
+        await claudeLocal({ abort: new AbortController().signal, sessionId: 'requested-native-id',
+            path: '/moved-workspace', hookSettingsPath: '/tmp/hooks.json',
+            claudeEnvVars: { CLAUDE_CONFIG_DIR: '/isolated-config' } })
+        expect(getSpawnArgs().slice(0, 2)).toEqual(['--resume', 'requested-native-id'])
     })
 
     it('launches Claude with the current session model', async () => {

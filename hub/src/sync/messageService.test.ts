@@ -15,7 +15,7 @@ import { MessageService } from './messageService'
 import type { EventPublisher } from './eventPublisher'
 import { Store } from '../store'
 import type { Server } from 'socket.io'
-import { SESSION_EXPORT_MESSAGE_LIMIT } from '@hapi/protocol/sessionExport'
+import { SESSION_EXPORT_MAX_BYTES, SESSION_EXPORT_MESSAGE_LIMIT } from '@hapi/protocol/sessionExport'
 import type { Session, SyncEvent } from '@hapi/protocol/types'
 
 // ---------------------------------------------------------------------------
@@ -216,8 +216,14 @@ describe('MessageService goal status filtering', () => {
             invokedAt: index + 1,
             scheduledAt: null
         })) as ReturnType<Store['messages']['getAllMessages']>
+        // Stub the paged reads the export now uses; this test is about the
+        // threshold behaviour, not the storage layer.
         const store = {
-            messages: { getAllMessages: () => rows },
+            messages: {
+                countMessages: () => rows.length,
+                getMessagesAfterSeqLimit: (_sessionId: string, afterSeq: number, limit: number) =>
+                    rows.filter((row) => row.seq > afterSeq).slice(0, limit)
+            },
             scratchlist: { list: () => [] }
         } as unknown as Store
 
@@ -236,6 +242,52 @@ describe('MessageService goal status filtering', () => {
         expect(confirmed.type).toBe('success')
         if (confirmed.type !== 'success') throw new Error('Expected confirmed export')
         expect(confirmed.payload.messages).toHaveLength(SESSION_EXPORT_MESSAGE_LIMIT + 1)
+        expect(warning.estimatedBytes).toBe(Buffer.byteLength(JSON.stringify(confirmed.payload)))
+    })
+
+    it('stops reading once visible export bytes exceed the cap', () => {
+        const sessionStore = makeStore()
+        const session = makeSession(sessionStore, 'session-export-oversized')
+        const content = { role: 'user', content: 'x'.repeat(512 * 1024) }
+        let pageCalls = 0
+        const store = {
+            messages: {
+                countMessages: () => 130_000,
+                getMessagesAfterSeqLimit: (_id: string, after: number, limit: number) => {
+                    pageCalls += 1
+                    return Array.from({ length: limit }, (_, i) => ({ id: `m-${after + i + 1}`,
+                        sessionId: session.id, seq: after + i + 1, createdAt: 1, invokedAt: 1,
+                        localId: null, scheduledAt: null, content }))
+                }
+            }, scratchlist: { list: () => [] }
+        } as unknown as Store
+        const result = new MessageService(store, makeIo(() => {}), makePublisher() as any)
+            .getSessionExport(session.id, toProtocolSession(session))
+        expect(result).toMatchObject({ type: 'too-large', maxBytes: SESSION_EXPORT_MAX_BYTES })
+        expect(pageCalls).toBeLessThanOrEqual(3)
+        sessionStore.close()
+    })
+
+    it('does not count large invisible bookkeeping toward export bytes', () => {
+        const sessionStore = makeStore()
+        const session = makeSession(sessionStore, 'session-export-hidden')
+        const hiddenContent = { role: 'agent', content: { type: 'output', data: {
+            type: 'assistant', isMeta: true, message: { content: 'x'.repeat(512 * 1024) }
+        } } }
+        const rows = Array.from({ length: 220 }, (_, i) => ({ id: `h-${i}`, sessionId: session.id,
+            seq: i + 1, createdAt: 1, invokedAt: 1, localId: null, scheduledAt: null,
+            content: hiddenContent }))
+        const visible = { ...rows[0]!, id: 'visible', seq: 221, content: { role: 'user', content: 'hello' } }
+        const all = [...rows, visible]
+        const store = { messages: {
+            countMessages: () => all.length,
+            getMessagesAfterSeqLimit: (_id: string, after: number, limit: number) => all.filter(row => row.seq > after).slice(0, limit)
+        }, scratchlist: { list: () => [] } } as unknown as Store
+        const result = new MessageService(store, makeIo(() => {}), makePublisher() as any)
+            .getSessionExport(session.id, toProtocolSession(session))
+        expect(result.type).toBe('success')
+        if (result.type === 'success') expect(result.payload.messages.map(row => row.id)).toEqual(['visible'])
+        sessionStore.close()
     })
 
     it('includes scratchlist text and attachment metadata in chronological order (tiann/hapi#1235)', () => {

@@ -20,6 +20,7 @@ export class SessionCache {
     private readonly sessions: Map<string, Session> = new Map()
     private readonly lastBroadcastAtBySessionId: Map<string, number> = new Map()
     private readonly todoBackfillAttemptedSessionIds: Set<string> = new Set()
+    private readonly conversationContentScanBySessionId: Map<string, { epoch: number; maxSeq: number; result: boolean }> = new Map()
     private readonly deduplicateInProgress: Set<string> = new Set()
     private readonly deduplicatePending: Set<string> = new Set()
     private readonly pendingThinkingUntilBySessionId: Map<string, number> = new Map()
@@ -156,9 +157,22 @@ export class SessionCache {
         this.refreshSession(sessionId)
     }
 
+    private resolveHasConversationContent(sessionId: string): boolean {
+        const epoch = this.store.messages.getMessageEpoch(sessionId)
+        const maxSeq = this.store.messages.getMaxSeq(sessionId)
+        const cached = this.conversationContentScanBySessionId.get(sessionId)
+        if (cached?.epoch === epoch && (cached.maxSeq === maxSeq || (cached.result && maxSeq >= cached.maxSeq))) {
+            return cached.result
+        }
+        const result = this.store.messages.hasConversationContent(sessionId)
+        this.conversationContentScanBySessionId.set(sessionId, { epoch, maxSeq, result })
+        return result
+    }
+
     refreshSession(sessionId: string): Session | null {
         let stored = this.store.sessions.getSession(sessionId)
         if (!stored) {
+            this.conversationContentScanBySessionId.delete(sessionId)
             const existed = this.sessions.delete(sessionId)
             this.pendingThinkingUntilBySessionId.delete(sessionId)
             this.runtimeConfigUpdatedAtBySessionId.delete(sessionId)
@@ -210,7 +224,7 @@ export class SessionCache {
         })()
 
         const session: Session = {
-            hasConversationContent: this.store.messages.hasConversationContent(sessionId),
+            hasConversationContent: this.resolveHasConversationContent(sessionId),
             id: stored.id,
             namespace: stored.namespace,
             seq: stored.seq,
@@ -254,7 +268,7 @@ export class SessionCache {
 
     refreshConversationContent(sessionId: string): void {
         const session = this.sessions.get(sessionId)
-        const hasContent = this.store.messages.hasConversationContent(sessionId)
+        const hasContent = this.resolveHasConversationContent(sessionId)
         if (session && session.hasConversationContent !== hasContent) {
             session.hasConversationContent = hasContent
             this.publisher.emit({ type: 'session-updated', sessionId, data: { ...session } })
@@ -1222,6 +1236,7 @@ export class SessionCache {
         }
 
         this.sessions.delete(sessionId)
+        this.conversationContentScanBySessionId.delete(sessionId)
         this.lastBroadcastAtBySessionId.delete(sessionId)
         this.todoBackfillAttemptedSessionIds.delete(sessionId)
         this.pendingThinkingUntilBySessionId.delete(sessionId)
@@ -1469,6 +1484,7 @@ export class SessionCache {
                 throw new Error('Failed to delete old session during merge')
             }
 
+            this.conversationContentScanBySessionId.delete(oldSessionId)
             const existed = this.sessions.delete(oldSessionId)
             if (existed) {
                 this.publisher.emit({ type: 'session-removed', sessionId: oldSessionId, namespace })

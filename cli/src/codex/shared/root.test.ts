@@ -322,3 +322,24 @@ describe('shared steering availability', () => {
         await vi.waitFor(() => expect(end).toHaveBeenCalledTimes(1));
     });
 });
+
+
+describe('bounded resume response', () => {
+    it('subscribes without requesting a second full transcript', async () => {
+        const f = await fixture();
+        const request = vi.spyOn(f.root.client, 'request');
+        await f.root.bind('thread', { thread: { id: 'thread' } }, true);
+        expect(request).toHaveBeenCalledWith('thread/resume', { threadId: 'thread', excludeTurns: true });
+        expect(request).toHaveBeenCalledWith('thread/read', { threadId: 'thread', includeTurns: false });
+    });
+
+    it('propagates missing existing history instead of pretending resume succeeded', async () => {
+        const f = await fixture();
+        const original = f.root.client.request.bind(f.root.client);
+        vi.spyOn(f.root.client, 'request').mockImplementation(async (method, params) => {
+            if (method === 'thread/resume') throw new Error('no rollout found for existing thread');
+            return original(method, params);
+        });
+        await expect(f.root.bind('thread', { thread: { id: 'thread' } }, true)).rejects.toThrow('no rollout found');
+    });
+});

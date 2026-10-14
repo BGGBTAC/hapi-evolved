@@ -21,6 +21,7 @@ import { notifyCommand } from './notify'
 import { hubCommand } from './hub'
 import { pingPeerCommand } from './pingPeer'
 import { inspectPeerCommand } from './inspectPeer'
+import { evolvedCommand } from './evolved'
 import type { CommandContext, CommandDefinition } from './types'
 
 // Gemini CLI was sunset (Google stopped serving the consumer Gemini CLI on
@@ -39,6 +40,7 @@ const removedGeminiCommand: CommandDefinition = {
 }
 
 const COMMANDS: CommandDefinition[] = [
+    evolvedCommand,
     agyCommand,
     authCommand,
     claudeCommand,

@@ -1,0 +1,70 @@
+name: hapi-evolved-runner-${EVOLVED_PROJECT_ID:?Project ID required}
+x-runner: &runner
+  user: "${EVOLVED_UID:-1000}:${EVOLVED_GID:-1000}"
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  read_only: true
+  restart: unless-stopped
+  tmpfs: ["/tmp:rw,nosuid,size=256m"]
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+services:
+  runner:
+    <<: *runner
+    build: { context: ../.., dockerfile: deploy/evolved/Runner.Dockerfile }
+    image: hapi-evolved-runner:0.1.0
+    user: "0:0"
+    # Root supervisor has no DAC override and cannot traverse the private user home.
+    working_dir: /
+    cap_add: [SETUID, SETGID, SETPCAP]
+    command: [bun, /app/services/runner-proxy/supervisor.ts]
+    environment:
+      HAPI_API_URL: http://runner-proxy:3010
+      HAPI_EVOLVED_URL: http://runner-proxy:3010
+      HAPI_EVOLVED_PROXY: "1"
+      EVOLVED_PROJECT_ID: ${EVOLVED_PROJECT_ID:?Project ID required}
+      CLI_API_TOKEN: evolved-local
+      HAPI_RUNNER_SUPERVISED: "1"
+      EVOLVED_RUNNER_UID: ${EVOLVED_UID:-1000}
+      EVOLVED_RUNNER_GID: ${EVOLVED_GID:-1000}
+      EVOLVED_RUNNER_ROOT: /workspaces/${EVOLVED_PROJECT_DIRECTORY:?Project directory required}
+      EVOLVED_RUNNER_PROFILE: ${EVOLVED_RUNNER_PROFILE:?Current project profile required}
+      HTTPS_PROXY: http://egress:3128
+      HTTP_PROXY: http://egress:3128
+      NO_PROXY: runner-proxy,localhost,127.0.0.1
+    volumes:
+      - ${EVOLVED_RUNNER_HOME:?Private runner home required}:/runner
+      - ${EVOLVED_RUNNER_WORKSPACE:?Only this project's workspace}:/workspaces/${EVOLVED_PROJECT_DIRECTORY}:${EVOLVED_WORKSPACE_MODE:-ro}
+    networks: [project]
+    mem_limit: 4g
+    pids_limit: 512
+    depends_on: [runner-proxy, egress]
+  runner-proxy:
+    <<: *runner
+    image: hapi-evolved:0.1.0
+    command: [bun, services/runner-proxy/server.ts]
+    environment:
+      EVOLVED_PROXY_HOST: 0.0.0.0
+      EVOLVED_HUB_URL: http://hub:3006
+      EVOLVED_PROJECT_ID: ${EVOLVED_PROJECT_ID}
+      EVOLVED_RUNNER_LEASE_FILE: /credentials/lease
+    volumes:
+      - ${EVOLVED_RUNNER_LEASE_FILE:?Private lease file required}:/credentials/lease:ro
+    networks: [project, backend]
+    mem_limit: 512m
+  egress:
+    <<: *runner
+    image: hapi-evolved:0.1.0
+    command: [bun, services/runner-proxy/egress.ts]
+    environment:
+      EVOLVED_EGRESS_HOST: 0.0.0.0
+      EVOLVED_EGRESS_HOSTS: ${EVOLVED_EGRESS_HOSTS:-api.anthropic.com,claude.ai,console.anthropic.com,api.openai.com,chatgpt.com,auth.openai.com}
+    networks: [project, provider-egress]
+    mem_limit: 128m
+networks:
+  project: { internal: true }
+  provider-egress: {}
+  backend:
+    external: true
+    name: ${EVOLVED_BACKEND_NETWORK:-hapi-evolved_backend}

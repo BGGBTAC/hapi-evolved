@@ -3,6 +3,7 @@ import { Hono } from 'hono'
 import type { Session, SyncEngine } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
 import { createSessionsRoutes } from './sessions'
+import type { AgentProfile } from '../../evolved/store'
 
 function createSession(overrides?: Partial<Session>): Session {
     const baseMetadata = {
@@ -57,6 +58,7 @@ type ReopenResultMock =
     | { type: 'incomplete'; message: string; missing: [string, ...string[]] }
 
 function createApp(session: Session, opts?: {
+    profile?: AgentProfile
     resumeSession?: (sessionId: string, namespace: string, resumeOpts?: { permissionMode?: string }) => Promise<{ type: string; sessionId?: string; message?: string; code?: string }>
     reopenSession?: (sessionId: string, namespace: string) => Promise<ReopenResultMock>
     listSlashCommands?: SyncEngine['listSlashCommands']
@@ -186,6 +188,7 @@ function createApp(session: Session, opts?: {
     const app = new Hono<WebAppEnv>()
     app.use('*', async (c, next) => {
         c.set('namespace', 'default')
+        if (opts?.profile) c.set('evolvedAccess', { project: { profile: opts.profile, rootPath: '/tmp' } } as NonNullable<WebAppEnv['Variables']['evolvedAccess']>)
         await next()
     })
     app.route('/api', createSessionsRoutes(() => engine as SyncEngine))
@@ -194,6 +197,16 @@ function createApp(session: Session, opts?: {
 }
 
 describe('sessions routes', () => {
+    it('restricted resume and implicit clear-resume replace previously broader agent permissions', async () => {
+        const calls: unknown[] = []
+        const session = createSession({ active: false, permissionMode: 'yolo', metadata: { path: '/tmp', host: 'test', flavor: 'codex', capabilities: { concurrentClients: true } } })
+        const { app } = createApp(session, { profile: 'restricted', resumeSession: async (...args) => { calls.push(args); return { type: 'success', sessionId: session.id } }, clearConversation: async () => ({ sessionId: session.id }) })
+        const post = (path: string, body = {}) => app.request(`/api/sessions/session-1/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+        expect((await post('resume')).status).toBe(200)
+        expect((await post('clear')).status).toBe(200)
+        expect(calls).toEqual([[session.id, 'default', { permissionMode: 'read-only' }], [session.id, 'default', { permissionMode: 'read-only' }]])
+        expect((await post('resume', { permissionMode: 'yolo' })).status).toBe(403)
+    })
     it('dispatches plan implementation using the authenticated namespace and returns stale/unknown outcomes', async () => {
         const session = createSession({ metadata: { path: '/tmp', host: 'test', flavor: 'codex', capabilities: { concurrentClients: true } } })
         const calls: unknown[] = []

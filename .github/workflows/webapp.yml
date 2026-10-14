@@ -20,6 +20,7 @@ concurrency:
 
 jobs:
     build:
+        if: github.repository == 'tiann/hapi'
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
@@ -39,6 +40,7 @@ jobs:
                   path: web/dist
 
     deploy:
+        if: github.repository == 'tiann/hapi'
         needs: build
         runs-on: ubuntu-latest
         environment:

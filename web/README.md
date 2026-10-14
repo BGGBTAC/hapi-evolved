@@ -197,6 +197,28 @@ The spec drives a Vite-served fixture page (`web/e2e-fixtures/scratchlist-fixtur
 that mounts the production `ScratchlistPanel` in isolation, so no hub /
 auth / socket setup is required.
 
+## Evolved workspace verification
+
+When `/health` enables Evolved, the web app uses passkeys and recovery codes;
+legacy shared-token login is never mounted. The workspace at `/evolved` manages
+projects, teams, passkeys, the vault, memory, codegraph, runner leases and previews.
+Serve the PWA from the configured `EVOLVED_ORIGIN` so its session cookies and
+WebAuthn relying-party identity stay on the same origin.
+
+```bash
+bun run test:web -- src/evolved src/api/client.test.ts
+bun run --cwd web test:evolved:e2e
+```
+
+The browser check builds the production PWA and starts an isolated real hub and
+vault server on temporary loopback ports. It exercises virtual WebAuthn,
+recovery and step-up, project creation, encrypted vault writes, persistent
+memory, runner lease downloads/revocation, the existing session API bridge,
+preview sharing/revocation and browser-enforced preview isolation. All state and
+credentials are synthetic and removed afterwards. Chromium must be installed for
+Playwright; `PLAYWRIGHT_CHROME_PATH` can select an existing browser executable.
+The check does not contact a memory provider or spend a cloud budget.
+
 ## Build
 
 ```bash

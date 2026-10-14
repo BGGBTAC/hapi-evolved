@@ -4,6 +4,8 @@ import { z } from 'zod'
 import type { SyncEngine } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
 import { requireSessionFromParam, requireSyncEngine } from './guards'
+import { resolve } from 'node:path'
+import { withinProject } from '../../evolved/bridge'
 
 const fileSearchSchema = z.object({
     query: z.string().optional(),
@@ -61,6 +63,20 @@ function ifNoneMatchMatches(header: string | undefined, etag: string): boolean {
 
 export function createGitRoutes(getSyncEngine: () => SyncEngine | null): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
+    app.use('/sessions/:id/*', async (c, next) => {
+        const project = c.get('evolvedAccess')?.project
+        if (project) {
+            const engine = requireSyncEngine(c, getSyncEngine)
+            if (engine instanceof Response) return engine
+            const access = requireSessionFromParam(c, engine)
+            if (access instanceof Response) return access
+            const root = access.session.metadata?.path
+            if (!root || !withinProject(project, root)) return c.json({ error: 'Session directory is outside this project.' }, 403)
+            const path = c.req.query('path')
+            if (path !== undefined && !withinProject(project, resolve(root, path), true)) return c.json({ error: 'Path is outside this project.' }, 403)
+        }
+        return next()
+    })
 
     app.get('/sessions/:id/git-status', async (c) => {
         const engine = requireSyncEngine(c, getSyncEngine)

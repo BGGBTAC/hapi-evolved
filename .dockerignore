@@ -1,0 +1,12 @@
+.git
+**/node_modules
+**/.env
+**/.env.*
+**/*.db
+**/*.db-*
+**/.codegraph*
+.evolved
+test-results
+playwright-report
+ios
+android

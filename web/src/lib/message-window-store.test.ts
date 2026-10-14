@@ -7,6 +7,7 @@ import {
     VISIBLE_WINDOW_SIZE,
     activateMessageWindow,
     appendOptimisticMessage,
+    clearAllMessageWindows,
     clearMessageWindow,
     fetchOlderMessages,
     getMessageWindowState,
@@ -18,6 +19,7 @@ import {
     removeOptimisticMessage,
     rewindMessageWindow,
     setMessageViewMode,
+    subscribeMessageWindow,
     syncTailMessages,
     updateMessageStatus,
 } from '@/lib/message-window-store'
@@ -251,6 +253,49 @@ afterEach(() => {
 })
 
 describe('message tail synchronization', () => {
+    it('clears loaded and unhydrated persisted transcripts without deleting composer drafts', () => {
+        const id = sessionId('private-loaded')
+        const unloaded = sessionId('private-unhydrated')
+        ingestIncomingMessages(id, [makeUserMessage({ id: 'private-message', seq: 1 })])
+        sessionStorage.setItem(`hapi:message-window:v2:${unloaded}`, JSON.stringify({ messages: [makeUserMessage({ id: 'private-cached', seq: 2 })] }))
+        sessionStorage.setItem('hapi:composer-drafts', 'keep-user-work')
+        const listener = vi.fn()
+        const unsubscribe = subscribeMessageWindow(id, listener)
+        clearAllMessageWindows()
+        expect(listener).toHaveBeenCalled()
+        expect(getMessageWindowState(id).messages).toEqual([])
+        expect(getMessageWindowState(unloaded).messages).toEqual([])
+        expect(sessionStorage.getItem(`hapi:message-window:v2:${unloaded}`)).toBeNull()
+        expect(sessionStorage.getItem('hapi:composer-drafts')).toBe('keep-user-work')
+        unsubscribe()
+    })
+
+    it('cannot resurrect old transcripts from a late tail response after an authentication reset', async () => {
+        const id = sessionId('private-tail-reset')
+        const stale = deferred<MessagesResponse>()
+        const oldSync = syncTailMessages(createApi(vi.fn(() => stale.promise)), id)
+        clearAllMessageWindows()
+        await syncTailMessages(createApi(vi.fn().mockResolvedValue(latestResponse([
+            makeUserMessage({ id: 'new-principal-message', seq: 2 })
+        ]))), id)
+        stale.resolve(latestResponse([makeUserMessage({ id: 'old-private-message', seq: 1 })]))
+        await oldSync
+        expect(getMessageWindowState(id).messages.map(message => message.id)).toEqual(['new-principal-message'])
+    })
+
+    it('discards a late older-page response after an authentication reset', async () => {
+        const id = sessionId('private-older-reset')
+        await syncTailMessages(createApi(vi.fn().mockResolvedValue(latestResponse([
+            makeAgentMessage({ id: 'current', seq: 2, at: 2000 })
+        ], { hasMore: true, nextBeforeAt: 2000, nextBeforeSeq: 2 }))), id)
+        const stale = deferred<MessagesResponse>()
+        const older = fetchOlderMessages(createApi(vi.fn(() => stale.promise)), id)
+        clearAllMessageWindows()
+        stale.resolve(latestResponse([makeUserMessage({ id: 'old-private-message', seq: 1 })]))
+        expect(await older).toEqual({ kind: 'stopped', reason: 'invalidated' })
+        expect(getMessageWindowState(id).messages).toEqual([])
+    })
+
     it('uses a small cold latest page while keeping older loads at full page size', async () => {
         const id = sessionId('cold-initial-page')
         const latestMessages = Array.from({ length: INITIAL_PAGE_SIZE }, (_, index) =>

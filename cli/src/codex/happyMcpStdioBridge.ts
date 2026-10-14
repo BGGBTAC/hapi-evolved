@@ -12,6 +12,8 @@
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerEvolvedTools } from '@/evolved/mcp';
+import { evolvedClientFromEnvironment } from '@/evolved/client';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -80,6 +82,7 @@ export async function runHappyMcpStdioBridge(argv: string[]): Promise<void> {
       name: 'HAPI MCP Bridge',
       version: '1.0.0',
     });
+    if (process.env.HAPI_EVOLVED_CAPABILITY_FILE || process.env.HAPI_EVOLVED_PROXY === '1') registerEvolvedTools(server, evolvedClientFromEnvironment());
 
     // Register tools and forward to HTTP MCP
     const changeTitleInputSchema: z.ZodTypeAny = z.object({

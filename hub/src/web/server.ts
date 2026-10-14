@@ -43,6 +43,8 @@ import type { WebSocketData } from '@socket.io/bun-engine'
 import { loadEmbeddedAssetMap, type EmbeddedWebAsset } from './embeddedAssets'
 import { isBunCompiled } from '../utils/bunCompiled'
 import type { Store } from '../store'
+import type { EvolvedRuntime } from '../evolved/runtime'
+import { createProjectAuthMiddleware } from '../evolved/bridge'
 
 // Normalise upstream close codes before forwarding to the browser client.
 // Codes 1005/1006/1015 are reserved and cannot be sent in a close frame;
@@ -228,20 +230,22 @@ function createWebApp(options: {
     embeddedAssetMap: Map<string, EmbeddedWebAsset> | null
     relayMode?: boolean
     officialWebUrl?: string
+    evolved?: EvolvedRuntime
 }): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
 
-    app.use('*', logger())
+    if (!options.evolved) app.use('*', logger())
 
     const configuration = getConfiguration()
-    const corsOrigins = options.corsOrigins ?? configuration.corsOrigins
+    const corsOrigins = options.evolved ? [options.evolved.origin] : options.corsOrigins ?? configuration.corsOrigins
     const corsOriginOption = corsOrigins.includes('*') ? '*' : corsOrigins
     const corsMiddleware = cors({
         origin: corsOriginOption,
         allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
         // last-event-id: browsers attach it to EventSource reconnects for
         // SSE replay; allow it in case a browser preflights the request.
-        allowHeaders: ['authorization', 'content-type', 'last-event-id']
+        allowHeaders: ['authorization', 'content-type', 'last-event-id', 'x-hapi-project-id'],
+        credentials: Boolean(options.evolved)
     })
     app.use('/health', corsMiddleware)
     app.use('/api/*', corsMiddleware)
@@ -252,6 +256,7 @@ function createWebApp(options: {
     app.get('/health', (c) => c.json({
         status: 'ok',
         protocolVersion: PROTOCOL_VERSION,
+        evolved: { enabled: Boolean(options.evolved) },
         capabilities: {
             workGraph: true,
             titleSuggestion: readTitleProviderConfig() !== null
@@ -279,12 +284,16 @@ function createWebApp(options: {
         return next()
     })
 
-    app.route('/cli', createCliRoutes(options.getSyncEngine))
+    app.route('/cli', createCliRoutes(options.getSyncEngine, options.evolved?.store))
 
-    app.route('/api', createAuthRoutes(options.jwtSecret, options.store))
-    app.route('/api', createBindRoutes(options.jwtSecret, options.store))
-
-    app.use('/api/*', createAuthMiddleware(options.jwtSecret))
+    if (options.evolved) {
+        app.route('/api/evolved', options.evolved.routes)
+        app.use('/api/*', createProjectAuthMiddleware(options.evolved.store, options.jwtSecret, options.evolved.origin))
+    } else {
+        app.route('/api', createAuthRoutes(options.jwtSecret, options.store))
+        app.route('/api', createBindRoutes(options.jwtSecret, options.store))
+        app.use('/api/*', createAuthMiddleware(options.jwtSecret))
+    }
     app.route('/api', createEventsRoutes(options.getSseManager, options.getSyncEngine, options.getVisibilityTracker))
     app.route('/api', createSessionsRoutes(options.getSyncEngine))
     app.route('/api', createMessagesRoutes(options.getSyncEngine))
@@ -423,6 +432,7 @@ export async function startWebServer(options: {
     corsOrigins?: string[]
     relayMode?: boolean
     officialWebUrl?: string
+    evolved?: EvolvedRuntime
 }): Promise<BunServer<WebSocketData>> {
     const isCompiled = isBunCompiled()
     const embeddedAssetMap = isCompiled ? await loadEmbeddedAssetMap() : null
@@ -436,7 +446,8 @@ export async function startWebServer(options: {
         corsOrigins: options.corsOrigins,
         embeddedAssetMap,
         relayMode: options.relayMode,
-        officialWebUrl: options.officialWebUrl
+        officialWebUrl: options.officialWebUrl,
+        evolved: options.evolved
     })
 
     const configuration = getConfiguration()
@@ -501,6 +512,7 @@ export async function startWebServer(options: {
             // Voice WebSocket proxies — require JWT auth via query param
             // (browser WebSocket API cannot set custom headers)
             if (url.pathname === '/api/voice/gemini-ws' || url.pathname === '/api/voice/qwen-ws') {
+                if (options.evolved) return new Response('Voice is unavailable in Evolved v1', { status: 403 })
                 const token = url.searchParams.get('token')
                 if (!token) {
                     return new Response('Missing authorization token', { status: 401 })
@@ -551,7 +563,7 @@ export async function startWebServer(options: {
                 return undefined as unknown as Response
             }
 
-            return app.fetch(req)
+            return app.fetch(req, { server })
         }
     })
 

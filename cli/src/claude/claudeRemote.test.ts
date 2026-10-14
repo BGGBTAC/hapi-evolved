@@ -3,7 +3,7 @@ import * as claudeSdk from '@/claude/sdk';
 import type { SDKMessage } from '@/claude/sdk/types';
 
 vi.mock('@/claude/utils/claudeCheckSession', () => ({
-    claudeCheckSession: () => true
+    claudeCheckSession: () => false
 }));
 
 vi.mock('@/modules/watcher/awaitFileExist', () => ({
@@ -102,6 +102,7 @@ describe('claudeRemote async message handling', () => {
             });
 
             expect(onFirstResult).toHaveBeenCalledTimes(1);
+            expect(queryMock.mock.calls[0]?.[0]?.options.resume).toBe('session-1');
             expect(onFirstResult).toHaveBeenCalledWith('Review this project');
         } finally {
             queryMock.mockReset();

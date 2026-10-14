@@ -27,6 +27,7 @@ concurrency:
 
 jobs:
     image:
+        if: github.repository == 'tiann/hapi'
         runs-on: ubuntu-latest
         permissions:
             contents: read
