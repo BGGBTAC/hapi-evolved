@@ -3,7 +3,7 @@
   "sourceRepository": "https://github.com/tiann/hapi",
   "baseCommit": "8033c3df01eed9fb7d28318ba5e1aa5aa2478543",
   "reviewModel": "claude-opus-5-5",
-  "status": "locally_validated_pending_ci",
+  "status": "locally_validated_ci_blocked_by_account_billing",
   "rubric": {
     "functionality": {
       "1": "kosmetisch",
@@ -1057,7 +1057,7 @@
       "implementability": 6,
       "projectValue": "gering",
       "rationale": "Codex wendet einen Permission-Wechsel mitten im Turn erst im nächsten Turn an. Das Problem liegt upstream (openai/codex#32612); das Issue verlangt keine HAPI-Änderung. Ein optionaler UI-Hinweis wäre denkbar.",
-      "costBenefit": "gering",
+      "costBenefit": "Das Verhalten entsteht im Codex-Upstream und verlangt keine HAPI-Korrektur. Ein eigener UI-Hinweis hätte nur begrenzten Zusatznutzen; deshalb beobachten, statt einen nicht wirksamen Mid-Turn-Wechsel zu versprechen.",
       "decision": "defer",
       "codeEvidence": [
         "keine"
@@ -1094,7 +1094,7 @@
       "implementability": 4,
       "projectValue": "gering",
       "rationale": "DSH startet eine eigene mediaOnly-HAPI-MCP-Bridge mit display_image/video/media und sauberem Lifecycle-Cleanup. Keine Peer-/GitHub-/Policy-Tools in diesem Medienpfad. Doctor beschreibt tatsächlich verfügbare Flavor-Pfade.",
-      "costBenefit": "Doctor-Fix günstig; Bridge gering",
+      "costBenefit": "Die begrenzte Medien-Bridge schließt eine konkrete Lücke geerbter DSH-Sitzungen mit wiederverwendbaren display-Werkzeugen. Der zusätzliche Lifecycle-Aufwand bleibt überschaubar; Peer- und Policy-Werkzeuge werden dort nicht mit eingebaut.",
       "decision": "implement",
       "codeEvidence": [
         "cli/src/dsh/dshRemoteLauncher.ts; cli/src/claude/utils/startHappyServer.ts:45; cli/src/ui/doctorInlineMedia.ts"
@@ -1131,7 +1131,7 @@
       "implementability": 6,
       "projectValue": "gering",
       "rationale": "Doctor erkennt kompilierte Bun-Binaries und erzeugt keinen nicht ausführbaren /$bunfs- bzw. B:-Shell-Fallback mehr.",
-      "costBenefit": "trivial, sinnvoll",
+      "costBenefit": "Eine kleine Erkennung kompilierter Binaries verhindert unmittelbar irreführende, nicht ausführbare Doctor-Befehle. Der geringe Aufwand rechtfertigt die Korrektur zusammen mit dem Medienpfad.",
       "decision": "implement",
       "codeEvidence": [
         "cli/src/ui/doctorInlineMedia.ts:11; cli/src/ui/doctorInlineMedia.test.ts:54"
@@ -1246,7 +1246,7 @@
       "implementability": 3,
       "projectValue": "gering",
       "rationale": "Nur Windows betroffen: synchrones tasklist blockiert den Event-Loop. Die fail-closed CIM-Logik ist korrekt. Für eine Linux-Installation ohne Windows-Runner geringer Nutzen.",
-      "costBenefit": "gering hier",
+      "costBenefit": "Der Fehler betrifft ausschließlich Windows-tasklist und bringt dem freigegebenen Linux-Runner keinen unmittelbaren Nutzen. Ohne Windows-Prüfung wäre eine Änderung am Prozessstopp unnötig riskant; die bestehende fail-closed-CIM-Grenze bleibt erhalten.",
       "decision": "defer",
       "codeEvidence": [
         "keine"
@@ -1283,7 +1283,7 @@
       "implementability": 4,
       "projectValue": "gering",
       "rationale": "Die Rundendauer wird im Web aus sichtbaren Nachrichten berechnet und fehlt nach einem Tail-Reload. Lösung: durationMs beim echten Turn-Ende persistieren, nichts beim Replay erfinden. Kosmetischer Nutzen.",
-      "costBenefit": "mittel-gering",
+      "costBenefit": "Eine dauerhafte Rundendauer müsste am echten Turn-Ende in CLI und Web ergänzt werden. Der Gewinn betrifft die Anzeige nach Reload; angesichts des begrenzten Nutzens wird dieses kleine, aber schichtübergreifende Inkrement zurückgestellt.",
       "decision": "defer",
       "codeEvidence": [
         "docs/evolved/upstream-issues-2026-10-14.json (Issue #1912); /tmp/hapi-evolved-backlog-live.json (vollständiger Issue-/Kommentarstand)"
@@ -1357,7 +1357,7 @@
       "implementability": 3,
       "projectValue": "mittel",
       "rationale": "Useful extra navigation but existing outline covers primary jump workflow; density and virtual-history rail adds complexity.",
-      "costBenefit": "Zurückgestellt; Begründung/Risiken dokumentiert, keine behauptete Lösung.",
+      "costBenefit": "Eine zusätzliche Markerleiste ergänzt die bereits vorhandene Outline-Navigation. Teilhistorien, dichte Marker, Touchbedienung und Virtualisierung verursachen erheblichen UI-Aufwand für optionalen Zusatznutzen; daher zurückgestellt.",
       "decision": "defer",
       "codeEvidence": [
         "web/src/components/AssistantChat/HappyThread.tsx:82"
@@ -1533,7 +1533,7 @@
       "implementability": 2,
       "projectValue": "hoch",
       "rationale": "Native iPad split geometry root cause unknown and cannot be reproduced on Linux; do not weaken assertion.",
-      "costBenefit": "Zurückgestellt; Begründung/Risiken dokumentiert, keine behauptete Lösung.",
+      "costBenefit": "Die Abweichung der iPad-Sidebar kann ein Layout- oder Messproblem sein und ist ohne Apple-Toolchain hier nicht reproduzierbar. Diagnoseaufwand und zusätzliche Apple-Läufe stehen einem bislang nur im Test belegten Nutzen gegenüber; deshalb keine Abschwächung der Assertion.",
       "decision": "defer",
       "codeEvidence": [
         "ios/HapiTests/SessionSplitPresentationTests.swift:1"
@@ -1564,7 +1564,7 @@
         "model": "claude-opus-5-5",
         "functionality": 3,
         "implementability": 2,
-        "reason": "Für doppelte lokale Claude-Konfiguration fehlt ein belastbarer HAPI-Produktfehler; ohne Reproduktion kein riskanter Konfigurationsumbau."
+        "reason": "Der sporadische iPad-Sidebar-Test zeigt 420 statt höchstens 360 Pixel; ein Nutzerfehler ist bisher nicht belegt. Ohne Apple-Toolchain ist die Unterscheidung zwischen Layout- und Messproblem hier nicht reproduzierbar. Daher F3/U2 und Zurückstellung statt einer Abschwächung der Assertion."
       },
       "mandatory": false,
       "originalProjectValue": "hoch"
@@ -1575,7 +1575,7 @@
       "implementability": 5,
       "projectValue": "mittel",
       "rationale": "Test-Hubs erhalten eigene Marker und werden im finalen Teardown mit Prozessgeneration bereinigt. CLI-Hub-Marker nicht mit Runner-Marker verwechselt; isolierte Native-Integration besitzt eigene Hubs/Runner.",
-      "costBenefit": "gut: kleiner Fix",
+      "costBenefit": "Ein eigener Test-Hub-Marker ermöglicht verlässliches Aufräumen verwaister Testprozesse mit kleinem Eingriff. Prozessgeneration und getrennte Runner-Marker begrenzen das Risiko, fremde Prozesse zu treffen; deshalb umgesetzt.",
       "decision": "implement",
       "codeEvidence": [
         "cli/src/test/globalSetup.ts:91; cli/src/test/auditTestProcesses.ts:8"
@@ -1649,7 +1649,7 @@
       "implementability": 2,
       "projectValue": "hoch",
       "rationale": "Question-card recycling correctness matters, but native lifecycle-versus-probe root cause requires unavailable iOS execution.",
-      "costBenefit": "Zurückgestellt; Begründung/Risiken dokumentiert, keine behauptete Lösung.",
+      "costBenefit": "Ein Produktionsfehler ist noch nicht belegt; der Test verwechselt möglicherweise onAppear mit tatsächlichem Recycling. Eine belastbare Korrektur benötigt iOS-Ausführung und Viewport-Nachweise. Ohne verfügbare Apple-Toolchain wird dieser Diagnoseaufwand zurückgestellt.",
       "decision": "defer",
       "codeEvidence": [
         "ios/HapiTests/QuestionCardPresentationTests.swift:1"
@@ -1685,7 +1685,7 @@
       "implementability": 4,
       "projectValue": "mittel",
       "rationale": "1M-Kontext wird nur durch beobachtetes Laufzeitmodell, passende lokale Modellwechsel-Hooks oder tatsächliche Nutzung oberhalb 200k bestätigt. Reines Startflag behauptet kein 1M. PostModelSwitch aktualisiert Zielmodell und Evidenz synchron.",
-      "costBenefit": "mittel",
+      "costBenefit": "Der begrenzte CLI-/Web-Abgleich behebt eine sichtbar falsche Kontextanzeige und nutzt vorhandene Modellwechsel-Signale. Der Aufwand lohnt sich, solange nur beobachtete Laufzeitevidenz 1M bestätigt und kein Startflag eine größere Grenze behauptet.",
       "decision": "implement",
       "codeEvidence": [
         "cli/src/claude/utils/localContextWindow.ts:38; cli/src/claude/utils/localContextWindow.test.ts; cli/src/claude/utils/startHookServer.ts"
@@ -1856,7 +1856,7 @@
       "implementability": 4,
       "projectValue": "gering",
       "rationale": "Pi hat kein Bildtool. Bestehender Signatur-, MIME- und Größencheck wäre wiederverwendbar; die Reihenfolge bei asynchroner Registrierung muss gelöst werden. Begrenzter Pi-Nutzen.",
-      "costBenefit": "gering-mittel",
+      "costBenefit": "Signatur-, MIME- und Größenprüfung könnten wiederverwendet werden, doch die asynchrone Werkzeugregistrierung benötigt eigene Reihenfolge- und Lifecycle-Prüfungen. Für den begrenzten Pi-Anwendungsfall rechtfertigt der Zusatznutzen diese Arbeit derzeit nicht.",
       "decision": "defer",
       "codeEvidence": [
         "keine"
@@ -1893,7 +1893,7 @@
       "implementability": 2,
       "projectValue": "gering",
       "rationale": "Projektgebundene Agent- und Auth-Defaults kollidieren mit dem Team/Profil-Scope. Credentials dürfen nicht als Metadaten gespeichert werden; das Design ist offen.",
-      "costBenefit": "gering",
+      "costBenefit": "Ein Default-Schalter wäre klein, die geforderte Verbindung von Agent, Projekt und Zugangsdaten greift aber in Team- und Profilrechte ein. Ohne geklärtes Auth-Design überwiegt das Sicherheitsrisiko den Komfortgewinn; daher zurückgestellt.",
       "decision": "defer",
       "codeEvidence": [
         "keine"
@@ -1930,7 +1930,7 @@
       "implementability": 3,
       "projectValue": "mittel",
       "rationale": "Optional annotation/cropping duplicates external image tools and introduces substantial transactional replacement/editor state.",
-      "costBenefit": "Zurückgestellt; Begründung/Risiken dokumentiert, keine behauptete Lösung.",
+      "costBenefit": "Zuschneiden und Markieren sind nützlicher Komfort, benötigen jedoch einen Editor mit Undo/Redo und sichere Ersetzung erst nach erfolgreichem Upload. Dieser zusätzliche Zustands- und Prüfaufwand rechtfertigt derzeit keinen zweiten Bildbearbeitungsweg neben externen Werkzeugen.",
       "decision": "defer",
       "codeEvidence": [
         "web/src/components/ImagePreview.tsx:10"
@@ -1965,7 +1965,7 @@
       "implementability": 5,
       "projectValue": "mittel",
       "rationale": "Negation of existing metadata search is small, independently useful and composes with required filter work.",
-      "costBenefit": "Begrenzte lokale Ergänzung mit günstigem Nutzen/Aufwand umgesetzt.",
+      "costBenefit": "Der Ausschlussmodus nutzt die bestehende Metadatensuche und ergänzt die ohnehin erforderlichen Filter mit wenig zusätzlicher Logik. Das erleichtert große Sitzungslisten, ohne einen weiteren Suchindex einzuführen; deshalb umgesetzt.",
       "decision": "implement",
       "codeEvidence": [
         "web/src/components/SessionList.tsx:978"
@@ -2000,7 +2000,7 @@
       "implementability": 6,
       "projectValue": "mittel",
       "rationale": "Absolute-date tooltip gives precise existing timestamp at very low cost.",
-      "costBenefit": "Begrenzte lokale Ergänzung mit günstigem Nutzen/Aufwand umgesetzt.",
+      "costBenefit": "Ein Tooltip zeigt den bereits vorhandenen Zeitwert exakt an und benötigt nur eine kleine Darstellungsänderung. Die gemeinsame Zeitquelle mit dem relativen Label hält das Risiko gering; deshalb umgesetzt.",
       "decision": "implement",
       "codeEvidence": [
         "web/src/components/SessionRowSummary.tsx:298"
@@ -2036,7 +2036,7 @@
       "implementability": 3,
       "projectValue": "mittel",
       "rationale": "Upstream bilingual release catalogue and release pipeline are not directly reusable for newly versioned private fork.",
-      "costBenefit": "Zurückgestellt; Begründung/Risiken dokumentiert, keine behauptete Lösung.",
+      "costBenefit": "Ein zweisprachiger Upstream-Releasekatalog passt nicht unmittelbar zur eigenen Evolved-Versionierung. Eigene Sprachen, Inhalte und laufende Releasepflege verursachen wiederkehrenden Aufwand bei begrenztem Zusatznutzen; daher zurückgestellt.",
       "decision": "defer",
       "codeEvidence": [
         "web/src/routes/settings/about.tsx:1"
@@ -2101,7 +2101,7 @@
       "implementability": 2,
       "projectValue": "mittel",
       "rationale": "5h/7d-Quota ist etwas anderes als die Token-Statistik. Gehört in #846. Abfragen nur runnerseitig; Credentials nie an Web oder Hub.",
-      "costBenefit": "mittel, später",
+      "costBenefit": "5h-/7d-Kontingente benötigen eine eigene Quota-Darstellung und sind nicht durch bestehende Tokenstatistiken abgedeckt. Ein separater Sonderweg würde die Anbieter- und Zustandslogik aus #846 duplizieren; die Anforderung bleibt deshalb dort gebündelt.",
       "decision": "defer",
       "codeEvidence": [
         "keine"
@@ -2177,7 +2177,7 @@
       "implementability": 4,
       "projectValue": "mittel",
       "rationale": "Selected-position rail complements required reveal; geometry lifecycle cost exceeds purely visual benefit in this iteration.",
-      "costBenefit": "Zurückgestellt; Begründung/Risiken dokumentiert, keine behauptete Lösung.",
+      "costBenefit": "Die erforderliche Funktion zum Sichtbarmachen der aktuellen Sitzung deckt den Hauptbedarf bereits ab. Ein zusätzlicher Scrollleistenmarker benötigt Geometrie- und Animationspflege für rein visuellen Zusatznutzen; daher zurückgestellt.",
       "decision": "defer",
       "codeEvidence": [
         "web/src/components/SessionList.tsx:27"
@@ -2213,7 +2213,7 @@
       "implementability": 4,
       "projectValue": "gering",
       "rationale": "In #878 durch persistente strukturierte Fehlermeldung und menschliche Bestätigung abgedeckt; automatisches unbegrenztes Continue wird wegen Schleifen-/Kostenrisiko bewusst nicht umgesetzt.",
-      "costBenefit": "gering separat",
+      "costBenefit": "Persistente strukturierte Fehler und menschliche Bestätigung werden bereits mit #878 behandelt. Ein zusätzlicher Cursor-Footer liefert wenig unabhängigen Nutzen; automatische Fortsetzung wäre wegen Schleifen- und Kostenrisiko kein günstiger Ersatz.",
       "decision": "defer",
       "codeEvidence": [
         "keine"
@@ -2327,7 +2327,7 @@
       "implementability": 4,
       "projectValue": "gering",
       "rationale": "TTFT und Tokenrate wären optionale Metriken. Nur bei messenden Adaptern; fehlende Werte als Unknown.",
-      "costBenefit": "gering",
+      "costBenefit": "Ersttoken-Latenz und Tokenrate sind optionale Kennzahlen, die nicht jeder Adapter zuverlässig liefert. Zusätzliche Mess- und Unknown-Zustände lohnen sich derzeit weniger als die bestehenden Funktionskorrekturen; daher zurückgestellt.",
       "decision": "defer",
       "codeEvidence": [
         "keine"
@@ -2547,7 +2547,7 @@
       "implementability": 5,
       "projectValue": "mittel",
       "rationale": "IME alias is niche but tiny safe canonicalization with existing skill insertion; favorable cost-benefit.",
-      "costBenefit": "Begrenzte lokale Ergänzung mit günstigem Nutzen/Aufwand umgesetzt.",
+      "costBenefit": "Das IME-Zeichen lässt sich mit einer kleinen Kanonisierung in die vorhandene Skill-Einfügung integrieren. Trotz des speziellen Anwendungsfalls ist der Eingriff so begrenzt, dass der Komfortgewinn den Aufwand rechtfertigt.",
       "decision": "implement",
       "codeEvidence": [
         "web/src/components/AssistantChat/HappyComposer.tsx:100",
@@ -2656,7 +2656,7 @@
       "implementability": 4,
       "projectValue": "mittel",
       "rationale": "Optional search dictation shortcut, existing text search sufficient; avoid hidden long-press interaction cost for now.",
-      "costBenefit": "Zurückgestellt; Begründung/Risiken dokumentiert, keine behauptete Lösung.",
+      "costBenefit": "Suchdiktat wäre ein zusätzlicher Einstieg in die vorhandene Diktatfunktion, während Texteingabe bereits funktioniert. Moduswahl sowie Langdruck-gegen-Toggle benötigen weitere Bedienentscheidungen; für diesen optionalen Suchkomfort wird der Aufwand zurückgestellt.",
       "decision": "defer",
       "codeEvidence": [
         "web/src/hooks/useDictation.ts:11"
@@ -2692,7 +2692,7 @@
       "implementability": 1,
       "projectValue": "hoch",
       "rationale": "Native renderer crash and unavailable mobile local models require real-device/browser research; retain fail-closed gate.",
-      "costBenefit": "Zurückgestellt; Begründung/Risiken dokumentiert, keine behauptete Lösung.",
+      "costBenefit": "Das bestehende Gate schützt vor belegten nativen Renderer-Abstürzen, und mobile On-device-Modelle fehlen. Ohne echte Geräte- und Browsernachweise wäre eine Freigabe riskant; die notwendige Recherche geht über eine belastbare lokale Korrektur hinaus.",
       "decision": "defer",
       "codeEvidence": [
         "web/src/hooks/browserLocalSpeech.ts:43"
@@ -2837,7 +2837,7 @@
       "implementability": 2,
       "projectValue": "mittel",
       "rationale": "RFC über vier Subsysteme. Nur das erste (SIGHUP-Survival für Claude plus persistentes active=true) ist ein konkretes Inkrement; es überschneidet sich mit #1986/#1942. Attach, Accounts und Hosts sind zu groß und sicherheitsrelevant.",
-      "costBenefit": "Gesamtpaket gering; Inkrement 1 mittel",
+      "costBenefit": "Das RFC umfasst Attach, Hosts, Accounts und Sitzungsüberleben über mehrere sicherheitsrelevante Subsysteme. Nur das klar umrissene Survival-Inkrement überschneidet sich mit der bestehenden Lifecycle-Prüfung; das Gesamtpaket wird wegen Umfang und offener Verträge zurückgestellt.",
       "decision": "defer",
       "codeEvidence": [
         "keine"
@@ -2904,7 +2904,7 @@
       "implementability": 4,
       "projectValue": "gering",
       "rationale": "display_links umgeht einen Cursor-spezifischen Darstellungsfehler (verschluckte Doppelbuchstaben in URLs). Nur Cursor; erweitert die MCP-Oberfläche.",
-      "costBenefit": "gering",
+      "costBenefit": "Ein weiteres display_links-Werkzeug würde vor allem einen Cursor-spezifischen URL-Darstellungsfehler umgehen. Für den vereinbarten Claude/Codex-Umfang ist der zusätzliche Nutzen gering gegenüber einer dauerhaft erweiterten MCP-Oberfläche.",
       "decision": "defer",
       "codeEvidence": [
         "keine"
@@ -2971,7 +2971,7 @@
       "implementability": 6,
       "projectValue": "mittel",
       "rationale": "Small review template improves future contributions; direct documentation-only gain.",
-      "costBenefit": "Begrenzte lokale Ergänzung mit günstigem Nutzen/Aufwand umgesetzt.",
+      "costBenefit": "Eine kurze PR-Vorlage verbessert nachvollziehbare Übergaben mit einem reinen Dokumentationseingriff. Summary, Validation und Related unterstützen den ohnehin vorgeschriebenen PR-Ablauf ohne neue Laufzeit- oder Wartungskomplexität.",
       "decision": "implement",
       "codeEvidence": [
         ".github/PULL_REQUEST_TEMPLATE.md:1"
@@ -3065,7 +3065,7 @@
       "implementability": 2,
       "projectValue": "gering",
       "rationale": "Pi-TUI braucht einen eigenen Local/Remote-Handoff mit stabiler Resume-Identität.",
-      "costBenefit": "gering",
+      "costBenefit": "Pi-TUI erfordert einen eigenen Local-/Remote-Handoff und eine stabile Resume-Identität. Für einen zusätzlichen, nicht zum Kernumfang gehörenden Anbieter ist dieser noch ungeklärte Lifecycle-Aufwand derzeit nicht gerechtfertigt.",
       "decision": "defer",
       "codeEvidence": [
         "keine"
@@ -3102,7 +3102,7 @@
       "implementability": 3,
       "projectValue": "gering",
       "rationale": "ACP-Usage und -Kosten erfordern eine durchgehende Änderung inkl. Schema. Kumulative Werte und Deltas müssen getrennt werden; Kontextgröße nicht als Verbrauch zählen.",
-      "costBenefit": "mittel-gering",
+      "costBenefit": "ACP-Verbrauch müsste durch Adapter, Schema und Anzeige geführt werden. Die saubere Unterscheidung kumulativer Werte, Deltas und Kontextgröße verursacht schichtübergreifenden Aufwand für optionale Statistik; daher zurückgestellt.",
       "decision": "defer",
       "codeEvidence": [
         "keine"
@@ -3220,7 +3220,7 @@
       "implementability": 4,
       "projectValue": "mittel",
       "rationale": "Existing mention atom makes drag/drop a bounded convenience feature with favorable cost-benefit.",
-      "costBenefit": "Begrenzte lokale Ergänzung mit günstigem Nutzen/Aufwand umgesetzt.",
+      "costBenefit": "Drag-and-drop kann die bereits vorhandene Mention-Einfügung wiederverwenden. Der zusätzliche Komfort benötigt dadurch nur einen begrenzten UI-Eingriff; die bestehende Autovervollständigung bleibt der alternative Bedienweg.",
       "decision": "implement",
       "codeEvidence": [
         "web/src/lib/sessionMentionDrag.ts:1",
@@ -3389,7 +3389,7 @@
       "implementability": 3,
       "projectValue": "mittel",
       "rationale": "Optional tour less valuable than fixing startup diagnostics; fresh-install versus upgrade detection needs product policy.",
-      "costBenefit": "Zurückgestellt; Begründung/Risiken dokumentiert, keine behauptete Lösung.",
+      "costBenefit": "Eine Führung durch die App ist optional und benötigt eine zuverlässige Unterscheidung neuer und aktualisierter Installationen. Solange diese Produktregel offen ist, bringen konkrete Startdiagnosen mehr Nutzen als zusätzlicher Tour-Zustand; daher zurückgestellt.",
       "decision": "defer",
       "codeEvidence": [
         "web/src/lib/use-fue.ts:34"
@@ -3558,7 +3558,7 @@
       "implementability": 5,
       "projectValue": "gering",
       "rationale": "Explizite Referenzgrundlage zusammen mit #1162 umgesetzt.",
-      "costBenefit": "Small, but duplicative.",
+      "costBenefit": "Die strukturierten Referenzen und der PR-Chip bilden die kleine gemeinsame Grundlage von #1162. Sie werden dort mitgeliefert, wodurch derselbe Nutzen ohne eine doppelte Integration oder getrennten Pflegepfad entsteht.",
       "decision": "implement",
       "codeEvidence": [
         "/home/benedict/work/hapi-evolved/shared/src/externalRefs.ts:3"
@@ -3624,7 +3624,7 @@
       "implementability": 2,
       "projectValue": "mittel",
       "rationale": "Summarize-and-migrate-RFC bleibt F3/U2 zurückgestellt. Der unabhängig notwendige Datenintegritätspunkt ist geprüft: mergeSessionData erhält Scratchlist-Text und Anhänge bei Sessionrotation, Merge und Historykeep einschließlich Null-/Löschvarianten.",
-      "costBenefit": "Flow gering; Merge-Lücke wichtig",
+      "costBenefit": "Der vollständige Zusammenfassen-und-Migrieren-Ablauf benötigt einen noch offenen Produkt- und Lifecycle-Vertrag. Die unabhängige Datenintegritätsprüfung des Scratchlist-Transfers wurde bereits erledigt; der optionale Summary-Flow rechtfertigt derzeit keinen zusätzlichen Umbau.",
       "decision": "defer",
       "codeEvidence": [
         "hub/src/sync/sessionCache-merge-scratchlist.test.ts:1; hub/src/sync/sessionCache.ts:1306"
@@ -3727,7 +3727,7 @@
       "implementability": 5,
       "projectValue": "gering",
       "rationale": "account/rateLimits/updated wird verworfen. Nützlich erst, wenn ein Quota-Zustand existiert (#846/#1901).",
-      "costBenefit": "gering ohne Gauge",
+      "costBenefit": "Das einzelne Rate-Limit-Ereignis hätte ohne persistierten Quota-Zustand und Anzeige kaum sichtbaren Nutzen. Seine Behandlung wird deshalb mit #846 gebündelt, statt einen ungenutzten Parallelzustand einzuführen.",
       "decision": "defer",
       "codeEvidence": [
         "keine"
@@ -3764,7 +3764,7 @@
       "implementability": 5,
       "projectValue": "gering",
       "rationale": "i18n für Strings des veralteten Entwurfs #847. Erst relevant, wenn ein Gauge existiert.",
-      "costBenefit": "gering",
+      "costBenefit": "Die Übersetzung betrifft Strings eines veralteten Gauge-Entwurfs. Vor einer tatsächlichen Umsetzung der Quota-Anzeige wäre der Pflegeaufwand ohne sichtbaren Nutzen; die Anforderung bleibt bei #846.",
       "decision": "defer",
       "codeEvidence": [
         "keine"
@@ -3801,7 +3801,7 @@
       "implementability": 2,
       "projectValue": "mittel",
       "rationale": "Umbrella für Quota-Anzeigen. Kontext, Abo-Quota und Kosten sind verschiedene Daten. Erstes Inkrement: Codex-Gauge aus token_count- und rateLimits-Events. Credentials bleiben runnerseitig.",
-      "costBenefit": "mittel",
+      "costBenefit": "Eine anbieterübergreifende Anzeige muss Kontext, Abokontingente und Kosten getrennt modellieren und Zugangsdaten beim Runner belassen. Dieser breite, noch unklare Vertrag wird zurückgestellt; ein späteres Codex-Inkrement aus belegten Ereignissen ist klarer abgrenzbar.",
       "decision": "defer",
       "codeEvidence": [
         "keine"
@@ -4001,7 +4001,7 @@
       "implementability": 2,
       "projectValue": "gering",
       "rationale": "Profilwahl im Web ist gewünscht. Der Shared-Runtime lehnt --profile ausdrücklich ab (app-server 0.154 ohne Profile-Loader). Alternative wäre CODEX_HOME pro Profil, was Design und Sicherheit klären muss.",
-      "costBenefit": "gering",
+      "costBenefit": "Die gewünschte Profilwahl wird vom vorhandenen Shared-App-Server nicht unterstützt. Eine Alternative über getrennte CODEX_HOME-Verzeichnisse erfordert zusätzliche Identitäts- und Sicherheitsplanung; ein einfacher UI-Schalter hätte daher keinen verlässlich funktionierenden Unterbau.",
       "decision": "defer",
       "codeEvidence": [
         "cli/src/codex/shared/launch.ts: Fehler bei -p/--profile/--config-profile"
@@ -4038,7 +4038,7 @@
       "implementability": 4,
       "projectValue": "mittel",
       "rationale": "Manual title already overrides agent summary; explicit global titlelock optional, defer broader lifecycle contract.",
-      "costBenefit": "Zurückgestellt; Begründung/Risiken dokumentiert, keine behauptete Lösung.",
+      "costBenefit": "Manuelle Namen haben bereits Vorrang vor Agentenzusammenfassungen. Ein umfassender Titelsperrschalter müsste weitere Lifecycle-Fälle und überlappende Issues klären; der zusätzliche Nutzen rechtfertigt diesen Vertrag derzeit nicht.",
       "decision": "defer",
       "codeEvidence": [
         "hub/src/sync/sessionCache.ts:19"
@@ -4082,5 +4082,57 @@
       "not-applicable": 1,
       "partial": 1
     }
+  },
+  "ci": {
+    "pullRequest": "https://github.com/BGGBTAC/hapi-evolved/pull/2",
+    "sourceCommit": "f8a1716527d8a18cca537db8001563432619309e",
+    "status": "jobs-not-started",
+    "reason": "GitHub: recent account payments have failed or spending limit needs to be increased",
+    "testRun": "https://github.com/BGGBTAC/hapi-evolved/actions/runs/38664511945",
+    "iosRun": "https://github.com/BGGBTAC/hapi-evolved/actions/runs/38664511950",
+    "androidRun": "https://github.com/BGGBTAC/hapi-evolved/actions/runs/38664511958",
+    "nativeValidation": "not-executed; awaiting account-side Actions availability"
+  },
+  "localValidation": {
+    "validatedAt": "2026-10-15",
+    "sourceCommit": "f8a1716527d8a18cca537db8001563432619309e",
+    "status": "passed",
+    "command": "bun run test:cli && bun run test:hub && bun run test:web && bun run test:shared && bun run test:relay && bun run test:proxy && bun run test:deployment",
+    "passed": 8964,
+    "skipped": 15,
+    "failed": 0,
+    "packages": {
+      "cli": {
+        "passed": 3136,
+        "skipped": 12
+      },
+      "hub": {
+        "passed": 1637,
+        "skipped": 3
+      },
+      "web": {
+        "passed": 3712,
+        "skipped": 0
+      },
+      "shared": {
+        "passed": 342,
+        "skipped": 0
+      },
+      "relay": {
+        "passed": 118,
+        "skipped": 0
+      },
+      "runnerProxy": {
+        "passed": 9,
+        "skipped": 0
+      },
+      "deployment": {
+        "passed": 10,
+        "skipped": 0
+      }
+    },
+    "sourceLog": "/tmp/evolved-v2-committed-full-tests.log",
+    "sourceLogSha256": "14046b0c979b632954889924d4e4313f36a4e27c0d84aaa71c78cd3709ed0426",
+    "scope": "Vollständige lokale Paketsuite am angegebenen Implementierungscommit; keine erfolgreiche GitHub-CI- oder native iOS/Android-Abnahme. Historische Einzelprüfungen und Reviewzahlen bleiben unverändert."
   }
 }

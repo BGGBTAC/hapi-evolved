@@ -83,14 +83,14 @@ Speicher freigeben, ohne automatisch Daten zu verwerfen.
 
 ## Abnahme
 
-Die lokalen vollständigen Paketsuiten ergaben **8963 bestandene Tests und 15 bedingte
-Skips**. Nach den letzten eng begrenzten Korrekturen wurden die betroffenen Regressionen
-erneut ausgeführt. Die GitHub-CI führt die Gesamtsuiten auf dem gepushten Commit erneut
-aus; ihr verbindlicher Stand ist bei den Checks des Pull Requests sichtbar.
+Die vollständigen lokalen Paketsuiten wurden auf dem gepushten Implementierungscommit
+`f8a1716527d8a18cca537db8001563432619309e` erneut ausgeführt: **8964 bestandene Tests
+und 15 bedingte Skips**, keine Fehler. Die GitHub-CI führt die Gesamtsuiten auf dem gepushten Commit erneut
+aus, sobald die unten dokumentierte Kontosperre aufgehoben ist.
 
 | Prüfung | Ergebnis |
 |---|---|
-| CLI / Hub / Web | 3135 / 1637 / 3712 bestanden; 12 / 3 / 0 bedingte Skips |
+| CLI / Hub / Web | 3136 / 1637 / 3712 bestanden; 12 / 3 / 0 bedingte Skips |
 | Shared / Relay / Runner-Proxy / Deployment | 342 / 118 / 9 / 10 bestanden |
 | Serielle Runner-Integration mit echten Prozessbäumen | 14 bestanden, 1 ausdrücklich optionaler Stresstest übersprungen |
 | Playwright-Fixtures | 19 bestanden |
@@ -100,6 +100,17 @@ aus; ihr verbindlicher Stand ist bei den Checks des Pull Requests sichtbar.
 | Typprüfung / vollständiger Produktbuild | Alle fünf Pakete / Build bestanden |
 | Fixture-Reproduktion | 91 Dateien ohne zusätzliche Abweichung |
 | Vollständiger Evolved-Browserablauf | Bestanden, einschließlich exakter Original- und TXT-Bytes |
+
+**Externe CI-Sperre:** [PR #2](https://github.com/BGGBTAC/hapi-evolved/pull/2),
+Implementierungscommit `f8a1716527d8a18cca537db8001563432619309e`. GitHub hat am
+15.10.2026 sämtliche Jobs vor dem ersten Schritt abgewiesen und nennt fehlgeschlagene
+Kontozahlungen oder ein zu niedriges Ausgabenlimit. Belege:
+[Test](https://github.com/BGGBTAC/hapi-evolved/actions/runs/38664511945),
+[iOS](https://github.com/BGGBTAC/hapi-evolved/actions/runs/38664511950),
+[Android](https://github.com/BGGBTAC/hapi-evolved/actions/runs/38664511958).
+Es gibt daher keine erfolgreiche CI-Abnahme dieses Commits. Abrechnung, Limits und
+Produktionsinfrastruktur wurden nicht verändert. Nach Wiederverfügbarkeit müssen
+diese Prüfungen erneut laufen; die native Freigabe steht bis dahin aus.
 
 Swift- und Android-Änderungen gleichen die nativen Anhangsmodelle und Fixtureversion 2
 an. Mangels lokaler Apple-/Android-Toolchain werden deren Kompilierung, Pakettests und
