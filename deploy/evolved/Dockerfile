@@ -1,9 +1,9 @@
-FROM oven/bun:1.3.14 AS build
+FROM oven/bun:1.4.3 AS build
 WORKDIR /app
 COPY . .
 RUN bun install --frozen-lockfile && bun run build:web
 
-FROM oven/bun:1.3.14
+FROM oven/bun:1.4.3
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends openssh-client ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
