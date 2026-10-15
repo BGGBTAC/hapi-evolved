@@ -1,5 +1,8 @@
 # HAPI brand assets
 
+The separate [HAPI-eVolved logo](evolved/README.md) is available for the evolved
+project. The sources and export process below describe the inherited HAPI brand.
+
 Canonical HAPI icon source used by the web, documentation, website, Android,
 and iOS applications.
 

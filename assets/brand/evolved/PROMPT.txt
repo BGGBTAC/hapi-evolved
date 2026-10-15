@@ -1,0 +1,9 @@
+Use case: logo-brand
+Asset type: primary production logo, transparent PNG, for HAPI-eVolved, a local-first coding-agent workspace with a secure local vault, persistent graph memory and codegraph.
+Primary request: design one distinctive, refined and friendly developer-tool logo. It should feel precise, capable and calm, suitable for a web app and its documentation.
+Composition: a single compact emblem to the left of a crisp, exceptionally well-kerned horizontal wordmark. Make the emblem a custom geometric lowercase e formed by a continuous bold rounded path, with a purposeful rising open end and two integrated graph-node endpoints. The topology should quietly suggest evolution and connected knowledge, without clutter. Simple silhouette, very few shapes, generous negative space, readable as a small app mark.
+Text (verbatim): "HAPI-eVolved" — uppercase H A P I, a normal hyphen, lowercase e, uppercase V, lowercase o l v e d. The exact capitalization is essential. Modern geometric sans serif, HAPI slightly heavier; no extra text or tagline.
+Color palette: existing Evolved interface teal #0F766E for the emblem and eVolved, dark ink #172B2A for HAPI and hyphen.
+Style/medium: flat, vector-like brand identity with precise clean edges and solid fills. No gradients, shadows, 3D effects, photographic material, mockups, generic AI sparkles, brain or padlock symbols.
+Scene/backdrop: genuinely transparent alpha background; no colored backdrop and no simulated checkerboard.
+Constraints: one final horizontal logo only, not a board of alternatives. Canvas around 1536x1024 with the horizontal logo filling its width and generous clean transparent margins. No watermarks, no captions.
