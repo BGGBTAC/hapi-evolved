@@ -32,7 +32,10 @@ vi.mock('@/hooks/useColorTheme', () => ({
     getColorThemeOptions: () => [
         { value: 'default', labelKey: 'settings.display.colorTheme.default' },
         { value: 'nord', labelKey: 'settings.display.colorTheme.nord' },
+        { value: 'plugin:fixture:night', labelKey: '', label: 'Plugin Night', pluginMode: 'dark' },
     ],
+    getColorThemePickerValue: () => null,
+    getPluginThemeMode: (theme: string) => theme.startsWith('plugin:') ? 'dark' : null,
     getColorThemePreview: (theme: string) => theme === 'nord'
         ? { light: '#eceff4', dark: '#2e3440', accent: '#88c0d0' }
         : { light: '#ffffff', dark: '#1c1c1e', accent: '#111827' },
@@ -45,6 +48,7 @@ vi.mock('@tanstack/react-router', () => ({
 vi.mock('@hapi/protocol', () => ({ PROTOCOL_VERSION: 1 }))
 
 vi.mock('@/hooks/useTheme', () => ({
+    useTheme: () => ({ colorScheme: 'light' }),
     useAppearance: () => ({ appearance: 'system', setAppearance }),
     getAppearanceOptions: () => [
         { value: 'system', labelKey: 'settings.display.appearance.system' },
@@ -286,6 +290,7 @@ describe('responsive settings pages', () => {
     it('renders compact display controls without dropdown popovers', () => {
         renderPage(<SettingsDisplayPage />)
         expect(screen.getByRole('radio', { name: 'OLED Black' })).toBeInTheDocument()
+        fireEvent.click(screen.getByText('More color profiles'))
         fireEvent.click(screen.getByRole('radio', { name: 'Nord' }))
         expect(setColorTheme).toHaveBeenCalledWith('nord')
         expect(screen.getByRole('radio', { name: '120%' })).toBeInTheDocument()
@@ -301,6 +306,14 @@ describe('responsive settings pages', () => {
         expect(screen.getByRole('checkbox', { name: 'Created time' })).not.toBeChecked()
         expect(screen.getByRole('checkbox', { name: 'Updated time' })).not.toBeChecked()
         expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    })
+
+    it('selects the intended appearance before applying a plugin palette', () => {
+        renderPage(<SettingsDisplayPage />)
+        fireEvent.click(screen.getByRole('radio', { name: 'Plugin Night' }))
+        expect(setAppearance).toHaveBeenCalledWith('dark')
+        expect(setColorTheme).toHaveBeenCalledWith('plugin:fixture:night')
+        expect(setAppearance.mock.invocationCallOrder.at(-1)).toBeLessThan(setColorTheme.mock.invocationCallOrder.at(-1)!)
     })
 
     it('keeps the session status description visible with its choice group', () => {

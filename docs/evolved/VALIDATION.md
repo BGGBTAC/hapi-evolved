@@ -78,3 +78,48 @@ Veröffentlichung sowie Änderungen an vorhandener Infrastruktur. Eine echte Gra
 einem Cloudmodell verlangt Betreiberkonfiguration, aktuelle Preise und ein ausdrücklich aktiviertes
 Projektbudget. Modellqualität und reale Anbieterabrechnung sind durch Offline-Tests nicht belegt.
 Backups und darin verbleibende gelöschte Quellen benötigen eine Betreiber-Aufbewahrungsregel.
+
+## Browser-Anmeldung, Erweiterungen und Modelle am 15.10.2026
+
+Die Erweiterung auf `feat/browser-provider-login` baut auf
+`71d5bb50b8429f5b8a02161d3605eb67ad2284e6` auf. Sie umfasst native Browser-Anmeldung,
+verwaltete dauerhafte Projektdienste, globale Agentenvorlagen, deklarative GitHub-Plugins,
+Farbprofile und dynamische native Modellkataloge.
+
+Die abschließenden Paketläufe bestanden 9.378 Tests; 15 bestehende bedingte Tests wurden
+übersprungen. Aufteilung: CLI 3.170, Hub 1.784, Web 3.877, Shared 342, Relay 118,
+Runner-Proxy 21, Deployment 11, native Anmeldung/Modelle 34 und Runner-Control 21.
+Alle sieben Typechecks sowie Web- und Dokumentationsbuild bestanden.
+
+- Die vollständige echte Hub-/WebAuthn-Browserregression bestand einschließlich GitHub,
+  Codegraph, Projektordnern, dauerhaften Runnerfreigaben, Memory, Vault, Historie und Vorschau.
+- Ein separater echter Hub-/WebAuthn-Lauf prüfte globale Agenten über zwei Projekte,
+  Plugin-Vorschau/Installation/Update/Deaktivierung/Entfernung, Skill-Abhängigkeiten,
+  Theme-Fallback sowie dynamische und manuelle Modellwahl. GitHub- und Modellantworten
+  waren dabei ausdrücklich kontrollierte Testantworten; kein Agentenprompt wurde ausgeführt.
+- Die Sichtprüfung umfasste 18 Ansichten und fünf Prüfgruppen bei 1440, 390 und 320 Pixeln,
+  einschließlich heller/dunkler Farbprofile, kompakter Auswahlfelder und Anmeldezustände.
+  Die dargestellten Provider-Challenges waren synthetisch.
+- Separat wurden auf VM180 die echten anonymen Codex- und Claude-Anmelde-Challenges
+  unter denselben systemd-Schutzoptionen wie der Steuerdienst geprüft. Abbruch,
+  Sitzungstrennung, falscher Callback-State, Berechtigungswiderruf und dauerhafter
+  Runner-Wiederanlauf bestanden. Ausgetauschte Ordner und Symlinks wurden abgewiesen,
+  der gebundene Workspace behielt seine ursprüngliche Verzeichnisidentität.
+- Die echten gepinnten CLIs wurden zusätzlich in einem frischen privaten HOME über ihre
+  Modellprotokolle abgefragt: Codex 0.157.0 meldete sieben, Claude 2.1.285 fünf Einträge.
+  Dieser anonyme Protokolltest belegt weder aktuelle Konto-Freigaben noch einen
+  ungepufferten Anbieterabruf. Die Produktabfrage unterscheidet diese Grenzen sichtbar.
+
+Die VM-Integration verwendet ausschließlich eigene temporäre Konten, Netzwerke und
+Container. Persönliche Anbieteranmeldungen und kostenpflichtige Modellaufrufe wurden
+nicht ausgeführt. Die abschließende Installation und die tatsächlich laufenden
+Image-/Quellstände werden zusätzlich im privaten Infrastruktur-Repository unter
+`hapi-evolved/update-2026-10-15-browser-login.json` dokumentiert.
+
+Tatsächliche Claude-Opus-5.5-Aufrufe und abgearbeitete Befunde sind in
+[Browser-Anmeldung](./reviews/browser-provider-login-2026-10-15.json) und
+[Agenten/Plugins](./reviews/agents-plugins-2026-10-15.json) protokolliert.
+Der zusätzliche [Opus-Modellreview](./reviews/native-models-opus-2026-10-15.json)
+prüft Katalogrechte, parallele Anmeldungen, Zeitlimits und die Modellauswahl.
+Der [native Modell-Prüfbericht](./reviews/native-models-2026-10-15.json) trennt
+Protokollnachweise, kontrollierte Testantworten und Grenzen der Anbieterfreigabe.

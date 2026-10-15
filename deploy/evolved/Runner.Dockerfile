@@ -6,6 +6,7 @@ RUN npm install -g @anthropic-ai/claude-code@2.1.285 @openai/codex@0.157.0 && np
 COPY --from=bun-runtime /usr/local/bin/bun /usr/local/bin/bun
 COPY --from=source /app /app
 COPY services/runner-proxy /app/services/runner-proxy
+COPY services/runner-auth /app/services/runner-auth
 RUN mkdir -p /runner /workspaces /managed-workspaces && chown node:node /runner /workspaces /managed-workspaces
 # Native Git transports use the project-scoped credential broker. No GitHub
 # credential, helper or direct GitHub egress is installed inside this image.

@@ -20,7 +20,8 @@ export async function checkCodegraph(page, workspace) {
     await reindex;
     await page.getByRole('group', { name: 'Interaktiver Codegraph', exact: true }).waitFor();
     await workspaceArea(page, 'Abos verbinden');
-    await page.getByRole('heading', { name: 'Abos verbinden', level: 2, exact: true }).waitFor();
+    await page.getByRole('region', { name: 'Codex-Anmeldung', exact: true }).waitFor();
+    await page.getByRole('region', { name: 'Claude-Anmeldung', exact: true }).waitFor();
     for (const width of [1440, 390, 320]) {
         await page.setViewportSize({ width, height: 900 });
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);

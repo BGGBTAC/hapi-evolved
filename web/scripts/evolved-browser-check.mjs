@@ -93,6 +93,7 @@ try {
  await page.getByText('Persistente Browsererkenntnis',{exact:true}).waitFor();
  await workspaceArea(page,'Runner');
  await page.getByLabel('Runner-Name',{exact:true}).fill('Synthetic runner');
+ await page.getByText(/^Berechtigungen anpassen/).click();
  await page.getByLabel('Gedächtnis lesen',{exact:true}).check();
  const permanentIssued=page.waitForResponse(r=>new URL(r.url()).pathname.endsWith('/runner-leases')&&r.request().method()==='POST'&&r.status()===201);
  await page.getByRole('button',{name:'Runner-Zugang erstellen',exact:true}).click();

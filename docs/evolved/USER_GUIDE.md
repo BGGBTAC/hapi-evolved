@@ -165,16 +165,17 @@ stammen aus dem Codeindex und ersetzen keinen tatsächlichen Testlauf.
 
 ## Codex- und Claude-Abos verbinden
 
-Öffne **Abos verbinden** in der Navigation oder auf der Projektübersicht. Dort
-steht der native Anmeldeweg für beide Anbieter. Die Anmeldung erfolgt derzeit im
-privaten Runner-Terminal und wird beim Anbieter im Browser bestätigt. Ein eigener
-Anmelde- oder Statusdialog für Anbieterabos im HAPI-Backend ist noch nicht
-implementiert. Der Hub zeigt deshalb keinen behaupteten Verbindungsstatus an.
+Öffne **Abos verbinden**, wähle das Projekt und klicke beim Anbieter auf **Verbinden**. HAPI richtet einen fehlenden Projektdienst automatisch ein und führt dich durch die offizielle Anbieteranmeldung: Codex mit Gerätecode, Claude mit Bestätigungscode. Status, Abbruch und Abmeldung stehen direkt in der Oberfläche. Ein Terminal ist dafür nicht erforderlich.
 
-Ein Runner-Zugang verbindet den Runner mit HAPI; er meldet weder Codex noch Claude
-bei deren Anbieter an. Die Anleitung mit Befehlen, privatem Runner-Home und
-Statusprüfung steht unter [Abos verbinden](PROVIDER_LOGIN.md). Abo-Zugangsdaten
-gehören nicht als GitHub-Token oder allgemeiner Tresorschlüssel in ein Formular.
+Die Anmeldung bleibt im privaten Projektdienst erhalten. Die Einzelheiten, Schutzgrenzen und Wiederaufnahme nach einem Neuladen stehen unter [Abos verbinden](PROVIDER_LOGIN.md).
+
+## Wiederverwendbare Agenten, Plugins und Darstellung
+
+Unter **Agenten** legst du Spezialisten mit Namen, Aufgabe, Anweisungen, bevorzugtem Anbieter/Modell und optionalen Plugin-Skills an. Die Definitionen sind in allen Projekten und Ausführungsprofilen verfügbar. Beim Start wählst du ein Projekt und gibst den konkreten Auftrag an. Dateien, Sitzungen und Rechte bleiben an dieses Projekt gebunden. Globale Definitionen verwaltet der Installationsadministrator.
+
+**Plugins** importiert Erweiterungen aus öffentlichen GitHub-Repositorys. Vor der Installation siehst du Version, Commit und Inhalt. Aktualisierungen werden ebenfalls zuerst geprüft; Deaktivieren und Entfernen sind jederzeit möglich. Plugins können Agentenvorlagen, Skills und Farbprofile beisteuern. Das Format und seine Grenzen beschreibt [Erweiterungen](EXTENSIONS.md).
+
+Über **Darstellung** wählst du ein Farbprofil mit Vorschau und den hellen, dunklen oder OLED-Modus. Die abgestimmten Profile Ocean, Iris und Sand passen sich dem hellen oder dunklen Modus an; weitere vorhandene Profile bleiben aufklappbar. Deine Auswahl bleibt für diesen Browser gespeichert, individuelle Farbanpassungen haben weiterhin Vorrang. Installierte Plugin-Profile erscheinen ebenfalls dort und wählen ihren vorgesehenen hellen oder dunklen Modus. Nach Deaktivierung des Plugins oder Abmeldung fällt die Oberfläche auf das Standardprofil zurück.
 
 ## Runner anbinden
 
@@ -182,9 +183,7 @@ Ein **Runner** ist der Arbeitsdienst auf deinem Server. Er startet Claude oder
 Codex, bearbeitet Projektdateien und führt Git-Befehle aus. Damit du ihn über HAPI
 steuern kannst, benötigt er einen HAPI-Zugang für das Projekt.
 
-Unter **Runner** erstellt ein Projektadministrator nur diesen Zugang. Die
-Weboberfläche installiert oder startet damit noch keinen Arbeitsdienst; das
-übernimmt der Betreiber gemäß [Deployment-Anleitung](DEPLOYMENT.md).
+Unter **Runner** verwaltest du zusätzliche manuelle Zugänge. Der normale Browserweg über **Abos verbinden** richtet einen verwalteten Projektdienst automatisch ein. Zusätzliche externe Runner installiert der Betreiber gemäß [Deployment-Anleitung](DEPLOYMENT.md).
 
 **Dauerhaft – bis zum Widerruf** ist für deinen eigenen Runner vorausgewählt.
 Dieser Zugang hat kein Ablaufdatum. Wähle **Befristet**, wenn du den Zugang nur für

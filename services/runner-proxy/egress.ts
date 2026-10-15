@@ -58,6 +58,6 @@ export function createModelEgress(hosts: string[], port = 3128, host = '127.0.0.
     return server
 }
 if (import.meta.main) {
-    const hosts = (process.env.EVOLVED_EGRESS_HOSTS ?? 'api.anthropic.com,claude.ai,console.anthropic.com,api.openai.com,chatgpt.com,auth.openai.com').split(',')
+    const hosts = (process.env.EVOLVED_EGRESS_HOSTS ?? 'api.anthropic.com,claude.ai,claude.com,console.anthropic.com,platform.claude.com,api.openai.com,chatgpt.com,auth.openai.com').split(',')
     createModelEgress(hosts, Number(process.env.EVOLVED_EGRESS_PORT ?? 3128), process.env.EVOLVED_EGRESS_HOST ?? '127.0.0.1')
 }

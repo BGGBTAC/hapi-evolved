@@ -7,6 +7,26 @@ import { createVaultServer } from '../../hub/src/evolved/vaultServer.ts'
 import { startHub } from '../../hub/src/startHub.ts'
 const tmp = process.env.EVOLVED_TEST_STATE!
 if (!tmp || !tmp.startsWith('/tmp/hapi-evolved-ui-')) throw new Error('Synthetic test state required')
+if (process.env.EVOLVED_TEST_PLUGINS === '1') {
+    // Only this isolated test entrypoint replaces external GitHub responses.
+    // Product runtime and its PluginService always retain the ordinary fetcher.
+    const originalFetch = globalThis.fetch
+    const repository = 'synthetic-owner/browser-plugin'
+    const manifest = (updated: boolean) => ({ schemaVersion: 1, id: 'browser-plugin', name: 'Browser Plugin', version: updated ? '1.1.0' : '1.0.0', description: 'Isolierte Browser-Test-Erweiterung',
+        agents: [{ id: 'reviewer', name: 'Browser plugin reviewer', description: 'Prüft synthetische Änderungen.', instructions: 'Prüfe die Aufgabe. <img src="https://invalid.example/plugin-pixel">', providerPreference: 'either', skills: ['checklist'] }],
+        skills: [{ id: 'checklist', name: 'Browser checklist', description: 'Synthetische Prüfschritte', instructions: 'Prüfe Quellen und Ergebnisse.' }],
+        themes: [{ id: 'midnight', name: 'Browser midnight', mode: 'dark', colors: { background: '#101827', surface: '#182238', text: '#F9FAFB', muted: '#D1D5DB', accent: '#99CCFF', accentText: '#101827', border: '#7B8BA5' } }],
+    })
+    globalThis.fetch = (async (input, init) => {
+        const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url)
+        if (url.href === `https://api.github.com/repos/${repository}`) return Response.json({ id: 4242, private: false, full_name: repository })
+        if (url.href === `https://api.github.com/repos/${repository}/commits/HEAD`) return new Response('a'.repeat(40))
+        if (url.href === `https://api.github.com/repos/${repository}/commits/updated`) return new Response('b'.repeat(40))
+        for (const updated of [false, true]) if (url.href === `https://raw.githubusercontent.com/${repository}/${(updated ? 'b' : 'a').repeat(40)}/hapi-evolved.plugin.json`) return Response.json(manifest(updated))
+        if (['api.github.com', 'raw.githubusercontent.com'].includes(url.hostname)) return new Response('Unknown synthetic plugin fixture', { status: 404 })
+        return originalFetch(input, init)
+    }) as typeof fetch
+}
 const hubPort = process.env.EVOLVED_TEST_HUB_PORT!
 const vaultPort = process.env.EVOLVED_TEST_VAULT_PORT!
 const origin = `http://localhost:${hubPort}`

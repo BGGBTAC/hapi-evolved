@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     availableAgents: [
         'agy', 'claude', 'codex', 'dsh', 'copilot', 'cursor', 'grok', 'kimi', 'opencode', 'pi'
     ].map((agent) => ({ agent, available: true })),
+    evolved: false,
     codexModelsLoading: false,
     agyModelsLoading: false,
     agyModels: [{ modelId: 'gemini-3.6-flash-low', name: 'Gemini 3.6 Flash (Low)' }],
@@ -42,6 +43,8 @@ const mocks = vi.hoisted(() => ({
     addToast: vi.fn()
 }))
 
+vi.mock('@/evolved/auth', () => ({ useOptionalEvolved: () => mocks.evolved ? { project: { id: 'project-1' } } : null }))
+vi.mock('@/evolved/useProviderModels', () => ({ useProviderModels: () => ({ enabled: mocks.evolved, canRefresh: true, data: { provider: 'codex', status: 'ready', models: [{ id: 'new-native-model', label: 'Fresh native model', reasoningEfforts: ['high'] }] }, isLoading: false, error: null, refresh: vi.fn() }) }))
 vi.mock('@/lib/use-translation', () => ({
     useTranslation: () => ({ t: (key: string) => key })
 }))
@@ -306,6 +309,7 @@ describe('NewSession launch preferences', () => {
             ...['agy', 'claude', 'codex', 'dsh', 'copilot', 'cursor', 'grok', 'kimi', 'opencode', 'pi']
                 .map((agent) => ({ agent, available: true }))
         )
+        mocks.evolved = false
         mocks.codexModelsLoading = false
         mocks.agyModelsLoading = false
         mocks.agyModels = [{ modelId: 'gemini-3.6-flash-low', name: 'Gemini 3.6 Flash (Low)' }]
@@ -330,6 +334,21 @@ describe('NewSession launch preferences', () => {
         mocks.refetchSessions.mockResolvedValue(undefined)
         mocks.addToast.mockReset()
         savePreferredAgent('codex')
+    })
+
+    it('uses the native Evolved catalog and preserves an explicit custom model on launch', async () => {
+        mocks.evolved = true
+        mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'session-new' })
+        render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" initialDirectory="C:\\repo" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        const picker = await screen.findByRole('combobox', { name: 'Modell' })
+        expect(screen.getByRole('option', { name: 'Fresh native model' })).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Eigene Modell-ID' }))
+        fireEvent.change(screen.getByRole('textbox', { name: 'Eigene Modell-ID' }), { target: { value: 'newer-native-id' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
+        await waitFor(() => expect(picker).toHaveValue('newer-native-id'))
+        fireEvent.click(screen.getByTestId('create'))
+        await waitFor(() => expect(mocks.spawnSession).toHaveBeenCalled())
+        expect(mocks.spawnSession.mock.calls[0][0].model).toBe('newer-native-id')
     })
 
     it('hides unavailable Agents and falls back to the first available Agent', async () => {

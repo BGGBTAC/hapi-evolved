@@ -97,6 +97,22 @@
         "typescript": "^5",
       },
     },
+    "services/runner-auth": {
+      "name": "hapi-evolved-runner-auth",
+      "devDependencies": {
+        "@types/node": "26.3.0",
+        "bun-types": "1.4.0",
+        "typescript": "^5",
+      },
+    },
+    "services/runner-control": {
+      "name": "hapi-evolved-runner-control",
+      "devDependencies": {
+        "@types/node": "26.3.0",
+        "bun-types": "1.4.0",
+        "typescript": "^5",
+      },
+    },
     "services/runner-proxy": {
       "name": "hapi-evolved-runner-proxy",
       "dependencies": {
@@ -1971,6 +1987,10 @@
     "hachure-fill": ["hachure-fill@0.5.2", "", {}, "sha512-3GKBOn+m2LX9iq+JC1064cSFprJY4jL1jCXTcpnfER5HYE2l/4EfWSGzkPa/ZDBmYI0ZOEj5VHV/eKnPGkHuOg=="],
 
     "hapi-docs": ["hapi-docs@workspace:docs"],
+
+    "hapi-evolved-runner-auth": ["hapi-evolved-runner-auth@workspace:services/runner-auth"],
+
+    "hapi-evolved-runner-control": ["hapi-evolved-runner-control@workspace:services/runner-control"],
 
     "hapi-evolved-runner-proxy": ["hapi-evolved-runner-proxy@workspace:services/runner-proxy"],
 

@@ -1,0 +1,23 @@
+.ev-agent-layout { display: grid; gap: 1.25rem; }
+.ev-agent-toolbar, .ev-agent-actions, .ev-agent-card-header { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; }
+.ev-agent-toolbar { margin: 1rem 0; }
+.ev-agent-toolbar input { flex: 1 1 15rem; min-width: 0; }
+.ev-agent-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); gap: 1rem; margin-top: 1rem; }
+.ev-agent-card { min-width: 0; padding: 1.1rem; border: 1px solid var(--ev-border, var(--app-border)); border-radius: 1rem; background: var(--ev-surface, var(--app-bg)); }
+.ev-agent-card-header { justify-content: space-between; }
+.ev-agent-card strong { font-size: 1.05rem; }
+.ev-agent-card p { margin: .65rem 0; overflow-wrap: anywhere; }
+.ev-agent-card details { margin: .9rem 0; }
+.ev-agent-card summary, .ev-plugin-preview summary { cursor: pointer; font-weight: 600; min-height: 2.75rem; display: flex; align-items: center; }
+.ev-agent-card pre, .ev-plugin-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: .875rem; padding: .75rem; border-radius: .5rem; background: var(--app-subtle-bg); max-height: 22rem; overflow-y: auto; }
+.ev-agent-badge { font-size: .75rem; padding: .2rem .6rem; border-radius: 999px; background: var(--app-subtle-bg); color: var(--app-hint); }
+.ev-agent-source, .ev-plugin-preview dd { font-size: .8125rem; overflow-wrap: anywhere; }
+.ev-agent-actions { margin-top: 1rem; }
+.ev-agent-skills { display: grid; gap: .65rem; border: 1px solid var(--app-border); border-radius: .75rem; padding: 1rem; }
+.ev-agent-skills label { display: flex; align-items: flex-start; gap: .65rem; }
+.ev-agent-skills input { width: 1.1rem; min-height: 1.1rem; margin-top: .2rem; }
+.ev-agent-skills small { display: block; color: var(--app-hint); }
+.ev-plugin-preview { border: 2px solid var(--app-link); border-radius: 1rem; padding: 1.2rem; margin: 1.25rem 0; min-width: 0; }
+.ev-plugin-preview dl { display: grid; grid-template-columns: minmax(6rem, auto) minmax(0, 1fr); gap: .45rem 1rem; margin: 1rem 0; }
+.ev-plugin-preview dd { margin: 0; }
+@media (max-width: 640px) { .ev-agent-actions > button { flex: 1 1 auto; } .ev-plugin-preview dl { grid-template-columns: 1fr; } .ev-plugin-preview dt { font-weight: 600; } }

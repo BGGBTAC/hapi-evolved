@@ -6,6 +6,7 @@ const keys = [
     'EVOLVED_UID', 'EVOLVED_GID', 'EVOLVED_PROJECT_ID', 'EVOLVED_PROJECT_DIRECTORY',
     'EVOLVED_RUNNER_PROFILE', 'EVOLVED_WORKSPACE_MODE', 'EVOLVED_RUNNER_WORKSPACE',
     'EVOLVED_RUNNER_HOME', 'EVOLVED_RUNNER_LEASE_FILE', 'EVOLVED_BACKEND_NETWORK', 'EVOLVED_EGRESS_HOSTS', 'EVOLVED_WORKSPACE_PREFIX',
+    'EVOLVED_RUNNER_RESTART_POLICY', 'EVOLVED_RUNNER_WORKSPACE_DEVICE', 'EVOLVED_RUNNER_WORKSPACE_INODE',
 ] as const
 type RunnerKey = typeof keys[number]
 type RunnerConfig = Partial<Record<RunnerKey, string>>
@@ -67,6 +68,9 @@ export function checkRunnerConfig(config: RunnerConfig, environment: NodeJS.Proc
         }
     }
     const uid = identifier(config, 'EVOLVED_UID')
+    if(config.EVOLVED_RUNNER_RESTART_POLICY && !['no','unless-stopped'].includes(config.EVOLVED_RUNNER_RESTART_POLICY)) throw new Error('Ungültige Runner-Neustartrichtlinie.')
+    const device=config.EVOLVED_RUNNER_WORKSPACE_DEVICE, inode=config.EVOLVED_RUNNER_WORKSPACE_INODE
+    if((device!==undefined||inode!==undefined)&&(!/^\d{1,24}$/.test(device??'')||!/^[1-9]\d{0,23}$/.test(inode??''))) throw new Error('Workspace-Gerät und Inode müssen gemeinsam angegeben werden.')
     identifier(config, 'EVOLVED_GID')
     const projectId = required(config, 'EVOLVED_PROJECT_ID')
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(projectId)) {

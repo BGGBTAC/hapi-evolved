@@ -21,6 +21,7 @@ vi.mock('./Codegraph', () => ({ CodegraphPanel: () => <p>Codegraph content</p> }
 vi.mock('./Runner', () => ({ RunnerPanel: () => <p>Runner content</p> }))
 vi.mock('./Automation', () => ({ AutomationPanel: () => <p>Automation content</p> }))
 vi.mock('./Previews', () => ({ PreviewsPanel: () => <p>Previews content</p> }))
+vi.mock('./AgentsPlugins', () => ({ AgentsPluginsPanel: () => <p>Global agent catalog</p> }))
 const project = (id: string): EvolvedProject => ({ id, teamId: 'team-1', name: id, role: 'admin', profile: 'restricted' })
 function update() { state.version++; state.listeners.forEach(listener => listener()) }
 async function mount(url = '/evolved') {
@@ -55,7 +56,7 @@ describe('workspace navigation', () => {
     it('supports browser back and forward between links and keeps every tool reachable', async () => {
         const { history } = await mount('/evolved?tab=overview&project=project-1')
         const nav = screen.getByRole('navigation', { name: 'Arbeitsbereich' })
-        for (const label of ['Projekte', 'Kapazität', 'GitHub', 'Gedächtnis', 'Codegraph', 'Vorschauen', 'Automatisierung', 'Runner', 'Abos verbinden', 'Tresor', 'Team & Konto', 'Sessions']) expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument()
+        for (const label of ['Projekte', 'Agenten & Plugins', 'Kapazität', 'GitHub', 'Gedächtnis', 'Codegraph', 'Vorschauen', 'Automatisierung', 'Runner', 'Abos verbinden', 'Tresor', 'Team & Konto', 'Sessions']) expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument()
         fireEvent.click(within(nav).getByRole('link', { name: 'Gedächtnis' }))
         await screen.findByText('Memory content')
         fireEvent.click(within(nav).getByRole('link', { name: 'Kapazität' }))
@@ -101,6 +102,8 @@ describe('workspace navigation', () => {
         const nav = screen.getByRole('navigation', { name: 'Arbeitsbereich' })
         expect(within(nav).queryByRole('link', { name: 'Kapazität' })).not.toBeInTheDocument()
         expect(within(nav).getByRole('link', { name: 'Team & Konto' })).toBeInTheDocument()
+        expect(within(nav).getByRole('link', { name: 'Agenten & Plugins' })).toBeInTheDocument()
+        expect(screen.getByRole('link', { name: 'Darstellung' })).toHaveAttribute('href', '/settings/display')
     })
     it('changes project cards through router navigation so a stale URL cannot switch back', async () => {
         const { router } = await mount('/evolved?tab=projects&project=project-1')
@@ -129,7 +132,7 @@ describe('workspace navigation', () => {
         state.value.me.accessibleProjects = []
         const { router } = await mount('/evolved?tab=providers')
         expect(await screen.findByRole('heading', { name: 'Abos verbinden', level: 1 })).toBeInTheDocument()
-        expect(screen.getByText(/Anmeldestatus hier nicht geprüft/)).toBeInTheDocument()
+        expect(screen.getByText(/Wähle zuerst ein Projekt/)).toBeInTheDocument()
         expect(router.state.location.search.tab).toBe('providers')
     })
 })

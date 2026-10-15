@@ -1,0 +1,29 @@
+[Unit]
+Description=HAPI evolved managed project runners and browser provider login
+After=docker.service hapi-evolved.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+Environment=EVOLVED_STATE_DIR=/var/lib/hapi-evolved
+Environment=EVOLVED_CONTROL_SOURCE=/opt/hapi-evolved
+Environment=EVOLVED_UID=1001
+Environment=EVOLVED_GID=1001
+ExecStart=/usr/local/lib/hapi-evolved/bun /opt/hapi-evolved/services/runner-control/server.ts
+Restart=on-failure
+RestartSec=3
+RuntimeDirectory=hapi-evolved-control
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/hapi-evolved /run/hapi-evolved-control
+ProtectHome=true
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -69,7 +69,7 @@ A local browser folder picker would not select a directory on the server.
 
 Use the [GitHub guide](GITHUB.md) to connect repositories, and the
 [runner instructions](DEPLOYMENT.md#einen-isolierten-projekt-runner-starten) to start
-an isolated agent. Provider login happens inside that runner. Connecting GitHub
+an isolated agent. For the browser flow, install the [local runner control service](DEPLOYMENT.md#browser-anmeldung-und-verwaltete-projektdienste), then open **Abos verbinden**. The browser provisions the project runner and starts native provider login. Connecting GitHub
 does not connect a model provider or authorize cloud spending.
 
 ## Memory, backups and updates

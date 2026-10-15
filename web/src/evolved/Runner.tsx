@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useEvolved } from './auth'
 import { isProjectAdmin, projectPath } from './api'
-import { ProviderLoginPanel } from './ProviderLogin'
 import { ActionStatus, ConfirmButton, Empty, ErrorNotice, Field, Loading, Panel, formatDate, submit, useAction } from './ui'
 
 type RunnerLease = { id: string; name: string; scopes: string[]; actionIds: string[]; profile: string; createdAt: number; expiresAt: number | null; revokedAt: number | null }
@@ -24,13 +23,14 @@ export function RunnerPanel() {
     return <RunnerForProject key={`${api.baseUrl}:${me.user.id}:${project?.id}:${project?.role}:${project?.profile}`} />
 }
 function RunnerExplanation() {
-    return <Panel title="Was macht ein Runner?" description="Ein Runner ist der Arbeitsdienst auf deinem Server: Er startet Claude oder Codex, bearbeitet Projektdateien und führt Git-Befehle aus.">
-        <div className="ev-stack">
-            <p>Damit du diese Arbeit über HAPI steuern kannst, braucht der Dienst einen HAPI-Zugang für das Projekt. Hier erstellst du nur diese Zugangsdaten. Installation und Start des Dienstes übernimmt der Betreiber auf dem Server.</p>
-            <p>Für deinen eigenen Runner ist ein dauerhafter Zugang vorausgewählt. Er hat kein Ablaufdatum. Alternativ kannst du einen befristeten Zugang für höchstens 168 Stunden, also 7 Tage, erstellen. Diese Gültigkeit ist kein Rechenstundenkontingent und kein Zeitlimit für dein Anbieterabo.</p>
-            <p>Nach Ablauf eines befristeten Zugangs stoppt der verwaltete Runner und kann erst mit einem neu eingerichteten Zugang weiterarbeiten. Auch dauerhafte Zugänge verlieren ihre Berechtigung bei Widerruf, einem Profilwechsel oder einer Änderung der zugehörigen Rollen und stoppen dann die Arbeit. Projektdateien und gespeicherte Anbieteranmeldungen bleiben erhalten.</p>
-        </div>
-    </Panel>
+    return <div><div className="ev-runner-intro">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="3" /><path d="m7 8 3 3-3 3M13 13h4M8 21h8M12 17v4" /></svg>
+        <div><h2>Dein Arbeitsdienst</h2><p>Der Runner führt Claude oder Codex aus und arbeitet mit deinen Projektdateien. Hier verwaltest du seinen Zugang zu HAPI.</p></div>
+    </div><details className="ev-disclosure"><summary>Was bedeutet der Runner-Zugang?</summary><div className="ev-stack">
+        <p>Hier erstellst du nur die Zugangsdaten. Installation und Start des Dienstes übernimmt der Betreiber auf dem Server.</p>
+        <p>Dauerhafte Zugänge haben kein Ablaufdatum. Befristete gelten höchstens 7 Tage; danach stoppt der Runner, bis ein neuer Zugang eingerichtet ist. Diese Gültigkeit ist kein Zeitlimit für dein Anbieterabo.</p>
+        <p>Widerruf, Profilwechsel und Änderungen der zugehörigen Rollen können auch dauerhafte Zugänge beenden. Projektdateien und gespeicherte Anbieteranmeldungen bleiben erhalten.</p>
+    </div></details></div>
 }
 function RunnerForProject() {
     const { api, me, project } = useEvolved()
@@ -46,8 +46,9 @@ function RunnerForProject() {
     const [created, setCreated] = useState<NewLease | null>(null)
     const [saved, setSaved] = useState(false)
     const action = useAction()
-    if (!admin) return <div className="ev-stack"><RunnerExplanation /><ProviderLoginPanel /><Panel title="Runner-Zugänge"><Empty>Runner-Zugänge werden von Projektadministratoren verwaltet.</Empty></Panel></div>
-    return <div className="ev-stack"><RunnerExplanation /><ProviderLoginPanel /><Panel title="Runner-Zugänge" description="Diese Zugänge erlauben dem Arbeitsdienst die Verbindung zu HAPI für genau dieses Projekt und dessen Ausführungsprofil.">
+    const providerLink = <div className="ev-actions"><a className="ev-session-link" href={`/evolved?tab=providers&project=${encodeURIComponent(project!.id)}`}>Abos verbinden <span aria-hidden="true">↗</span></a><span className="ev-provider-caption">Claude und ChatGPT direkt im Browser anmelden.</span></div>
+    if (!admin) return <div className="ev-stack"><RunnerExplanation />{providerLink}<Panel title="Runner-Zugänge"><Empty>Runner-Zugänge werden von Projektadministratoren verwaltet.</Empty></Panel></div>
+    return <div className="ev-stack"><RunnerExplanation />{providerLink}<Panel title="Runner-Zugänge" description="Zugänge für diesen Arbeitsdienst und das aktuelle Projektprofil.">
         <ErrorNotice error={leases.error} />{leases.isPending ? <Loading /> : !leases.data?.leases.length ? <Empty>Noch kein Runner-Zugang vorhanden.</Empty> : <div className="ev-list">{leases.data.leases.map(lease => <div className="ev-row" key={lease.id}><div><strong>{lease.name}</strong><small>{lease.profile} · {lease.scopes.join(', ')}</small>{lease.actionIds.length > 0 && <small>Ressourcen: {lease.actionIds.join(', ')}</small>}<small>{lease.revokedAt ? `Widerrufen am ${formatDate(lease.revokedAt)}` : lease.expiresAt === null ? 'Dauerhaft – bis zum Widerruf' : `${lease.expiresAt <= Date.now() ? 'Abgelaufen' : 'Gültig'} bis ${formatDate(lease.expiresAt)}`}</small></div>{!lease.revokedAt && (lease.expiresAt === null || lease.expiresAt > Date.now()) && <ConfirmButton label="Widerrufen" detail={`${lease.name} sofort den Zugang entziehen?`} disabled={action.busy} onConfirm={() => void action.run(async () => { await api.request(`${path}/${encodeURIComponent(lease.id)}`, { method: 'DELETE' }); if (created?.id === lease.id) setCreated(null); await leases.refetch() }, 'Runner-Zugang widerrufen.')} />}</div>)}</div>}
     </Panel>
     {created && <Panel title="Runner-Zugang einmalig sichern" description="Diese Datei gehört ausschließlich in den geschützten Operatorbereich des Runner-Proxys. Sie darf weder im Projektverzeichnis noch in Agentenprompts oder Logs landen.">
@@ -55,18 +56,18 @@ function RunnerForProject() {
         <button onClick={() => downloadOperatorFile(created.token, 'hapi-evolved-runner-lease.txt')}>Operator-Datei herunterladen</button><p className="ev-muted">Lege die Datei mit Zugriffsrechten 0600 beim Runner-Proxy ab.</p>
         <label className="ev-check"><input type="checkbox" checked={saved} onChange={event => setSaved(event.target.checked)} />Ich habe die Operator-Datei sicher abgelegt.</label><button disabled={!saved} onClick={() => { setCreated(null); setSaved(false) }}>Schlüssel schließen</button>
     </Panel>}
-    <Panel title="Runner-Zugang erstellen" description="Du erstellst hier den HAPI-Zugang für einen Runner. Der Dienst wird dadurch nicht installiert oder gestartet. Eine frische Passkey-Bestätigung ist erforderlich; ein Profilwechsel macht bisherige Zugänge ungültig."><form className="ev-stack" onSubmit={submit(() => void action.run(async () => {
+    <Panel title="Runner-Zugang erstellen" description="Zugang für deinen Arbeitsdienst. Bestätigung per Passkey erforderlich."><form className="ev-stack" onSubmit={submit(() => void action.run(async () => {
         const allowedScopes = scopes.filter(scope => scope !== 'git:write' || canPush)
         const result = await api.request<NewLease>(path, { method: 'POST', body: { name: name.trim(), scopes: allowedScopes, actionIds: allowedScopes.includes('resource:execute') ? [...new Set(actionIds.split(/[\s,]+/).filter(Boolean))] : [], expiresInSeconds: validity === 'permanent' ? null : Math.round(Number(hours) * 3600) } })
         setCreated(result); setSaved(false); setName(''); await leases.refetch()
     }))}><Field label="Runner-Name"><input required value={name} maxLength={120} onChange={event => setName(event.target.value)} /></Field>
-        <fieldset disabled={action.busy}><legend>Gültigkeit des HAPI-Zugangs</legend>
-            <label className="ev-check"><input type="radio" name="runner-validity" value="permanent" checked={validity === 'permanent'} onChange={() => setValidity('permanent')} />Dauerhaft – bis zum Widerruf</label>
-            <label className="ev-check"><input type="radio" name="runner-validity" value="limited" checked={validity === 'limited'} onChange={() => setValidity('limited')} />Befristet</label>
+        <fieldset disabled={action.busy}><legend>Gültigkeit des HAPI-Zugangs</legend><div className="ev-choice-group">
+            <label className="ev-choice"><input type="radio" name="runner-validity" value="permanent" aria-label="Dauerhaft – bis zum Widerruf" checked={validity === 'permanent'} onChange={() => setValidity('permanent')} /><span><strong>Dauerhaft</strong><small>Bis zum Widerruf</small></span></label>
+            <label className="ev-choice"><input type="radio" name="runner-validity" value="limited" aria-label="Befristet" checked={validity === 'limited'} onChange={() => setValidity('limited')} /><span><strong>Befristet</strong><small>1–168 Stunden</small></span></label>
+        </div>
         </fieldset>
-        <p className="ev-muted">Für den eigenen Runner empfehlen wir einen dauerhaften Zugang. Er bleibt an dieses Projekt, die gewählten Berechtigungen und das aktuelle Profil gebunden.</p>
         {validity === 'limited' && <Field label="HAPI-Zugang gültig für (Stunden, maximal 168)"><input type="number" min="1" max="168" step="1" required value={hours} onChange={event => setHours(event.target.value)} /></Field>}
-        <fieldset disabled={action.busy}><legend>Berechtigungen</legend>{permissions.map(([scope, label]) => <label className="ev-check" key={scope}><input type="checkbox" checked={scopes.includes(scope) && (scope !== 'git:write' || canPush)} disabled={scope === 'git:write' && !canPush} onChange={event => setScopes(previous => event.target.checked ? [...previous, scope] : previous.filter(item => item !== scope))} />{label}</label>)}</fieldset>
+        <details className="ev-disclosure"><summary>Berechtigungen anpassen · {scopes.length} ausgewählt</summary><fieldset disabled={action.busy}><legend className="ev-sr-only">Berechtigungen</legend><div className="ev-permission-grid">{permissions.map(([scope, label]) => <label className="ev-check" key={scope}><input type="checkbox" checked={scopes.includes(scope) && (scope !== 'git:write' || canPush)} disabled={scope === 'git:write' && !canPush} onChange={event => setScopes(previous => event.target.checked ? [...previous, scope] : previous.filter(item => item !== scope))} />{label}</label>)}</div></fieldset></details>
         <p className="ev-muted">Git-Zugriff gilt nur für die unter „GitHub“ freigegebenen Repositorys. Im eingeschränkten Profil bleibt Push gesperrt.</p>
         {scopes.includes('resource:execute') && <Field label="Freigegebene Ressourcen-IDs" hint="Komma oder Leerzeichen als Trennzeichen. Nur diese vorkonfigurierten Aktionen sind erlaubt."><textarea rows={2} value={actionIds} onChange={event => setActionIds(event.target.value)} /></Field>}
         <button className="ev-primary" disabled={action.busy || !name.trim() || !scopes.length || !!created}>Runner-Zugang erstellen</button>

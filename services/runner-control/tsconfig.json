@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": [
+      "node",
+      "bun-types"
+    ],
+    "lib": [
+      "es2022"
+    ]
+  },
+  "include": [
+    "*.ts"
+  ]
+}

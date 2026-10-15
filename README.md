@@ -18,7 +18,8 @@ remaining limits; [release preparation](RELEASING.md) tracks publication gates.
 
 | Area | Capability |
 | --- | --- |
-| Agents | Claude Code and Codex in isolated, project-scoped Linux runners; web/PWA session access |
+| Agents | Browser subscription login, automatically managed project runners and reusable specialist definitions |
+| Models | Native Claude/Codex catalogs with refresh, explicit source limits and manual model IDs; no built-in replacement list |
 | Workspace | Responsive desktop sidebar/mobile navigation, project dashboard and accessible light/dark/OLED design |
 | Capacity | Native Claude/Codex subscription reports with remaining quota, reset times and explicit unknown/stale states |
 | Teams | Passkeys, recovery codes, team/project roles, revocable runner access |
@@ -28,6 +29,7 @@ remaining limits; [release preparation](RELEASING.md) tracks publication gates.
 | Memory | Persistent local knowledge and search; optional Graphiti/Neo4j knowledge graph with explicit provider configuration and budgets |
 | Codegraph | Local symbol, caller, impact and affected-test exploration with automatic indexing |
 | Workflow | Durable attachments, history search, saved prompts, project-scoped automation and private previews |
+| Extensions | Version-pinned GitHub plugins for agents, skills and validated color profiles |
 
 The vault is an integration credential store, not a browser password autofill
 product. Codegraph and the knowledge graph are separate. Cloud memory starts
@@ -65,6 +67,8 @@ packages intentionally retain `private: true`.
 | [User guide](docs/evolved/USER_GUIDE.md) | Projects, teams, vault, memory and Codegraph — German |
 | [GitHub connection](docs/evolved/GITHUB.md) | Repository grants, native Git and credential boundaries |
 | [Responsive interface](docs/evolved/DESIGN.md) | Desktop/PWA navigation, accessibility and browser checks |
+| [Browser provider login](docs/evolved/PROVIDER_LOGIN.md) | Native Claude/Codex account connection and persistent runner credentials |
+| [Extensions](docs/evolved/EXTENSIONS.md) | Global specialists, GitHub plugins and manifest format |
 | [Subscription capacity](docs/evolved/CAPACITY.md) | Native data sources, freshness and account-wide limits |
 | [Project architecture](docs/evolved/PROJECT.md) | Scope and trust boundaries — German |
 | [Privacy and data](docs/evolved/DATA_HANDLING.md) | Storage, providers and retention |

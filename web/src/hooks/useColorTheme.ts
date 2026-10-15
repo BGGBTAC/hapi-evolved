@@ -2,8 +2,11 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ThemeColorKeyId } from './useThemeColors'
 
 export type ColorScheme = 'light' | 'dark' | 'oled'
-export type ColorThemePreset =
+type BuiltinColorThemePreset =
     | 'default'
+    | 'evolved-ocean'
+    | 'evolved-iris'
+    | 'evolved-sand'
     | 'notion'
     | 'one'
     | 'proof'
@@ -20,10 +23,14 @@ export type ColorThemePreset =
     | 'monokai'
     | 'night-owl'
     | 'nord'
+export type ColorThemePreset = BuiltinColorThemePreset | `plugin:${string}`
+export type PluginColorTheme = { id: `plugin:${string}`; name: string; mode: 'light' | 'dark'; colors: { background: string; surface: string; text: string; muted: string; accent: string; accentText: string; border: string } }
 
 export type ColorThemeOption = {
     value: ColorThemePreset
     labelKey: string
+    label?: string
+    pluginMode?: 'light' | 'dark'
     preview: {
         light: string
         dark: string
@@ -47,9 +54,13 @@ type ThemePalette = {
 }
 
 const COLOR_THEME_KEY = 'hapi-color-theme'
+let pluginThemes = new Map<string, PluginColorTheme>()
 
 const COLOR_THEME_OPTIONS: ReadonlyArray<ColorThemeOption> = [
     { value: 'default', labelKey: 'settings.display.colorTheme.default', preview: { light: '#f6f8f7', dark: '#0d1312', accent: '#0f766e' } },
+    { value: 'evolved-ocean', labelKey: 'settings.display.colorTheme.ocean', preview: { light: '#f5f8fc', dark: '#0e1726', accent: '#175c9e' } },
+    { value: 'evolved-iris', labelKey: 'settings.display.colorTheme.iris', preview: { light: '#faf7fc', dark: '#191424', accent: '#7242a0' } },
+    { value: 'evolved-sand', labelKey: 'settings.display.colorTheme.sand', preview: { light: '#fbf8f1', dark: '#211b14', accent: '#855217' } },
     { value: 'notion', labelKey: 'settings.display.colorTheme.notion', preview: { light: '#fafafa', dark: '#191919', accent: '#3183d8' } },
     { value: 'one', labelKey: 'settings.display.colorTheme.one', preview: { light: '#fbfbff', dark: '#1f2433', accent: '#526fff' } },
     { value: 'proof', labelKey: 'settings.display.colorTheme.proof', preview: { light: '#f8f7f2', dark: '#18231f', accent: '#2f7d5b' } },
@@ -68,7 +79,19 @@ const COLOR_THEME_OPTIONS: ReadonlyArray<ColorThemeOption> = [
     { value: 'nord', labelKey: 'settings.display.colorTheme.nord', preview: { light: '#eceff4', dark: '#2e3440', accent: '#88c0d0' } },
 ]
 
-const PALETTES: Record<Exclude<ColorThemePreset, 'default'>, Record<'light' | 'dark', ThemePalette>> = {
+const PALETTES: Record<Exclude<BuiltinColorThemePreset, 'default'>, Record<'light' | 'dark', ThemePalette>> = {
+    'evolved-ocean': {
+        light: palette('#175c9e', '#f5f8fc', '#172b42', '#485f77', '#e5edf6'),
+        dark: palette('#8fc5ff', '#0e1726', '#e5edf7', '#aabdd2', '#19283d'),
+    },
+    'evolved-iris': {
+        light: palette('#7242a0', '#faf7fc', '#30233b', '#695575', '#efe7f5'),
+        dark: palette('#d3b1f4', '#191424', '#f0e8f7', '#bfaccd', '#2b203a'),
+    },
+    'evolved-sand': {
+        light: palette('#855217', '#fbf8f1', '#362b1e', '#6b5b43', '#f0e8d9'),
+        dark: palette('#efc581', '#211b14', '#f1e9db', '#c3b49c', '#34291d'),
+    },
     notion: {
         light: palette('#3183d8', '#fafafa', '#37352f', '#787774', '#f1f1ef'),
         dark: palette('#3183d8', '#191919', '#d9d9d8', '#9b9a97', '#252525'),
@@ -185,7 +208,7 @@ function safeRemoveItem(key: string): void {
 }
 
 export function parseColorTheme(raw: string | null): ColorThemePreset {
-    return COLOR_THEME_OPTIONS.some((option) => option.value === raw) ? raw as ColorThemePreset : 'default'
+    return raw && (COLOR_THEME_OPTIONS.some((option) => option.value === raw) || pluginThemes.has(raw)) ? raw as ColorThemePreset : 'default'
 }
 
 export function getStoredColorTheme(): ColorThemePreset {
@@ -193,11 +216,11 @@ export function getStoredColorTheme(): ColorThemePreset {
 }
 
 export function getColorThemeOptions(): ReadonlyArray<ColorThemeOption> {
-    return COLOR_THEME_OPTIONS
+    return [...COLOR_THEME_OPTIONS, ...[...pluginThemes.values()].map(theme => ({ value: theme.id, labelKey: '', label: theme.name, pluginMode: theme.mode, preview: { light: theme.colors.background, dark: theme.colors.surface, accent: theme.colors.accent } }))]
 }
 
 export function getColorThemePreview(theme: ColorThemePreset): ColorThemeOption['preview'] {
-    return COLOR_THEME_OPTIONS.find((option) => option.value === theme)?.preview ?? COLOR_THEME_OPTIONS[0]!.preview
+    return getColorThemeOptions().find((option) => option.value === theme)?.preview ?? COLOR_THEME_OPTIONS[0]!.preview
 }
 
 export function getColorThemeStorageKey(): string {
@@ -205,12 +228,12 @@ export function getColorThemeStorageKey(): string {
 }
 
 export function getColorThemeBackground(theme: ColorThemePreset, scheme: ColorScheme): string | null {
-    return theme === 'default' ? null : PALETTES[theme][toPaletteScheme(scheme)].background
+    return resolvePalette(theme, scheme)?.background ?? null
 }
 
 export function getColorThemePickerValue(theme: ColorThemePreset, scheme: ColorScheme, id: ThemeColorKeyId): string | null {
-    if (theme === 'default') return null
-    const palette = PALETTES[theme][toPaletteScheme(scheme)]
+    const palette = resolvePalette(theme, scheme)
+    if (!palette) return null
     const values: Record<ThemeColorKeyId, string> = {
         background: palette.background,
         surface: palette.secondary,
@@ -229,12 +252,11 @@ export function applyColorTheme(theme: ColorThemePreset = getStoredColorTheme(),
     const root = document.documentElement
     root.setAttribute('data-color-theme', theme)
 
-    if (theme === 'default') {
+    const values = resolvePalette(theme, scheme)
+    if (!values) {
         removeThemeProperties(root)
         return
     }
-
-    const values = PALETTES[theme][toPaletteScheme(scheme)]
     const properties: Record<string, string> = {
         '--app-bg': values.background,
         '--app-fg': values.foreground,
@@ -301,8 +323,51 @@ function toPaletteScheme(scheme: ColorScheme): 'light' | 'dark' {
     return scheme === 'light' ? 'light' : 'dark'
 }
 
+export function getPluginThemeMode(theme: ColorThemePreset): 'light' | 'dark' | null {
+    return pluginThemes.get(theme)?.mode ?? null
+}
+
+function resolvePalette(theme: ColorThemePreset, scheme: ColorScheme): ThemePalette | null {
+    if (theme === 'default') return null
+    const plugin = pluginThemes.get(theme)
+    if (plugin) {
+        if (plugin.mode !== toPaletteScheme(scheme)) return null
+        const { colors } = plugin
+        return { ...palette(colors.accent, colors.background, colors.text, colors.muted, colors.surface), dialog: colors.surface, surface: colors.surface, secondary: colors.surface, code: colors.surface, surfaceHover: colors.surface, border: colors.border, buttonText: colors.accentText }
+    }
+    const builtin = PALETTES[theme as keyof typeof PALETTES]
+    return builtin?.[toPaletteScheme(scheme)] ?? null
+}
+
+/** Server manifests never become CSS. Only seven bounded hex colors are accepted. */
+export function registerPluginColorThemes(input: unknown): void {
+    const next = new Map<string, PluginColorTheme>()
+    if (Array.isArray(input)) for (const candidate of input.slice(0, 100)) {
+        if (!candidate || typeof candidate !== 'object') continue
+        const value = candidate as Partial<PluginColorTheme>
+        if (typeof value.id !== 'string' || !/^plugin:[a-zA-Z0-9_-]{1,80}:[a-zA-Z0-9_-]{1,80}$/.test(value.id) || typeof value.name !== 'string' || !value.name.trim() || value.name.length > 100 || (value.mode !== 'light' && value.mode !== 'dark') || !value.colors) continue
+        const keys = ['background', 'surface', 'text', 'muted', 'accent', 'accentText', 'border'] as const
+        if (!keys.every(key => typeof value.colors![key] === 'string' && /^#[0-9a-fA-F]{6}$/.test(value.colors![key]))) continue
+        const colors = Object.fromEntries(keys.map(key => [key, value.colors![key]])) as PluginColorTheme['colors']
+        if ([colors.background, colors.surface].some(background => colorContrast(colors.text, background) < 4.5 || colorContrast(colors.muted, background) < 4.5 || colorContrast(colors.accent, background) < 4.5) || colorContrast(colors.accentText, colors.accent) < 4.5) continue
+        next.set(value.id, { id: value.id, name: value.name, mode: value.mode, colors })
+    }
+    if (JSON.stringify([...pluginThemes]) === JSON.stringify([...next])) return
+    pluginThemes = next
+    if (isBrowser()) {
+        applyColorTheme(getStoredColorTheme(), getDocumentColorScheme())
+        window.dispatchEvent(new CustomEvent('hapi-color-theme-change'))
+    }
+}
+
+export function colorContrast(a: string, b: string): number {
+    const x = relativeLuminance(a), y = relativeLuminance(b)
+    return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
+}
+
 export function useColorTheme(): { colorTheme: ColorThemePreset; setColorTheme: (theme: ColorThemePreset) => void } {
     const [colorTheme, setColorThemeState] = useState<ColorThemePreset>(getStoredColorTheme)
+    const [, refreshRegistry] = useState(0)
 
     useEffect(() => {
         if (!isBrowser()) return
@@ -314,7 +379,9 @@ export function useColorTheme(): { colorTheme: ColorThemePreset; setColorTheme: 
             window.dispatchEvent(new CustomEvent('hapi-color-theme-change', { detail: nextTheme }))
         }
         window.addEventListener('storage', onStorage)
-        return () => window.removeEventListener('storage', onStorage)
+        const onThemeChanged = () => { setColorThemeState(getStoredColorTheme()); refreshRegistry(value => value + 1) }
+        window.addEventListener('hapi-color-theme-change', onThemeChanged)
+        return () => { window.removeEventListener('storage', onStorage); window.removeEventListener('hapi-color-theme-change', onThemeChanged) }
     }, [])
 
     const setColorTheme = useCallback((theme: ColorThemePreset) => {
