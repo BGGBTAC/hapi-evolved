@@ -7,6 +7,9 @@ import { boundedGitResponse, GIT_TIMEOUT_MS, gitPath, parseGitRequest, readGitBo
 
 type Grant = { token: string; expiresAt: number; projectId: string }
 const MAX_PENDING_BYTES = 8 * 1024 * 1024
+const MAX_RPC_METHODS = 256
+const MAX_RPC_METHOD_BYTES = 512
+const MAX_RPC_REGISTRATION_BYTES = 64 * 1024
 // Hub-issued capabilities last at most 15 minutes. Allow bounded clock skew
 // when a project proxy and the Hub run on different hosts.
 const MAX_GRANT_REMAINING_MS = 900_000 + 60_000
@@ -66,6 +69,12 @@ export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; p
     namespace.on('connection', socket => {
         let closed = false
         const auth = socket.handshake.auth as Record<string, unknown>
+        const scope = auth.clientType === 'machine-scoped' ? auth.machineId
+            : auth.clientType === 'session-scoped' ? auth.sessionId : null
+        const rpcPrefix = typeof scope === 'string' && scope.length > 0 && Buffer.byteLength(scope) <= 128
+            && !/[:\s\p{C}]/u.test(scope) ? `${scope}:` : null
+        const rpcMethods = new Set<string>()
+        let rpcMethodBytes = 0, generation = 0
         const upstream = connect(new URL('/cli', hub).toString(), {
             path: '/socket.io/', transports: ['websocket'], reconnection: true,
             reconnectionDelay: 1000, reconnectionDelayMax: 5000,
@@ -76,13 +85,40 @@ export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; p
         const pending: Array<[string, unknown[]]> = []
         let pendingBytes = 0
         upstream.on('connect', () => {
-            if (closed) { upstream.disconnect(); return }
+            generation++
+            if (closed || !socket.connected) { upstream.disconnect(); return }
+            // Restore only declarative registrations, before queued live events.
+            // Keeping the CLI connected avoids stopping its browser terminals
+            // whenever the Hub restarts or its short-lived capability rotates.
+            for (const method of rpcMethods) upstream.emit('rpc-register', { method })
             pendingBytes = 0
             for (const [event, args] of pending.splice(0)) upstream.emit(event, ...args)
         })
         // Use explicit listeners, including acknowledgement functions: Socket.IO's
         // codecs preserve binary payloads and acknowledgement IDs in both directions.
         socket.onAny((event: string, ...args: unknown[]) => {
+            if (closed || !socket.connected) return
+            if (event === 'rpc-register' || event === 'rpc-unregister') {
+                const payload = args[0]
+                const method = payload && typeof payload === 'object' && !Array.isArray(payload)
+                    ? (payload as Record<string, unknown>).method : null
+                if (!rpcPrefix || typeof method !== 'string' || !method.startsWith(rpcPrefix)
+                    || method.length <= rpcPrefix.length || Buffer.byteLength(method) > MAX_RPC_METHOD_BYTES
+                    || /[\s\p{C}]/u.test(method)) {
+                    socket.emit('error', { message: 'RPC registration rejected' }); return
+                }
+                const bytes = Buffer.byteLength(method)
+                if (event === 'rpc-register' && !rpcMethods.has(method)) {
+                    if (rpcMethods.size >= MAX_RPC_METHODS || rpcMethodBytes + bytes > MAX_RPC_REGISTRATION_BYTES) {
+                        socket.emit('error', { message: 'RPC registration limit reached' }); return
+                    }
+                    rpcMethods.add(method); rpcMethodBytes += bytes
+                } else if (event === 'rpc-unregister' && rpcMethods.delete(method)) rpcMethodBytes -= bytes
+                // No payload extras, ACKs or duplicate pending copies are retained.
+                // The Hub independently checks the authenticated namespace's ownership.
+                if (upstream.connected) upstream.emit(event, { method })
+                return
+            }
             if (!upstream.connected) {
                 pendingBytes += Buffer.byteLength(event) + queuedPacketBytes(args)
                 if (pending.length >= 128 || pendingBytes > MAX_PENDING_BYTES) { socket.disconnect(true); return }
@@ -90,15 +126,27 @@ export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; p
             }
             upstream.emit(event, ...args)
         })
-        upstream.onAny((event: string, ...args: unknown[]) => socket.emit(event, ...args))
+        upstream.onAny((event: string, ...args: unknown[]) => {
+            if (closed || !socket.connected) return
+            const receivedGeneration = generation
+            socket.emit(event, ...args.map(arg => typeof arg === 'function' ? (...values: unknown[]) => {
+                // Socket.IO reuses this client object across Hub connections. An old
+                // response must never acknowledge a new connection's reused packet ID.
+                if (!closed && upstream.connected && generation === receivedGeneration) arg(...values)
+            } : arg))
+        })
         upstream.on('connect_error', () => { socket.emit('error', { message: 'Runner authorization unavailable' }) })
         upstream.on('disconnect', reason => {
+            generation++
             if (reason === 'io server disconnect') {
                 grant = null
                 if (!closed) void current().then(() => { if (!closed) upstream.connect() }).catch(() => socket.disconnect(true))
             }
         })
-        socket.on('disconnect', () => { closed = true; pending.length = 0; pendingBytes = 0; upstream.disconnect() })
+        socket.on('disconnect', () => {
+            closed = true; generation++; pending.length = 0; pendingBytes = 0
+            rpcMethods.clear(); rpcMethodBytes = 0; upstream.disconnect()
+        })
     })
     const handler = engine.handler()
     const server = Bun.serve({ hostname: config.host ?? '127.0.0.1', port: config.port ?? 3010,

@@ -25,7 +25,7 @@ describe('SyncEngine.spawnSession preallocates HAPI id for fresh machine spawns'
                 } }
             }
         }
-        registry.register(socket as never, 'directory-machine:spawn-happy-session')
+        registry.register(socket as never, 'directory-machine:spawn-happy-session', { kind: 'machine', id: 'directory-machine', valid: () => true })
         const io = { of: () => ({ sockets: new Map([[socket.id, socket]]) }) }
         const engine = new SyncEngine(store, io as never, registry, { broadcast() {} } as never)
         try {

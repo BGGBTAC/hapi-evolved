@@ -41,6 +41,10 @@ or container image.
 
 ### Fixed
 
+- Runner RPC registrations are restored after Hub reconnects and capability
+  renewal without disconnecting the native client. Delayed acknowledgements
+  cannot cross connection generations, and RPC ownership is checked by the Hub.
+
 - New project sessions automatically use the stored project folder. Old paths,
   form drafts and URL parameters cannot override it; the server validates the
   root and rejects unrelated folders and unsupported external worktree starts.

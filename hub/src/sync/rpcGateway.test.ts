@@ -38,9 +38,10 @@ function createGateway() {
         }
     } as unknown as Server
 
+    const registration = { socketId: 'socket-1' }
     const rpcRegistry = {
-        getSocketIdForMethod() {
-            return 'socket-1'
+        getRegistration() {
+            return registration
         }
     } as unknown as RpcRegistry
 
@@ -130,7 +131,7 @@ describe('RpcGateway no-target diagnostics (tiann/hapi#916)', () => {
             }
         } as unknown as Server
         const rpcRegistry = {
-            getSocketIdForMethod() { return undefined }
+            getRegistration() { return undefined }
         } as unknown as RpcRegistry
         const gateway = new RpcGateway(io, rpcRegistry)
 
@@ -149,8 +150,9 @@ describe('RpcGateway no-target diagnostics (tiann/hapi#916)', () => {
                 }
             }
         } as unknown as Server
+        const registration = { socketId: 'socket-1' }
         const rpcRegistry = {
-            getSocketIdForMethod() { return 'socket-1' }
+            getRegistration() { return registration }
         } as unknown as RpcRegistry
         const gateway = new RpcGateway(io, rpcRegistry)
 
@@ -178,8 +180,9 @@ describe('RpcGateway permission RPC error surfacing (tiann/hapi#1735)', () => {
                 return { sockets: { get() { return socket } } }
             }
         } as unknown as Server
+        const registration = { socketId: 'socket-1' }
         const rpcRegistry = {
-            getSocketIdForMethod() { return 'socket-1' }
+            getRegistration() { return registration }
         } as unknown as RpcRegistry
         return new RpcGateway(io, rpcRegistry)
     }
