@@ -259,7 +259,7 @@ describe('ConversationOutlinePanel', () => {
         renderPanel({ onClose })
 
         const closeButton = screen.getByRole('button', { name: 'Close' })
-        expect(closeButton).toHaveClass('border', 'rounded-md', 'h-9', 'w-9')
+        expect(closeButton).toHaveClass('border', 'rounded-xl', 'h-9', 'w-9')
         fireEvent.click(closeButton)
 
         expect(onClose).toHaveBeenCalledTimes(1)

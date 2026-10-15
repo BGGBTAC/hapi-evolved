@@ -19,6 +19,8 @@ remaining limits; [release preparation](RELEASING.md) tracks publication gates.
 | Area | Capability |
 | --- | --- |
 | Agents | Claude Code and Codex in isolated, project-scoped Linux runners; web/PWA session access |
+| Workspace | Responsive desktop sidebar/mobile navigation, project dashboard and accessible light/dark/OLED design |
+| Capacity | Native Claude/Codex subscription reports with remaining quota, reset times and explicit unknown/stale states |
 | Teams | Passkeys, recovery codes, team/project roles, revocable runner access |
 | Projects | A dedicated folder is created automatically; administrators can optionally attach an existing allowed folder |
 | GitHub | Project repository connections and brokered Git access; credentials remain in the local vault |
@@ -62,6 +64,8 @@ packages intentionally retain `private: true`.
 | [Operator guide](docs/evolved/DEPLOYMENT.md) | Services, isolated runners, backup/restore and upgrades — German |
 | [User guide](docs/evolved/USER_GUIDE.md) | Projects, teams, vault, memory and Codegraph — German |
 | [GitHub connection](docs/evolved/GITHUB.md) | Repository grants, native Git and credential boundaries |
+| [Responsive interface](docs/evolved/DESIGN.md) | Desktop/PWA navigation, accessibility and browser checks |
+| [Subscription capacity](docs/evolved/CAPACITY.md) | Native data sources, freshness and account-wide limits |
 | [Project architecture](docs/evolved/PROJECT.md) | Scope and trust boundaries — German |
 | [Privacy and data](docs/evolved/DATA_HANDLING.md) | Storage, providers and retention |
 | [Changelog](CHANGELOG.md) · [Roadmap](ROADMAP.md) | Changes and remaining work |

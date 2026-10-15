@@ -1,0 +1,711 @@
+{
+  "title": "Responsive interface, PWA identity and native provider-capacity review evidence",
+  "date": "2026-10-15",
+  "status": "locally_validated_no_open_confirmed_review_findings",
+  "notice": "Historical reviews of explicit source and screenshot snapshots, followed by code verification and corrective changes. This artifact is evidence of local checks, not a security certification, WCAG certification, production approval, or proof of a real subscriber quota. Raw prompts and responses remain private; this public record omits operator paths, topology, costs, account/API/session identifiers and credentials.",
+  "reviews": [
+    {
+      "stage": "Initial interface and information architecture consultation",
+      "requestedModel": "claude-opus-5-5",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "inputSha256": "4b0aa636f1b68b8838a33f66831ad6d33a3b1f626d54bbed52e1c97b79b96225",
+      "rawResponseSha256": "125b764c3b072ccd509123e9f81dfb2c4e5682f9fde5daa4f1ea395f3e4b04e8",
+      "historical": true
+    },
+    {
+      "stage": "Provider capacity backend adversarial review",
+      "requestedModel": "claude-opus-5-5",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "rawResponseSha256": "93557e6ea4aec7a8639c65710015af48bb2ac5ced8fb043e1eeb8dac342063ed",
+      "historical": true,
+      "inputHashAvailability": "The review input was not archived; no input hash is claimed."
+    },
+    {
+      "stage": "Provider capacity corrective follow-up",
+      "requestedModel": "claude-opus-5-5",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "rawResponseSha256": "d1703d9fa7eb3e45c31d4e863124fbaa3838c98a638f98b176ed43091aa7895a",
+      "historical": true,
+      "inputHashAvailability": "The review input was not archived; no input hash is claimed."
+    },
+    {
+      "stage": "Final combined multimodal source and responsive screenshot review",
+      "requestedModel": "claude-opus-5-5",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "inputSha256": "833ecf2d146007cdedd42da2eabd7676598f9dcf39eafd5ec53b38ea9c7dc78d",
+      "rawResponseSha256": "3563b46667157bdbe9009ee3b6a32f173ab6f8ebc17a56c12e095817b2c8a0a2",
+      "historical": true,
+      "screenshotInputs": [
+        {
+          "name": "desktop-1440-overview.png",
+          "sha256": "7d5bb81bdeb02376ef1e4730c089d0f39fdaf1e925d50ea01d1b95a696e7d93c"
+        },
+        {
+          "name": "mobile-390-overview.png",
+          "sha256": "a00aabb7fdac5567457041cae4afb117e7987fa183d9a743da72f2fe1f3fd91c"
+        },
+        {
+          "name": "mobile-320-capacity.png",
+          "sha256": "271b35eda8e1f1265703098916225383ee9986f3df8e43dc536e89845026f6dd"
+        },
+        {
+          "name": "mobile-320-dark-chat.png",
+          "sha256": "1c8bf09f3604e600e59d6f8b66eac5a2a64fa9d2b716c31a3980252dcf9c71c6"
+        },
+        {
+          "name": "desktop-1440-chat.png",
+          "sha256": "d2f3879a329b76b29d309d9a52aa5ff7d11daa9a1d6c4e76d8129261671eb5be"
+        },
+        {
+          "name": "mobile-390-menu.png",
+          "sha256": "b8ab17dd8c42edfa8b78453f105ee9c56af01eddafc43354f6eb4349da6a91f6"
+        },
+        {
+          "name": "mobile-390-onboarding.png",
+          "sha256": "1e45d37c6fe85173bee052b1a82595f2933748dcb2b95563f02a64bb5c648dc0"
+        },
+        {
+          "name": "desktop-1440-dark-overview.png",
+          "sha256": "d4bc7607ea04600059520a22c27175606b5da08812d43bc98789e73d83bdb047"
+        }
+      ],
+      "sourceSnapshot": {
+        "sourceFiles": [
+          {
+            "path": "web/src/evolved/Workspace.tsx",
+            "sha256": "a3cde604e3e6fe51f470aff78ace3a03b0152af8c23ec0b0e65695889d4455b7"
+          },
+          {
+            "path": "web/src/evolved/workspaceNavigation.tsx",
+            "sha256": "57d116b41448b8b01d99bbfab43cfce2077b7937322d9ada46af1facc3b240d6"
+          },
+          {
+            "path": "web/src/evolved/workspace.css",
+            "sha256": "b7640c839f895be8e780a95077a0b299783e452d8642b9386c40defc2cb1095b"
+          },
+          {
+            "path": "web/src/evolved/Dashboard.tsx",
+            "sha256": "4de2f8bccc41245ad410528b9a877326630f9d0f0ecf23bd5fb5684d4ce99f63"
+          },
+          {
+            "path": "web/src/evolved/Capacity.tsx",
+            "sha256": "ab0c12d73b486b8be7ccebddfbfd00d5d9528b987bb0f438caa8c169d997e279"
+          },
+          {
+            "path": "web/src/evolved/Brand.tsx",
+            "sha256": "590ea1a29c7bb5414895d14c19e45b774c0b5adac25145fd3dff4eefa309fadd"
+          },
+          {
+            "path": "web/src/evolved/auth.tsx",
+            "sha256": "9e445d4b03a2501d699481b93a064150f9de5f83294d870e9deef8a0f3d8c751"
+          },
+          {
+            "path": "web/src/evolved/evolved.css",
+            "sha256": "4c8b83e9ba7ade3e19345b675b01b4042eb104080067d37ca98125eadeb0c731"
+          },
+          {
+            "path": "hub/src/evolved/capacity.ts",
+            "sha256": "c30658b9b567e250c0c16b85cd4ca0f5643940d28e2499ae42ffa91709122827"
+          },
+          {
+            "path": "cli/src/agent/providerCapacity.ts",
+            "sha256": "3b3b0366b3f750dc7314095a11deb47673c71dc3dbafac9dc74deab8a5a1d5f4"
+          },
+          {
+            "path": "shared/src/capacity.ts",
+            "sha256": "a96db16b9c60df14fec7e1a385b5f3fb7305b9a5e72732d81c901466f6f13a14"
+          }
+        ],
+        "diffFiles": [
+          "web/src/App.tsx",
+          "web/src/index.css",
+          "web/src/components/SessionChat.tsx",
+          "web/src/components/SessionList.tsx",
+          "web/src/components/AssistantChat/HappyComposer.tsx",
+          "web/src/components/AssistantChat/ComposerButtons.tsx",
+          "web/src/components/AssistantChat/RichComposerInput.tsx",
+          "web/src/routes/settings/layout.tsx",
+          "web/src/hooks/useTheme.ts",
+          "web/src/hooks/useThemeColors.ts",
+          "web/src/hooks/useColorTheme.ts",
+          "web/src/router.tsx",
+          "web/index.html",
+          "web/vite.config.ts",
+          "web/src/evolved/ProjectsTeam.tsx",
+          "cli/src/claude/claudeRemoteLauncher.ts",
+          "cli/src/codex/codexAppServerClient.ts",
+          "cli/src/codex/shared/root.ts",
+          "hub/src/evolved/runtime.ts"
+        ],
+        "diffSha256": "6cb9f84be6e7e398b0cead3ac36b17832bdc88aaa5ceea6d1baf2a83b96f6dde"
+      },
+      "reviewConclusion": "No P0; one P1 context-confusion issue and six P2 issues were reported. These were independently checked against the complete source; dispositions below describe subsequent corrections, not claims made by the model."
+    }
+  ],
+  "backendReviewDispositions": [
+    {
+      "id": "initial-account-type-events",
+      "disposition": "fixed",
+      "evidence": "cli/src/agent/providerCapacity.ts: CodexCapacityReporter.subscription is set only after native account/read type=chatgpt; notifications cannot bypass it",
+      "test": "marks API-key authentication unsupported without querying subscription limits"
+    },
+    {
+      "id": "initial-identity-inflight",
+      "disposition": "fixed",
+      "evidence": "pending is keyed by identity revision; account/updated starts current generation immediately; obsolete outcomes discarded",
+      "test": "refreshes a new identity immediately while an old native read is still pending"
+    },
+    {
+      "id": "initial-partial-windows",
+      "disposition": "fixed",
+      "evidence": "mergeCapacity preserves independent observedAt; final codexUpdate replaces only explicitly reported primary/secondary fields, while the Hub derives each window freshness independently.",
+      "test": "independent Claude windows; partial Codex events; mixed fresh/stale Hub projection"
+    },
+    {
+      "id": "initial-reset-zero",
+      "disposition": "fixed",
+      "evidence": "reset validates rounded milliseconds >0; Codex emit validates ProviderCapacitySchema",
+      "test": "tiny positive seconds normalizes to null"
+    },
+    {
+      "id": "initial-telemetry-exception",
+      "disposition": "fixed",
+      "evidence": "Codex emitter catches consumer errors; Claude emission/reset catches and logs only static message",
+      "test": "a failing telemetry consumer cannot break native notification processing"
+    },
+    {
+      "id": "initial-stale-available",
+      "disposition": "fixed",
+      "evidence": "Hub provider available requires a fresh numeric window",
+      "test": "inactive/reset/old snapshots return provider unknown"
+    },
+    {
+      "id": "initial-account-type-extension",
+      "disposition": "fixed",
+      "evidence": "accepts only documented account/read type chatgpt; external ChatGPT authentication exposes the same native Account variant"
+    },
+    {
+      "id": "followup-read-timeout",
+      "disposition": "false-positive-incomplete-context",
+      "evidence": "cli/src/codex/codexAppServerClient.ts:190 supplies sendRequest timeoutMs=5000 to every reporter read; timer removes pending and settles the promise",
+      "test": "times out a stalled native capacity read after five seconds and retries on the next interval"
+    },
+    {
+      "id": "followup-bucket-id-fallback",
+      "disposition": "fixed",
+      "evidence": "codexBuckets valid limitId -> valid map key -> indexed fallback, duplicate IDs omitted",
+      "test": "bounds windows and sanitizes arbitrary provider identifiers"
+    },
+    {
+      "id": "followup-bucket-prefix",
+      "disposition": "fixed",
+      "evidence": "codexUpdate matches exact primary/secondary IDs via Set; no startsWith",
+      "test": "updating a short bucket ID does not remove a different bucket sharing its prefix"
+    },
+    {
+      "id": "followup-error-retention",
+      "disposition": "intentional-conservative-behavior",
+      "evidence": "failed native read clears numbers and reports native_read_failed rather than claiming current availability. Newer event wins over an older read error. Docs CAPACITY.md documents unknown on failed native read.",
+      "test": "a failed older read cannot erase a newer native event"
+    }
+  ],
+  "combinedReviewDispositions": [
+    {
+      "id": "P1-1",
+      "severity": "P1",
+      "summary": "An unavailable project deep link silently selected a different project in the same sensitive tool tab.",
+      "status": "fixed",
+      "evidence": [
+        "web/src/evolved/Workspace.tsx: invalid project remains a blocked state until explicit authorized selection; context and navigation do not imply the previous project.",
+        "web/src/evolved/Workspace.test.tsx: unavailable deep-link state and explicit recovery."
+      ],
+      "verification": "Independent code check plus 74 targeted Workspace/Capacity/NewSession UI tests and Web typecheck passed."
+    },
+    {
+      "id": "P2-2",
+      "severity": "P2",
+      "summary": "A newer unknown or API-key status could hide an existing fresh numeric report in the compact view.",
+      "status": "fixed",
+      "evidence": [
+        "web/src/evolved/Capacity.tsx: compact selection prefers the latest report with a fresh numeric window, falling back to the latest status only when none exists.",
+        "web/src/evolved/Capacity.test.tsx: fresh numeric preference over newer unknown/unsupported reports."
+      ],
+      "verification": "Independent code check plus 74 targeted Workspace/Capacity/NewSession UI tests and Web typecheck passed."
+    },
+    {
+      "id": "P2-3",
+      "severity": "P2",
+      "summary": "Empty or partial Codex updates could erase windows that were not actually updated.",
+      "status": "fixed",
+      "evidence": [
+        "cli/src/agent/providerCapacity.ts: replace only explicitly present primary/secondary fields, preserving independent timestamps.",
+        "cli/src/agent/providerCapacity.test.ts: empty updates, one-window partial updates and explicit null removal."
+      ],
+      "verification": "41 targeted tests passed: 31 provider parser/reporter and 10 native client tests. CLI typecheck passed."
+    },
+    {
+      "id": "P2-4",
+      "severity": "P2",
+      "summary": "Duration-only labels made model-specific Claude windows and distinct Codex buckets indistinguishable.",
+      "status": "fixed",
+      "evidence": [
+        "web/src/evolved/Capacity.tsx: window labels and accessible meter names identify Claude models and Codex buckets.",
+        "web/src/evolved/Capacity.test.tsx: distinct labels and meter names."
+      ],
+      "verification": "Independent code check plus 74 targeted Workspace/Capacity/NewSession UI tests and Web typecheck passed."
+    },
+    {
+      "id": "P2-5",
+      "severity": "P2",
+      "summary": "Dark warning badges used an inactive .dark selector instead of the actual theme attributes.",
+      "status": "fixed",
+      "evidence": [
+        "web/src/evolved/workspace.css: data-theme dark/oled warning colors."
+      ],
+      "verification": "Independent code check plus 74 targeted Workspace/Capacity/NewSession UI tests and Web typecheck passed."
+    },
+    {
+      "id": "P2-6",
+      "severity": "P2",
+      "summary": "A project-session report could be interpreted as the viewing user's own provider account quota.",
+      "status": "fixed",
+      "evidence": [
+        "web/src/evolved/Capacity.tsx: states that reports can belong to other team members and account identity cannot be established; each displayed report links to its source session.",
+        "docs/evolved/DESIGN.md: no account correlation or summation."
+      ],
+      "verification": "Independent code check plus 74 targeted Workspace/Capacity/NewSession UI tests and Web typecheck passed."
+    },
+    {
+      "id": "P2-7",
+      "severity": "P2",
+      "summary": "A failed logout incremented the authority epoch while leaving the signed-in UI mounted, invalidating subsequent Hub requests.",
+      "status": "fixed",
+      "evidence": [
+        "web/src/evolved/auth.tsx: advances authority only after successful server logout; failed requests leave the current session usable for retry.",
+        "web/src/evolved/auth.test.tsx: failed logout, real ApiClient getSessions and successful logout retry; 8 auth tests passed."
+      ]
+    },
+    {
+      "id": "R1",
+      "severity": "unconfirmed-risk",
+      "summary": "The optional sidechannel dialog might be clipped by the horizontal toolbar.",
+      "status": "disproved_by_existing_code",
+      "evidence": [
+        "web/src/evolved/Sidechannel.tsx: uses DialogContent.",
+        "web/src/components/ui/dialog.tsx: DialogContent renders in a Radix Portal outside the toolbar overflow container."
+      ]
+    },
+    {
+      "id": "R2",
+      "severity": "usability-observation",
+      "summary": "Extra chat tools require horizontal scrolling at 320px.",
+      "status": "verified_intentional_design_with_accessibility_fix",
+      "evidence": [
+        "web/src/components/AssistantChat/ComposerButtons.tsx: intentional horizontal toolbar retains optional controls.",
+        "web/scripts/evolved-design-check.mjs: at 320px OLED and 130% font size, scrolls to both triggers, opens dialogs and verifies focus containment and Escape return.",
+        "The first extended run found missing dialog focus return; real DialogTrigger wiring fixed it and the final focused browser run passed."
+      ]
+    }
+  ],
+  "preReviewVisualCorrections": [
+    {
+      "summary": "A long chat placeholder shrank to an unreadably small font on a 320px viewport.",
+      "status": "fixed",
+      "evidence": [
+        "web/src/components/AssistantChat/RichComposerInput.tsx: fixed readable base font and ellipsis, complete accessible name.",
+        "web/src/components/AssistantChat/RichComposerInput.test.tsx: readability regression."
+      ]
+    },
+    {
+      "summary": "Optional chat tools consumed separate full rows on small screens.",
+      "status": "fixed",
+      "evidence": [
+        "web/src/components/AssistantChat/ComposerButtons.tsx: extra actions share the existing horizontal toolbar.",
+        "web/src/components/AssistantChat/HappyComposer.tsx: /btw and saved prompts use extraActions."
+      ]
+    },
+    {
+      "summary": "Programmatic page-heading focus displayed a large input-like ring after pointer navigation.",
+      "status": "fixed",
+      "evidence": [
+        "web/src/evolved/Workspace.tsx: retains heading focus and records keyboard navigation modality.",
+        "web/src/evolved/workspace.css: visible focus treatment for keyboard navigation."
+      ]
+    }
+  ],
+  "validation": {
+    "preCorrectiveBrowserSnapshot": {
+      "harness": "web/scripts/evolved-design-check.mjs",
+      "engine": "Chromium 153.0.8010.12",
+      "viewCount": 69,
+      "failures": 0,
+      "reportSha256": "dd7d18f5118eab412c1982d2b08276534655ae6dae284bc5724eb3f8a84c34f9",
+      "viewports": [
+        {
+          "width": 1440,
+          "height": 1000
+        },
+        {
+          "width": 390,
+          "height": 844
+        },
+        {
+          "width": 320,
+          "height": 740
+        }
+      ],
+      "schemes": [
+        "light",
+        "dark"
+      ],
+      "checks": [
+        "Real WebAuthn enrollment; persisted teams/projects/memory; authenticated CLI sessions and capacity state",
+        "Mobile menu focus trap/Escape/return, real links, Back/Forward and deep-link reload",
+        "Stale and unavailable provider data use real authenticated state updates; synthetic runner lease revoked",
+        "Visible control clipping and document overflow; selected computed text contrasts; accessible control names; mobile input typography; primary mobile touch targets."
+      ],
+      "fixture": "Isolated real Hub/Vault, virtual WebAuthn passkey, real authenticated CLI Socket.IO, synthetic native capacity events; no mocked feature API responses."
+    },
+    "iconExports": {
+      "script": "web/scripts/export-evolved-icons.mjs",
+      "renderer": "Chromium 153.0.8010.12",
+      "result": "Export and byte-for-byte --check passed. Original raster wordmark and upstream native assets preserved."
+    },
+    "wholePackageSuiteBeforeCorrectiveDelta": {
+      "reportedBy": "integrating root agent",
+      "passed": 9099,
+      "skipped": 15,
+      "packages": {
+        "cli": 3159,
+        "hub": 1683,
+        "web": 3767,
+        "shared": 342,
+        "relay": 118,
+        "runnerProxy": 19,
+        "deployment": 11
+      },
+      "typechecks": "CLI, Hub, Web, relay and runner proxy passed. Shared fixture generation produced no drift."
+    },
+    "correctiveDelta": {
+      "logout": "8 auth tests passed, including usable real ApiClient after failed logout and successful retry.",
+      "capacityParser": "41 tests passed; CLI typecheck passed.",
+      "workspaceAndCapacity": "74 tests across Workspace, Capacity and NewSession; Web typecheck passed.",
+      "extendedAccessibility": "49 targeted tests and Web typecheck passed after three extended-audit corrections."
+    },
+    "standardBrowserAfterCombinedReviewCorrections": {
+      "harness": "web/scripts/evolved-design-check.mjs",
+      "engine": "Chromium 153.0.8010.12",
+      "viewCount": 69,
+      "failures": 0,
+      "reportSha256": "8cbe3480b9c6d514a4610ee2b0543da7040e7188446c6637f4279948149c4dd0",
+      "checks": [
+        "Real WebAuthn enrollment; persisted teams/projects/memory; authenticated CLI sessions and capacity state",
+        "Mobile menu focus trap/Escape/return, real links, Back/Forward and deep-link reload",
+        "Stale and unavailable provider data use real authenticated state updates; synthetic runner lease revoked"
+      ],
+      "screenshots": [
+        {
+          "name": "desktop-1440-overview.png",
+          "sha256": "27f525ca70d801b2332bf3842e2879dbd729920071c776b7594eae9858a67d87"
+        },
+        {
+          "name": "mobile-390-overview.png",
+          "sha256": "a00aabb7fdac5567457041cae4afb117e7987fa183d9a743da72f2fe1f3fd91c"
+        },
+        {
+          "name": "mobile-320-dark-chat.png",
+          "sha256": "97fff2393ec4548e598386be9cf2e98c958de5730daed34643a55aa6c0d77a6f"
+        }
+      ],
+      "timing": "After all seven combined Opus findings were corrected; before the subsequent extended-audit plus-button and dialog-focus fixes."
+    },
+    "latestPackageResults": {
+      "reportedBy": "integrating root agent",
+      "execution": "Package-by-package results, not a single uninterrupted monorepo command. CLI and Web rerun after corrective deltas; unchanged packages reused passing results.",
+      "passed": 9118,
+      "skipped": 15,
+      "packages": {
+        "cli": 3170,
+        "hub": 1683,
+        "web": 3775,
+        "shared": 342,
+        "relay": 118,
+        "runnerProxy": 19,
+        "deployment": 11
+      },
+      "typechecks": "All five package typechecks passed.",
+      "webBuild": "passed",
+      "fixtures": "Generated shared fixtures had no drift.",
+      "existingBrowserRegression": "All nine groups passed.",
+      "timing": "Before the final three extended accessibility corrections; focused follow-up checks are recorded separately.",
+      "documentationBuild": "passed"
+    },
+    "extendedResponsiveAudit": {
+      "harness": "web/scripts/evolved-design-check.mjs",
+      "mode": "EVOLVED_DESIGN_EXTENDED=1",
+      "viewCount": 61,
+      "findings": [
+        "tablet-1024-landscape-new-session: targets below 24px [\"BUTTON (18×18)\"]",
+        "mobile-320-oled-font130: Persönliche Prompts Escape did not restore focus",
+        "mobile-320-oled-font130: /btw Escape did not restore focus"
+      ],
+      "reportSha256": "3927ff37214ceddd15640b624a67d051620787297f6ed89b5347ed281fb0cf5a",
+      "coverage": [
+        "768x1024 tablet",
+        "1024x768 tablet landscape",
+        "844x390 phone landscape",
+        "320px OLED with 130% app font scale and emulated OS text scale",
+        "All workspace panels, NewSession, chat, settings and optional toolbar dialogs",
+        "Scrolled form-control clipping and minimum 24px control targets"
+      ],
+      "result": "Three concrete accessibility findings; no document or scrolled-control overflow reported. These are historical failed checks, followed by the targeted corrections below."
+    },
+    "finalFocusedAccessibilityBrowser": {
+      "harness": "web/scripts/evolved-design-check.mjs",
+      "mode": "EVOLVED_DESIGN_FOCUS=1",
+      "engine": "Chromium 153.0.8010.12",
+      "viewCount": 5,
+      "failures": 0,
+      "reportSha256": "c355bd0fd8ba1b839f8b74688c206f97a90ee2f454a4ecc6d6195fba7c2adef7",
+      "screenshots": [
+        {
+          "name": "tablet-1024-landscape-new-session.png",
+          "sha256": "df515f39151b6cc774f1097c1026a2992bdf0872630491baca68f4eb942296cc"
+        },
+        {
+          "name": "mobile-320-oled-font130-new-session.png",
+          "sha256": "0ad2b8bdf453d0b2e73764561da38c2c48f2cb8a6e43d406e1af8fa1cc562647"
+        },
+        {
+          "name": "mobile-320-oled-font130-chat.png",
+          "sha256": "8e25d783520cbdd50f14cc2091a9d163d0cca1f4b1e2881578edf755586aaddf"
+        },
+        {
+          "name": "mobile-320-oled-font130-toolbar-prompts.png",
+          "sha256": "461b353d5d4748b73a53145345441b50a2e8ec6ee709660785bbcbd478e19e14"
+        },
+        {
+          "name": "mobile-320-oled-font130-toolbar-btw.png",
+          "sha256": "17e7d52e36849e42f282768fb9a6d17b060dd76512aa5511a40775bb27f57b2c"
+        }
+      ],
+      "checks": [
+        "1024px NewSession and session-group copy control meet target-size checks.",
+        "320px OLED with 130% font scaling: both optional toolbar dialogs open from horizontal scroll, retain modal focus and return focus after Escape.",
+        "No viewport overflow, clipped controls, unnamed interactive controls or sampled contrast failures."
+      ],
+      "visualInspection": "Tablet NewSession and both 320px OLED dialogs independently inspected from the final screenshots.",
+      "rootFontPixels": 20.8,
+      "timing": "After the final three extended-audit fixes and final Web build."
+    }
+  },
+  "limitations": [
+    "No real subscriber account was queried. Numerical quota scenarios use synthetic native protocol events; a genuine installed Codex 0.157.0 runtime was separately exercised with an isolated unauthenticated account and local test provider.",
+    "Claude displays only genuinely reported SDK fields; absent percentages, windows and resets remain unknown. API-key authentication does not invent subscription capacity.",
+    "Reports belong to project sessions. Provider accounts are neither correlated nor added across sessions; a report may originate from another team member.",
+    "Responsive Chromium screenshots, computed contrast samples and accessibility-tree checks are not a physical iOS/Safari/Android test or a complete WCAG audit.",
+    "Current web/PWA branding and responsive controls are in scope; inherited native application artwork was not redesigned."
+  ],
+  "postReviewAdditionalCorrections": [
+    {
+      "id": "A1",
+      "summary": "Extended responsive inspection found unlabeled NewSession machine/model/directory controls and undersized radio labels.",
+      "status": "fixed",
+      "evidence": [
+        "web/src/components/NewSession/accessibility.test.tsx: unique associated labels, labeled directory/worktree, distinct radio groups, complete 44px targets and decorative icon exclusion."
+      ]
+    },
+    {
+      "id": "A2",
+      "summary": "The copy-directory control in a session project group was only 18x18px at tablet width.",
+      "status": "fixed_and_browser_verified",
+      "evidence": [
+        "web/src/components/SessionList.tsx: CopyPathButton has minimum 44px dimensions and visible keyboard focus."
+      ]
+    },
+    {
+      "id": "A3",
+      "summary": "Escape from the optional /btw or saved-prompts dialog did not return focus to its toolbar trigger.",
+      "status": "fixed_and_browser_verified",
+      "evidence": [
+        "web/src/evolved/Sidechannel.tsx and SavedPrompts.tsx: real Radix DialogTrigger restores focus; explicit composer handoffs are preserved.",
+        "web/src/evolved/Sidechannel.test.tsx and SavedPrompts.test.tsx: Escape, intercepted command origin and prompt-insertion focus regressions."
+      ]
+    }
+  ],
+  "finalValidatedSourceFiles": [
+    {
+      "path": "assets/brand/evolved/hapi-evolved-app-icon.svg",
+      "sha256": "af49048f0094cb06ddfe9a54fee0daed876dee9196b5990e1f17bf4b258ce625"
+    },
+    {
+      "path": "assets/brand/evolved/hapi-evolved-mark.svg",
+      "sha256": "cddac2ce89af8ee146bb0d7dd66e63643492057b7919cb77b6cee756c9f89dcb"
+    },
+    {
+      "path": "assets/brand/evolved/hapi-evolved-maskable-icon.svg",
+      "sha256": "69da2c18fff39fbf797bd1537c487561cb4fa000ba60f051fb56df4f78d7bf54"
+    },
+    {
+      "path": "cli/src/agent/providerCapacity.ts",
+      "sha256": "b0ef08d7189c400606ae8dac748a6b644b2ec8deb575b624cc359d03b814a2b3"
+    },
+    {
+      "path": "cli/src/claude/claudeRemoteLauncher.ts",
+      "sha256": "6599a3e8bf1eccd6165281174568e7a7f7d538b652234b6be1e08f814835fd63"
+    },
+    {
+      "path": "cli/src/codex/codexAppServerClient.ts",
+      "sha256": "3aae562b16a8027696ec5a565c1fe703a58c13047569dc77186af864769b1411"
+    },
+    {
+      "path": "cli/src/codex/shared/root.ts",
+      "sha256": "f96602962a2e387dce5f8b40953a270753f90d5f1096f01715a43d52b9ac3a33"
+    },
+    {
+      "path": "hub/src/evolved/capacity.ts",
+      "sha256": "c30658b9b567e250c0c16b85cd4ca0f5643940d28e2499ae42ffa91709122827"
+    },
+    {
+      "path": "hub/src/evolved/runtime.ts",
+      "sha256": "c5cb4369d0366169eb797415ecc139ad669fcc0d480485aa6ddffbc7d9b8d31b"
+    },
+    {
+      "path": "shared/src/capacity.ts",
+      "sha256": "a96db16b9c60df14fec7e1a385b5f3fb7305b9a5e72732d81c901466f6f13a14"
+    },
+    {
+      "path": "web/index.html",
+      "sha256": "3999bb34b564b79f4c4e5531bf033fb147c5d87c9a9c55e64bc92793deb46f6e"
+    },
+    {
+      "path": "web/scripts/evolved-design-check.mjs",
+      "sha256": "eb40aff5bde0799827005591dccd6d65ce528c4ab18571bc168c2b32e6414410"
+    },
+    {
+      "path": "web/scripts/export-evolved-icons.mjs",
+      "sha256": "f0c86a2527f1b952a2262cc742d5152248c41bd715af6137c5b793f0113051bb"
+    },
+    {
+      "path": "web/src/App.tsx",
+      "sha256": "d3c780a64c58c78a97184330cde27f8e263119107d671f9f02db91a14dd1ba8e"
+    },
+    {
+      "path": "web/src/components/AssistantChat/ComposerButtons.tsx",
+      "sha256": "a1148619a00ccddcacee5172fdae58fe1f71b969e2666d397ad68a82d0f2cda1"
+    },
+    {
+      "path": "web/src/components/AssistantChat/HappyComposer.tsx",
+      "sha256": "1485316abf736c7e343621443c842aaed74e118534316b62005ac5bc3e919b8b"
+    },
+    {
+      "path": "web/src/components/AssistantChat/RichComposerInput.tsx",
+      "sha256": "6189dcf374e7dce6e9c76c9d679ea387094c6b848fb2723f30a90a14736a1044"
+    },
+    {
+      "path": "web/src/components/NewSession/AgentSelector.tsx",
+      "sha256": "27779865a115b566ee8b50055269aba6ae92626f89110808990f75db45818619"
+    },
+    {
+      "path": "web/src/components/NewSession/DirectorySection.tsx",
+      "sha256": "332c3c7d9b2b9d9fe2ec9223f304558ee463ddbfeeef016ec8e7c8ac17d2a4a7"
+    },
+    {
+      "path": "web/src/components/NewSession/MachineSelector.tsx",
+      "sha256": "514fc72229655e7241adf25dfabf26f21f434ff3ca425a2f7741a348e6d20640"
+    },
+    {
+      "path": "web/src/components/NewSession/ModelSelector.tsx",
+      "sha256": "fb8e3f5ef707911c1a32e356f6298e20f5c77978365e68875a7b6334588e42a5"
+    },
+    {
+      "path": "web/src/components/NewSession/SessionTypeSelector.tsx",
+      "sha256": "cf9863272a9b141863f4ab3def3c783ac3d7e957ba6254846d89bd4679b3e649"
+    },
+    {
+      "path": "web/src/components/SessionChat.tsx",
+      "sha256": "7425105b2e5f83c8d932c7fb7f9a4a35b457f2b99567172e9585f2cb69ae25c2"
+    },
+    {
+      "path": "web/src/components/SessionList.tsx",
+      "sha256": "40593712917b7b0ece1b684875c63f1c5c7bfd765a21ef86f3399ca5299921a6"
+    },
+    {
+      "path": "web/src/evolved/Brand.tsx",
+      "sha256": "590ea1a29c7bb5414895d14c19e45b774c0b5adac25145fd3dff4eefa309fadd"
+    },
+    {
+      "path": "web/src/evolved/Capacity.tsx",
+      "sha256": "2d82cca970d78181a88d71c6b74459205a39a9d9bad34876681b5f030c5b90ac"
+    },
+    {
+      "path": "web/src/evolved/Dashboard.tsx",
+      "sha256": "4de2f8bccc41245ad410528b9a877326630f9d0f0ecf23bd5fb5684d4ce99f63"
+    },
+    {
+      "path": "web/src/evolved/ProjectsTeam.tsx",
+      "sha256": "8742e7570324f939d61ace2d218882589d2f4e06f30e681d21c6de5d49eb6a1c"
+    },
+    {
+      "path": "web/src/evolved/SavedPrompts.tsx",
+      "sha256": "c4fbf4c80c32f9408f61f42b68e893cced1f402d50c016ce0f67ff1bf23ca8a2"
+    },
+    {
+      "path": "web/src/evolved/Sidechannel.tsx",
+      "sha256": "aa73c6281b8cd778ac7265babdea321ca10b8429cc8758a5a77a49b17a0b68f0"
+    },
+    {
+      "path": "web/src/evolved/Workspace.tsx",
+      "sha256": "e8dbb3d1428e0395edcd4803b28f5837f24532c90b9d64c30d346a0eb9a0fd22"
+    },
+    {
+      "path": "web/src/evolved/auth.tsx",
+      "sha256": "677c834274ada56ac0a2b4747c63e5db51243fb315c1c8a079882bfcdf2934b4"
+    },
+    {
+      "path": "web/src/evolved/evolved.css",
+      "sha256": "4c8b83e9ba7ade3e19345b675b01b4042eb104080067d37ca98125eadeb0c731"
+    },
+    {
+      "path": "web/src/evolved/workspace.css",
+      "sha256": "4df60917392aec2e909380d18cef072b9c25d9629c1e896db1cdd9ad2b6732a5"
+    },
+    {
+      "path": "web/src/evolved/workspaceNavigation.tsx",
+      "sha256": "57d116b41448b8b01d99bbfab43cfce2077b7937322d9ada46af1facc3b240d6"
+    },
+    {
+      "path": "web/src/hooks/useColorTheme.ts",
+      "sha256": "7bd2c1078b9731fe4c439b82db80914b89fa142a283bf5f9bd092fd2efd5f911"
+    },
+    {
+      "path": "web/src/hooks/useTheme.ts",
+      "sha256": "843ba9b6ff4e88ed59b3296a1e3b889d84de2e8fc25aaa59a514fff5589efb78"
+    },
+    {
+      "path": "web/src/hooks/useThemeColors.ts",
+      "sha256": "2fdb8a9f1488fca0f7e1d9be6bdd0822ad101f403dd014524f143f939b89133a"
+    },
+    {
+      "path": "web/src/index.css",
+      "sha256": "00c1cd43d25fd1f1c5e627b7a1a92fb92dd443143b689460de032ce461581e3d"
+    },
+    {
+      "path": "web/src/router.tsx",
+      "sha256": "29ca4389ae37aca80c64ef99c690e106470d2c659e3a2074573a4c6106d4c07e"
+    },
+    {
+      "path": "web/src/routes/settings/layout.tsx",
+      "sha256": "e495782e74cd8a4f33e2aec063716003c5547faf55fad76555cc3a062112895b"
+    },
+    {
+      "path": "web/vite.config.ts",
+      "sha256": "9fc54448f38f5c138d05def16b799d68335f826f328408b176bbe5c634319c9c"
+    }
+  ],
+  "sourceHashScope": "Final corrected source files relevant to the supplied model-review snapshot, later accessibility corrections and reproducible browser/icon harnesses. This is not a digest of every repository file; the historical review snapshot remains separately recorded above."
+}

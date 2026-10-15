@@ -62,6 +62,52 @@ describe('CodexAppServerClient process cwd', () => {
         spawnMock.mockReset();
     });
 
+    it('uses real JSON-RPC startup reads and account notifications to publish only sanitized capacity', async () => {
+        const child = fakeChild(), methods: string[] = [], snapshots: unknown[] = [];
+        child.stdin.write = vi.fn((data: unknown, cb?: (error?: Error | null) => void) => {
+            const request = JSON.parse(String(data)); methods.push(request.method); cb?.();
+            if (request.id !== undefined) {
+                const result = request.method === 'account/read' ? { account: { type: 'chatgpt', email: 'private-email' } }
+                    : request.method === 'account/rateLimits/read' ? { rateLimits: { primary: { usedPercent: 23, resetsAt: 2_000_000_000 } }, accountId: 'private-account' } : {};
+                queueMicrotask(() => child.stdout.emit('data', JSON.stringify({ id: request.id, result }) + '\n'));
+            }
+            return true;
+        });
+        spawnMock.mockReturnValue(child);
+        const client = new CodexAppServerClient({ cwd: '/neutral-home' });
+        client.setCapacityHandler(value => snapshots.push(value));
+        await client.connect(); await client.initialize({ clientInfo: { name: 'test', version: '1' }, capabilities: { experimentalApi: true } });
+        await vi.waitFor(() => expect(snapshots.at(-1)).toMatchObject({ status: 'available', windows: [{ remainingPercent: 77 }] }));
+        expect(methods).toContain('account/read'); expect(methods).toContain('account/rateLimits/read');
+        child.stdout.emit('data', JSON.stringify({ method: 'account/rateLimits/updated', params: { rateLimits: { primary: { usedPercent: 56 } } } }) + '\n');
+        expect(snapshots.at(-1)).toMatchObject({ windows: [{ remainingPercent: 44 }] });
+        expect(JSON.stringify(snapshots)).not.toContain('private-');
+        await client.disconnect();
+        expect(spawnMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('times out a stalled native capacity read after five seconds and retries on the next interval', async () => {
+        vi.useFakeTimers();
+        const child = fakeChild(), methods: string[] = [], snapshots: unknown[] = [];
+        const client = new CodexAppServerClient({ cwd: '/neutral-home' });
+        child.stdin.write = vi.fn((data: unknown, cb?: (error?: Error | null) => void) => {
+            const request = JSON.parse(String(data)); methods.push(request.method); cb?.();
+            if (request.method === 'initialize') queueMicrotask(() => child.stdout.emit('data', JSON.stringify({ id: request.id, result: {} }) + '\n'));
+            return true;
+        });
+        spawnMock.mockReturnValue(child);
+        try {
+            client.setCapacityHandler(value => snapshots.push(value));
+            await client.connect(); await client.initialize({ clientInfo: { name: 'test', version: '1' }, capabilities: { experimentalApi: true } });
+            await vi.advanceTimersByTimeAsync(5_000);
+            expect(snapshots.at(-1)).toMatchObject({ status: 'unknown', reason: 'native_read_failed' });
+            expect(client.isInitialized()).toBe(true);
+            await vi.advanceTimersByTimeAsync(55_000);
+            expect(methods.filter(method => method === 'account/read')).toHaveLength(2);
+            expect(spawnMock).toHaveBeenCalledTimes(1);
+        } finally { await client.disconnect(); vi.useRealTimers(); }
+    });
+
     it('passes an explicit neutral cwd to the app-server process', async () => {
         spawnMock.mockReturnValue(fakeChild());
         const client = new CodexAppServerClient({ cwd: '/neutral-home' });

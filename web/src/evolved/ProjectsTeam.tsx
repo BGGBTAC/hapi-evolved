@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useEvolved, enrollPasskey, RecoveryCodes } from './auth'
 import { isProjectAdmin, projectPath, type ExecutionProfile, type ProjectRole, type Team, type TeamMember } from './api'
 import { ActionStatus, ConfirmButton, Empty, ErrorNotice, Field, Loading, Panel, formatDate, submit, useAction } from './ui'
+import { CapacityPanel } from './Capacity'
 
 const profiles: { id: ExecutionProfile; label: string; description: string }[] = [
     { id: 'restricted', label: 'Eingeschränkt', description: 'Schreib- und Ausführungsrechte bleiben eng begrenzt.' },
@@ -59,13 +60,13 @@ function WorkspacePicker({ disabled, onChoose }: { disabled: boolean; onChoose: 
     </div>
 }
 
-export function ProjectsPanel() {
+export function ProjectsPanel({ onSelectProject }: { onSelectProject?: (id: string) => void } = {}) {
     const { api, me } = useEvolved()
     // A changed account or installation-admin role must discard drafts and directory listings.
-    return <ProjectsForUser key={`${api.baseUrl}:${me.user.id}:${me.user.isAdmin}`} />
+    return <ProjectsForUser key={`${api.baseUrl}:${me.user.id}:${me.user.isAdmin}`} onSelectProject={onSelectProject} />
 }
 
-function ProjectsForUser() {
+function ProjectsForUser({ onSelectProject }: { onSelectProject?: (id: string) => void }) {
     const { api, me, project, selectProject, refresh } = useEvolved()
     const teams = useQuery({ queryKey: ['evolved', 'teams', api.baseUrl, me.user.id], queryFn: ({ signal }) => api.request<{ teams: Team[] }>('/teams', { signal }) })
     const [name, setName] = useState('')
@@ -73,6 +74,7 @@ function ProjectsForUser() {
     const [manual, setManual] = useState(false)
     const [showPicker, setShowPicker] = useState(false)
     const [teamId, setTeamId] = useState('')
+    const [projectFilter, setProjectFilter] = useState('')
     const creating = useRef(false)
     const creation = useRef<AbortController | null>(null)
     useEffect(() => () => creation.current?.abort(), [])
@@ -80,6 +82,10 @@ function ProjectsForUser() {
     const adminTeams = teams.data?.teams.filter(team => isProjectAdmin(team.role)) ?? []
     const selectedTeam = adminTeams.find(team => team.id === teamId)?.id ?? adminTeams[0]?.id
     const useManualPath = me.user.isAdmin && manual
+    const canFilter = me.accessibleProjects.length > 4
+    const visibleProjects = canFilter && projectFilter.trim()
+        ? me.accessibleProjects.filter(item => item.name.toLocaleLowerCase().includes(projectFilter.trim().toLocaleLowerCase()))
+        : me.accessibleProjects
     const createProject = () => {
         if (creating.current || action.busy) return
         creating.current = true
@@ -94,11 +100,13 @@ function ProjectsForUser() {
             await refresh()
         }, 'Projekt angelegt.').finally(() => { creating.current = false; if (creation.current === controller) creation.current = null })
     }
-    return <div className="ev-stack"><Panel title="Deine Projekte" description="Jedes Projekt hat eigene Zugriffsrechte, einen Tresor und ein Gedächtnis.">
-        {me.accessibleProjects.length === 0 ? <Empty>Lege zuerst ein Team und anschließend ein Projekt an.</Empty> : <div className="ev-project-grid">{me.accessibleProjects.map(item => <button key={item.id} className={`ev-project-card ${project?.id === item.id ? 'ev-selected' : ''}`} onClick={() => selectProject(item.id)} aria-pressed={project?.id === item.id}>
-            <strong>{item.name}</strong><span>{roleNames[item.role] ?? item.role} · {profiles.find(profile => profile.id === item.profile)?.label ?? item.profile}</span>{item.rootPath && <small>{item.rootPath}</small>}
+    return <div className="ev-stack ew-projects"><Panel title="Deine Projekte" description="Jedes Projekt hat eigene Zugriffsrechte, einen Tresor und ein Gedächtnis.">
+        {canFilter && <div className="ew-project-filter"><Field label="Projekte durchsuchen"><input type="search" value={projectFilter} onChange={event => setProjectFilter(event.target.value)} placeholder="Projektname" /></Field><span className="ew-caption" role="status">{visibleProjects.length} von {me.accessibleProjects.length} Projekten</span>{projectFilter && <button onClick={() => setProjectFilter('')}>Filter zurücksetzen</button>}</div>}
+        {me.accessibleProjects.length === 0 ? <Empty>Lege zuerst ein Team und anschließend ein Projekt an.</Empty> : !visibleProjects.length ? <Empty>Kein Projekt passt zu deiner Suche. Setze den Filter zurück, um alle Projekte anzuzeigen.</Empty> : <div className="ev-project-grid">{visibleProjects.map(item => <button key={item.id} className={`ev-project-card ${project?.id === item.id ? 'ev-selected' : ''}`} onClick={() => (onSelectProject ?? selectProject)(item.id)} aria-pressed={project?.id === item.id} aria-label={`${item.name} ${roleNames[item.role] ?? item.role} · ${profiles.find(profile => profile.id === item.profile)?.label ?? item.profile}`}>
+            <span className="ew-project-card-top"><span className="ew-project-initial" aria-hidden="true">{item.name.slice(0, 1).toLocaleUpperCase()}</span><span className="ew-caption">{project?.id === item.id ? 'Aktives Projekt' : 'Projekt öffnen'}</span></span><strong>{item.name}</strong><span>{roleNames[item.role] ?? item.role} · {profiles.find(profile => profile.id === item.profile)?.label ?? item.profile}</span>{item.rootPath && <small>{item.rootPath}</small>}
         </button>)}</div>}
     </Panel>
+    {project && me.accessibleProjects.some(item => item.id === project.id) && <CapacityPanel compact />}
     {project && <Panel title="Ausführungsprofil" description="Das Profil gilt für dieses Projekt. Änderungen können nur Projektadministratoren vornehmen."><div className="ev-profile-grid">{profiles.map(profile => <button key={profile.id} className={`ev-profile ${project.profile === profile.id ? 'ev-selected' : ''}`} aria-pressed={project.profile === profile.id} disabled={!isProjectAdmin(project.role) || action.busy} onClick={() => void action.run(async () => {
         await api.request(`${projectPath(project.id)}/profile`, { method: 'PUT', body: { profile: profile.id } }); await refresh()
     }, 'Profil gespeichert.')}><strong>{profile.label}</strong><small>{profile.description}</small></button>)}</div></Panel>}

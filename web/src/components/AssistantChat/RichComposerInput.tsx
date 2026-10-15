@@ -134,11 +134,12 @@ export function fitSingleLineFontSize(
         return resolvedMaxFontSize
     }
 
-    // Keep a tiny buffer for fractional glyph metrics: scrollWidth is rounded
-    // to an integer, while the browser can paint glyphs on sub-pixels.
-    return resolvedMaxFontSize
+    // Keep text readable on narrow screens; the visual placeholder ellipsizes
+    // while the textbox retains its complete accessible label. The gutter
+    // accounts for fractional glyph metrics when a larger font still fits.
+    return Math.max(Math.min(16, resolvedMaxFontSize), resolvedMaxFontSize
         * Math.max(0, availableWidth - PLACEHOLDER_FIT_GUTTER_PX)
-        / contentWidth
+        / contentWidth)
 }
 
 function stripCaretPad(text: string): string {
@@ -1145,7 +1146,7 @@ export const RichComposerInput = forwardRef<RichComposerInputHandle, Props>(func
                     ref={placeholderRef}
                     aria-hidden
                     data-testid="rich-composer-placeholder"
-                    className="pointer-events-none absolute inset-0 overflow-hidden whitespace-nowrap text-base leading-[1.375rem] text-[var(--app-hint)]"
+                    className="pointer-events-none absolute inset-0 overflow-hidden text-ellipsis whitespace-nowrap text-base leading-[1.375rem] text-[var(--app-hint)]"
                 >
                     {placeholder}
                 </div>

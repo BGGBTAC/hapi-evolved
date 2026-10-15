@@ -8,6 +8,10 @@ or container image.
 
 ### Added
 
+- Responsive workspace navigation, project dashboard and a unified desktop/PWA
+  design, with dark/OLED themes, accessible mobile controls and new app icons.
+- Project-scoped subscription-capacity views from native Claude/Codex telemetry,
+  with per-window freshness, reset times and explicit unavailable states.
 - Team/project roles, passkeys, one-time recovery codes and step-up authentication.
 - A separate encrypted local credential vault and constrained resource broker.
 - Persistent knowledge, source verification and local search, with an optional
@@ -22,6 +26,12 @@ or container image.
 
 ### Fixed
 
+- PWA updates are visible before sign-in and project selection; consistent HTML,
+  service-worker and manifest cache headers, with no automatic reload of other
+  tabs already running the corrected client.
+- Global event handlers no longer block browser zoom gestures and shortcuts.
+- Mobile chat placeholder readability and excessive composer toolbar height.
+- Browser zoom, landscape PWA use and dark-mode workspace styling.
 - Replay duplication, usage-history paging and delayed client-cache updates.
 - Claude resume identity handling, reconnect behavior and process cleanup.
 - Attachment migration/restore integrity and notification epochs after restore.

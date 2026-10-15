@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { useOptionalEvolved } from './auth'
 import { projectPath } from './api'
 
@@ -10,6 +10,7 @@ export function useSidechannel(sessionId?: string) {
     const [open, setOpen] = useState(false), [text, setText] = useState(''), [reply, setReply] = useState<Reply | null>(null)
     const [error, setError] = useState(''), [busy, setBusy] = useState(false)
     const inFlight = useRef(false)
+    const interceptedFrom = useRef<HTMLElement | null>(null)
     const active = useRef<AbortController | null>(null), scope = `${projectId ?? ''}:${sessionId ?? ''}`
     const generation = useRef(0)
     useEffect(() => { generation.current++; inFlight.current = false; active.current?.abort(); setOpen(false); setText(''); setReply(null); setError(''); setBusy(false); return () => { generation.current++; active.current?.abort() } }, [scope])
@@ -25,6 +26,7 @@ export function useSidechannel(sessionId?: string) {
     const enabled = availability?.enabled === true
     const intercept = useCallback((value: string) => {
         if (!/^\/btw(?:\s|$)/.test(value)) return false
+        interceptedFrom.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
         setText(value.replace(/^\/btw\s*/, '')); setReply(null); setError(''); setOpen(true); return true
     }, [])
     const send = async () => {
@@ -41,8 +43,13 @@ export function useSidechannel(sessionId?: string) {
         finally { if (generation.current === current) { inFlight.current = false; setBusy(false) } }
     }
     const panel = <>
-        {(enabled || text.length > 0) && <button type="button" className="min-h-9 rounded px-2 text-sm text-[var(--app-hint)]" onClick={() => setOpen(true)} title="Separate Textfrage (/btw)">/btw</button>}
-        <Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-h-[85dvh] overflow-y-auto"><DialogTitle>Separate Textfrage</DialogTitle><DialogDescription className="mt-2">Dieser Text verlässt den Host und wird an {status.data?.provider} gesendet. Modell: {status.data?.model}. Keine Chatübernahme, Werkzeuge oder Weiterleitung an deinen Agenten.</DialogDescription>
+        <Dialog open={open} onOpenChange={setOpen}>
+        {(enabled || text.length > 0) && <DialogTrigger asChild><button type="button" className="min-h-9 rounded px-2 text-sm text-[var(--app-hint)]" onClick={() => { interceptedFrom.current = null }} title="Separate Textfrage (/btw)">/btw</button></DialogTrigger>}
+        <DialogContent className="max-h-[85dvh] overflow-y-auto" onCloseAutoFocus={event => {
+            const origin = interceptedFrom.current
+            interceptedFrom.current = null
+            if (origin?.isConnected) { event.preventDefault(); origin.focus() }
+        }}><DialogTitle>Separate Textfrage</DialogTitle><DialogDescription className="mt-2">Dieser Text verlässt den Host und wird an {status.data?.provider} gesendet. Modell: {status.data?.model}. Keine Chatübernahme, Werkzeuge oder Weiterleitung an deinen Agenten.</DialogDescription>
             <p className="my-2 text-sm">Verbleibendes Budget: {status.data?.remainingTokens ?? 0} Tokens · maximal {status.data?.maxOutputTokens ?? 0} Antwort-Tokens</p>
             {!enabled && <p role="status">Der separate Textkanal ist nicht verfügbar. Deine Frage wurde nicht an den Agenten gesendet.</p>}
             <form onSubmit={event => { event.preventDefault(); void send() }}><label className="block">Frage<textarea aria-label="Separate Frage" className="my-2 block w-full rounded border p-2" rows={5} maxLength={status.data?.maxInputChars} value={text} disabled={busy} onChange={event => setText(event.target.value)} /></label><button type="submit" className="rounded border px-3 py-2" disabled={!enabled || busy || !text.trim() || (status.data?.remainingTokens ?? 0) <= 0}>{busy ? 'Anfrage läuft …' : 'An Anbieter senden'}</button></form>

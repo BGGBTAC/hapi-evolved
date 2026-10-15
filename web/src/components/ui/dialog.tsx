@@ -22,7 +22,7 @@ export const DialogContent = React.forwardRef<
             <DialogPrimitive.Content
                 ref={ref}
                 className={cn(
-                    'fixed left-1/2 top-1/2 z-50 w-[calc(100vw-24px)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-[var(--app-dialog-bg)] p-4 shadow-2xl',
+                    'app-dialog fixed left-1/2 top-1/2 z-50 w-[calc(100vw-24px)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-[var(--app-dialog-bg)] p-5 shadow-2xl',
                     className
                 )}
                 {...props}
@@ -30,7 +30,7 @@ export const DialogContent = React.forwardRef<
                 {children}
                 <DialogPrimitive.Close
                     className={cn(
-                        'absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]',
+                        'absolute right-2 top-2.5 flex h-11 w-11 items-center justify-center rounded-xl text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]',
                         closeButtonClassName
                     )}
                     aria-label={t('button.close')}

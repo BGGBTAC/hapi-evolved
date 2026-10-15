@@ -18,5 +18,28 @@ do not stretch or recolor the file. This is a horizontal wordmark, not a favicon
 The file is raster artwork, not a scalable vector master. The prompt specifies
 teal `#0F766E` and ink `#172B2A`; the generated pixels are not a flat-color reference.
 
-This asset is stored separately from the inherited HAPI branding. Creating it
-does not update installed app icons or the running test VM.
+## Application icon companion
+
+`hapi-evolved-mark.svg` is a small, code-native optical companion to the raster
+wordmark. Its graph-e geometry matches `web/src/evolved/Brand.tsx`. It is not a
+vector tracing or replacement of the original artwork above. The application
+uses this simpler mark at navigation and launcher sizes.
+
+`hapi-evolved-app-icon.svg` and `hapi-evolved-maskable-icon.svg` add a light neutral
+surface and clear space. The maskable version has an opaque, square background;
+the mark stays inside the central safe circle. The Safari pinned-tab mask is
+monochrome. Native app assets inherited from upstream remain unchanged.
+
+Rebuild the public SVG, PNG and multi-resolution ICO exports from the vector
+source with the repository's existing Playwright dependency:
+
+```sh
+node web/scripts/export-evolved-icons.mjs
+node web/scripts/export-evolved-icons.mjs --check
+```
+
+Use `PLAYWRIGHT_CHROME_PATH` when an installed Chromium executable is outside
+Playwright's default cache. Use the same Chromium build for byte-identical
+exports; the script reports its version and output hashes. No ImageMagick,
+external fonts, network resources or image-generation service is involved.
+Original raster artwork is never read or rewritten by the exporter.

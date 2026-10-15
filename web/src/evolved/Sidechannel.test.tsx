@@ -9,6 +9,27 @@ function Panel({ sessionId = 'session' }: { sessionId?: string }) { const side =
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 const config = { enabled: true, provider: 'https://provider.test', model: 'explicit-model', remainingTokens: 500, maxInputChars: 1000, maxOutputTokens: 100 }
 describe('isolated text sidechannel', () => {
+    it('returns focus to the toolbar trigger after Escape', async () => {
+        state.request.mockResolvedValue(config)
+        render(<Panel />)
+        const trigger = await screen.findByRole('button', { name: '/btw' })
+        trigger.focus(); fireEvent.click(trigger)
+        const dialog = await screen.findByRole('dialog')
+        await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
+        fireEvent.keyDown(dialog, { key: 'Escape' })
+        await waitFor(() => expect(trigger).toHaveFocus())
+    })
+    it('returns intercepted commands to their original focus instead of the toolbar', async () => {
+        state.request.mockResolvedValue(config)
+        render(<Panel />)
+        await screen.findByRole('button', { name: '/btw' })
+        const origin = screen.getByRole('button', { name: 'Intercept' })
+        origin.focus(); fireEvent.click(origin)
+        const dialog = await screen.findByRole('dialog')
+        await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
+        fireEvent.keyDown(dialog, { key: 'Escape' })
+        await waitFor(() => expect(origin).toHaveFocus())
+    })
     it('preserves an unavailable question without a session instead of sending or swallowing it', () => {
         render(<Panel sessionId="" />); fireEvent.click(screen.getByText('Intercept'))
         expect(screen.getByLabelText('Separate Frage')).toHaveValue('Explicit only')

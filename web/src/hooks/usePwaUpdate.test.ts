@@ -8,11 +8,11 @@ import {
     usePwaUpdate,
 } from '@/hooks/usePwaUpdate'
 
-const registerSWMock = vi.fn()
+const workboxMock = vi.hoisted(() => ({ create: vi.fn() }))
 const serviceWorkerListeners = new Map<string, Set<EventListener>>()
 
-vi.mock('virtual:pwa-register', () => ({
-    registerSW: (options: Parameters<typeof registerSWMock>[0]) => registerSWMock(options),
+vi.mock('workbox-window', () => ({
+    Workbox: class { constructor(...args: unknown[]) { return workboxMock.create(...args) } },
 }))
 
 beforeEach(() => {
@@ -143,88 +143,87 @@ describe('requestPwaUpdateReload', () => {
     })
 })
 
-describe('usePwaUpdate', () => {
-    let capturedOptions: {
-        onNeedRefresh?: () => void
-        onRegistered?: (registration: ServiceWorkerRegistration | undefined) => void
-    } = {}
-    const updateSW = vi.fn().mockResolvedValue(undefined)
-
+describe('usePwaUpdate direct registration', () => {
+    let waiting: (() => void) | undefined
+    let registration: ServiceWorkerRegistration
+    let worker: {
+        register: ReturnType<typeof vi.fn>
+        messageSkipWaiting: ReturnType<typeof vi.fn>
+        addEventListener: ReturnType<typeof vi.fn>
+        removeEventListener: ReturnType<typeof vi.fn>
+    }
     beforeEach(() => {
-        capturedOptions = {}
-        updateSW.mockClear()
-        registerSWMock.mockImplementation((options) => {
-            capturedOptions = options
-            return updateSW
-        })
-    })
-
-    it('registers the service worker and exposes refresh state', () => {
-        const { result } = renderHook(() => usePwaUpdate())
-
-        expect(registerSWMock).toHaveBeenCalledTimes(1)
-        expect(result.current.needRefresh).toBe(false)
-
-        act(() => {
-            capturedOptions.onNeedRefresh?.()
-        })
-
-        expect(result.current.needRefresh).toBe(true)
-    })
-
-    it('reloads through updateSW when reload is called', async () => {
-        const updateSW = vi.fn().mockImplementation(async () => {
-            for (const listener of serviceWorkerListeners.get('controllerchange') ?? []) {
-                listener(new Event('controllerchange'))
-            }
-        })
-        registerSWMock.mockImplementation((options) => {
-            capturedOptions = options
-            return updateSW
-        })
-
-        const { result } = renderHook(() => usePwaUpdate())
-
-        await act(async () => {
-            result.current.reload()
-        })
-
-        expect(updateSW).toHaveBeenCalledWith(true)
-    })
-
-    it('keeps needRefresh true until a successful reload clears the page', () => {
-        const { result } = renderHook(() => usePwaUpdate())
-
-        act(() => {
-            capturedOptions.onNeedRefresh?.()
-        })
-
-        expect(result.current.needRefresh).toBe(true)
-
-        act(() => {
-            result.current.reload()
-        })
-
-        expect(updateSW).toHaveBeenCalledWith(true)
-        expect(result.current.needRefresh).toBe(true)
-    })
-
-    it('wires registration update checks from onRegistered', () => {
         vi.useFakeTimers()
+        vi.stubEnv('BASE_URL', '/')
+        vi.stubEnv('DEV', false)
+        waiting = undefined
+        registration = { waiting: null, update: vi.fn().mockResolvedValue(undefined) } as unknown as ServiceWorkerRegistration
+        worker = {
+            register: vi.fn().mockResolvedValue(registration),
+            messageSkipWaiting: vi.fn(),
+            addEventListener: vi.fn((name, handler) => { if (name === 'waiting') waiting = handler }),
+            removeEventListener: vi.fn(),
+        }
+        workboxMock.create.mockClear().mockReturnValue(worker)
+    })
+    afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs() })
 
-        const registration = {
-            update: vi.fn().mockResolvedValue(undefined),
-        } as unknown as ServiceWorkerRegistration
+    it('registers one worker and exposes waiting state without subscribing to automatic reload events', async () => {
+        const { result } = renderHook(() => usePwaUpdate())
+        await act(async () => {})
+        expect(workboxMock.create).toHaveBeenCalledExactlyOnceWith('/sw.js', { scope: '/', type: 'classic' })
+        expect(worker.register).toHaveBeenCalledOnce()
+        expect(worker.addEventListener.mock.calls.map(call => call[0])).toEqual(['waiting'])
+        expect(result.current.needRefresh).toBe(false)
+        act(() => waiting?.())
+        expect(result.current.needRefresh).toBe(true)
+        expect(worker.messageSkipWaiting).not.toHaveBeenCalled()
+        expect(serviceWorkerListeners.get('controllerchange')?.size ?? 0).toBe(0)
+    })
 
+    it('preserves the production subpath and Vite development worker URL', async () => {
+        vi.stubEnv('BASE_URL', '/hapi/')
+        const first = renderHook(() => usePwaUpdate())
+        await act(async () => {})
+        expect(workboxMock.create).toHaveBeenLastCalledWith('/hapi/sw.js', { scope: '/hapi/', type: 'classic' })
+        first.unmount()
+        vi.stubEnv('DEV', true)
         renderHook(() => usePwaUpdate())
+        await act(async () => {})
+        expect(workboxMock.create).toHaveBeenLastCalledWith('/hapi/dev-sw.js?dev-sw', { scope: '/hapi/', type: 'module' })
+    })
 
-        act(() => {
-            capturedOptions.onRegistered?.(registration)
-        })
+    it('recognizes an already waiting worker and keeps it waiting until the local explicit action', async () => {
+        Object.defineProperty(registration, 'waiting', { value: {} })
+        const { result } = renderHook(() => usePwaUpdate())
+        await act(async () => {})
+        expect(result.current.needRefresh).toBe(true)
+        expect(worker.messageSkipWaiting).not.toHaveBeenCalled()
+        await act(async () => { result.current.reload() })
+        expect(worker.messageSkipWaiting).toHaveBeenCalledOnce()
+        expect(serviceWorkerListeners.get('controllerchange')?.size).toBe(1)
+        expect(result.current.needRefresh).toBe(true)
+    })
 
-        vi.advanceTimersByTime(PWA_UPDATE_CHECK_INTERVAL_MS)
-        expect(registration.update).toHaveBeenCalledTimes(1)
+    it('cleans update checks on unmount and ignores late registration resolution', async () => {
+        let resolve!: (value: ServiceWorkerRegistration) => void
+        worker.register.mockReturnValue(new Promise(done => { resolve = done }))
+        const view = renderHook(() => usePwaUpdate())
+        view.unmount()
+        await act(async () => { resolve(registration) })
+        act(() => { waiting?.(); vi.advanceTimersByTime(PWA_UPDATE_CHECK_INTERVAL_MS) })
+        expect(registration.update).not.toHaveBeenCalled()
+        expect(worker.removeEventListener).toHaveBeenCalledWith('waiting', expect.any(Function))
+    })
 
-        vi.useRealTimers()
+    it('checks hourly and absorbs offline update failures', async () => {
+        vi.mocked(registration.update).mockRejectedValue(new Error('offline'))
+        const view = renderHook(() => usePwaUpdate())
+        await act(async () => {})
+        await act(async () => { vi.advanceTimersByTime(PWA_UPDATE_CHECK_INTERVAL_MS) })
+        expect(registration.update).toHaveBeenCalledOnce()
+        view.unmount()
+        await act(async () => { vi.advanceTimersByTime(PWA_UPDATE_CHECK_INTERVAL_MS) })
+        expect(registration.update).toHaveBeenCalledOnce()
     })
 })

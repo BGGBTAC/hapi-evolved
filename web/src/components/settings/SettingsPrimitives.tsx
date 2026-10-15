@@ -43,7 +43,7 @@ export function SettingsSection(props: { title?: string; description?: string; c
         <section>
             {props.title ? <h2 className="mb-2 text-base font-semibold text-[var(--app-fg)]">{props.title}</h2> : null}
             {props.description ? <p className="mb-2 text-sm text-[var(--app-hint)]">{props.description}</p> : null}
-            <div className="overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] shadow-sm divide-y divide-[var(--app-divider)]">
+            <div className="app-settings-section overflow-hidden border border-[var(--app-border)] divide-y divide-[var(--app-divider)]">
                 {props.children}
             </div>
         </section>
@@ -52,7 +52,7 @@ export function SettingsSection(props: { title?: string; description?: string; c
 
 export function SettingsRow(props: { label: string; description?: string; trailing?: ReactNode; children?: ReactNode }) {
     return (
-        <div className="flex min-h-12 items-center justify-between gap-3 px-3 py-3">
+        <div className="flex min-h-14 items-center justify-between gap-3 px-4 py-3">
             <div className="min-w-0">
                 <div className="text-sm font-medium text-[var(--app-fg)]">{props.label}</div>
                 {props.description ? <div className="mt-0.5 text-xs leading-snug text-[var(--app-hint)]">{props.description}</div> : null}
@@ -66,9 +66,9 @@ export function SettingsRow(props: { label: string; description?: string; traili
 export function SettingsSwitch(props: { label: string; description?: string; checked: boolean; onChange: (checked: boolean) => void }) {
     return (
         <SettingsRow label={props.label} description={props.description} trailing={
-            <label className="relative inline-flex h-6 w-11 items-center">
+            <label className="app-settings-switch relative inline-flex w-11 items-center">
                 <input type="checkbox" checked={props.checked} onChange={(event) => props.onChange(event.target.checked)} className="peer sr-only" aria-label={props.label} />
-                <span className="absolute inset-0 rounded-full bg-[var(--app-border)] transition-colors peer-checked:bg-[var(--app-link)]" />
+                <span className="absolute inset-x-0 h-6 rounded-full bg-[var(--app-border)] transition-colors peer-checked:bg-[var(--app-link)]" />
                 <span className="absolute left-0.5 h-5 w-5 rounded-full bg-[var(--app-bg)] shadow-sm transition-transform peer-checked:translate-x-5" />
             </label>
         } />

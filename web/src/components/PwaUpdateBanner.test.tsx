@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '@/lib/i18n-context'
-import { PwaUpdateBanner, PwaUpdateBannerWithStatusOffset } from '@/components/PwaUpdateBanner'
+import { PwaUpdateBanner, PwaUpdateStatusOffset } from '@/components/PwaUpdateBanner'
 
 const usePwaUpdateMock = vi.fn()
 const useVoiceOptionalMock = vi.fn()
@@ -80,6 +80,7 @@ describe('PwaUpdateBanner', () => {
         expect(screen.getByTestId('pwa-update-banner')).toBeInTheDocument()
         expect(screen.getByText('New version available')).toBeInTheDocument()
         expect(screen.getByText('Reload to get the latest HAPI')).toBeInTheDocument()
+        expect(screen.getByText(/Older HAPI tabs may also reload/)).toBeVisible()
         expect(screen.getAllByRole('button')).toHaveLength(1)
 
         fireEvent.click(screen.getByRole('button', { name: 'Reload' }))
@@ -102,24 +103,32 @@ describe('PwaUpdateBanner', () => {
     })
 
     it('offsets below voice error banners when shown inside the voice provider', () => {
+        const setHasTopStatusBanner = vi.fn()
         usePwaUpdateMock.mockReturnValue({
             needRefresh: true,
             reload: vi.fn(),
+            hasTopStatusBanner: true,
+            setHasTopStatusBanner,
         })
         useVoiceOptionalMock.mockReturnValue({
             status: 'error',
             errorMessage: 'Mic failed',
         })
 
-        render(
+        const view = render(
             <I18nProvider>
-                <PwaUpdateBannerWithStatusOffset isSyncing={false} isReconnecting={false} />
+                <PwaUpdateBanner />
+                <PwaUpdateStatusOffset isSyncing={false} isReconnecting={false} />
             </I18nProvider>,
         )
 
         expect(screen.getByTestId('pwa-update-banner')).toHaveClass(
             'top-[calc(env(safe-area-inset-top)+3rem)]'
         )
+        expect(screen.getAllByTestId('pwa-update-banner')).toHaveLength(1)
+        expect(setHasTopStatusBanner).toHaveBeenLastCalledWith(true)
+        view.unmount()
+        expect(setHasTopStatusBanner).toHaveBeenLastCalledWith(false)
     })
 
     it('expands the rationale section when the disclosure is opened', () => {
@@ -131,11 +140,11 @@ describe('PwaUpdateBanner', () => {
         renderBanner()
 
         const disclosure = screen.getByText("Why can't I dismiss this?")
-        expect(screen.queryByText(/agent running/i)).not.toBeVisible()
+        expect(screen.queryByText(/Server-side agents keep running/i)).not.toBeVisible()
 
         fireEvent.click(disclosure)
 
-        expect(screen.getByText(/agent running/i)).toBeVisible()
+        expect(screen.getByText(/Server-side agents keep running/i)).toBeVisible()
         expect(screen.getByText(/finish what you are doing first/i)).toBeVisible()
     })
 })

@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import type { Machine } from '@/types/api'
 import { isMachineCapabilitySkewed } from '@hapi/protocol/runnerCapabilities'
 import { useTranslation } from '@/lib/use-translation'
@@ -29,13 +30,15 @@ export function MachineSelector(props: {
     onChange: (machineId: string) => void
 }) {
     const { t } = useTranslation()
+    const selectId = useId()
 
     return (
         <div className="flex flex-col gap-1.5 px-3 py-3">
-            <label className="text-xs font-medium text-[var(--app-hint)]">
+            <label htmlFor={selectId} className="text-xs font-medium text-[var(--app-hint)]">
                 {t('newSession.machine')}
             </label>
             <SelectControl
+                id={selectId}
                 value={props.machineId ?? ''}
                 onChange={(e) => props.onChange(e.target.value)}
                 disabled={props.isDisabled}

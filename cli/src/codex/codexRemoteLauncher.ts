@@ -364,6 +364,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
         const session = this.session;
         const messageBuffer = this.messageBuffer;
         const appServerClient = this.appServerClient;
+        appServerClient.setCapacityHandler(providerCapacity => session.client.updateAgentState(state => ({ ...state, providerCapacity })));
         const appServerEventConverter = new AppServerEventConverter();
 
         const normalizeCommand = (value: unknown): string | undefined => {

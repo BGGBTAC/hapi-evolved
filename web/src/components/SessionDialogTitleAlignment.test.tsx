@@ -22,7 +22,7 @@ function expectCenteredTitle(name: string) {
 
     expect(title.parentElement).toHaveClass('pr-0')
     expect(title).toHaveClass('min-h-6', 'px-10', 'text-center', 'leading-6')
-    expect(within(dialog).getByRole('button', { name: 'Close' })).toHaveClass('top-3', 'h-8')
+    expect(within(dialog).getByRole('button', { name: 'Close' })).toHaveClass('top-2.5', 'h-11')
 }
 
 describe('session dialog title alignment', () => {

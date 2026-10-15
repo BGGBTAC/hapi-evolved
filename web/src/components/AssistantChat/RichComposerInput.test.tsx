@@ -116,17 +116,18 @@ describe('RichComposerInput responsive placeholder', () => {
         expect(changed).not.toHaveBeenCalled()
         expect(editor.textContent).toBe('existing')
     })
-    it('calculates a smaller font that fits overflowing text', () => {
-        expect(fitSingleLineFontSize(160, 320)).toBeCloseTo(7.95)
+    it('keeps an overflowing placeholder legible instead of shrinking below 16px', () => {
+        expect(fitSingleLineFontSize(160, 320)).toBe(16)
+        expect(fitSingleLineFontSize(1, 1000)).toBe(16)
         expect(fitSingleLineFontSize(320, 320)).toBe(16)
         expect(fitSingleLineFontSize(640, 320)).toBe(16)
         expect(fitSingleLineFontSize(0, 320)).toBe(16)
         expect(fitSingleLineFontSize(Number.NaN, 320)).toBe(16)
         expect(fitSingleLineFontSize(384, 320, 19.2)).toBe(19.2)
-        expect(fitSingleLineFontSize(160, 320, 19.2)).toBeCloseTo(9.54)
+        expect(fitSingleLineFontSize(160, 320, 19.2)).toBe(16)
     })
 
-    it('refits the complete single-line placeholder when its container width changes', () => {
+    it('retains its accessible full label and truncates visibly at a readable size', () => {
         let resizeCallback: ResizeObserverCallback | undefined
         class TestResizeObserver {
             constructor(callback: ResizeObserverCallback) {
@@ -164,9 +165,10 @@ describe('RichComposerInput responsive placeholder', () => {
 
             resizeCallback?.([], {} as ResizeObserver)
             expect(placeholder).toHaveTextContent('Type what you want the agent to do, without truncation')
-            expect(placeholder).not.toHaveClass('text-ellipsis')
+            expect(placeholder).toHaveClass('text-ellipsis')
+            expect(screen.getByRole('textbox')).toHaveAttribute('aria-label', 'Type what you want the agent to do, without truncation')
             expect(placeholder).toHaveClass('text-base')
-            expect(placeholder.style.fontSize).toBe('9.54px')
+            expect(placeholder.style.fontSize).toBe('16px')
 
             availableWidth = 640
             resizeCallback?.([], {} as ResizeObserver)

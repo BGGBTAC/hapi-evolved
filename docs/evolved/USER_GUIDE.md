@@ -1,10 +1,13 @@
 # HAPI evolved bedienen
 
 Öffne die vom Betreiber eingerichtete private HTTPS-Adresse. Der Arbeitsbereich
-ist unter `/evolved` erreichbar. Über „Sessions öffnen“ gelangst du zu den
-Agentengesprächen; „Evolved“ führt zurück. Oben wählst du das aktive Projekt.
+ist unter `/evolved` erreichbar. Über „Sessions“ gelangst du zu den
+Agentengesprächen; die Marke oben in der Sessionliste führt zurück. Oben wählst du das aktive Projekt.
 Tresor, Wissen, Codegraph, Runner und Sessions beziehen sich auf dieses Projekt.
-Auf dem Smartphone lässt sich die Tab-Leiste horizontal verschieben. Die PWA
+Auf dem Smartphone erreichst du Übersicht, Sessions und Projekte über die untere
+Navigation. „Mehr“ öffnet alle weiteren Werkzeuge, Einstellungen und Abmelden.
+Am Desktop stehen dieselben Bereiche in der Seitenleiste. Direktlinks und
+Zurück/Vorwärts behalten den Projektkontext; siehe [DESIGN.md](DESIGN.md). Die PWA
 kann über die Installationsfunktion des Browsers zum Startbildschirm hinzugefügt
 werden; Anmeldung und aktuelle Projektdaten benötigen eine Verbindung zum Hub.
 
@@ -36,6 +39,12 @@ Sensible Änderungen verlangen eine Passkey-Bestätigung, die höchstens fünf
 Minuten zurückliegt. HAPI fordert diese bei Bedarf während der Aktion an.
 
 ## Teams, Projekte und Profile
+
+Die Projektübersicht zeigt unter „Kapazität“ gemeldete Claude-/Codex-Limits mit
+Stand und Rücksetzzeit. Diese Werte gelten für das jeweilige Anbieterkonto,
+nicht allein für das Projekt. Fehlende Werte bleiben unbekannt; veraltete
+Fenster werden gekennzeichnet. Datenquellen, Aktualisierung und API erklärt
+[Gemeldete Abo-Kapazität](CAPACITY.md).
 
 Teamadministratoren können Personen einladen, deren Teamrolle ändern oder sie
 aus dem Team entfernen. Unter „Projektrollen“ lassen sich abweichende Rollen

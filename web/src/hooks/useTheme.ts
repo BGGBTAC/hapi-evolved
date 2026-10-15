@@ -6,8 +6,8 @@ export type AppearancePreference = 'system' | 'dark' | 'light' | 'oled'
 
 const APPEARANCE_KEY = 'hapi-appearance'
 const THEME_COLORS: Record<ColorScheme, string> = {
-    light: '#ffffff',
-    dark: '#1c1c1e',
+    light: '#f6f8f7',
+    dark: '#0d1312',
     oled: '#000000',
 }
 
