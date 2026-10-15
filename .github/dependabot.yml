@@ -1,0 +1,45 @@
+version: 2
+# Review-only dependency PRs. Nothing here enables auto-merge or publishing.
+updates:
+    - package-ecosystem: github-actions
+      directory: /
+      schedule:
+          interval: weekly
+      open-pull-requests-limit: 3
+      groups:
+          actions:
+              patterns: ['*']
+    - package-ecosystem: bun
+      directory: /
+      schedule:
+          interval: weekly
+      open-pull-requests-limit: 3
+      groups:
+          compatible:
+              update-types: [minor, patch]
+    - package-ecosystem: npm
+      directory: /services/codegraph
+      schedule:
+          interval: weekly
+      open-pull-requests-limit: 3
+      groups:
+          compatible:
+              update-types: [minor, patch]
+    - package-ecosystem: docker
+      directories:
+          - /deploy/evolved
+          - /services/codegraph
+          - /services/memory
+          - /relay
+      schedule:
+          interval: weekly
+      open-pull-requests-limit: 3
+    - package-ecosystem: gradle
+      directory: /android
+      schedule:
+          interval: monthly
+      open-pull-requests-limit: 2
+# Memory's requirements.lock is a separately generated, complete environment.
+# Update requirements.txt and regenerate/test the lock together; a pip-only PR
+# would leave the deployed lock stale. The conditional Swift manifest likewise
+# needs a maintainer-reviewed update with the native conformance checks.

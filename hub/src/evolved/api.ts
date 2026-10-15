@@ -6,6 +6,7 @@ import { assertOrigin, authenticateEvolvedRequest, createAuthRoutes, parseBody, 
 import type { VaultClient } from './vault'
 import { createRunnerRoutes } from './runner'
 import { createSavedPromptRoutes } from './savedPrompts'
+import { browseWorkspaces } from './workspaces'
 
 const role = z.enum(['viewer', 'member', 'admin'])
 const profile = z.enum(['restricted', 'workspace', 'extended'])
@@ -74,9 +75,18 @@ export function createEvolvedRoutes(config: EvolvedRoutesConfig): Hono<EvolvedEn
         return c.json(store.issueInvitation(principal.user.id, c.req.param('id'), body.displayName, body.role), 201)
     })
     app.get('/projects', c => c.json({ projects: c.get('principal').accessibleProjects }))
+    app.get('/workspaces', c => {
+        const principal = c.get('principal'); requireHuman(principal)
+        if (!principal.user.isAdmin) throw new EvolvedError('workspace_admin_required', 'Only the installation administrator can browse workspaces.', 403)
+        const query = z.object({ path: z.string().max(4096).optional(), limit: z.coerce.number().int().min(1).max(100).default(50), offset: z.coerce.number().int().min(0).max(10_000).default(0) }).strict().safeParse(c.req.query())
+        if (!query.success) throw new EvolvedError('invalid_query', 'Invalid workspace browser parameters.')
+        const boundPaths = (store.db.prepare("SELECT root_path FROM evolved_projects WHERE root_path<>''").all() as Array<{ root_path: string }>).map(row => row.root_path)
+        return c.json(browseWorkspaces({ ...query.data, roots: config.allowedWorkspaceRoots ?? [], managedRoot: store.managedWorkspaceRoot, boundPaths }))
+    })
     app.post('/projects', async c => {
         const principal = c.get('principal'); requireHuman(principal)
         const body = await parseBody(c, z.object({ teamId: identifier, name, rootPath: z.string().max(4096).optional(), root: z.string().max(4096).optional() }).strict())
+        if (body.rootPath !== undefined && body.root !== undefined && body.rootPath !== body.root) throw new EvolvedError('invalid_workspace', 'Specify only one workspace path.')
         if (body.rootPath || body.root) {
             if (!principal.user.isAdmin) throw new EvolvedError('workspace_admin_required', 'Only the installation administrator can attach a workspace.', 403)
             requireFreshPasskey(c, store, principal)
@@ -122,6 +132,7 @@ export function createEvolvedRoutes(config: EvolvedRoutesConfig): Hono<EvolvedEn
             const available = store.db.prepare("SELECT 1 FROM evolved_team_members m LEFT JOIN evolved_project_roles r ON r.project_id=? AND r.user_id=m.user_id WHERE m.team_id=? AND COALESCE(r.role,m.role)='admin' LIMIT 1").get(project.id, project.teamId)
             if (!admins.length || !available) throw new EvolvedError('last_admin', 'Project must retain an administrator.', 409)
             store.db.prepare('UPDATE evolved_capabilities SET revoked_at=? WHERE project_id=? AND user_id=?').run(store.now(), project.id, body.userId)
+            store.db.prepare('UPDATE evolved_runner_leases SET revoked_at=COALESCE(revoked_at,?) WHERE project_id=? AND user_id=?').run(store.now(), project.id, body.userId)
             store.audit(principal.user.id, project.id, 'project.role_changed', body.userId)
         })()
         return c.json({ ok: true })
@@ -134,13 +145,14 @@ export function createEvolvedRoutes(config: EvolvedRoutesConfig): Hono<EvolvedEn
             const available = store.db.prepare("SELECT 1 FROM evolved_team_members m LEFT JOIN evolved_project_roles r ON r.project_id=? AND r.user_id=m.user_id WHERE m.team_id=? AND COALESCE(r.role,m.role)='admin' LIMIT 1").get(project.id, project.teamId)
             if (!available) throw new EvolvedError('last_admin', 'Project must retain an administrator.', 409)
             store.db.prepare('UPDATE evolved_capabilities SET revoked_at=? WHERE project_id=? AND user_id=?').run(store.now(), project.id, c.req.param('userId'))
+            store.db.prepare('UPDATE evolved_runner_leases SET revoked_at=COALESCE(revoked_at,?) WHERE project_id=? AND user_id=?').run(store.now(), project.id, c.req.param('userId'))
             store.audit(principal.user.id, project.id, 'project.role_reset', c.req.param('userId'))
         })()
         return c.json({ ok: true })
     })
     app.post('/projects/:id/capabilities', async c => {
         const principal = c.get('principal'); requireFreshPasskey(c, store, principal)
-        const body = await parseBody(c, z.object({ scopes: z.array(capabilityScope).min(1).max(8), actionIds: z.array(identifier).max(50).default([]), expiresInSeconds: z.number().int().min(30).max(900).default(900) }).strict())
+        const body = await parseBody(c, z.object({ scopes: z.array(capabilityScope).min(1).max(10), actionIds: z.array(identifier).max(50).default([]), expiresInSeconds: z.number().int().min(30).max(900).default(900) }).strict())
         return c.json(store.issueCapability(principal.user.id, c.req.param('id'), [...new Set(body.scopes)], [...new Set(body.actionIds)], body.expiresInSeconds), 201)
     })
     app.delete('/projects/:id/capabilities/:capabilityId', c => {

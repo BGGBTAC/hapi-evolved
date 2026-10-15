@@ -1,54 +1,75 @@
-name: Bug Report
-description: Report an issue that should be fixed
-labels:
-  - bug
+name: Bug report
+description: Report a reproducible problem in HAPI-eVolved.
+title: "[Bug]: "
 body:
   - type: markdown
     attributes:
       value: |
-        Thank you for submitting a bug report! It helps make HAPI better for everyone.
-
-        If you need help or support using HAPI, and are not reporting a bug, please post on [HAPI/discussions](https://github.com/tiann/hapi/discussions), where you can ask questions or engage with others on ideas for how to improve HAPI.
-
-        You are already an engineer who uses coding agents; you should know how to describe issues clearly. Issues that lack a clear description will be closed.
-
-        Please try to include as much information as possible.
-
+        This tracker is for **HAPI-eVolved**, the independent BGGBTAC/hapi-evolved fork.
+        Search existing issues first. For setup questions, use the Support request form.
+        **Suspected vulnerability? Stop here and read [the security policy](https://github.com/BGGBTAC/hapi-evolved/security/policy).**
+        Private reporting is available only when the repository is public and maintainers have enabled it; the policy explains the fallback.
+        Use synthetic data. Do not paste secrets, environment files, private conversations, database backups or access-bearing URLs.
   - type: input
     id: version
     attributes:
-      label: What version of HAPI is running?
-      description: Copy the output of `hapi --version`
+      label: Evolved version and source commit
+      description: Include the release/tag if known and `git rev-parse HEAD` from the checkout. A legacy CLI version alone does not identify Evolved.
+      placeholder: "Evolved 0.1.0, commit …; CLI/agent versions …"
     validations:
       required: true
-  - type: input
-    id: platform
+  - type: dropdown
+    id: deployment
     attributes:
-      label: What platform is your computer?
-      description: |
-        For MacOS and Linux: copy the output of `uname -mprs`
-        For Windows: copy the output of `"$([Environment]::OSVersion | ForEach-Object VersionString) $(if ([Environment]::Is64BitOperatingSystem) { "x64" } else { "x86" })"` in the PowerShell console
+      label: Deployment method
+      options:
+        - Repository Docker Compose stack
+        - Source checkout / local development
+        - Other (describe below)
+    validations:
+      required: true
   - type: textarea
-    id: actual
+    id: environment
     attributes:
-      label: What issue are you seeing?
-      description: Please include the full error messages and prompts with PII redacted. If possible, please provide text instead of a screenshot. 
+      label: Environment and affected component
+      description: OS/architecture, browser/version, relevant agent and service versions, and any deployment differences. Do not include hostnames, IP addresses or user identifiers unless necessary and safe to share.
+      placeholder: "Linux x86_64; browser …; Claude Code/Codex …; affected Hub/Web/runner/memory/codegraph …"
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
-      label: What steps can reproduce the bug?
-      description: Explain the bug and provide a code snippet that can reproduce it. Please include session id, token limit usage, context window usage if applicable.
+      label: Steps to reproduce
+      description: Give a minimal sequence using synthetic data. Include required setup and how often it occurs; say if you have not found a reliable reproduction.
+      placeholder: |
+        1. Create a test project …
+        2. …
+        3. Observe …
     validations:
       required: true
   - type: textarea
     id: expected
     attributes:
-      label: What is the expected behavior?
-      description: If possible, please provide text instead of a screenshot.
+      label: Expected behavior
+    validations:
+      required: true
   - type: textarea
-    id: notes
+    id: actual
     attributes:
-      label: Additional information
-      description: Is there anything else you think we should know?
+      label: Actual behavior and impact
+      description: Include the visible error and whether a workaround exists.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant redacted logs or screenshots
+      description: Optional short excerpts only. Review them manually; remove tokens, cookies, keys, personal data, private project paths and conversation content. Never attach complete databases or environment files.
+      render: text
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked this report and its attachments for secrets and private data, and it is not a public vulnerability disclosure.
+          required: true

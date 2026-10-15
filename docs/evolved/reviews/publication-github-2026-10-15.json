@@ -1,0 +1,298 @@
+{
+  "title": "Publication, managed workspaces and GitHub security review evidence",
+  "date": "2026-10-15",
+  "status": "locally_validated_publication_pending_operator_decision",
+  "notice": "These are historical model reviews of specific source snapshots, followed by human/agent verification and corrective changes. They are not an unconditional security certification or publication approval. Raw prompts/responses remain private; this public artifact intentionally omits operator topology, absolute personal paths, API/session identifiers, tokens and costs.",
+  "reviews": [
+    {
+      "stage": "Design consultation",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "inputSha256": "dc1bc8bf59ac72dc4acdb914f29106c4aab43109cd1ba0730d8f729ceb74cb9a",
+      "rawResponseSha256": "b9606c714c3aaa76a85f501d09def83255b08cd774cdd47e16377f095c051c95",
+      "historical": true
+    },
+    {
+      "stage": "Managed workspace implementation",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "inputSha256": "132ee6985d93a20bfe014e5f3b2973acf3ec2916117a09e201a31dfb3f059bc7",
+      "rawResponseSha256": "64237d4f2c76f3fdc81229d42ed4f8f45eb30944985ccdf9c50b5a3ee0810bb5",
+      "historical": true
+    },
+    {
+      "stage": "Git broker and workspace adversarial review",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "inputSha256": "6002b71180651bf848285bc0f845c6688442fc4be5a014f82ed093354f508895",
+      "rawResponseSha256": "ca02c8929d983e39cec582a5d4d9f1bea2c1d22de64efa1cbd556a93384413cf",
+      "historical": true
+    },
+    {
+      "stage": "Final corrective delta follow-up",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "inputSha256": "7df0627d3344b3a03f1d56660faba401b6dc48d14cc4249576e8f95cae5453b0",
+      "rawResponseSha256": "210219348e7b25de7b53c7078cfe3364359d66a7d69701d74bcb3b42697fca13",
+      "conclusion": "No remaining blocker or regression found in the supplied corrective deltas. Additional low-severity notes were independently checked below.",
+      "historical": true
+    }
+  ],
+  "findings": [
+    {
+      "id": "H1",
+      "status": "disproved_by_existing_code",
+      "summary": "Codegraph cross-project symlink concern was conditional on unseen code.",
+      "evidence": [
+        "services/codegraph/policy.mjs: sourcePath/sourceText compare the exact project root, use O_NOFOLLOW and verify the opened descriptor.",
+        "services/codegraph/policy.mjs: scanCodeFiles skips symlink entries.",
+        "services/codegraph/worker.mjs: synchronize copies checked source text into adapter-owned per-project mirrors; SDK never opens source workspaces.",
+        "services/codegraph/test/policy.test.mjs: sibling/escaping symlink regression."
+      ]
+    },
+    {
+      "id": "M1",
+      "status": "fixed",
+      "summary": "Git accepts only lease-derived capabilities; standalone capability endpoint no longer offers Git scopes. Original reviewer statement that ordinary members could mint capabilities was incorrect: issuance already required project admin.",
+      "evidence": [
+        "hub/src/evolved/store.ts: capability exposes leaseId only after current lease/ACL/profile validation.",
+        "hub/src/evolved/github.ts: authorize requires capability.leaseId.",
+        "hub/src/evolved/api.ts: generic capabilityScope excludes git:read/write.",
+        "hub/src/evolved/github.test.ts: standalone capability rejection; hub/tests/github.integration.test.ts uses an actual runner lease."
+      ]
+    },
+    {
+      "id": "M2",
+      "status": "fixed",
+      "summary": "Nested mounts are checked in both Hub and runner mount namespaces.",
+      "evidence": [
+        "hub/src/evolved/workspaces.ts: hasNestedWorkspaceMount/assertWorkspaceMountIsolation.",
+        "services/runner-proxy/supervisor.ts: workspaceMountsSafe before spawning.",
+        "hub/src/evolved/workspaces.test.ts and services/runner-proxy/supervisor.test.ts: nested/escaped/sibling mount snapshots.",
+        "deploy/evolved/runner.compose.yml explicitly requires rprivate; validate-runner-vm.mjs checks actual propagation and rejects shared/slave/missing values."
+      ]
+    },
+    {
+      "id": "M3",
+      "status": "verified_operator_boundary",
+      "summary": "Only the installation operator controls Docker host bind sources. Managed paths require the project UUID and identical container root; this is not remote proof against a malicious host administrator.",
+      "evidence": [
+        "services/runner-proxy/workspace.ts: validRunnerRoot.",
+        "deploy/evolved/check-runner.ts and check-runner.test.ts: strict prefix/UUID/profile checks.",
+        "services/runner-proxy/supervisor.ts: compares authority project/profile/root and local realpath."
+      ]
+    },
+    {
+      "id": "M4",
+      "status": "fixed",
+      "summary": "Upload slots are reserved before body buffering, unnecessary copies removed, Vault memory budget raised.",
+      "evidence": [
+        "hub/src/evolved/vaultServer.ts: maximum two admissions before readGitBody, released on EOF/error/cancel.",
+        "hub/src/evolved/github.ts: maximum four global transfers.",
+        "hub/src/evolved/vault.ts and githubBroker.ts: zero-copy Buffer views.",
+        "deploy/evolved/compose.yml: Vault memory 768 MiB.",
+        "hub/src/evolved/githubBroker.test.ts: concurrency and cancellation regressions."
+      ]
+    },
+    {
+      "id": "L1",
+      "status": "fixed",
+      "summary": "Hub checks broker status/MIME/content encoding and projects only safe response headers.",
+      "evidence": [
+        "hub/src/evolved/github.ts",
+        "hub/src/evolved/github.test.ts: malicious status/MIME and incidental credential-header regression."
+      ]
+    },
+    {
+      "id": "L2",
+      "status": "fixed",
+      "summary": "Repository grant generation derives from monotone connection revision, preventing revoke/regrant ABA.",
+      "evidence": [
+        "hub/src/evolved/githubBroker.ts: grant insertion/update generation.",
+        "hub/src/evolved/githubBroker.test.ts: revoke/regrant generation regression.",
+        "hub/src/evolved/githubBroker.test.ts: stale in-flight request after disconnect/connect/regrant fails even if the provider ignores cancellation; a new request succeeds."
+      ]
+    },
+    {
+      "id": "L3",
+      "status": "documented_provider_limitation",
+      "summary": "GitHub smart HTTP addresses repository names, not immutable IDs. Identity is checked immediately before transfer and redirects fail closed; delete/recreate between API identity check and Git request cannot be eliminated locally.",
+      "evidence": [
+        "hub/src/evolved/githubBroker.ts: repository identity recheck and redirect:error.",
+        "docs/evolved/GITHUB.md"
+      ]
+    },
+    {
+      "id": "L4",
+      "status": "accepted_in_flight_operation_boundary",
+      "summary": "An authorized management request can commit before a later access revocation. Its response is suppressed after revalidation, and Vault retains the operation audit. Cancel does not promise rollback of a remote Git push.",
+      "evidence": [
+        "hub/src/evolved/github.ts: dispatch authorization before/after vault.request.",
+        "hub/src/evolved/githubBroker.ts: audit and explicit inspect-refs-before-retry errors."
+      ]
+    },
+    {
+      "id": "L5",
+      "status": "fixed",
+      "summary": "Managed roots cannot overlap operator state or credential directories. The two dedicated project-workspaces/managed-workspaces state children remain supported.",
+      "evidence": [
+        "hub/src/evolved/workspaces.ts: assertManagedWorkspaceSeparation.",
+        "hub/src/evolved/runtime.ts: validates before and after canonical root creation.",
+        "hub/src/evolved/workspaces.test.ts: operator-state and credential overlap regression."
+      ]
+    },
+    {
+      "id": "L6",
+      "status": "documented_deployment_boundary",
+      "summary": "Hub, Codegraph and runner use the configured service UID for 0700 project access. Container mounts, not UID separation, prevent runner access to sibling projects and credential parents.",
+      "evidence": [
+        "deploy/evolved/compose.yml",
+        "deploy/evolved/runner.compose.yml",
+        "docs/evolved/DEPLOYMENT.md"
+      ]
+    },
+    {
+      "id": "L7",
+      "status": "verified_existing_and_strengthened",
+      "summary": "There is no account-disable/delete API. Missing users fail authentication. Passkey removal revokes capabilities, leases and other sessions while retaining the freshly verified current session; the final passkey cannot be removed. Recovery revokes all sessions/capabilities/leases. Project deletion marks deleting_at before purge and removes leases.",
+      "evidence": [
+        "hub/src/evolved/security.ts: DELETE /passkeys/:id.",
+        "hub/src/evolved/store.ts: getPrincipal/recover/listProjects.",
+        "hub/src/evolved/api.ts: DELETE /projects/:id."
+      ]
+    },
+    {
+      "id": "DIRECT-1",
+      "status": "fixed",
+      "summary": "Role/profile revocation permanently revokes leases, even if the original role/profile is subsequently restored.",
+      "evidence": [
+        "hub/src/evolved/store.ts: setMember/setProfile.",
+        "hub/src/evolved/api.ts: project role set/reset.",
+        "hub/src/evolved/security.test.ts: restore-profile/membership/override/reset regression."
+      ]
+    },
+    {
+      "id": "DIRECT-2",
+      "status": "fixed",
+      "summary": "Signed Vault admission expiry is enforced during upload and immediately before Git execution, without consuming the nonce twice.",
+      "evidence": [
+        "hub/src/evolved/vaultServer.ts: admissionDeadline and expiresAt recheck.",
+        "hub/src/evolved/githubBroker.test.ts: slow expired upload does not reach GitHub."
+      ]
+    },
+    {
+      "id": "UI-1",
+      "status": "fixed",
+      "summary": "Pending project creation is aborted when account or administrator role changes, preventing stale step-up replay under a new context. GitHub token forms already clear on submit and abort on context changes; credentials never enter mutation/query caches.",
+      "evidence": [
+        "web/src/evolved/ProjectsTeam.tsx",
+        "web/src/evolved/Github.tsx",
+        "web/src/evolved/operations.test.tsx"
+      ]
+    },
+    {
+      "id": "R1",
+      "status": "fixed_after_delta_review",
+      "summary": "Operator-state and credential locations now resolve existing symlinked parents before overlap comparison, including not-yet-created credential files.",
+      "evidence": [
+        "hub/src/evolved/workspaces.ts: canonicalLocation within assertManagedWorkspaceSeparation.",
+        "hub/src/evolved/workspaces.test.ts: state alias and credential-parent alias regressions;13 workspace tests passed."
+      ]
+    },
+    {
+      "id": "R2",
+      "status": "disproved_by_existing_code",
+      "summary": "Deleting a project marks deleting_at before the Vault call, causing Hub authorization polls to fail. Vault purge calls GithubBroker.purge, which synchronously aborts all active project transfers before removing credentials/grants. No additional group mechanism required.",
+      "evidence": [
+        "hub/src/evolved/api.ts: DELETE /projects/:id.",
+        "hub/src/evolved/github.ts: one-second authorize interval.",
+        "hub/src/evolved/vault.ts: purgeProject invokes github.purge.",
+        "hub/src/evolved/githubBroker.ts: purge invokes abort(projectId)."
+      ]
+    },
+    {
+      "id": "R3",
+      "status": "fixed_after_delta_review",
+      "summary": "Only failures before Git admission are reclassified as an expired capability. A push failing after admission preserves its transport error and inspect-remote-refs guidance.",
+      "evidence": [
+        "hub/src/evolved/vaultServer.ts: admitted flag gates expiry classification.",
+        "hub/src/evolved/githubBroker.test.ts: push failure after the 31-second admission deadline remains 502, not 401."
+      ]
+    },
+    {
+      "id": "R4",
+      "status": "fixed_after_delta_review",
+      "summary": "A FIFO with a source extension cannot block the Codegraph worker during open. O_NONBLOCK is combined with O_NOFOLLOW and the existing descriptor isFile check.",
+      "evidence": [
+        "services/codegraph/policy.mjs: sourceText.",
+        "services/codegraph/test/policy.test.mjs: real Linux FIFO in an isolated subprocess with timeout;3 policy tests passed."
+      ]
+    },
+    {
+      "id": "R5",
+      "status": "documented_operator_boundary",
+      "summary": "Native non-container Vault operation requires a separate service account and private state outside Hub/Runner/workspace directories. Compose uses separate credential/state mounts.",
+      "evidence": [
+        "docs/evolved/DEPLOYMENT.md: Vault und Ressourcenaktionen."
+      ]
+    }
+  ],
+  "credentialBoundary": "The human-entered PAT necessarily exists transiently in the browser submit and the authenticated TLS request through Hub to Vault. Persistent encrypted storage and authenticated GitHub consumption are Vault-only. Agent/runner clients receive neither PAT nor the sidecar lease/short capability. No operator gh credential was read or copied.",
+  "workspaceBoundary": {
+    "automatic": "Every new project with omitted/empty rootPath receives a server-generated UUID directory; current projects are not silently migrated.",
+    "manual": "Installation administrator plus fresh passkey, explicit allowed roots, canonical paths, protected-directory filtering, no duplicate/parent/child/bind-alias binding.",
+    "rollback": "Only empty newly allocated directory with original inode; never recursive removal. Project deletion retains source files.",
+    "upgrade": "Create the managed root with the configured UID and mode0700 before Compose starts; Docker-created root-owned0755 bind directories are rejected. Missing/symlinked configured roots deliberately fail closed."
+  },
+  "secretAudit": {
+    "snapshotCommit": "fe02a5cb",
+    "scanner": "Gitleaks8.30.1",
+    "officialScannerArchiveSha256": "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb",
+    "historyCommits": 1546,
+    "trackedFiles": 3150,
+    "historyCandidates": 6,
+    "trackedCandidates": 5,
+    "confirmedCredentials": 0,
+    "disposition": "All six candidates were false positives: two SHA256 checksums of a literal attachment fixture, one local E2E context token, one synthetic iOS route-test token, two ordinary Cursor documentation paragraphs. No credential values are reproduced.",
+    "limitations": "Frozen pre-change tracked snapshot and locally available refs only. Scanner absence is not proof; remote-only refs/actions artifacts, images and unpublished refs require a release-time check. Custom privacy scan examined13040 historical text blobs; eight large binary archives were excluded from that text scan. No history rewrite occurred. Tip sanitization does not erase historical operator paths."
+  },
+  "validation": {
+    "targetedAfterCorrections": "38 tests passed across workspace, security, Git routes and actual native Git integration; Hub typecheck passed.",
+    "deployment": "21 preflight/VM-validator tests passed.",
+    "reportedByCoordinator": {
+      "fullSuitePassed": 9038,
+      "skipped": 15,
+      "typechecks": 5,
+      "docsBuild": "passed",
+      "browserCheck": "9 checks passed",
+      "codegraphTests": 4,
+      "memoryTests": 9,
+      "additionalVmGuardTests": 11,
+      "publicationPolicyTests": 17,
+      "afterFinalSmallFixes": {
+        "hubPassed": 1677,
+        "hubSkipped": 3,
+        "proxyPassed": 19,
+        "deploymentPassed": 22,
+        "codegraphPassed": 4,
+        "hubProxyTypechecks": "passed",
+        "documentationBuild": "passed"
+      }
+    },
+    "scope": "Local isolated synthetic fixtures; no live GitHub credentials or infrastructure mutation in these tests."
+  },
+  "publicationGate": "Repository visibility remains unchanged. Preserve original AGPL and MIT-derived CLI/tool notices. Review historical personal metadata and release artifact licenses before any future public release.",
+  "postReviewChecks": {
+    "workspaceRegressionTestsPassed": 13,
+    "codegraphPolicyTestsPassed": 3,
+    "hubTypecheck": "passed",
+    "diffWhitespaceCheck": "passed",
+    "additionalModelReview": "None required for the final small canonical-path and nonblocking-file-open fixes; reviewed locally and regression-tested."
+  },
+  "clarifications": [
+    "Passkey removal retains the current freshly verified session and revokes other sessions; a model statement saying all sessions was overly broad. Recovery revokes all sessions.",
+    "Disconnect increments connection generation/revision, and stillGranted verifies the captured connection generation as well as grant generation.",
+    "Compose project bind propagation is explicitly rprivate; preflight allows only ro/rw mode values and the VM validator checks the actual mount propagation.",
+    "No publication visibility change, credential rotation, history rewrite, or infrastructure change is performed by this review artifact."
+  ]
+}

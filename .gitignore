@@ -85,3 +85,16 @@ android/app/google-services.json
 **/.codegraph-evolved-*/
 **/__pycache__/
 **/*.pyc
+
+# Private operator/runner files may be created beside a checkout accidentally.
+**/bootstrap.token
+**/service.token
+**/compose.env
+**/runner.env
+**/master.key
+**/vault-signing.pem
+**/provider.key
+**/neo4j.password
+**/*.db
+**/*.db-wal
+**/*.db-shm

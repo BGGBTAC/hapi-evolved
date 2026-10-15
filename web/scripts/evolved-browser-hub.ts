@@ -23,9 +23,17 @@ document.getElementById('result').textContent=JSON.stringify(result)})();
 writeFileSync(join(workspace, 'dist/asset.txt'), 'sandbox-asset-ok')
 const signingKeyFile=join(tmp,'hub-signing.pem')
 const {publicKey}=createVaultSigningKey(signingKeyFile)
-const vault=new EvolvedVault({dbPath:join(tmp,'vault.db'),masterKeyFile:join(tmp,'master.key')})
+// Only the external provider is synthetic; browser -> Hub -> signed Vault -> broker is real.
+const githubFetcher = (async (input, init) => {
+    const url = String(input)
+    if (new Headers(init?.headers).get('authorization') !== 'Bearer github_pat_synthetic_browser_credential_only') return new Response('denied', { status: 401 })
+    if (url === 'https://api.github.com/user') return Response.json({ id: 42, login: 'synthetic-github-account' })
+    if (url === 'https://api.github.com/repos/synthetic-owner/browser-repo') return Response.json({ id: 123, full_name: 'synthetic-owner/browser-repo' })
+    return new Response('Synthetic fixture endpoint unavailable', { status: 404 })
+}) as typeof fetch
+const vault=new EvolvedVault({dbPath:join(tmp,'vault.db'),masterKeyFile:join(tmp,'master.key'),githubFetcher})
 const vaultServer=Bun.serve({hostname:'127.0.0.1',port:Number(vaultPort),fetch:createVaultServer({vault,hubPublicKey:publicKey}).fetch})
-Object.assign(process.env,{HAPI_HOME:tmp,DB_PATH:join(tmp,'hapi.db'),HAPI_EVOLVED_ENABLED:'1',HAPI_LISTEN_HOST:'127.0.0.1',HAPI_LISTEN_PORT:hubPort,HAPI_PUBLIC_URL:origin,EVOLVED_ORIGIN:origin,EVOLVED_CODE_ROOTS:JSON.stringify([workspace]),EVOLVED_DB_PATH:join(tmp,'evolved.db'),EVOLVED_BOOTSTRAP_FILE:join(tmp,'bootstrap.token'),EVOLVED_VAULT_URL:`http://127.0.0.1:${vaultPort}`,EVOLVED_VAULT_SIGNING_KEY_FILE:signingKeyFile,CLI_API_TOKEN:randomBytes(32).toString('base64url'),HAPI_IOS_PUSH:'off',HAPI_ANDROID_PUSH:'off',TELEGRAM_BOT_TOKEN:'',SERVERCHAN_SENDKEY:'',EVOLVED_MEMORY_URL:'',EVOLVED_CODEGRAPH_URL:'',EVOLVED_SERVICE_TOKEN_FILE:''})
+Object.assign(process.env,{HAPI_HOME:tmp,DB_PATH:join(tmp,'hapi.db'),HAPI_EVOLVED_ENABLED:'1',HAPI_LISTEN_HOST:'127.0.0.1',HAPI_LISTEN_PORT:hubPort,HAPI_PUBLIC_URL:origin,EVOLVED_ORIGIN:origin,EVOLVED_CODE_ROOTS:JSON.stringify([workspace]),EVOLVED_MANAGED_WORKSPACE_ROOT:join(tmp,'managed-workspaces'),EVOLVED_DB_PATH:join(tmp,'evolved.db'),EVOLVED_BOOTSTRAP_FILE:join(tmp,'bootstrap.token'),EVOLVED_VAULT_URL:`http://127.0.0.1:${vaultPort}`,EVOLVED_VAULT_SIGNING_KEY_FILE:signingKeyFile,CLI_API_TOKEN:randomBytes(32).toString('base64url'),HAPI_IOS_PUSH:'off',HAPI_ANDROID_PUSH:'off',TELEGRAM_BOT_TOKEN:'',SERVERCHAN_SENDKEY:'',EVOLVED_MEMORY_URL:'',EVOLVED_CODEGRAPH_URL:'',EVOLVED_SERVICE_TOKEN_FILE:''})
 const sideKey = join(tmp, 'side-provider.key')
 writeFileSync(sideKey, 'synthetic-side-provider-key', { mode: 0o600 })
 let sideRequests = 0

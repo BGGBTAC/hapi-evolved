@@ -22,6 +22,13 @@ function fixture() {
     return { directory, home, workspace, lease, uid, config }
 }
 describe('runner operator preflight', () => {
+    test('managed workspace mounts require the project UUID as their directory', () => {
+        const { config } = fixture()
+        expect(checkRunnerConfig({ ...config, EVOLVED_WORKSPACE_PREFIX: '/managed-workspaces', EVOLVED_PROJECT_DIRECTORY: config.EVOLVED_PROJECT_ID }).profile).toBe('restricted')
+        for (const prefix of ['/managed-workspaces', '/arbitrary', '/workspaces/../managed-workspaces']) {
+            expect(() => checkRunnerConfig({ ...config, EVOLVED_WORKSPACE_PREFIX: prefix })).toThrow()
+        }
+    })
     test('accepts a private, separated configuration and explicit writable workspace profile', () => {
         const { config } = fixture()
         expect(checkRunnerConfig(config).profile).toBe('restricted')

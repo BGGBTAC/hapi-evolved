@@ -29,6 +29,8 @@ jobs:
                 working-directory: android
         steps:
             - uses: actions/checkout@v4
+              with:
+                  persist-credentials: false
             - uses: actions/setup-java@v4
               with:
                   distribution: temurin
@@ -49,6 +51,8 @@ jobs:
                 api-level: [29, 36]
         steps:
             - uses: actions/checkout@v4
+              with:
+                  persist-credentials: false
             - uses: actions/setup-java@v4
               with:
                   distribution: temurin

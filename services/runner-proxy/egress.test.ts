@@ -1,5 +1,9 @@
 import { expect, test } from 'bun:test'
 import { connectTarget, publicAddress } from './egress'
+test('GitHub cannot bypass the project broker through provider egress', () => {
+    const hosts = new Set(['github.com', 'api.github.com', 'ssh.github.com'])
+    for (const host of hosts) expect(connectTarget(`${host}:443`, hosts)).toBeNull()
+})
 test('model egress admits only exact configured TLS hosts and public destinations', () => {
     const allow = new Set(['api.openai.com'])
     expect(connectTarget('api.openai.com:443', allow)).toBe('api.openai.com')

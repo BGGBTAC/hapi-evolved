@@ -6,7 +6,11 @@ RUN npm install -g @anthropic-ai/claude-code@2.1.285 @openai/codex@0.157.0 && np
 COPY --from=bun-runtime /usr/local/bin/bun /usr/local/bin/bun
 COPY --from=source /app /app
 COPY services/runner-proxy /app/services/runner-proxy
-RUN mkdir -p /runner /workspaces && chown node:node /runner /workspaces
+RUN mkdir -p /runner /workspaces /managed-workspaces && chown node:node /runner /workspaces /managed-workspaces
+# Native Git transports use the project-scoped credential broker. No GitHub
+# credential, helper or direct GitHub egress is installed inside this image.
+RUN git config --system url.http://runner-proxy:3010/evolved-git/github.com/.insteadOf https://github.com/ \
+    && git config --system http.followRedirects false
 USER node
 ENV HAPI_HOME=/runner/hapi CLAUDE_CONFIG_DIR=/runner/claude CODEX_HOME=/runner/codex
 WORKDIR /runner

@@ -21,15 +21,29 @@ ausschließlich `127.0.0.1:3006`. Es richtet weder DNS noch öffentliche Freigab
 
 ```sh
 docker compose --env-file "$HOME/.local/share/hapi-evolved/compose.env" \
+  -f deploy/evolved/compose.yml build hub
+docker compose --env-file "$HOME/.local/share/hapi-evolved/compose.env" \
   -f deploy/evolved/compose.yml up -d --build
 ```
 
 Im Browser die konfigurierte Adresse öffnen. Den einmaligen Einrichtungscode aus der privaten
 Betreiberdatei `hub/bootstrap.token` lokal in das Formular übernehmen; ihn nicht in Chat, Logs
 oder Tickets kopieren. Passkey registrieren, Recovery-Codes offline sichern, Team und Projekt
-anlegen. Projektpfade liegen im Container unter `/workspaces/<verzeichnis>`; entsprechende
-Quelldateien liegen auf dem Host unter `<EVOLVED_STATE_DIR>/workspaces/<verzeichnis>`.
-Hub und Codegraph bekommen diese Quellen schreibgeschützt. Codegraph hält seinen eigenen
+anlegen. Neue Projekte bekommen automatisch einen eigenen Ordner unter
+`/managed-workspaces/<Projekt-UUID>`; auf dem Host liegt er unter
+`<EVOLVED_STATE_DIR>/managed-workspaces/<Projekt-UUID>`. Nur dieser getrennte Bereich
+ist für den Hub beschreibbar, damit er Verzeichnisse anlegen kann. Codegraph liest
+ihn weiterhin ausschließlich. `EVOLVED_MANAGED_WORKSPACE_ROOT` legt den verwalteten
+Root fest; bei nativen Installationen ist der Standard `project-workspaces` im
+Hub-Datenverzeichnis. Verzeichnisse müssen privat sein und dem Hub-Benutzer gehören.
+Hub, Codegraph und Runner verwenden für diese privaten Ordner dieselbe konfigurierte
+UID/GID; ein abweichender Runnerbenutzer kann die Ordner mit Modus 0700 nicht öffnen.
+
+Manuell verknüpfte Quellen liegen im Compose-Container unter `/workspaces/<verzeichnis>`,
+auf dem Host unter `<EVOLVED_STATE_DIR>/workspaces/<verzeichnis>`. Hub und Codegraph
+bekommen diesen bestehenden Bereich weiterhin schreibgeschützt. Manuelles Verknüpfen
+verlangt Systemadminrechte und einen frischen Passkey; überlappende Projektpfade sind
+gesperrt. Projektlöschung entfernt keine Quellverzeichnisse. Codegraph hält seinen eigenen
 Quellenspiegel und Index im privaten Dienstverzeichnis, außerhalb der Agent-Workspaces.
 
 Wird die erstmalige Registrierung unterbrochen, lässt sie sich innerhalb von zehn Minuten im
@@ -47,6 +61,12 @@ Der eigene Vault-Prozess speichert AES-256-GCM-verschlüsselte Werte und pro Pro
 Schlüssel. `credentials/vault/master.key` bleibt ausschließlich dort eingebunden. Der Hub signiert
 Anfragen mit seinem getrennten Ed25519-Schlüssel. Browser können Werte anlegen/ersetzen/löschen;
 kein Endpunkt gibt gespeicherte Klartextwerte zurück. Der Browser muss dafür frisch authentisiert sein.
+
+Bei nativem Betrieb ohne Container braucht der Vault einen eigenen Dienstbenutzer und ein
+privates Zustandsverzeichnis außerhalb aller manuellen und verwalteten Projektordner.
+Vault-Datenbank und Masterkey dürfen weder im Hub-Zustandsverzeichnis noch in einem
+Runner-Home liegen. Der Hub erhält nur seinen Signaturschlüssel, nicht den Vault-Masterkey.
+Die Compose-Installation stellt diese Dateigrenze durch getrennte Mounts her.
 
 Ressourcenaktionen legt der Betreiber in `credentials/vault/actions.json` fest, beispielsweise:
 
@@ -82,12 +102,12 @@ Graphiti und Neo4j bilden den zusätzlichen Wissensgraphen. Der Wissensdienst bl
 Der Betreiber hinterlegt einen eigenen Provider-Key in `credentials/memory/provider.key`, setzt
 die Modell-/Embeddingnamen und deren tatsächlich gültige Preise in `compose.env` und startet den
 Memory-Dienst neu. Unterstützt wird zunächst der OpenAI-Endpunkt. Alle Variablen und Kostenregeln
-stehen in [services/memory/README.md](../../services/memory/README.md).
+stehen in [services/memory/README.md](https://github.com/BGGBTAC/hapi-evolved/blob/main/services/memory/README.md).
 Ein menschlicher Projektadmin aktiviert anschließend Cloudverarbeitung und Projektbudget im Browser.
 Ohne diese Freigabe entstehen keine Modellaufrufe. Preise müssen bei Anbieteränderungen gepflegt werden.
 
 Codegraph benötigt keinen Cloudanbieter. Er indexiert erlaubte Quelldateien automatisch und gleicht
-Änderungen alle drei Sekunden ab. [Dienstkonfiguration](../../services/codegraph/README.md).
+Änderungen alle drei Sekunden ab. [Dienstkonfiguration](https://github.com/BGGBTAC/hapi-evolved/blob/main/services/codegraph/README.md).
 Dateilöschung und Rechteentzug werden vor Memory-Ergebnissen erneut geprüft. Löschung markiert alte
 Graphgenerationen sofort als unzugänglich; die physische Bereinigung wird dauerhaft nachgeholt.
 
@@ -168,6 +188,31 @@ Metadaten, statt private Dateien pauschal zu löschen.
 
 MCP-Werkzeuge für Codegraph, Memory und Ressourcen werden in Claude/Codex automatisch ergänzt.
 Im Runner ist auch `bun /app/cli/src/index.ts evolved --help` verfügbar.
+
+Für automatisch verwaltete Projekte in `runner.env` zusätzlich
+`EVOLVED_WORKSPACE_PREFIX=/managed-workspaces` setzen und als
+`EVOLVED_PROJECT_DIRECTORY` exakt die Projekt-UUID verwenden. Der resultierende
+Containerpfad muss dem im Browser angezeigten Projektpfad entsprechen, beispielsweise
+`/managed-workspaces/12345678-1234-4234-8234-123456789abc`. Den entsprechenden privaten
+Hostpfad als `EVOLVED_RUNNER_WORKSPACE` einsetzen; der Runner darf nicht unter einem
+abweichenden Alias arbeiten. Für bisherige manuelle Projekte bleibt der Standard
+`/workspaces/<EVOLVED_PROJECT_DIRECTORY>` erhalten. Die Vorprüfung lehnt falsche Pfade ab.
+
+Die [GitHub-Anbindung](GITHUB.md) ist in den Runner integriert. Neue Leases enthalten
+standardmäßig `git:read`, schreibfähige Profile zusätzlich `git:write`; die konkrete
+Repositoryfreigabe erfolgt separat durch einen Projektadministrator. Bereits ausgegebene
+Leases erhalten keine zusätzlichen Rechte: bei Bedarf widerrufen und neu erstellen.
+Profil- und Rollenänderungen widerrufen die alten Leases dauerhaft.
+
+Beim Upgrade auf automatische Workspaces den Initialisierer erneut als ursprünglicher
+Betreiberbenutzer ausführen; bestehende Schlüssel bleiben erhalten. Er legt den neuen
+privaten Workspacebereich an. Anschließend Haupt- und Runnerimages aus demselben Commit
+neu bauen und die zugehörigen Compose-Dateien verwenden. Bestehende Projektpfade und
+Benutzerdaten nicht umschreiben. Die neue Funktion erzeugt Verzeichnisse für neue Projekte.
+Bei nativer Installation zusätzlich den tatsächlichen verwalteten Root in die
+`EVOLVED_CODE_ROOTS`-Liste des Codegraphdiensts aufnehmen; Compose enthält bereits
+beide Pfade. Fehlende, unzureichend private oder über Symlinks konfigurierte
+Workspace-Roots führen zu einem Startfehler, statt die Pfadgrenze aufzuweichen.
 
 ### Isolierte VM-Abnahme ohne Provideranmeldung
 

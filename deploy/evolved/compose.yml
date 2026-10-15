@@ -24,6 +24,7 @@ services:
       HAPI_PUBLIC_URL: "${EVOLVED_ORIGIN:?Set the private HTTPS origin}"
       EVOLVED_ORIGIN: "${EVOLVED_ORIGIN}"
       EVOLVED_CODE_ROOTS: '["/workspaces"]'
+      EVOLVED_MANAGED_WORKSPACE_ROOT: /managed-workspaces
       EVOLVED_VAULT_URL: http://vault:3212
       EVOLVED_VAULT_SIGNING_KEY_FILE: /credentials/vault-signing.pem
       EVOLVED_SERVICE_TOKEN_FILE: /credentials/service.token
@@ -34,6 +35,7 @@ services:
       - ${EVOLVED_STATE_DIR:?Run deploy/evolved/init.ts}/hub:/data
       - ${EVOLVED_STATE_DIR}/credentials/hub:/credentials:ro
       - ${EVOLVED_STATE_DIR}/workspaces:/workspaces:ro
+      - ${EVOLVED_STATE_DIR}/managed-workspaces:/managed-workspaces
     networks: [backend, frontend]
     depends_on: [vault, codegraph, memory]
     mem_limit: 2g
@@ -55,19 +57,20 @@ services:
       - ${EVOLVED_STATE_DIR}/vault:/data
       - ${EVOLVED_STATE_DIR}/credentials/vault:/credentials:ro
     networks: [backend, broker-egress]
-    mem_limit: 256m
+    mem_limit: 768m
   codegraph:
     <<: *runtime
     build: { context: ../.., dockerfile: services/codegraph/Dockerfile }
     image: hapi-evolved-codegraph:0.1.0
     environment:
       EVOLVED_CODEGRAPH_HOST: 0.0.0.0
-      EVOLVED_CODE_ROOTS: '["/workspaces"]'
+      EVOLVED_CODE_ROOTS: '["/workspaces","/managed-workspaces"]'
       EVOLVED_SERVICE_TOKEN_FILE: /credentials/service.token
       EVOLVED_CODEGRAPH_MAX_PROJECTS: "4"
       EVOLVED_CODEGRAPH_STATE_DIR: /data
     volumes:
       - ${EVOLVED_STATE_DIR}/workspaces:/workspaces:ro
+      - ${EVOLVED_STATE_DIR}/managed-workspaces:/managed-workspaces:ro
       - ${EVOLVED_STATE_DIR}/codegraph:/data
       - ${EVOLVED_STATE_DIR}/credentials/codegraph:/credentials:ro
     networks: [backend]

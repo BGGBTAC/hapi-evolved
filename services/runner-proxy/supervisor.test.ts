@@ -1,5 +1,20 @@
 import { expect, it } from 'bun:test'
-import { validateAuthority, workspaceReadOnly, droppedPrivileges } from './supervisor'
+import { validRunnerRoot } from './workspace'
+import { validateAuthority, workspaceReadOnly, workspaceMountsSafe, droppedPrivileges } from './supervisor'
+it('rejects nested mounts visible only in the runner namespace', () => {
+    const root = '/workspaces/project', own = '1 0 1:0 / / ro - overlay overlay ro\n2 1 1:1 / /workspaces/project rw - ext4 disk rw'
+    expect(workspaceMountsSafe(root, own)).toBe(true)
+    expect(workspaceMountsSafe(root, `${own}\n3 2 1:2 / /workspaces/project/secrets ro - ext4 other ro`)).toBe(false)
+    expect(workspaceMountsSafe(root, `${own}\n3 2 1:2 / /workspaces/project/escaped\\040folder ro - ext4 other ro`)).toBe(false)
+    expect(workspaceMountsSafe(root, `${own}\n3 2 1:2 / /workspaces/project-other ro - ext4 other ro`)).toBe(true)
+})
+it('binds managed mounts to the exact project UUID and preserves explicit workspace mounts', () => {
+    const id = '86bd0f72-511d-4ad4-9464-e45bc1c45917'
+    expect(validRunnerRoot(`/managed-workspaces/${id}`, id)).toBe(true)
+    expect(validRunnerRoot('/workspaces/project-1', id)).toBe(true)
+    for (const root of ['/managed-workspaces/other', '/managed-workspaces', '/workspaces/a/b', '/workspaces/../runner', '/runner']) expect(validRunnerRoot(root, id)).toBe(false)
+    expect(validRunnerRoot(`/managed-workspaces/${id}`, 'different-project')).toBe(false)
+})
 it('requires current project, profile, root and an unexpired lease', () => {
     const expected = { projectId: 'p', profile: 'workspace', rootPath: '/workspaces/p' }
     expect(validateAuthority({ ...expected, expiresAt: 2000 }, expected, 1000)).toBe(true)

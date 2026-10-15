@@ -1,13 +1,16 @@
 import { Database } from 'bun:sqlite'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
-import { closeSync, constants, existsSync, fstatSync, mkdirSync, openSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, isAbsolute, relative } from 'node:path'
+import { closeSync, constants, fstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmdirSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
+import { allocateWorkspace, assertWorkspaceMountIsolation, existingWorkspace, openManagedWorkspaceRoot, workspaceBindingsOverlap } from './workspaces'
+export { canonicalWorkspace } from './workspaces'
 
 export type ProjectRole = 'viewer' | 'member' | 'admin'
 export type AgentProfile = 'restricted' | 'workspace' | 'extended'
 export type EvolvedUser = { id: string; displayName: string; isAdmin: boolean }
 export type EvolvedProject = { id: string; teamId: string; name: string; rootPath: string; root: string; namespace: string; profile: AgentProfile; role: ProjectRole }
-export type EvolvedPrincipal = { user: EvolvedUser; accessibleProjects: EvolvedProject[]; capability?: { id: string; projectId: string; scopes: string[]; actionIds: string[]; expiresAt: number } }
+export type EvolvedPrincipal = { user: EvolvedUser; accessibleProjects: EvolvedProject[]; capability?: { id: string; projectId: string; scopes: string[]; actionIds: string[]; expiresAt: number; leaseId?: string } }
 export class EvolvedError extends Error {
     constructor(public code: string, message: string, public status = 400) { super(message); this.name = 'EvolvedError' }
 }
@@ -43,9 +46,13 @@ export type PasskeyRow = { id: string; user_id: string; public_key: Uint8Array; 
 export class EvolvedStore {
     readonly db: Database
     readonly bootstrapFile?: string
-    constructor(dbPath: string, options: { bootstrapFile?: string; now?: () => number } = {}) {
+    readonly managedWorkspaceRoot: string
+    private readonly ephemeralWorkspaces: string[] | null
+    constructor(dbPath: string, options: { bootstrapFile?: string; now?: () => number; managedWorkspaceRoot?: string } = {}) {
         this.now = options.now ?? Date.now
         this.bootstrapFile = options.bootstrapFile
+        this.ephemeralWorkspaces = dbPath === ':memory:' && !options.managedWorkspaceRoot ? [] : null
+        this.managedWorkspaceRoot = options.managedWorkspaceRoot ?? (dbPath === ':memory:' ? mkdtempSync(join(tmpdir(), 'evolved-workspaces-')) : join(dirname(resolve(dbPath)), 'project-workspaces'))
         if (dbPath !== ':memory:') {
             mkdirSync(dirname(dbPath), { recursive: true, mode: 0o700 })
             const fd = openSync(dbPath, constants.O_RDWR | constants.O_CREAT | constants.O_NOFOLLOW, 0o600)
@@ -77,7 +84,13 @@ export class EvolvedStore {
         if (options.bootstrapFile && !this.initialized()) this.ensureBootstrap(options.bootstrapFile)
     }
     readonly now: () => number
-    close(): void { this.db.close() }
+    close(): void {
+        this.db.close()
+        // In-memory stores have no persistent project records. Remove only their empty test folders.
+        if (this.ephemeralWorkspaces) {
+            for (const path of [...this.ephemeralWorkspaces, this.managedWorkspaceRoot]) { try { rmdirSync(path) } catch { /* Never remove contents. */ } }
+        }
+    }
     initialized(): boolean { return !!this.db.prepare('SELECT 1 FROM evolved_users LIMIT 1').get() }
     private ensureBootstrap(path: string): void {
         const raw = privateFile(path, randomToken()).toString('utf8').trim()
@@ -151,6 +164,7 @@ export class EvolvedStore {
                 WHERE m.team_id=p.team_id AND COALESCE(r.role,m.role)='admin') LIMIT 1`).get(teamId)
             if (orphan) throw new EvolvedError('last_admin', 'Every project must retain an administrator.', 409)
             this.db.prepare('UPDATE evolved_capabilities SET revoked_at=? WHERE user_id=? AND project_id IN (SELECT id FROM evolved_projects WHERE team_id=?)').run(this.now(), userId, teamId)
+            this.db.prepare('UPDATE evolved_runner_leases SET revoked_at=COALESCE(revoked_at,?) WHERE user_id=? AND project_id IN (SELECT id FROM evolved_projects WHERE team_id=?)').run(this.now(), userId, teamId)
             this.audit(actor, null, role === null ? 'member.removed' : 'member.updated', userId)
         })()
     }
@@ -158,15 +172,37 @@ export class EvolvedStore {
         this.requireTeam(userId, teamId, 'admin')
         if (rootPath && !this.user(userId)?.isAdmin) throw new EvolvedError('workspace_admin_required', 'Only the installation administrator can attach a workspace.', 403)
         const id = randomUUID()
-        this.db.prepare('INSERT INTO evolved_projects(id,team_id,name,root_path,created_at) VALUES(?,?,?,?,?)').run(id, teamId, name, rootPath, this.now())
-        this.audit(userId, id, 'project.created', id)
-        return this.requireProject(userId, id)
+        const managed = rootPath ? null : openManagedWorkspaceRoot(this.managedWorkspaceRoot)
+        let allocated: ReturnType<typeof allocateWorkspace> | undefined
+        try {
+            return this.db.transaction(() => {
+                this.requireTeam(userId, teamId, 'admin')
+                if (rootPath) {
+                    rootPath = existingWorkspace(rootPath)
+                    assertWorkspaceMountIsolation(rootPath)
+                    if (workspaceBindingsOverlap(rootPath, resolve(this.managedWorkspaceRoot))) throw new EvolvedError('workspace_conflict', 'Managed project directories cannot be attached manually.', 409)
+                } else {
+                    allocated = allocateWorkspace(managed!, id)
+                    rootPath = allocated.path
+                }
+                // Include deleting projects until their purge commits. Serialize competing binds.
+                const existing = this.db.prepare("SELECT root_path FROM evolved_projects WHERE root_path<>''").all() as Array<{ root_path: string }>
+                if (existing.some(row => workspaceBindingsOverlap(rootPath, row.root_path))) throw new EvolvedError('workspace_conflict', 'Workspace overlaps an existing project.', 409)
+                this.db.prepare('INSERT INTO evolved_projects(id,team_id,name,root_path,created_at) VALUES(?,?,?,?,?)').run(id, teamId, name, rootPath, this.now())
+                this.audit(userId, id, 'project.created', id)
+                const project = this.requireProject(userId, id)
+                if (allocated) this.ephemeralWorkspaces?.push(allocated.path)
+                return project
+            }).immediate()
+        } catch (error) { allocated?.rollback(); throw error }
+        finally { if (managed) closeSync(managed.fd) }
     }
     setProfile(userId: string, projectId: string, profile: AgentProfile): EvolvedProject {
         this.requireProject(userId, projectId, 'admin')
         this.db.transaction(() => {
             this.db.prepare('UPDATE evolved_projects SET profile=? WHERE id=?').run(profile, projectId)
             this.db.prepare('UPDATE evolved_capabilities SET revoked_at=? WHERE project_id=?').run(this.now(), projectId)
+            this.db.prepare('UPDATE evolved_runner_leases SET revoked_at=COALESCE(revoked_at,?) WHERE project_id=?').run(this.now(), projectId)
             this.audit(userId, projectId, 'profile.changed', projectId)
         })()
         return this.requireProject(userId, projectId)
@@ -288,18 +324,6 @@ export class EvolvedStore {
             const lease = this.db.prepare('SELECT 1 FROM evolved_runner_leases WHERE id=? AND user_id=? AND project_id=? AND profile=? AND revoked_at IS NULL AND expires_at>?').get(row.lease_id, row.user_id, row.project_id, row.profile, this.now())
             if (!lease || project.role !== 'admin') return null
         }
-        return { user: principal.user, accessibleProjects: [project], capability: { id: row.id, projectId: row.project_id, scopes: JSON.parse(row.scopes), actionIds: JSON.parse(row.action_ids), expiresAt: row.expires_at } }
+        return { user: principal.user, accessibleProjects: [project], capability: { id: row.id, projectId: row.project_id, scopes: JSON.parse(row.scopes), actionIds: JSON.parse(row.action_ids), expiresAt: row.expires_at, ...(row.lease_id ? { leaseId: row.lease_id } : {}) } }
     }
-}
-
-export function canonicalWorkspace(path: string, allowedRoots: string[]): string {
-    if (!path) return ''
-    if (!isAbsolute(path) || !existsSync(path) || !statSync(path).isDirectory()) throw new EvolvedError('invalid_workspace', 'Workspace must be an existing absolute directory.')
-    const actual = realpathSync(path)
-    const allowed = allowedRoots.some(root => {
-        const parent = realpathSync(root), rel = relative(parent, actual)
-        return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
-    })
-    if (!allowed) throw new EvolvedError('workspace_forbidden', 'Workspace is outside configured workspace roots.', 403)
-    return actual
 }

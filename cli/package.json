@@ -5,11 +5,11 @@
   "author": "Kirill Dubovitskiy & weishu",
   "license": "AGPL-3.0-only",
   "type": "module",
-  "homepage": "https://github.com/tiann/hapi",
-  "bugs": "https://github.com/tiann/hapi/issues",
+  "homepage": "https://github.com/BGGBTAC/hapi-evolved",
+  "bugs": "https://github.com/BGGBTAC/hapi-evolved/issues",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tiann/hapi.git",
+    "url": "git+https://github.com/BGGBTAC/hapi-evolved.git",
     "directory": "cli"
   },
   "bin": {

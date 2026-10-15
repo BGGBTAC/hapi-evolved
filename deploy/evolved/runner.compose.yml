@@ -28,14 +28,15 @@ services:
       HAPI_RUNNER_SUPERVISED: "1"
       EVOLVED_RUNNER_UID: ${EVOLVED_UID:-1000}
       EVOLVED_RUNNER_GID: ${EVOLVED_GID:-1000}
-      EVOLVED_RUNNER_ROOT: /workspaces/${EVOLVED_PROJECT_DIRECTORY:?Project directory required}
+      EVOLVED_RUNNER_ROOT: ${EVOLVED_WORKSPACE_PREFIX:-/workspaces}/${EVOLVED_PROJECT_DIRECTORY:?Project directory required}
       EVOLVED_RUNNER_PROFILE: ${EVOLVED_RUNNER_PROFILE:?Current project profile required}
       HTTPS_PROXY: http://egress:3128
       HTTP_PROXY: http://egress:3128
       NO_PROXY: runner-proxy,localhost,127.0.0.1
     volumes:
       - ${EVOLVED_RUNNER_HOME:?Private runner home required}:/runner
-      - ${EVOLVED_RUNNER_WORKSPACE:?Only this project's workspace}:/workspaces/${EVOLVED_PROJECT_DIRECTORY}:${EVOLVED_WORKSPACE_MODE:-ro}
+      # Later host mounts must not propagate past the supervisor's startup check.
+      - ${EVOLVED_RUNNER_WORKSPACE:?Only this project's workspace}:${EVOLVED_WORKSPACE_PREFIX:-/workspaces}/${EVOLVED_PROJECT_DIRECTORY}:${EVOLVED_WORKSPACE_MODE:-ro},rprivate
     networks: [project]
     mem_limit: 4g
     pids_limit: 512

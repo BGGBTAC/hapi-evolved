@@ -35,13 +35,22 @@ function container(plan: ReturnType<typeof validationPlan>, service: string) {
         NetworkSettings: { Networks: Object.fromEntries([`${plan.stack}_project`, ...(proxy ? [plan.backend] : runner ? [] : [`${plan.stack}_provider-egress`])].map(name => [name, {}])) },
         Mounts: runner ? [
             { Type: 'bind', Source: plan.config.EVOLVED_RUNNER_HOME, Destination: '/runner', RW: true },
-            { Type: 'bind', Source: plan.config.EVOLVED_RUNNER_WORKSPACE, Destination: plan.root, RW: false },
+            { Type: 'bind', Source: plan.config.EVOLVED_RUNNER_WORKSPACE, Destination: plan.root, RW: false, Propagation: 'rprivate' },
         ] : proxy ? [{ Type: 'bind', Source: plan.config.EVOLVED_RUNNER_LEASE_FILE, Destination: '/credentials/lease', RW: false }] : [],
         State: { Running: true },
     }
 }
 
 describe('isolated runner VM acceptance guard', () => {
+    test('rejects propagation of later host mounts into a checked project namespace', () => {
+        const { plan } = fixture()
+        for (const propagation of ['rshared', 'rslave', 'shared', 'slave', '']) {
+            const value = container(plan, 'runner')
+            value.Mounts[1].Propagation = propagation
+            expect(() => inspectTestContainer(value, plan, 'runner')).toThrow('Mount')
+        }
+        expect(() => inspectTestContainer(container(plan, 'runner'), plan, 'runner')).not.toThrow()
+    })
     test('never permits exec during startup or a short crash loop, even with a reused PID', () => {
         const state = { Running: true, Restarting: false, Pid: 17, StartedAt: '2026-10-15T07:00:00Z' }
         let result = observeRunnerStart(null, state, 0)

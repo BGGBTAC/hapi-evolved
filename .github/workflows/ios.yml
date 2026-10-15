@@ -18,11 +18,16 @@ concurrency:
     group: ios-${{ github.ref }}
     cancel-in-progress: true
 
+permissions:
+    contents: read
+
 jobs:
     package-tests:
         runs-on: macos-15
         steps:
             - uses: actions/checkout@v4
+              with:
+                  persist-credentials: false
             - name: Show toolchain versions
               run: |
                   xcodebuild -version
@@ -34,6 +39,8 @@ jobs:
         runs-on: macos-15
         steps:
             - uses: actions/checkout@v4
+              with:
+                  persist-credentials: false
             - name: Show toolchain versions
               run: xcodebuild -version
             - name: Check manual localization catalog

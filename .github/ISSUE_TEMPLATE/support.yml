@@ -1,0 +1,48 @@
+name: Support request
+description: Ask about setup, usage or documentation, or arrange a private contact channel.
+title: "[Support]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the HAPI-eVolved community tracker; responses are not guaranteed within a particular time.
+        Search existing issues and read the repository's SUPPORT.md first.
+        Treat this form as public. Never include credentials, tokens, private keys, environment files or private conversations.
+        **For a private contact request, provide only a request to arrange a channel, without incident or vulnerability details.**
+        Suspected vulnerabilities follow [the security policy](https://github.com/BGGBTAC/hapi-evolved/security/policy).
+  - type: dropdown
+    id: topic
+    attributes:
+      label: Topic
+      options:
+        - Installation or operation
+        - Usage question
+        - Documentation clarification
+        - Private contact request
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: Question or contact request
+      description: For ordinary questions, describe the goal and what you have tried. For private contact, say only that you need a private security or conduct reporting channel; omit all details until it is established.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version and deployment (optional)
+      description: For ordinary support, include Evolved version/commit, OS, browser, relevant agent versions and installation method. Leave empty for private contact requests.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted diagnostic excerpt (optional)
+      description: Only relevant, manually reviewed excerpts for ordinary support. Leave empty for private contact requests. Never attach environment files, backups or credentials.
+      render: text
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked this request for secrets and private data; any request for private contact contains no incident or vulnerability details.
+          required: true

@@ -1,0 +1,44 @@
+name: HAPI-eVolved preview source bundle
+
+# Explicit operator action only. Produces an Actions artifact, not a GitHub
+# release, tag, package, image or deployment. A source bundle is not a binary.
+on:
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: evolved-preview-${{ github.ref }}
+    cancel-in-progress: false
+
+jobs:
+    source-bundle:
+        if: github.repository == 'BGGBTAC/hapi-evolved'
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  persist-credentials: false
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: '1.3.14'
+            - name: Check publication boundaries
+              run: |
+                  bun scripts/publication/check-workflows.ts
+                  bun test scripts/publication/check-workflows.test.ts
+            - run: bun install --frozen-lockfile
+            - run: bun typecheck
+            - run: bun run build:web
+            - name: Package the exact checked-out source commit
+              env:
+                  SOURCE_BUNDLE_DIR: ${{ runner.temp }}/evolved-preview
+              run: bun scripts/publication/bundle-source.ts
+            - name: Upload reviewable preview source
+              uses: actions/upload-artifact@v4
+              with:
+                  name: hapi-evolved-0.1.0-preview-source-${{ github.sha }}
+                  path: ${{ runner.temp }}/evolved-preview/
+                  if-no-files-found: error
+                  retention-days: 14

@@ -20,7 +20,8 @@ export function publicAddress(address: string): boolean {
 export function connectTarget(target: string, allowedHosts: Set<string>): string | null {
     const match = /^([a-z0-9.-]+):443$/i.exec(target)
     const host = match?.[1].toLowerCase()
-    return host && !isIP(host) && allowedHosts.has(host) ? host : null
+    // GitHub belongs to the grant broker, even if accidentally allowlisted here.
+    return host && host !== 'github.com' && !host.endsWith('.github.com') && !isIP(host) && allowedHosts.has(host) ? host : null
 }
 export function createModelEgress(hosts: string[], port = 3128, host = '127.0.0.1') {
     const allowed = new Set(hosts.map(value => value.trim().toLowerCase()))

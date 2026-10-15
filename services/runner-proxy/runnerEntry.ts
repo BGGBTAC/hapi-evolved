@@ -3,6 +3,7 @@ import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readFi
 import type { Stats } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
+import { validRunnerRoot } from './workspace'
 
 export type RunnerNamespace = { version: 1; bootId: string; pidNamespace: string }
 const namespaceFile = '.runner-namespace.json'
@@ -117,7 +118,7 @@ async function main(): Promise<void> {
     const initArgs = readFileSync('/proc/1/cmdline', 'utf8').split('\0')
     requireSafe(initArgs.includes('/app/services/runner-proxy/supervisor.ts'), 'Expected container PID1 supervisor missing')
     const root = process.env.EVOLVED_RUNNER_ROOT
-    requireSafe(root?.startsWith('/workspaces/') && realpathSync(root) === root, 'Canonical project root required')
+    requireSafe(root && validRunnerRoot(root, process.env.EVOLVED_PROJECT_ID ?? '') && realpathSync(root) === root, 'Canonical project root required')
     const guard = acquireRunnerHome('/runner')
     try {
         guard.prepare(currentRunnerNamespace(), true)

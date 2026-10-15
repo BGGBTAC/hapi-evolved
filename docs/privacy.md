@@ -5,6 +5,13 @@ aside: false
 
 # Privacy Policy
 
+::: warning Inherited upstream policy
+The policy below describes upstream HAPI and its publisher's services, not the
+independent HAPI-eVolved project. For Evolved storage, providers and retention,
+read [Privacy and data handling](./evolved/DATA_HANDLING.md). This fork does not
+operate the upstream push relay or accept privacy requests on its publisher's behalf.
+:::
+
 **Effective date: September 12, 2026** · Applies to the HAPI mobile companion apps (Android and iOS) and the self-hosted HAPI hub.
 
 ::: tip The short version

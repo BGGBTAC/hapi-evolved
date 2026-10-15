@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, symlink, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { canonicalRoot, sourcePath, sourceText, normalizeGraph } from '../policy.mjs';
 
 test('canonical allowlist rejects sibling paths and escaping symlinks', async () => {
@@ -27,4 +29,16 @@ test('bounded graph never leaves dangling edges or emits secret paths', () => {
         { id: 'b', name: 'B', filePath: 'b.ts' }
     ], edges: [{ sourceId: 'a', targetId: 's' }, { sourceId: 'a', targetId: 'b' }] }, 1);
     assert.deepEqual(graph.nodes.map(n => n.id), ['a']); assert.equal(graph.edges.length, 0); assert.equal(graph.truncated, true);
+});
+
+test('sourceText rejects a FIFO without waiting for a writer', async (t) => {
+    if (process.platform !== 'linux') { t.skip('Linux FIFO regression'); return; }
+    const root = await mkdtemp(join(tmpdir(), 'hapi-codegraph-fifo-'));
+    try {
+        await promisify(execFile)('mkfifo', [join(root, 'pipe.ts')]);
+        const moduleUrl = new URL('../policy.mjs', import.meta.url).href;
+        const script = `const {sourceText}=await import(process.argv[1]);try{await sourceText(process.argv[2],'pipe.ts');process.exitCode=1}catch(error){if(error.status!==413)throw error}`;
+        // Separate process: a future regression fails within the timeout, without a stuck test worker.
+        await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script, moduleUrl, root], { timeout: 2000 });
+    } finally { await rm(root, { recursive: true, force: true }); }
 });

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign, type KeyObject } from 'node:crypto'
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Hono } from 'hono'
@@ -66,7 +66,8 @@ async function enroll(s: ReturnType<typeof setup>) {
 describe('Evolved authentication and authorization', () => {
     test('creating a personal team does not grant access to host workspaces or other projects', async () => {
         const s = setup(undefined, [tmpdir()]), { userId } = await enroll(s), victimTeam = s.store.createTeam(userId, 'Private team')
-        s.store.createProject(userId, victimTeam.id, 'Private workspace', s.directory)
+        const privateWorkspace = join(s.directory, 'private-workspace'); mkdirSync(privateWorkspace)
+        s.store.createProject(userId, victimTeam.id, 'Private workspace', privateWorkspace)
         const member = randomUUID()
         s.store.db.prepare('INSERT INTO evolved_users VALUES(?,?,0,?)').run(member, 'Viewer', Date.now())
         const own = s.store.createTeam(member, 'Own team')
@@ -162,6 +163,7 @@ describe('Evolved authentication and authorization', () => {
         const response = await s.call(`/projects/${project.id}/runner-leases`, { name: 'Local runner', scopes: ['runner:connect'], expiresInSeconds: 3600 })
         expect(response.status).toBe(201)
         const lease = await response.json() as { id: string; token: string; expiresAt: number }
+        expect((await s.call(`/projects/${project.id}/capabilities`, { scopes: ['runner:connect', 'git:read'] })).status).toBe(400)
         for (let index = 0; index < 8; index++) expect((await s.call('/runner/authority', undefined, { bearer: lease.token })).status).toBe(200)
         expect(await (await s.call('/runner/authority', undefined, { bearer: lease.token })).json()).toEqual({ projectId: project.id, profile: project.profile, rootPath: project.rootPath, expiresAt: lease.expiresAt })
         const mint = await s.call('/runner/token', {}, { bearer: lease.token })
@@ -189,8 +191,39 @@ describe('Evolved authentication and authorization', () => {
         s.store.setMember(userId, team.id, admin, 'admin')
         s.store.setMember(userId, team.id, userId, 'member')
         expect(s.store.capability(thirdCap.token)).toBeNull()
-        expect((await s.call('/runner/authority', undefined, { bearer: third.token })).status).toBe(403)
-        expect(() => exchangeRunnerLease(s.store, third.token)).toThrow('denied')
+        expect((await s.call('/runner/authority', undefined, { bearer: third.token })).status).toBe(401)
+        expect(() => exchangeRunnerLease(s.store, third.token)).toThrow('revoked')
+    })
+    test('restoring the same profile or membership never resurrects an old runner lease', async () => {
+        const s = setup(), { userId } = await enroll(s), team = s.store.createTeam(userId, 'Permanent revocation'), project = s.store.createProject(userId, team.id, 'Project')
+        const other = randomUUID(); s.store.db.prepare('INSERT INTO evolved_users VALUES(?,?,0,?)').run(other, 'Replacement admin', Date.now())
+        s.store.setMember(userId, team.id, other, 'admin')
+        const issue = async () => {
+            s.jar.set(SESSION_COOKIE, s.store.createSession(userId))
+            const response = await s.call(`/projects/${project.id}/runner-leases`, { name: 'Must not resurrect', scopes: ['runner:connect'], expiresInSeconds: 3600 })
+            expect(response.status).toBe(201)
+            return (await response.json() as { token: string }).token
+        }
+        const dead = async (token: string) => {
+            expect((await s.call('/runner/authority', undefined, { bearer: token })).status).toBe(401)
+            expect(() => exchangeRunnerLease(s.store, token)).toThrow('revoked')
+        }
+        s.store.setProfile(userId, project.id, 'workspace')
+        const profileLease = await issue(), profileCap = exchangeRunnerLease(s.store, profileLease)
+        s.store.setProfile(userId, project.id, 'restricted'); s.store.setProfile(userId, project.id, 'workspace')
+        await dead(profileLease); expect(s.store.capability(profileCap.token)).toBeNull()
+        const membershipLease = await issue()
+        s.store.setMember(other, team.id, userId, null); s.store.setMember(other, team.id, userId, 'admin')
+        await dead(membershipLease)
+        const roleLease = await issue()
+        s.jar.set(SESSION_COOKIE, s.store.createSession(other))
+        expect((await s.call(`/projects/${project.id}/members`, { userId, role: 'viewer' }, { method: 'PUT' })).status).toBe(200)
+        expect((await s.call(`/projects/${project.id}/members`, { userId, role: 'admin' }, { method: 'PUT' })).status).toBe(200)
+        await dead(roleLease)
+        const resetLease = await issue()
+        expect((await s.call(`/projects/${project.id}/members/${userId}`, undefined, { method: 'DELETE' })).status).toBe(200)
+        expect(s.store.requireProject(userId, project.id).role).toBe('admin')
+        await dead(resetLease)
     })
     test('removed team membership cannot resurrect an old project-administrator override on rejoin', async () => {
         const s = setup(), { userId } = await enroll(s), team = s.store.createTeam(userId, 'Membership team'), project = s.store.createProject(userId, team.id, 'Project')

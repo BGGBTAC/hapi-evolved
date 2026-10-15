@@ -50,11 +50,24 @@ Ein Projekt verleiht keinen Zugang zu einem fremden Team.
 | Mitglied | Zusätzlich reguläre Agentenarbeit, Wissen vorschlagen/verifizieren/vergessen, Indizierung und freigegebene Ressourcenaktionen |
 | Administrator | Zusätzlich Rollen, Profil, Tresorwerte, Verarbeitungsbudget, Runner-Zugänge und Vorschaufreigaben verwalten |
 
-Nur Systemadministratoren können beim Anlegen eines Projekts ein absolutes
-Repository-Verzeichnis verknüpfen; dafür ist eine frische Passkey-Anmeldung nötig.
-Der Betreiber muss diesen Verzeichnisbereich freigegeben haben. Der Pfad wird für
-Codegraph, belegte Dateiquellen und Vorschauen verwendet. Teamadministratoren können
-Projekte ohne Verzeichnis für Tresor und Memory anlegen.
+Beim Anlegen reichen **Projektname und Team**: Im Hintergrund entsteht für jedes
+neue Projekt ein eigener Ordner. Gleiche Namen führen trotzdem zu getrennten
+Verzeichnissen. Die Projektkarte zeigt nach dem Anlegen den tatsächlichen Pfad.
+
+Systemadministratoren können optional **„Ordner manuell festlegen oder wählen“**
+öffnen und einen vorhandenen, vom Betreiber freigegebenen Serverordner verknüpfen.
+Die Auswahl lädt Verzeichnisse vom Server, nicht vom eigenen Rechner. Das Verknüpfen
+verlangt eine frische Passkey-Anmeldung. Schon belegte, verschachtelte oder über
+Symlinks erreichbare Projektordner werden nicht erneut vergeben. Ein deaktivierter
+manueller Modus verwendet immer einen neuen automatischen Ordner.
+
+Bestehende Projekte und ihre Pfade werden nicht automatisch umgestellt. Das Entfernen
+eines Projekts löscht dessen Quelldateien nicht. Der Pfad dient Codegraph, belegten
+Dateiquellen, Vorschauen und dem isolierten Projekt-Runner.
+
+Unter **GitHub** verbindet ein Projektadministrator GitHub und vergibt Repository-
+Lese- oder Schreibrechte. Danach verwenden Projekt-Agenten normale Git-Befehle
+ohne eigene GitHub-Anmeldung. Einrichtung und Grenzen stehen in [GITHUB.md](GITHUB.md).
 
 Das Ausführungsprofil ist eine weitere Grenze für Agentenaktionen:
 
