@@ -771,9 +771,10 @@ export default {
   'reconnecting.reason.transportError': '流连接错误',
   'pwa.update.title': '新版本可用',
   'pwa.update.body': '重新加载以获取最新版 HAPI',
+  'pwa.update.otherTabs': '更新时，运行旧版 HAPI 的其他标签页也可能重新加载。请先保存所有标签页中尚未发送的草稿。',
   'pwa.update.reload': '重新加载',
   'pwa.update.whyToggle': '为什么不能关闭此提示？',
-  'pwa.update.whyBody': '当你可能有正在运行的智能体、待处理的权限请求或未发送的消息时，HAPI 不会自动重新加载标签页。旧版网页与当前服务器一起运行可能导致同步错误和操作失败。此横幅会一直保持显示，直到你重新加载，以免你在不知情的情况下停留在旧版本 — 但何时点击「重新加载」由你决定，可以先完成手头的工作。',
+  'pwa.update.whyBody': '此标签页会等待你点击「重新加载」。如果另一个标签页激活更新，仍在运行旧版 HAPI 的标签页可能自动重新加载。请先完成当前操作，并保存所有标签页中的草稿。服务器上的智能体会继续运行。新版本等待更新期间，此横幅会保持显示。',
 
   // Send blocked
   'send.blocked.title': '无法发送消息',

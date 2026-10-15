@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { registerSW } from 'virtual:pwa-register'
+import { Workbox } from 'workbox-window'
 
 export const PWA_UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000
 export const PWA_UPDATE_RELOAD_FALLBACK_MS = 2000
@@ -32,6 +32,7 @@ export async function requestPwaUpdateReload(
 
     const onControllerChange = () => {
         navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange)
+        if (fallbackTimer !== undefined) clearTimeoutFn(fallbackTimer)
         doReload()
     }
 
@@ -51,6 +52,7 @@ export async function requestPwaUpdateReload(
         return
     }
 
+    if (reloaded) return
     fallbackTimer = setTimeoutFn(() => {
         navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange)
         doReload()
@@ -60,13 +62,15 @@ export async function requestPwaUpdateReload(
 export function setupRegistrationUpdateChecks(
     registration: ServiceWorkerRegistration,
 ): () => void {
+    // An offline update check must not become an unhandled rejection.
+    const check = () => { void registration.update().catch(() => {}) }
     const intervalId = window.setInterval(() => {
-        void registration.update()
+        check()
     }, PWA_UPDATE_CHECK_INTERVAL_MS)
 
     const handleVisibilityChange = () => {
         if (document.visibilityState === 'visible') {
-            void registration.update()
+            check()
         }
     }
 
@@ -84,31 +88,32 @@ export function usePwaUpdate() {
     const cleanupRef = useRef<(() => void) | null>(null)
 
     useEffect(() => {
-        const updateSW = registerSW({
-            onNeedRefresh() {
-                setNeedRefresh(true)
-            },
-            onOfflineReady() {
-                console.log('App ready for offline use')
-            },
-            onRegistered(registration) {
-                cleanupRef.current?.()
-                cleanupRef.current = null
-
-                if (!registration) {
-                    return
-                }
-
-                cleanupRef.current = setupRegistrationUpdateChecks(registration)
-            },
-            onRegisterError(error) {
-                console.error('SW registration error:', error)
-            },
+        if (!('serviceWorker' in navigator)) return
+        let disposed = false
+        // The plugin's prompt helper also installs a controlling→reload listener
+        // in OTHER tabs. Register directly so only this tab's explicit action
+        // below can request a document reload. Existing old tabs keep old code.
+        const base = import.meta.env.BASE_URL
+        const workbox = new Workbox(`${base}${import.meta.env.DEV ? 'dev-sw.js?dev-sw' : 'sw.js'}`, {
+            scope: base,
+            type: import.meta.env.DEV ? 'module' : 'classic',
         })
-
-        updateSWRef.current = updateSW
+        const onWaiting = () => { if (!disposed) setNeedRefresh(true) }
+        workbox.addEventListener('waiting', onWaiting)
+        const registrationPromise = workbox.register()
+        void registrationPromise.then(registration => {
+            if (disposed || !registration) return
+            if (registration.waiting) onWaiting()
+            cleanupRef.current = setupRegistrationUpdateChecks(registration)
+        }).catch(error => { if (!disposed) console.error('SW registration error:', error) })
+        updateSWRef.current = async () => {
+            await registrationPromise
+            if (!disposed) workbox.messageSkipWaiting()
+        }
 
         return () => {
+            disposed = true
+            workbox.removeEventListener('waiting', onWaiting)
             cleanupRef.current?.()
             cleanupRef.current = null
             updateSWRef.current = null

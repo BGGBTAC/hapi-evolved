@@ -60,6 +60,9 @@ Graph-e-Marke. Der Export erfolgt reproduzierbar mit
 Ein Service-Worker-Update lädt weiterhin erst nach Benutzerbestätigung neu;
 laufende Entwürfe dürfen durch ein Designupdate nicht ungefragt verschwinden.
 Eine Installation allein ermöglicht keinen Offlinezugriff auf Hub-Projektdaten.
+Falls noch die bisherige Oberfläche erscheint, beschreibt
+[PWA_UPDATES.md](PWA_UPDATES.md) den direkten Einstieg und das geprüfte
+Aktualisierungsverhalten einschließlich älterer offener Tabs.
 
 ## Reproduzierbare Prüfung
 

@@ -38,6 +38,7 @@ import type { VisibilityTracker } from '../visibility/visibilityTracker'
 import type { Server as BunServer, ServerWebSocket } from 'bun'
 import { applyDefaultWsCompression } from './wsCompression'
 import { acceptsGzip } from './sseCompression'
+import { staticAssetCache } from './staticAssetCache'
 import type { Server as SocketEngine } from '@socket.io/bun-engine'
 import { jwtVerify } from 'jose'
 import type { WebSocketData } from '@socket.io/bun-engine'
@@ -209,12 +210,6 @@ function serveEmbeddedAsset(asset: EmbeddedWebAsset): Response {
         'Content-Type': asset.mimeType
     }
 
-    if (asset.path === '/sw.js') {
-        headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
-        headers['CDN-Cache-Control'] = 'no-store'
-        headers['Cloudflare-CDN-Cache-Control'] = 'no-store'
-    }
-
     return new Response(Bun.file(asset.sourcePath), {
         headers
     })
@@ -345,6 +340,9 @@ from GitHub Pages instead of through the relay tunnel.
         })
         return app
     }
+
+    // Apply one cache policy to both delivery modes, including SPA fallbacks.
+    app.use('*', staticAssetCache)
 
     if (options.embeddedAssetMap) {
         const embeddedAssetMap = options.embeddedAssetMap

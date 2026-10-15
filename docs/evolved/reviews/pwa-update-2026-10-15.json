@@ -1,0 +1,116 @@
+{
+  "date": "2026-10-15",
+  "status": "confirmed_upgrade_defects_fixed_and_locally_verified",
+  "reviews": [
+    {
+      "stage": "initial",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "inputSha256": "c0122a168b41c276c3289e30b4d14d3db6812f1c15c81a00531b3276cea06487",
+      "outputSha256": "121c8a1b2d0467f76002a32180201212c9a66923339280fbfb376abbeb6515b2"
+    },
+    {
+      "stage": "dependency-source correction",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "inputSha256": "d2fc93a26cb811b3d35ece0dd449be80e83777b6486d8446f7958906f75f6fc4",
+      "outputSha256": "b9fa9bb2e7cd6a845d403e45551a2baec7680f20e0d509fbe60f7bd16a3f0996"
+    }
+  ],
+  "userBrowserVisibility": "The actual user browser was not accessible. No claim is made about its exact URL, stored Hub or worker. The reported failure was reproduced independently with real old and new production builds.",
+  "confirmedDefects": [
+    "A waiting PWA update had no visible banner on Evolved login/onboarding without a project.",
+    "The old active worker continued serving the old precached root document on ordinary reload.",
+    "The installed plugin prompt helper also reloaded other old tabs on controlling, destroying an unsaved in-memory synthetic draft.",
+    "Filesystem delivery lacked the explicit mutable-entrypoint HTTP cache policy present for embedded sw.js.",
+    "Global App event handlers still blocked browser zoom despite the earlier design statement."
+  ],
+  "disprovedHypotheses": [
+    "The root route already selects /evolved for Evolved context; no routing change was necessary."
+  ],
+  "corrections": [
+    "One update banner above the auth boundary, preserving authenticated status/voice offsets.",
+    "Direct Workbox registration without a controlling-to-reload subscription; only the explicit initiating tab registers a reload listener.",
+    "Automatic plugin registration injection disabled; production output has exactly one registration.",
+    "HTML, worker and manifest HTTP cache headers unified for embedded and filesystem delivery; private API headers untouched.",
+    "Global browser zoom blockers removed; local component-specific gestures untouched."
+  ],
+  "immediateRecovery": "Navigate directly to /evolved on the same Hub in a separate tab. This path is not precached and does not require worker activation, unregistering, cache deletion or changed Hub selection.",
+  "legacyReproduction": {
+    "reportSha256": "0972152aa015e946447dcfe642d46d429982ccc67d1e1a216633fd07b92e9919",
+    "oldSw": "8d0bfc4e3d9fb41122e26904c5c5ae80b7264d2b886ec3c5d38785ffbb883081",
+    "newSw": "30086db46217e3b379ce9bc124af1aeacc2d30c722380cdd7947813e0584e604",
+    "checks": [
+      "Old zero-project client has a waiting new worker but no visible update banner",
+      "Navigating to / still loads the old precached entry",
+      "Direct /evolved navigation loads new HTML without worker activation or sibling-tab draft loss",
+      "Closing every app client and reopening activates the waiting version; authentication and localStorage survive",
+      "Confirmed legacy hazard: explicit SKIP_WAITING also reloads the other old tab and destroys its unsaved in-memory draft"
+    ]
+  },
+  "finalUpgradeBrowser": {
+    "reportSha256": "f12f659ff7557c9440aac3eb5e6c1c8fe7b54b57f22caa08a565bdd9ee183096",
+    "oldSw": "8d0bfc4e3d9fb41122e26904c5c5ae80b7264d2b886ec3c5d38785ffbb883081",
+    "newSw": "d6e1896a6d50219f2219ba9cbeb6152a1b7d4799258b7a1a292e0e6d46e4aa0e",
+    "checks": [
+      "Old zero-project client has a waiting new worker but no visible update banner",
+      "Navigating to / still loads the old precached entry",
+      "Direct /evolved navigation loads new HTML without worker activation or sibling-tab draft loss",
+      "Fixed zero-project surface displays exactly one update banner",
+      "Closing every app client and reopening activates the waiting version; authentication and localStorage survive",
+      "Production page has one service-worker registration and no injected plugin registration script",
+      "Two fixed clients: explicit update reloads only its initiator; sibling receives controllerchange but keeps its document and unsent draft"
+    ]
+  },
+  "validation": {
+    "focusedWebTestsPassed": 22,
+    "wholeWebSuitePassed": 3786,
+    "httpCacheTestsPassed": 16,
+    "webAndHubTypechecks": "passed",
+    "webBuild": "passed",
+    "docsBuild": "passed",
+    "generatedFixtures": "no drift",
+    "existingBrowserRegressionGroupsPassed": 9
+  },
+  "finalSourceFiles": [
+    {
+      "path": "web/src/App.tsx",
+      "sha256": "991e2540da7ec5688afbd584b721f7baf604fa036bd78231f659de764109cbc6"
+    },
+    {
+      "path": "web/src/hooks/usePwaUpdate.ts",
+      "sha256": "1334add805c4fa3dca01a840c83157b01b3c198b18658628ecc32c2ea2dd8b12"
+    },
+    {
+      "path": "web/src/components/PwaUpdateBanner.tsx",
+      "sha256": "671eaa9f1515c0b1911a9dfb8494a3ab9fb1d3ddbaa134f7d89ad19721077808"
+    },
+    {
+      "path": "web/src/lib/pwa-update-context.tsx",
+      "sha256": "183b30f698b085ce61d3f1a2c7b11088a587a91cb577bd1c3403a4560f95cb99"
+    },
+    {
+      "path": "web/vite.config.ts",
+      "sha256": "f7033e8aa57b169a46537cdeae695ba23c031b4e8fddaad006d634661db75409"
+    },
+    {
+      "path": "hub/src/web/server.ts",
+      "sha256": "4f1d477d6223d96e34631d38f14e92699339107993dde5cdab5eeb3fd15364a4"
+    },
+    {
+      "path": "hub/src/web/staticAssetCache.ts",
+      "sha256": "3e7c2c07f5635eaaa0946be8c0cf84f7a08514f94afe4885c2dbc5e7a614de71"
+    },
+    {
+      "path": "web/scripts/evolved-pwa-upgrade-check.mjs",
+      "sha256": "db92f4a2c50e8ebf69ce890f2982f52483b7c74b41b76e43309dc260bc22f639"
+    }
+  ],
+  "limits": [
+    "Already loaded old tabs retain their old plugin listeners; a new client cannot remove these remotely. The direct document-navigation recovery avoids activating the waiting worker.",
+    "No physical Safari/iOS/Android test is claimed; the upgrade fixture uses Chromium and virtual WebAuthn with synthetic state.",
+    "HTTP cache headers do not invalidate existing Workbox caches.",
+    "A configured different Hub remains an explicitly preserved setting."
+  ],
+  "modelCorrection": "An initial Opus statement claiming prompt mode protects all sibling tabs was rejected against the installed dependency source and corrected by the same actual model. The final browser fixture independently verifies both the old hazard and the new behavior."
+}

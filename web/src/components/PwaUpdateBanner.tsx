@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useOnlineStatus } from '@/hooks/useOnlineStatus'
 import { usePlatform } from '@/hooks/usePlatform'
 import { usePwaUpdateContext } from '@/lib/pwa-update-context'
@@ -6,7 +7,7 @@ import { useVoiceOptional } from '@/lib/voice-context'
 
 export function PwaUpdateBanner({ topClassName }: { topClassName?: string } = {}) {
     const { t } = useTranslation()
-    const { needRefresh, reload } = usePwaUpdateContext()
+    const { needRefresh, reload, hasTopStatusBanner } = usePwaUpdateContext()
     const isOnline = useOnlineStatus()
     const { haptic } = usePlatform()
 
@@ -14,7 +15,9 @@ export function PwaUpdateBanner({ topClassName }: { topClassName?: string } = {}
         return null
     }
 
-    const topClass = topClassName ?? (isOnline
+    const topClass = topClassName ?? (hasTopStatusBanner
+        ? 'top-[calc(env(safe-area-inset-top)+3rem)]'
+        : isOnline
         ? 'top-[calc(env(safe-area-inset-top)+0.5rem)]'
         : 'top-[calc(env(safe-area-inset-top)+2.5rem)]')
 
@@ -44,6 +47,8 @@ export function PwaUpdateBanner({ topClassName }: { topClassName?: string } = {}
                 </button>
             </div>
 
+            <p className="mt-2 text-xs text-[var(--app-hint)]">{t('pwa.update.otherTabs')}</p>
+
             <details className="mt-3 border-t border-[var(--app-border)] pt-2">
                 <summary className="cursor-pointer text-xs text-[var(--app-link)] active:opacity-60 list-none [&::-webkit-details-marker]:hidden">
                     {t('pwa.update.whyToggle')}
@@ -56,7 +61,9 @@ export function PwaUpdateBanner({ topClassName }: { topClassName?: string } = {}
     )
 }
 
-export function PwaUpdateBannerWithStatusOffset({
+// The one global update banner stays available before authentication. Report
+// authenticated connection/voice banners only to preserve their vertical space.
+export function PwaUpdateStatusOffset({
     isSyncing,
     isReconnecting,
 }: {
@@ -64,16 +71,15 @@ export function PwaUpdateBannerWithStatusOffset({
     isReconnecting: boolean
 }) {
     const voice = useVoiceOptional()
+    const { setHasTopStatusBanner } = usePwaUpdateContext()
     const hasTopStatusBanner =
         isSyncing ||
         isReconnecting ||
         Boolean(voice && voice.status === 'error' && voice.errorMessage)
 
-    return (
-        <PwaUpdateBanner
-            topClassName={hasTopStatusBanner
-                ? 'top-[calc(env(safe-area-inset-top)+3rem)]'
-                : undefined}
-        />
-    )
+    useEffect(() => {
+        setHasTopStatusBanner(hasTopStatusBanner)
+        return () => setHasTopStatusBanner(false)
+    }, [hasTopStatusBanner, setHasTopStatusBanner])
+    return null
 }

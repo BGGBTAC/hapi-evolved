@@ -773,9 +773,10 @@ export default {
   'reconnecting.reason.transportError': 'stream error',
   'pwa.update.title': 'New version available',
   'pwa.update.body': 'Reload to get the latest HAPI',
+  'pwa.update.otherTabs': 'Older HAPI tabs may also reload when you update. Save unsent drafts in every tab first.',
   'pwa.update.reload': 'Reload',
   'pwa.update.whyToggle': "Why can't I dismiss this?",
-  'pwa.update.whyBody': 'HAPI will not reload your tab automatically while you may have an agent running, a permission waiting, or a message in progress. Running an old web build against the current server can cause sync bugs and failed actions. This banner stays visible until you reload so you are not stuck on a stale version by accident — but you choose when to tap Reload and finish what you are doing first.',
+  'pwa.update.whyBody': 'This tab waits for you to choose Reload. An older HAPI tab may still reload when another tab activates the update, so finish what you are doing first and save drafts in every tab. Server-side agents keep running. This banner stays visible while a new version is waiting.',
 
   // Send blocked
   'send.blocked.title': 'Cannot send message',

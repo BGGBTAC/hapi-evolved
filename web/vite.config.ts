@@ -109,6 +109,8 @@ export default defineConfig({
         spaFallback(),
         copyKaTeXFonts(),
         VitePWA({
+            // usePwaUpdate owns registration and per-tab reload behavior.
+            injectRegister: false,
             // User-controlled reload avoids mid-session surprise reloads (autoUpdate reloads all tabs).
             registerType: 'prompt',
             includeAssets: ['favicon.ico', 'apple-touch-icon-180x180.png', 'mask-icon.svg'],

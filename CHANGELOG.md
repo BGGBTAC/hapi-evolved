@@ -26,6 +26,10 @@ or container image.
 
 ### Fixed
 
+- PWA updates are visible before sign-in and project selection; consistent HTML,
+  service-worker and manifest cache headers, with no automatic reload of other
+  tabs already running the corrected client.
+- Global event handlers no longer block browser zoom gestures and shortcuts.
 - Mobile chat placeholder readability and excessive composer toolbar height.
 - Browser zoom, landscape PWA use and dark-mode workspace styling.
 - Replay duplication, usage-history paging and delayed client-cache updates.
