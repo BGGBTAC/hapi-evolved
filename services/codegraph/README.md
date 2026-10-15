@@ -18,6 +18,14 @@ npm ci --prefix services/codegraph --ignore-scripts
 npm start --prefix services/codegraph
 ```
 
+Docker und `npm start` starten Node mit `--liftoff-only`, wie vom eingebetteten
+Codegraph-SDK für große Indexläufe verlangt. Der Parameter verhindert dessen
+bekannten V8-WASM-Optimierungscompiler-Fehler und wird an die Worker vererbt.
+Bei einem direkten Start gilt daher `node --liftoff-only server.mjs`.
+`NODE_OPTIONS` oder ein nachträglicher Worker-Parameter sind dafür kein Ersatz.
+Der Parameter ersetzt keine Speichergrenze: Ein Container-OOM durch den gesamten
+Indexierungsbedarf muss weiterhin separat anhand des tatsächlichen Verbrauchs bewertet werden.
+
 Konfiguration:
 
 | Variable | Bedeutung |
@@ -63,7 +71,7 @@ Quelldateien bleiben erhalten. Bei Ausfall behält der Hub den Bereinigungsauftr
 ## Prüfung
 
 ```sh
-node --test services/codegraph/test/*.test.mjs
+node --liftoff-only --test services/codegraph/test/*.test.mjs
 ```
 
 Der Integrationstest baut einen echten temporären Index, prüft Aufrufkanten, Quelltextvorschau,
