@@ -1,0 +1,143 @@
+{
+  "date": "2026-10-15",
+  "status": "confirmed_findings_fixed_and_verified",
+  "baseCommit": "e7893b108fe2db84ed33c37c807ec66b757b35bd",
+  "reviews": [
+    {
+      "stage": "design",
+      "inputSha256": "15e6f77b4db832ff7bf87783a172aacaa61539e2b18cf275b1a3a2918bdf2a3e",
+      "outputSha256": "a108dd63cdb92ebf5ffb1ef6c17869c3c0af5798a816654efcbfe0cb856f0aa2",
+      "success": true,
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty"
+    },
+    {
+      "stage": "final-adversarial",
+      "inputSha256": "0844da4a2b8e2589c872d666ebca72c525c87857a0e4f66308446a71cb57ce10",
+      "outputSha256": "c9db080e5c2c5d066893fb5acf8a54e1ed02f92e4fe8764217a163f6512591d8",
+      "success": true,
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty"
+    },
+    {
+      "stage": "closeout",
+      "inputSha256": "d40bad83dfc303fabcfb07242363d2a97e4db0f36fbf3f353f7c409d6cc075c9",
+      "outputSha256": "94a8f16aa2dbf99a7a55c63c2766731e9633f5f36530f296687ba19b7f74ae2b",
+      "success": true,
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty"
+    }
+  ],
+  "reportedProblems": [
+    "Restricted project profile disabled repository write grants in the browser.",
+    "Codegraph rendered nested SDK statistics as React children (error 31), and a valid empty graph returned a missing-node error.",
+    "Native provider subscription login was not discoverable or clearly distinguished from HAPI runner access."
+  ],
+  "confirmedReviewFindings": [
+    {
+      "finding": "A repeated same-profile PUT after remount/lost response revoked newly issued runner leases.",
+      "resolution": "Authorization and current-profile comparison now occur inside the same immediate SQLite transaction; same target is a no-op without audit/revocation. Actual API/lease/capability tests cover retries, roles and a real subsequent profile change."
+    },
+    {
+      "finding": "An index revision replaced the graph query and lost canvas zoom/pan.",
+      "resolution": "Retain prior data only for the same principal/project/role and selection while changing index version. Regression keeps the same canvas and transform."
+    },
+    {
+      "finding": "Provider operator documentation used the wrong egress variable.",
+      "resolution": "Use EVOLVED_EGRESS_HOSTS and explain that it replaces the Compose default host list."
+    }
+  ],
+  "otherCorrections": [
+    "Lost GitHub mutation responses reconcile with a server GET.",
+    "Existing browser failure states are not presented as empty Codegraph results; revoked access hides cached graph data.",
+    "Provider instructions are reachable before creating a project.",
+    "Active profile buttons cannot send another profile change.",
+    "Codegraph status exposes only three scalar counts; UI also tolerates nested legacy SDK stats."
+  ],
+  "validation": {
+    "webSuitePassed": 3810,
+    "hubSuitePassed": 1701,
+    "hubSuiteSkipped": 3,
+    "realCodegraphSdkTestsPassed": 5,
+    "focusedCodegraphWebTestsPassed": 13,
+    "focusedGithubWebTestsPassed": 20,
+    "profileSecurityBridgeTestsPassed": 26,
+    "webAndHubTypechecks": "passed",
+    "webProductionBuild": "passed",
+    "docsBuild": "passed",
+    "realBrowserGroupsPassed": 10,
+    "browserCodegraph": "Actual authenticated browser/Hub/adapter/SDK with synthetic workspace; empty -> automatic indexing -> graph/source/reindex.",
+    "browserGithub": "Actual browser/Hub/signed Vault broker with synthetic GitHub provider; restricted new/edit write grants, no implicit profile escalation, explicit profile activation, old lease revoked/new lease default scope, account isolation, rotation/revocation.",
+    "providerViewports": [
+      1440,
+      390,
+      320
+    ],
+    "providerAuthentication": "Installed CLI help and official documentation checked; no real provider login performed."
+  },
+  "finalSourceFiles": [
+    {
+      "path": "web/src/evolved/Github.tsx",
+      "sha256": "90620cabaebd6f8801b84c5c3656491cdbd9e47e3265f6ab16a1a77a8a0b6d42"
+    },
+    {
+      "path": "web/src/evolved/Codegraph.tsx",
+      "sha256": "e00d95c96f3535e6c793ca3b40f297e21e9003b896b712d55c2b5cf546d0cbe1"
+    },
+    {
+      "path": "web/src/evolved/ProviderLogin.tsx",
+      "sha256": "febc4f1bd170bd9f09069292fbac2aab528356fb975ab73ef0849f4cfb6a0798"
+    },
+    {
+      "path": "web/src/evolved/Runner.tsx",
+      "sha256": "1487bec338e462308833b2addba94ab336be09403df7d83f079c5dd1c16a361f"
+    },
+    {
+      "path": "web/src/evolved/ProjectsTeam.tsx",
+      "sha256": "b72f66f19aa91f71c55552b60927db8d259646a3e3345f61105e06f654225a05"
+    },
+    {
+      "path": "web/src/evolved/Workspace.tsx",
+      "sha256": "012c8c53d08f14c6849d98078558ab064d6390dfa8f08fc1918ccd9025013f7c"
+    },
+    {
+      "path": "web/src/evolved/workspaceNavigation.tsx",
+      "sha256": "6ba29027e97e30335be55d175ee7b7b01db7e011aac49ed022092ee3f2f3ec7c"
+    },
+    {
+      "path": "hub/src/evolved/store.ts",
+      "sha256": "815d36d4f876f9d40f275920cf02fc5c700046fd3ce5c9352e6f4aba55f7447f"
+    },
+    {
+      "path": "hub/src/evolved/codegraph.ts",
+      "sha256": "b1dcf4d67c5646276e72edfe0d1000464c868cef17063aa3390f1e65269ff704"
+    },
+    {
+      "path": "services/codegraph/worker.mjs",
+      "sha256": "11860f53057bdfb5ee0f5746ccc77cf3b3194b4932d08509f799ead3b45aa76e"
+    },
+    {
+      "path": "web/scripts/evolved-codegraph-check.mjs",
+      "sha256": "2ad0bd4649370473195f7b80b47123d497752908e4294f7a1e803ca56102c4f1"
+    },
+    {
+      "path": "web/scripts/evolved-github-check.mjs",
+      "sha256": "a1cb24bbfb2355caec112fcc54c6da4a6f25d4b368059a7050c012d5bb06d64d"
+    },
+    {
+      "path": "docs/evolved/PROVIDER_LOGIN.md",
+      "sha256": "58f834afb97173055438e76460f62bb2e214e68bc7530cd9fd084b8763c57834"
+    }
+  ],
+  "limits": [
+    "No real GitHub token or subscriber login was used; no actual remote Git push tested.",
+    "Subscription page documents native runner CLI login; it does not implement browser OAuth or claim verified provider status.",
+    "Responsive Chromium acceptance only; no physical Safari/iOS test.",
+    "Operator browser was not accessed; Codegraph defect was reproduced independently with the actual SDK data contract."
+  ],
+  "postReviewChanges": [
+    "Explicit TypeScript query result parameters corrected inference for placeholderData without changing runtime behavior.",
+    "Background-refresh test mock returns a valid status shape to prevent timing-dependent failures.",
+    "Real browser fixture supplies its generated synthetic service token through the required private file; no production credentials read."
+  ]
+}

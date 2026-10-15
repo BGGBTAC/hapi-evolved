@@ -27,6 +27,42 @@ async function setup() {
     const event = (turnId: string): SyncEvent => ({ type: 'message-received', sessionId: child.id, message: { id: `done-${turnId}`, seq: 100, localId: `codex:thread:${turnId}:hapi-turn-completed`, createdAt: Date.now(), content: { role: 'agent', content: { type: 'codex', data: { type: 'hapi-turn-completed', turnId, status: 'completed', finalText: 'Tests passed.' } } } } })
     return { store, messages, engine, parent, child, project, grant, reporter, event }
 }
+function permanentLease(t: Awaited<ReturnType<typeof setup>>) {
+    t.store.db.prepare('INSERT INTO evolved_runner_leases VALUES(?,?,?,?,?,?,?,?,?,NULL,NULL)').run('permanent-lease', 'Permanent runner', 'synthetic-unused-lease-hash', 'alice', t.project.id, '["peers:send"]', '[]', t.project.profile, Date.now())
+    t.store.db.prepare("UPDATE evolved_peer_children SET lease_id='permanent-lease' WHERE child_id=?").run(t.child.id)
+    // Auto-report authority follows the outer lease, not an expired exchanged capability.
+    t.store.db.prepare('UPDATE evolved_capabilities SET expires_at=0 WHERE id=?').run(t.grant.id)
+}
+test('permanent runner authority permits completion reports while standalone capabilities still expire', async () => {
+    const t = await setup()
+    t.store.db.prepare('UPDATE evolved_capabilities SET expires_at=0 WHERE id=?').run(t.grant.id)
+    await t.reporter.handle(t.event('expired-capability'))
+    expect(t.messages.messages.getMessages(t.parent.id, 10)).toHaveLength(0)
+    permanentLease(t)
+    await t.reporter.handle(t.event('permanent-runner'))
+    expect(t.messages.messages.getMessages(t.parent.id, 10)).toHaveLength(1)
+})
+test.each(['revoked', 'missing scope', 'profile mismatch'] as const)('permanent completion report authority rejects %s', async reason => {
+    const t = await setup(); permanentLease(t)
+    if (reason === 'revoked') t.store.db.prepare('UPDATE evolved_runner_leases SET revoked_at=?').run(Date.now())
+    if (reason === 'missing scope') t.store.db.exec("UPDATE evolved_runner_leases SET scopes='[\"peers:read\"]'")
+    if (reason === 'profile mismatch') t.store.db.exec("UPDATE evolved_runner_leases SET profile='workspace'")
+    await t.reporter.handle(t.event('blocked-permanent-runner'))
+    expect(t.messages.messages.getMessages(t.parent.id, 10)).toHaveLength(0)
+})
+test('permanent lease revocation during prompt lookup prevents report dispatch', async () => {
+    const t = await setup(); permanentLease(t)
+    const lookup = t.engine.getLatestUserMessage.bind(t.engine)
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    t.engine.getLatestUserMessage = async sessionId => { await gate; return lookup(sessionId) }
+    const handling = t.reporter.handle(t.event('permanent-revoked-during-lookup'))
+    t.store.db.prepare('UPDATE evolved_runner_leases SET revoked_at=?').run(Date.now())
+    release()
+    await handling
+    expect(t.messages.messages.getMessages(t.parent.id, 10)).toHaveLength(0)
+    expect(t.store.db.query('SELECT COUNT(*) AS n FROM evolved_peer_reports').get()).toEqual({ n: 0 })
+})
 test('completion reports resolve only the hub-owned parent and deduplicate across reporter restarts', async () => {
     const t = await setup()
     await t.reporter.handle(t.event('turn-1'))

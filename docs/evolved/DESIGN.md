@@ -109,3 +109,13 @@ durchgehenden Root-Aufruf. Späte Korrekturen wurden zusätzlich gezielt geprüf
 die erweiterten Browserergebnisse, Review-Befunde und abschließenden Quellhashes
 stehen im verlinkten Reviewnachweis. Numerische Kontingente in den
 Browsernachweisen sind ausdrücklich Testdaten.
+
+
+## Explain prerequisites where an action is used
+
+Permission and setup controls must explain their current state, the concrete
+reason an operation is unavailable, and the next available action in the same
+view. Do not rely on a handbook link alone. A saved repository grant is distinct
+from effective push access; a missing index is distinct from a failed service;
+a HAPI runner lease is distinct from provider subscription login. Show the actual
+state and never infer a verified connection from configuration alone.

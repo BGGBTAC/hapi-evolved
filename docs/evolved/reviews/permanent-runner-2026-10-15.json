@@ -1,0 +1,302 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-10-15T14:49:59.986807+00:00",
+  "scope": "Optional permanent runner access: nullable outer lease expiry, bounded derived capabilities, existing-data migration, authorization consumers, proxy/supervisor, UI and documentation.",
+  "verdict": "No blocking findings remain in the reviewed source after actual Claude Opus 5.5 closeout.",
+  "actualCalls": [
+    {
+      "stage": "design",
+      "at": "2026-10-15T14:36:32.348445+00:00",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "sourceBaseCommit": "3a2afc9f3a6fdc0377fc0902e3825003fa1f5c2e",
+      "inputSha256": "12e09128a361eb3e21e81083ed1e2d668b6c7e20eb16d0eae8a157c3329e00bd",
+      "outputSha256": "37b4e10732bd45298071bea01e037d42a941706b2b911d7bc3cdc44ae6457d20"
+    },
+    {
+      "stage": "final",
+      "at": "2026-10-15T14:42:15.956798+00:00",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "sourceBaseCommit": "3a2afc9f3a6fdc0377fc0902e3825003fa1f5c2e",
+      "inputSha256": "6f31dd34c49989f486b13b5771df0092cfd031870c4385a180b80e2d3fd98fd6",
+      "outputSha256": "778dc14c821eed49f0e0e1ea85d8f27a775a1e7e7740fc6403e30ab0560e9e74"
+    },
+    {
+      "stage": "closeout",
+      "at": "2026-10-15T14:48:06.040341+00:00",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "sourceBaseCommit": "3a2afc9f3a6fdc0377fc0902e3825003fa1f5c2e",
+      "inputSha256": "83cfcc6377479e1a6021efae9f6e7ead936d354bd8b6886c0f22ecc72330aa9f",
+      "outputSha256": "c630afc709c26fdee01f62c9e5efb6a4bab6f79fcc824805dd456eb33ea7e676"
+    }
+  ],
+  "acceptedFindings": [
+    {
+      "id": "proxy-clock-skew",
+      "severity": "medium",
+      "source": "services/runner-proxy/server.ts:48",
+      "problem": "A strict local-clock 900-second upper bound rejected a legitimate 900-second capability from a slightly faster Hub clock.",
+      "resolution": "Fixed validation ceiling at 900 + 60 seconds of local remaining time. Hub issuance remains strictly 1..900 seconds and derived capability expiry is NOT NULL. Regression rejects missing/null/string/expired/overlong values and accepts five seconds of Hub clock lead.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "migration-integrity-scope",
+      "severity": "medium",
+      "source": "hub/src/evolved/store.ts:91",
+      "problem": "A global foreign_key_check could block the expiry-constraint migration due to an unrelated historical orphan.",
+      "resolution": "Integrity checks scoped to evolved_runner_leases and evolved_capabilities inside the same IMMEDIATE transaction. A genuine legacy-schema fixture preserves unrelated corruption without changing it; a broken capability-to-lease FK still rolls back the expiry constraint change.",
+      "closeout": "resolved"
+    }
+  ],
+  "rejectedOrSupersededAdvice": [
+    {
+      "advice": "Rebuild the lease table with foreign_keys disabled.",
+      "disposition": "Superseded. Pinned Bun 1.3.14 contains SQLite 3.53.0, whose direct ALTER COLUMN DROP NOT NULL preserves table identity and needs no FK disable. Independent synthetic local and isolated VM-image probes passed."
+    },
+    {
+      "advice": "Allow nullable expiry in both lease and capability SQL branches.",
+      "disposition": "Rejected. Only outer lease expiry is nullable; capability expiry remains strict and finite."
+    },
+    {
+      "advice": "Promise supervisor revocation within two seconds.",
+      "disposition": "Rejected. Loop delay plus network timeout can exceed two seconds; no exact timing claim is made."
+    },
+    {
+      "advice": "Project-role restoration can resurrect a previously revoked lease.",
+      "disposition": "Rejected by source and corrected by Claude closeout. Project membership PUT and DELETE transactionally revoke both capabilities and leases; role restoration does not clear revoked_at.",
+      "sources": [
+        "hub/src/evolved/api.ts:134",
+        "hub/src/evolved/api.ts:147",
+        "hub/src/evolved/store.ts:179"
+      ]
+    }
+  ],
+  "nonblockingNotes": [
+    {
+      "note": "Proxy rejection test uses a 961000-ms future timestamp, only one second above the 960-second validation boundary. Extremely delayed CI could make that specific case timing-sensitive.",
+      "disposition": "Resolved after review by increasing the invalid timestamp to 990000 ms and rerunning the proxy suite."
+    },
+    {
+      "note": "An existing FK violation in the lease or capability tables makes this migration fail closed and requires operator diagnosis.",
+      "disposition": "Intended integrity behavior; no silent repair or deletion."
+    }
+  ],
+  "preservedRequirements": [
+    "Only explicit API expiresInSeconds:null creates a permanent lease; omitted API lifetime remains 24 hours.",
+    "Existing finite, expired and revoked leases retain their exact values and authorization status.",
+    "Permanent leases remain revocable and subject to current project membership, administrator role, profile and scope gates.",
+    "Derived capabilities remain at most 900 seconds with non-null expiry.",
+    "Browser default permanent access remains explicitly selectable alongside bounded temporary access; provider authentication and Runner provisioning remain separate."
+  ],
+  "primarySources": [
+    {
+      "url": "https://www.sqlite.org/lang_altertable.html",
+      "claim": "Section 6 documents ALTER COLUMN SET/DROP NOT NULL beginning with SQLite 3.53.0 (2026-04-09)."
+    }
+  ],
+  "verificationEvidence": [
+    {
+      "check": "Hub",
+      "result": {
+        "passed": 1718,
+        "skipped": 3,
+        "failed": 0
+      },
+      "logFile": "evolved-permanent-hub-tests.log",
+      "logSha256": "4c71a27777ef4d673d6409fedf5d786713eb2c1920d3d03c9e376f0e8ad0c1e2",
+      "verification": "Coordinator execution; log inspected independently by Codex reviewer. Claude received summaries and did not execute tests."
+    },
+    {
+      "check": "Web",
+      "result": {
+        "passed": 3812,
+        "failed": 0
+      },
+      "logFile": "evolved-permanent-web-tests.log",
+      "logSha256": "1e79a2c12dd437e899d28ca82bcff93c6ed65ba4389d285ec2f4710d85b2b3f1",
+      "verification": "Coordinator execution; log inspected independently by Codex reviewer. Claude received summaries and did not execute tests."
+    },
+    {
+      "check": "CLI",
+      "result": {
+        "passed": 3170,
+        "skipped": 12,
+        "failed": 0
+      },
+      "logFile": "evolved-permanent-cli-tests.log",
+      "logSha256": "b58fd9aee84c6dd6a8fec0790442b7449437bbbba80d616a89607901f9178012",
+      "verification": "Coordinator execution; log inspected independently by Codex reviewer. Claude received summaries and did not execute tests."
+    },
+    {
+      "check": "Shared",
+      "result": {
+        "passed": 342,
+        "failed": 0
+      },
+      "logFile": "evolved-permanent-shared-tests.log",
+      "logSha256": "636038e2e4192dcb2abdc86ac4dac5c96c40285a21040d026baafe515c4aab06",
+      "verification": "Coordinator execution; log inspected independently by Codex reviewer. Claude received summaries and did not execute tests."
+    },
+    {
+      "check": "Relay",
+      "result": {
+        "passed": 118,
+        "failed": 0
+      },
+      "logFile": "evolved-permanent-relay-tests.log",
+      "logSha256": "1ff0ba61e10c052242c0ba85e1bfe53e87f8483a5624284aef91dc00148319b2",
+      "verification": "Coordinator execution; log inspected independently by Codex reviewer. Claude received summaries and did not execute tests."
+    },
+    {
+      "check": "Runner proxy",
+      "result": {
+        "passed": 21,
+        "failed": 0
+      },
+      "logFile": "evolved-permanent-proxy-tests.log",
+      "logSha256": "6d9b4b02825fadf74cf979a620f13a6e33929cf919a71db3121bfd7c3a528a3c",
+      "verification": "Coordinator execution; log inspected independently by Codex reviewer. Claude received summaries and did not execute tests."
+    },
+    {
+      "check": "Migration and runner regression",
+      "result": {
+        "passed": 11,
+        "failed": 0
+      },
+      "logFile": "evolved-permanent-scoped-migration-tests.log",
+      "logSha256": "ae3c73efcf64302aa36291f403bd431c04bf75d3ca0c8d03cc4a8795282b6eac",
+      "verification": "Coordinator execution; log inspected independently by Codex reviewer. Claude received summaries and did not execute tests."
+    },
+    {
+      "check": "Deployment preflight",
+      "result": {
+        "passed": 11,
+        "failed": 0
+      },
+      "logFile": "evolved-permanent-deployment-tests.log",
+      "logSha256": "551d1ad88f497287ddb7139b102eec2db98c3eaf2eae5d30a0bb784012bfc75d",
+      "verification": "Coordinator execution; log inspected independently by Codex reviewer. Claude received summaries and did not execute tests."
+    },
+    {
+      "check": "VM validator",
+      "result": {
+        "passed": 11,
+        "failed": 0
+      },
+      "logFile": "evolved-permanent-validator-tests.log",
+      "logSha256": "2ce3dfab5641ec39b17d378f9ed8e7ce68d44de60a8cb8745c5c12e93f2bd529",
+      "verification": "Coordinator execution; log inspected independently by Codex reviewer. Claude received summaries and did not execute tests."
+    },
+    {
+      "check": "Real browser integration",
+      "result": {
+        "passGroups": 11
+      },
+      "logFile": "evolved-permanent-browser.log",
+      "logSha256": "3fb202113d4d7a8575e2256986230fd7bddcf80ccacef20e965ad77614e1a9f0",
+      "verification": "Coordinator execution; log inspected independently by Codex reviewer. Claude received summaries and did not execute tests."
+    },
+    {
+      "check": "Workspace typechecks",
+      "result": {
+        "status": "all packages Done"
+      },
+      "logFile": "evolved-permanent-typechecks.log",
+      "logSha256": "744c3893ab49b2d3dc42d3088c52af24ab94586aff3f409b610e054fbe79eb73",
+      "verification": "Coordinator execution; log inspected independently by Codex reviewer. Claude received summaries and did not execute tests."
+    }
+  ],
+  "reviewedSourceSha256": [
+    {
+      "path": "hub/src/evolved/store.ts",
+      "sha256": "b3d8e14f864a9b13b68293d7884c26ac9e88444ce3e6b9d4c23308c5bb3f877b"
+    },
+    {
+      "path": "hub/src/evolved/runner.ts",
+      "sha256": "9ac455fde10cc18c09918fe0bd47f418c28285552fd355ea2c3be40c98550023"
+    },
+    {
+      "path": "hub/src/evolved/peerReports.ts",
+      "sha256": "b5f9d89f99b992a25fc33170a1e3c5a413fca57f353e10d71555c91394d49b9c"
+    },
+    {
+      "path": "hub/src/evolved/schedules.ts",
+      "sha256": "aadd3d401eef78413fee3cb660a6592d473fe99d846261c9a2604936f5f6aa9d"
+    },
+    {
+      "path": "hub/src/evolved/runner.test.ts",
+      "sha256": "f3843cffc22374e09f888f42b0f0f10dbc3333edf50abd345e7743d7b5727129"
+    },
+    {
+      "path": "hub/src/evolved/runnerMigration.test.ts",
+      "sha256": "18df21856c01957370cd941950327166e53cc2244d282905baa13dbe6e79c237"
+    },
+    {
+      "path": "services/runner-proxy/supervisor.ts",
+      "sha256": "79c1682cdddf3463fd37f93471a4ffdd5a76abcb618a76c3df2f57649aba532f"
+    },
+    {
+      "path": "services/runner-proxy/server.ts",
+      "sha256": "1cf0d946863ebd122a06bfd090a236101cbdfedf7dfddcde641befdf8cacb5b1"
+    },
+    {
+      "path": "services/runner-proxy/supervisor.test.ts",
+      "sha256": "3731cb81a45cad65d46f42f7c92f3c769e490be50c7b0e462e8854e7c2b5738a"
+    },
+    {
+      "path": "services/runner-proxy/server.test.ts",
+      "sha256": "c038faf60feef310c1252e87f984dbb69562e09e2e3d3ce97f43388e8bcb5764"
+    },
+    {
+      "path": "web/src/evolved/Runner.tsx",
+      "sha256": "6fcbe1163cbd9500a56ee95f752ba86278d69cb84de94f06231433a5150f0bcb"
+    },
+    {
+      "path": "web/src/evolved/operations.test.tsx",
+      "sha256": "41c6a74836bfe64b44b14bbf275f6574cf0aa44fd787f72ac71fd0f24b4eaf9e"
+    },
+    {
+      "path": "docs/evolved/DEPLOYMENT.md",
+      "sha256": "30e4c9e76a7ba141d1a8b394421d62cd4d92b873f7d2dda30b4db763022e8ad6"
+    },
+    {
+      "path": "docs/evolved/PROVIDER_LOGIN.md",
+      "sha256": "40d20e8a0408a5086d9ba65a461e858e78d82a7c5c31d495a7ed6f8b194e1032"
+    },
+    {
+      "path": "hub/src/evolved/api.ts",
+      "sha256": "50ae93ddaa4be001813fa3302f75ef92255001e6f898aa39ec4cd0ceb1e0173c"
+    }
+  ],
+  "limits": [
+    "This record evaluates code readiness, not deployment success.",
+    "Tests use synthetic/local credentials and provider fixtures; no real provider subscription login or GitHub push was performed by the reviewer.",
+    "No existing user database or secret value was inspected or mutated by this review.",
+    "Raw Claude output and prompts remain outside the repository; this record contains sanitized dispositions and hashes."
+  ],
+  "postReviewChanges": [
+    {
+      "path": "services/runner-proxy/server.test.ts",
+      "change": "The rejected overlong capability fixture now uses 990000 ms instead of 961000 ms, retaining a 30-second margin above the same 960-second validation bound; proxy tests passed again."
+    },
+    {
+      "path": "docs/evolved/DEPLOYMENT.md",
+      "change": "The isolated acceptance instructions explicitly select Befristet because the user-facing default is now permanent."
+    }
+  ],
+  "postReviewSourceSha256": [
+    {
+      "path": "services/runner-proxy/server.test.ts",
+      "sha256": "2b5b5a3149a060d5aa74178f088ebf30f995d58600e723111888ced2b2b55c67"
+    },
+    {
+      "path": "docs/evolved/DEPLOYMENT.md",
+      "sha256": "aa0327dffab6900e9f5eadca1b863ecb264e4954691af57360a298ac5bb44a3c"
+    }
+  ]
+}

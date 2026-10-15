@@ -56,6 +56,24 @@ test('missed runs do not catch up and revoking the lease prevents dispatch', asy
     expect(t.calls).toHaveLength(0)
     expect(t.store.db.prepare("SELECT COUNT(*) AS n FROM evolved_schedule_runs WHERE state='failed'").get()).toEqual({ n: 1 })
 })
+test('a permanent runner still authorizes schedules after finite leases would expire and stops on revocation', async () => {
+    const t = setup()
+    t.store.db.exec('UPDATE evolved_runner_leases SET expires_at=NULL')
+    expect((await t.create()).status).toBe(201)
+    t.advance(31 * 86400_000)
+    await t.service.tick() // Missed occurrences are still skipped, never replayed.
+    expect(t.calls).toHaveLength(0)
+    t.advance(60_000)
+    await t.service.tick()
+    expect(t.calls).toHaveLength(2)
+    expect(t.store.db.query("SELECT COUNT(*) AS n FROM evolved_schedule_runs WHERE state='accepted'").get()).toEqual({ n: 1 })
+    t.store.db.prepare('UPDATE evolved_runner_leases SET revoked_at=?').run(t.store.now())
+    t.target.thinking = false
+    t.advance(60_000)
+    await t.service.tick()
+    expect(t.calls).toHaveLength(2)
+    expect(t.store.db.query("SELECT COUNT(*) AS n FROM evolved_schedule_runs WHERE state='failed'").get()).toEqual({ n: 1 })
+})
 test('profile changes disable schedules and capabilities cannot create background rights', async () => {
     const t = setup(); await t.create()
     t.store.db.prepare("UPDATE evolved_projects SET profile='workspace'").run()

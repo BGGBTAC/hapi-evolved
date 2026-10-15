@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EvolvedProject } from './api'
 import { ProjectsPanel } from './ProjectsTeam'
@@ -12,7 +12,7 @@ function mount(onSelectProject?: (id: string) => void) {
     const view = render(<QueryClientProvider client={client}><ProjectsPanel onSelectProject={onSelectProject} /></QueryClientProvider>)
     return { ...view, rerenderPanel: () => view.rerender(<QueryClientProvider client={client}><ProjectsPanel onSelectProject={onSelectProject} /></QueryClientProvider>) }
 }
-beforeEach(() => { context.me.user.id = 'user-1'; context.me.accessibleProjects = [...projects]; context.project = projects[0]; context.api.request.mockReset().mockResolvedValue({ teams: [] }); context.selectProject.mockReset() })
+beforeEach(() => { context.me.user.id = 'user-1'; context.me.accessibleProjects = [...projects]; context.project = projects[0]; context.api.request.mockReset().mockResolvedValue({ teams: [] }); context.selectProject.mockReset(); context.refresh.mockReset().mockResolvedValue(undefined) })
 describe('project overview', () => {
     it('offers name search only when useful and restores the full list after an empty result', async () => {
         mount()
@@ -40,6 +40,23 @@ describe('project overview', () => {
         fireEvent.click(screen.getByRole('button', { name: /Beta Lesend/ }))
         expect(select).toHaveBeenCalledWith('project-1')
         expect(context.selectProject).not.toHaveBeenCalled()
+    })
+    it('disables the current profile and explains runner and GitHub consequences before a real change', async () => {
+        context.project = { ...projects[0], role: 'admin', profile: 'workspace' }
+        mount()
+        const active = await screen.findByRole('button', { name: /^Arbeitsbereich Projektbezogene/ })
+        expect(active).toBeDisabled()
+        expect(active).toHaveAttribute('aria-pressed', 'true')
+        fireEvent.click(active)
+        expect(context.api.request.mock.calls.some(([path]) => path.endsWith('/profile'))).toBe(false)
+        expect(screen.getByText(/macht alle bisherigen Runner-Zugänge ungültig/)).toBeInTheDocument()
+        expect(screen.getByText(/Gespeicherte GitHub-Repository-Freigaben bleiben erhalten/)).toBeInTheDocument()
+        const restricted = screen.getByRole('button', { name: /^Eingeschränkt Schreib-/ })
+        expect(restricted).not.toBeDisabled()
+        fireEvent.click(restricted)
+        await waitFor(() => expect(context.api.request).toHaveBeenCalledWith('/projects/project-0/profile', { method: 'PUT', body: { profile: 'restricted' } }))
+        expect(await screen.findByText('Profil gespeichert.')).toBeInTheDocument()
+        expect(context.refresh).toHaveBeenCalledTimes(1)
     })
     it('drops removed projects immediately and resets search across accounts', () => {
         const { rerenderPanel } = mount()

@@ -33,7 +33,8 @@ export type CodeStatus = {
     state: 'unconfigured' | 'indexing' | 'ready' | 'error'
     watching: boolean
     pendingFiles: number
-    stats?: Record<string, number>
+    stats?: { nodeCount?: number; edgeCount?: number; fileCount?: number }
+    lastIndexedAt?: number | null
     version?: string
     error?: string
 }

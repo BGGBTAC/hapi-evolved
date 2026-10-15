@@ -96,7 +96,7 @@ function check(ok, message) { if (!ok) throw Error(message) }
 async function get(path) { const r=await fetch('http://runner-proxy:3010'+path,{signal:AbortSignal.timeout(4000)}); check(r.ok,'Proxy request refused'); return r.json() }
 try {
     const authority=await get('/evolved-runner-authority');
-    check(authority.projectId===projectId && authority.profile==='restricted' && authority.rootPath===root && authority.expiresAt>Date.now(),'Authority mismatch');
+    check(authority.projectId===projectId && authority.profile==='restricted' && authority.rootPath===root && (authority.expiresAt===null || (typeof authority.expiresAt==='number' && Number.isFinite(authority.expiresAt) && authority.expiresAt>Date.now())),'Authority mismatch');
     const state=JSON.parse(readFileSync('/runner/hapi/runner.state.json','utf8'));
     check(Number.isSafeInteger(state.pid)&&state.pid>1&&Number.isSafeInteger(state.httpPort)&&state.httpPort>0&&state.httpPort<65536,'Invalid runner state');
     const machineId=state.startedWithMachineId;

@@ -140,7 +140,18 @@ lokale Einträge und die lokale Suche nutzbar.
 
 Ein eingerichtetes Repository und ein erreichbarer Codegraphdienst sind nötig.
 Die Statusanzeige nennt Indexzustand, Dateiüberwachung und ausstehende Dateien.
-„Neu indizieren“ fordert eine Aktualisierung an.
+Der Index wird automatisch aufgebaut; du musst keinen Graphen von Hand anlegen.
+**Index wird aufgebaut** aktualisiert sich automatisch. **Noch kein Code im Index**
+ist bei einem neuen Projekt normal: Klone ein Repository in dessen Projektordner
+oder füge unterstützte Codedateien hinzu. Eine GitHub-Freigabe allein klont noch
+kein Repository. Die Dateiüberwachung erkennt neue und geänderte Quellen.
+
+**Nicht eingerichtet** bedeutet, dass ein Projektordner oder die Anbindung des
+Codegraph-Dienstes fehlt; der Hinweis nennt den nächsten Schritt. Ein nicht
+erreichbarer Dienst und eine fehlgeschlagene Indizierung werden dagegen als echte
+Fehler angezeigt. **Status aktualisieren** prüft die Verbindung erneut;
+**Neu indizieren** fordert für schreibberechtigte Mitglieder einen neuen Indexlauf
+an. Ein Fehler beim Laden eines Ausschnitts wird nicht als leerer Index ausgegeben.
 
 Suche nach Symbol oder Dateiname und wähle einen Treffer. Im Graphen kannst du
 Knoten anklicken oder per Tastatur auswählen, die Ansicht ziehen und mit Mausrad
@@ -152,11 +163,45 @@ dieses Symbol fokussieren“ beschränkt den Ausschnitt.
 trägst du geänderte, repository-relative Pfade ein, einen pro Zeile. Ergebnisse
 stammen aus dem Codeindex und ersetzen keinen tatsächlichen Testlauf.
 
+## Codex- und Claude-Abos verbinden
+
+Öffne **Abos verbinden** in der Navigation oder auf der Projektübersicht. Dort
+steht der native Anmeldeweg für beide Anbieter. Die Anmeldung erfolgt derzeit im
+privaten Runner-Terminal und wird beim Anbieter im Browser bestätigt. Ein eigener
+Anmelde- oder Statusdialog für Anbieterabos im HAPI-Backend ist noch nicht
+implementiert. Der Hub zeigt deshalb keinen behaupteten Verbindungsstatus an.
+
+Ein Runner-Zugang verbindet den Runner mit HAPI; er meldet weder Codex noch Claude
+bei deren Anbieter an. Die Anleitung mit Befehlen, privatem Runner-Home und
+Statusprüfung steht unter [Abos verbinden](PROVIDER_LOGIN.md). Abo-Zugangsdaten
+gehören nicht als GitHub-Token oder allgemeiner Tresorschlüssel in ein Formular.
+
 ## Runner anbinden
 
-Unter „Runner“ erstellt ein Projektadministrator einen befristeten Zugang:
+Ein **Runner** ist der Arbeitsdienst auf deinem Server. Er startet Claude oder
+Codex, bearbeitet Projektdateien und führt Git-Befehle aus. Damit du ihn über HAPI
+steuern kannst, benötigt er einen HAPI-Zugang für das Projekt.
 
-1. Namen und Gültigkeitsdauer zwischen einer und 168 Stunden wählen.
+Unter **Runner** erstellt ein Projektadministrator nur diesen Zugang. Die
+Weboberfläche installiert oder startet damit noch keinen Arbeitsdienst; das
+übernimmt der Betreiber gemäß [Deployment-Anleitung](DEPLOYMENT.md).
+
+**Dauerhaft – bis zum Widerruf** ist für deinen eigenen Runner vorausgewählt.
+Dieser Zugang hat kein Ablaufdatum. Wähle **Befristet**, wenn du den Zugang nur für
+eine bestimmte Zeit erlauben möchtest: maximal 168 Stunden, also 7 Tage. Die
+Stunden sind kein Rechenstundenkontingent und kein Zeitlimit für dein Anbieterabo.
+
+Nach Ablauf eines befristeten Zugangs stoppt der verwaltete Runner; für weitere
+Arbeit muss ein Administrator einen neuen Zugang erstellen und der Betreiber ihn
+beim Runner hinterlegen. Widerruf, Profilwechsel oder Änderungen der zugehörigen
+Rollen machen auch dauerhafte Zugänge ungültig und stoppen die Arbeit.
+Projektdateien und gespeicherte Anbieteranmeldungen bleiben erhalten.
+
+So erstellst du den Zugang:
+
+1. Einen Namen vergeben und **Dauerhaft – bis zum Widerruf** oder **Befristet**
+   wählen. Nur bei befristetem Zugang eine Gültigkeitsdauer zwischen einer und
+   168 Stunden angeben.
 2. Nur die benötigten Berechtigungen aktivieren. Ressourcenaktionen erfordern
    zusätzlich die freigegebenen Ressourcen-IDs.
 3. Mit frischem Passkey bestätigen und die einmalige Operator-Datei herunterladen.
@@ -168,9 +213,11 @@ Unter „Runner“ erstellt ein Projektadministrator einen befristeten Zugang:
 Der Schlüssel gehört außerhalb des Projektverzeichnisses und bleibt beim
 Operator beziehungsweise Runner-Proxy. Er wird weder in Agentenprompts noch in
 Logs oder Wissenseinträge kopiert. Der Proxy tauscht ihn gegen kurzlebige,
-projektgebundene Berechtigungen. Die Übersicht zeigt Laufzeit und Status;
-„Widerrufen“ entzieht den Zugang. Nach Ablauf oder Profilwechsel ist ein neuer
-Zugang nötig. Die eigentliche Runnerinstallation beschreibt die Betreiberanleitung.
+projektgebundene Berechtigungen. Die Übersicht zeigt Gültigkeit und Status;
+„Widerrufen“ entzieht auch einem dauerhaften Zugang die Berechtigung. Bereits
+vorhandene befristete Zugänge behalten ihr Ablaufdatum; sie werden nicht
+automatisch in dauerhafte Zugänge umgewandelt. Die eigentliche Runnerinstallation
+beschreibt die Betreiberanleitung.
 
 ## Vorschauen und Freigaben
 

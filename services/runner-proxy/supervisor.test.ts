@@ -15,11 +15,17 @@ it('binds managed mounts to the exact project UUID and preserves explicit worksp
     for (const root of ['/managed-workspaces/other', '/managed-workspaces', '/workspaces/a/b', '/workspaces/../runner', '/runner']) expect(validRunnerRoot(root, id)).toBe(false)
     expect(validRunnerRoot(`/managed-workspaces/${id}`, 'different-project')).toBe(false)
 })
-it('requires current project, profile, root and an unexpired lease', () => {
+it('requires current project, profile, root and an active timed or permanent lease', () => {
     const expected = { projectId: 'p', profile: 'workspace', rootPath: '/workspaces/p' }
     expect(validateAuthority({ ...expected, expiresAt: 2000 }, expected, 1000)).toBe(true)
-    for (const change of [{ projectId: 'other' }, { profile: 'restricted' }, { rootPath: '/workspaces/other' }, { expiresAt: 1000 }]) {
-        expect(validateAuthority({ ...expected, expiresAt: 2000, ...change }, expected, 1000)).toBe(false)
+    expect(validateAuthority({ ...expected, expiresAt: null }, expected, 1000)).toBe(true)
+    for (const expiresAt of [2000, null]) {
+        for (const change of [{ projectId: 'other' }, { profile: 'restricted' }, { rootPath: '/workspaces/other' }]) {
+            expect(validateAuthority({ ...expected, expiresAt, ...change }, expected, 1000)).toBe(false)
+        }
+    }
+    for (const expiresAt of [undefined, 1000, 0, '2000', Infinity, NaN, false]) {
+        expect(validateAuthority({ ...expected, expiresAt }, expected, 1000)).toBe(false)
     }
 })
 it('requires all identities, groups and capability sets to be dropped', () => {

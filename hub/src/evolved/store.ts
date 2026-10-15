@@ -75,12 +75,25 @@ export class EvolvedStore {
             CREATE TABLE IF NOT EXISTS evolved_team_members(team_id TEXT NOT NULL REFERENCES evolved_teams(id) ON DELETE CASCADE,user_id TEXT NOT NULL REFERENCES evolved_users(id) ON DELETE CASCADE,role TEXT NOT NULL CHECK(role IN ('viewer','member','admin')),PRIMARY KEY(team_id,user_id));
             CREATE TABLE IF NOT EXISTS evolved_projects(id TEXT PRIMARY KEY,team_id TEXT NOT NULL REFERENCES evolved_teams(id),name TEXT NOT NULL,root_path TEXT NOT NULL DEFAULT '',profile TEXT NOT NULL DEFAULT 'restricted' CHECK(profile IN ('restricted','workspace','extended')),created_at INTEGER NOT NULL,deleting_at INTEGER);
             CREATE TABLE IF NOT EXISTS evolved_project_roles(project_id TEXT NOT NULL REFERENCES evolved_projects(id) ON DELETE CASCADE,user_id TEXT NOT NULL REFERENCES evolved_users(id) ON DELETE CASCADE,role TEXT NOT NULL CHECK(role IN ('viewer','member','admin')),PRIMARY KEY(project_id,user_id));
-            CREATE TABLE IF NOT EXISTS evolved_runner_leases(id TEXT PRIMARY KEY,name TEXT NOT NULL,token_hash TEXT NOT NULL UNIQUE,user_id TEXT NOT NULL REFERENCES evolved_users(id),project_id TEXT NOT NULL REFERENCES evolved_projects(id),scopes TEXT NOT NULL,action_ids TEXT NOT NULL,profile TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,revoked_at INTEGER);
+            CREATE TABLE IF NOT EXISTS evolved_runner_leases(id TEXT PRIMARY KEY,name TEXT NOT NULL,token_hash TEXT NOT NULL UNIQUE,user_id TEXT NOT NULL REFERENCES evolved_users(id),project_id TEXT NOT NULL REFERENCES evolved_projects(id),scopes TEXT NOT NULL,action_ids TEXT NOT NULL,profile TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER,revoked_at INTEGER);
             CREATE TABLE IF NOT EXISTS evolved_capabilities(id TEXT PRIMARY KEY,token_hash TEXT NOT NULL UNIQUE,user_id TEXT NOT NULL REFERENCES evolved_users(id),project_id TEXT NOT NULL REFERENCES evolved_projects(id),scopes TEXT NOT NULL,action_ids TEXT NOT NULL,profile TEXT NOT NULL,expires_at INTEGER NOT NULL,revoked_at INTEGER,lease_id TEXT REFERENCES evolved_runner_leases(id));
             CREATE TABLE IF NOT EXISTS evolved_audit(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT,project_id TEXT,action TEXT NOT NULL,target_id TEXT,created_at INTEGER NOT NULL);
             CREATE INDEX IF NOT EXISTS evolved_sessions_expiry ON evolved_sessions(expires_at);
             CREATE INDEX IF NOT EXISTS evolved_challenges_expiry ON evolved_challenges(expires_at);
         `)
+        try {
+            this.db.transaction(() => {
+                const expiry = (this.db.query('PRAGMA table_info(evolved_runner_leases)').all() as Array<{ name: string; notnull: number }>).find(column => column.name === 'expires_at')
+                if (!expiry?.notnull) return
+                // Bun 1.3.14 ships SQLite 3.53: remove only this constraint, keeping
+                // table identity, rows, indexes, triggers and incoming foreign keys.
+                this.db.exec('ALTER TABLE evolved_runner_leases ALTER COLUMN expires_at DROP NOT NULL')
+                if (this.db.query('PRAGMA foreign_key_check(evolved_runner_leases)').get()
+                    || this.db.query('PRAGMA foreign_key_check(evolved_capabilities)').get()) {
+                    throw new EvolvedError('migration_failed', 'Runner lease migration failed its integrity check.', 500)
+                }
+            }).immediate()
+        } catch (error) { this.db.close(); throw error }
         if (options.bootstrapFile && !this.initialized()) this.ensureBootstrap(options.bootstrapFile)
     }
     readonly now: () => number
@@ -198,14 +211,17 @@ export class EvolvedStore {
         finally { if (managed) closeSync(managed.fd) }
     }
     setProfile(userId: string, projectId: string, profile: AgentProfile): EvolvedProject {
-        this.requireProject(userId, projectId, 'admin')
-        this.db.transaction(() => {
+        return this.db.transaction(() => {
+            const current = this.requireProject(userId, projectId, 'admin')
+            // Repeated PUTs can follow a lost response or a browser remount. Only
+            // a real profile transition revokes runners; authorization still applies.
+            if (current.profile === profile) return current
             this.db.prepare('UPDATE evolved_projects SET profile=? WHERE id=?').run(profile, projectId)
             this.db.prepare('UPDATE evolved_capabilities SET revoked_at=? WHERE project_id=?').run(this.now(), projectId)
             this.db.prepare('UPDATE evolved_runner_leases SET revoked_at=COALESCE(revoked_at,?) WHERE project_id=?').run(this.now(), projectId)
             this.audit(userId, projectId, 'profile.changed', projectId)
-        })()
-        return this.requireProject(userId, projectId)
+            return this.requireProject(userId, projectId)
+        }).immediate()
     }
     issueInvitation(actor: string, teamId: string, name: string, role: ProjectRole): { token: string; expiresAt: number } {
         this.requireTeam(actor, teamId, 'admin')
@@ -321,7 +337,7 @@ export class EvolvedStore {
         const project = principal?.accessibleProjects.find(p => p.id === row.project_id)
         if (!principal || !project || project.profile !== row.profile || project.role !== 'admin') return null
         if (row.lease_id) {
-            const lease = this.db.prepare('SELECT 1 FROM evolved_runner_leases WHERE id=? AND user_id=? AND project_id=? AND profile=? AND revoked_at IS NULL AND expires_at>?').get(row.lease_id, row.user_id, row.project_id, row.profile, this.now())
+            const lease = this.db.prepare('SELECT 1 FROM evolved_runner_leases WHERE id=? AND user_id=? AND project_id=? AND profile=? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>?)').get(row.lease_id, row.user_id, row.project_id, row.profile, this.now())
             if (!lease || project.role !== 'admin') return null
         }
         return { user: principal.user, accessibleProjects: [project], capability: { id: row.id, projectId: row.project_id, scopes: JSON.parse(row.scopes), actionIds: JSON.parse(row.action_ids), expiresAt: row.expires_at, ...(row.lease_id ? { leaseId: row.lease_id } : {}) } }

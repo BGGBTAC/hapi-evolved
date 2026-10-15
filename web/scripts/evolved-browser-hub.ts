@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
+import { spawn } from 'node:child_process'
 import { EvolvedVault, createVaultSigningKey } from '../../hub/src/evolved/vault.ts'
 import { createVaultServer } from '../../hub/src/evolved/vaultServer.ts'
 import { startHub } from '../../hub/src/startHub.ts'
@@ -44,7 +45,28 @@ const sideProvider = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(req
     return Response.json({ choices: [{ message: { content: 'SYNTHETIC_SIDE_REPLY: separate text-only answer' } }], usage: { total_tokens: 42 } })
 } })
 Object.assign(process.env, { EVOLVED_SIDECHANNEL_ADAPTER: 'openai-chat-completions-v1', EVOLVED_SIDECHANNEL_URL: `http://127.0.0.1:${sideProvider.port}/completions`, EVOLVED_SIDECHANNEL_ALLOW_LOOPBACK_HTTP: '1', EVOLVED_SIDECHANNEL_MODEL: 'synthetic-side-model', EVOLVED_SIDECHANNEL_DAILY_TOKENS: '40000', EVOLVED_SIDECHANNEL_KEY_FILE: sideKey })
+// Optional real local Codegraph fixture: all state and credentials are synthetic.
+let codegraphProcess: ReturnType<typeof spawn> | undefined
+process.on('exit', () => codegraphProcess?.kill('SIGTERM'))
+if (process.env.EVOLVED_TEST_CODEGRAPH_NODE) {
+    const token = randomBytes(32).toString('hex')
+    const tokenFile = join(tmp, 'codegraph-service.key')
+    writeFileSync(tokenFile, token, { mode: 0o600 })
+    const port = process.env.EVOLVED_TEST_CODEGRAPH_PORT!
+    mkdirSync(join(tmp, 'managed-workspaces'), { recursive: true, mode: 0o700 })
+    codegraphProcess = spawn(process.env.EVOLVED_TEST_CODEGRAPH_NODE, [new URL('../../services/codegraph/server.mjs', import.meta.url).pathname], {
+        env: { ...process.env, EVOLVED_SERVICE_TOKEN_FILE: '', EVOLVED_SERVICE_TOKEN: token, EVOLVED_CODEGRAPH_HOST: '127.0.0.1', EVOLVED_CODEGRAPH_PORT: port, EVOLVED_CODEGRAPH_STATE_DIR: join(tmp, 'codegraph'), EVOLVED_CODE_ROOTS: JSON.stringify([workspace, join(tmp, 'managed-workspaces')]) }, stdio: 'ignore',
+    })
+    let ready = false
+    for (let attempt = 0; attempt < 100; attempt++) {
+        if (codegraphProcess.exitCode !== null) throw new Error('Synthetic Codegraph exited')
+        try { if ((await fetch(`http://127.0.0.1:${port}/health`, { headers: { authorization: `Bearer ${token}` } })).ok) { ready = true; break } } catch { /* starting */ }
+        await new Promise(resolve => setTimeout(resolve, 100))
+    }
+    if (!ready) { codegraphProcess.kill('SIGTERM'); throw new Error('Synthetic Codegraph did not start') }
+    Object.assign(process.env, { EVOLVED_CODEGRAPH_URL: `http://127.0.0.1:${port}`, EVOLVED_SERVICE_TOKEN_FILE: tokenFile })
+}
 const hub=await startHub({args:['--no-relay']})
-const stop=async()=>{await hub.stop();vaultServer.stop(true);sideProvider.stop(true);vault.close();process.exit(0)}
+const stop=async()=>{codegraphProcess?.kill('SIGTERM');await hub.stop();vaultServer.stop(true);sideProvider.stop(true);vault.close();process.exit(0)}
 process.on('SIGINT',stop);process.on('SIGTERM',stop)
 console.log('Synthetic Evolved browser fixture ready')

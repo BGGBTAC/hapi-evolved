@@ -19,7 +19,7 @@ test('queued socket budget counts binary and UTF-8 bytes and bounds nested objec
     const cyclic: Record<string, unknown> = {}; cyclic.self = cyclic
     expect(queuedPacketBytes(cyclic)).toBeGreaterThan(8 * 1024 * 1024)
 })
-test('proxy holds credentials, preserves socket acknowledgements and denies browser/cross-project access', async () => {
+for (const permanent of [false, true]) test(`proxy holds ${permanent ? 'permanent' : 'timed'} credentials, preserves socket acknowledgements and denies browser/cross-project access`, async () => {
     const directory = mkdtempSync(join(tmpdir(), 'evolved-proxy-test-')), leaseFile = join(directory, 'lease')
     cleanup.push(() => rmSync(directory, { recursive: true, force: true }))
     writeFileSync(leaseFile, 'synthetic-lease', { mode: 0o600 })
@@ -39,7 +39,7 @@ test('proxy holds credentials, preserves socket acknowledgements and denies brow
         if (path.startsWith('/socket.io/')) return handler.fetch(request, server)
         if (path === '/api/evolved/runner/authority') {
             expect(request.headers.get('authorization')).toBe('Bearer synthetic-lease')
-            return revoked ? Response.json({ error: 'revoked' }, { status: 401 }) : Response.json({ projectId: 'a', profile: 'restricted', rootPath: '/workspaces/a', expiresAt: Date.now() + 900000 })
+            return revoked ? Response.json({ error: 'revoked' }, { status: 401 }) : Response.json({ projectId: 'a', profile: 'restricted', rootPath: '/workspaces/a', expiresAt: permanent ? null : Date.now() + 900000 })
         }
         if (path === '/api/evolved/runner/token') {
             expect(request.headers.get('authorization')).toBe('Bearer synthetic-lease'); leaseCalls++
@@ -79,8 +79,36 @@ test('proxy holds credentials, preserves socket acknowledgements and denies brow
     expect(authority.status).toBe(200)
     const state = await authority.json() as Record<string, unknown>
     expect(state.projectId).toBe('a')
+    if (permanent) expect(state.expiresAt).toBeNull()
+    else expect(state.expiresAt).toBeGreaterThan(Date.now())
     expect(Object.keys(state).sort()).toEqual(['expiresAt', 'profile', 'projectId', 'rootPath'])
     expect((await fetch(new URL('/evolved-runner-authority', url), { headers: { origin: 'https://browser.test' } })).status).toBe(403)
     revoked = true
     expect((await fetch(new URL('/evolved-runner-authority', url))).status).toBe(403)
 }, 10000)
+
+test('a permanent lease never permits missing, permanent or overlong exchanged capabilities', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'evolved-proxy-bounded-')), leaseFile = join(directory, 'lease')
+    cleanup.push(() => rmSync(directory, { recursive: true, force: true }))
+    writeFileSync(leaseFile, 'synthetic-permanent-lease', { mode: 0o600 })
+    let expiresAt: unknown = null, forwarded = 0
+    const hub = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch(request) {
+        if (new URL(request.url).pathname === '/api/evolved/runner/token') {
+            return Response.json({ token: 'x'.repeat(43), projectId: 'a', expiresAt })
+        }
+        forwarded++
+        return Response.json({ ok: true })
+    } })
+    cleanup.push(() => hub.stop(true))
+    const proxy = createRunnerProxy({ hubUrl: hub.url.toString(), leaseFile, projectId: 'a', port: 0 })
+    cleanup.push(proxy.close)
+    for (const invalid of [null, undefined, String(Date.now() + 60_000), Date.now() - 1, Date.now() + 990_000, Date.now() + 3600_000]) {
+        expiresAt = invalid
+        expect((await fetch(new URL('/cli/sessions', proxy.server.url))).status).toBe(503)
+    }
+    expect(forwarded).toBe(0)
+    // A valid 15-minute capability from a Hub whose clock is five seconds ahead.
+    expiresAt = Date.now() + 905_000
+    expect((await fetch(new URL('/cli/sessions', proxy.server.url))).status).toBe(200)
+    expect(forwarded).toBe(1)
+})

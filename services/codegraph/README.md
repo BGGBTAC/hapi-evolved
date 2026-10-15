@@ -35,6 +35,13 @@ Credential-Dateien, `.env`, `.git`, Abhängigkeiten und Build-Ausgaben werden au
 Alle drei Sekunden erfolgt ein begrenzter Dateiabgleich; nur geänderte/gelöschte Pfade gehen an das SDK.
 Maximal 50.000 Dateien, 10.000 Verzeichnisse und 1 MiB pro Quelldatei werden verarbeitet.
 Die Anzeige meldet Indexierungszustand, ausstehende Änderungen und Fehler.
+Ein leerer Projektordner ist ein erfolgreicher leerer Index: `graph` liefert
+`nodes: []` und `edges: []` statt eines fehlenden Symbols. Die Standardansicht
+wählt ein vorhandenes Symbol unabhängig von seinem Namen. Explizite unbekannte
+Knoten-IDs bleiben Fehler. Statusstatistiken enthalten ausschließlich die Zahlen
+`nodeCount`, `edgeCount`, `fileCount`; verschachtelte SDK-Verteilungen werden
+nicht an die Oberfläche durchgereicht. `lastIndexedAt` invalidiert dort die
+Abfragen nach einer automatischen Quelltextaktualisierung.
 
 `DO_NOT_TRACK=1`, `CODEGRAPH_TELEMETRY=0`, `CODEGRAPH_NO_UPDATE_CHECK=1` und
 `CODEGRAPH_NO_DOWNLOAD=1` werden vor dem Laden des SDK erzwungen. Laufzeit braucht keine externen Dienste.
@@ -61,3 +68,16 @@ Der HTTP-Abnahmelauf im isolierten Compose-Teststack erzeugt und entfernt nur se
 ```sh
 EVOLVED_VALIDATION_STATE=/tmp/hapi-evolved-stack-validation node services/codegraph/validate_stack.mjs
 ```
+
+
+Die Browserregression kann unter Linux x64 den echten Dienst einschließen
+(nach Installation der lokalen Codegraph-Abhängigkeiten und Web-Build):
+
+```sh
+EVOLVED_TEST_CODEGRAPH_NODE="$PWD/services/codegraph/node_modules/@colbymchenry/codegraph-linux-x64/node" \
+  node web/scripts/evolved-browser-check.mjs
+```
+
+Sie verwendet nur temporäre synthetische Konten/Workspaces und prüft den leeren
+Index, automatische Aufnahme neuer Dateien, Graphausschnitt, Quelltext und
+Neuindizierung über den echten authentifizierten Hub.

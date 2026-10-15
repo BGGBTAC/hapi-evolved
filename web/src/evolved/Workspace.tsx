@@ -1,3 +1,4 @@
+import { ProviderLoginPanel } from './ProviderLogin'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import * as Dialog from '@radix-ui/react-dialog'
@@ -97,7 +98,7 @@ function WorkspaceForAccount() {
             <main className="ew-content" id="workspace-content" ref={content}><div className="ew-content-inner"><div className="ew-page-heading"><div><span className="ew-eyebrow">{unavailableProject ? 'Projekt nicht verfügbar' : navigationProject?.name ?? 'Willkommen bei HAPI-eVolved'}</span><h1 ref={heading} tabIndex={-1}>{page.label}</h1><p>{page.description}</p></div>{navigationProject && <span className="ew-role-label">{roleLabels[navigationProject.role]}</span>}</div>
                 <ErrorNotice error={action.error} />
                 {unavailableProject ? <p className="ev-callout" role="status">Dieses Projekt ist für dein Konto nicht verfügbar. Wähle ausdrücklich ein anderes Projekt, um fortzufahren.</p> : changingProject ? <Loading /> : <div key={`${authorizedProject?.id ?? 'none'}:${tab}`}>
-                    {tab === 'overview' ? <Dashboard /> : tab === 'projects' ? <ProjectsPanel onSelectProject={changeProject} /> : tab === 'team' ? <TeamPanel /> : authorizedProject && tab === 'capacity' ? <CapacityPanel /> : authorizedProject && tab === 'github' ? <GithubPanel /> : authorizedProject && tab === 'vault' ? <VaultPanel /> : authorizedProject && tab === 'memory' ? <MemoryPanel /> : authorizedProject && tab === 'codegraph' ? <CodegraphPanel /> : authorizedProject && tab === 'automation' ? <AutomationPanel /> : authorizedProject && tab === 'runner' ? <RunnerPanel /> : authorizedProject && tab === 'previews' ? <PreviewsPanel /> : null}
+                    {tab === 'overview' ? <Dashboard /> : tab === 'projects' ? <ProjectsPanel onSelectProject={changeProject} /> : tab === 'team' ? <TeamPanel /> : authorizedProject && tab === 'capacity' ? <CapacityPanel /> : authorizedProject && tab === 'github' ? <GithubPanel /> : authorizedProject && tab === 'vault' ? <VaultPanel /> : authorizedProject && tab === 'memory' ? <MemoryPanel /> : authorizedProject && tab === 'codegraph' ? <CodegraphPanel /> : authorizedProject && tab === 'automation' ? <AutomationPanel /> : tab === 'providers' ? <ProviderLoginPanel /> : authorizedProject && tab === 'runner' ? <RunnerPanel /> : authorizedProject && tab === 'previews' ? <PreviewsPanel /> : null}
                 </div>}
                 <footer className="ew-page-footer">HAPI-eVolved <span>Dein Projekt. Dein Kontext.</span></footer>
             </div></main>

@@ -18,6 +18,8 @@ or container image.
   budgeted Graphiti/Neo4j knowledge graph.
 - Local Codegraph search, source inspection, graph/impact exploration and refresh.
 - Isolated Claude Code/Codex runners with revocable leases and project profiles.
+- Permanent runner access until revocation, with optional timed access; existing
+  access deadlines are preserved and internal credentials stay short-lived.
 - Automatic per-project directories and optional manual folder selection.
 - Project GitHub connections with repository grants and brokered Git operations.
 - Durable attachment originals, searchable history, saved prompts, scoped
@@ -25,6 +27,13 @@ or container image.
 - A dedicated logo, community documentation and source-preview packaging.
 
 ### Fixed
+
+- Repository write grants are selectable independently of the execution profile,
+  with contextual push requirements and an explicit profile/runner setup path.
+- Codegraph statistics no longer render nested SDK objects as React children;
+  empty workspaces return an empty graph and explain automatic indexing.
+- A visible subscription setup page distinguishes native Codex/Claude logins
+  from HAPI runner access, with accurate provider instructions and status limits.
 
 - PWA updates are visible before sign-in and project selection; consistent HTML,
   service-worker and manifest cache headers, with no automatic reload of other

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useEvolved } from './auth'
-import { canWriteProject, projectPath, type CodeDetail, type CodeGraph, type CodeNode, type CodeStatus } from './api'
+import { canWriteProject, EvolvedApiError, projectPath, type CodeDetail, type CodeGraph, type CodeNode, type CodeStatus } from './api'
+import { WorkspaceLink } from './workspaceNavigation'
 import { ActionStatus, Empty, ErrorNotice, Field, Loading, Panel, submit, useAction } from './ui'
 
 export function layoutNodes(nodes: CodeNode[]): Map<string, { x: number; y: number }> {
@@ -67,7 +68,12 @@ function NodeList({ nodes, select, selected }: { nodes: CodeNode[]; select: (id:
 }
 type Impact = { nodes?: CodeNode[]; edges?: CodeGraph['edges']; files?: string[]; truncated?: boolean }
 export function CodegraphPanel() {
-    const { api, project } = useEvolved()
+    const { api, me, project } = useEvolved()
+    if (!project) return <Panel title="Codegraph"><Empty>Wähle zuerst ein Projekt.</Empty></Panel>
+    return <CodegraphForProject key={`${api.baseUrl}:${me.user.id}:${project.id}:${project.role}`} />
+}
+function CodegraphForProject() {
+    const { api, me, project } = useEvolved()
     const path = `${projectPath(project!.id)}/codegraph`
     const action = useAction()
     const [query, setQuery] = useState('')
@@ -76,28 +82,52 @@ export function CodegraphPanel() {
     const [focus, setFocus] = useState<string | null>(null)
     const [files, setFiles] = useState('')
     const [affectedFiles, setAffectedFiles] = useState<string | null>(null)
-    const status = useQuery({ queryKey: ['evolved', 'code-status', project!.id], queryFn: ({ signal }) => api.request<CodeStatus>(`${path}/status`, { signal }), refetchInterval: query => query.state.data?.state === 'indexing' ? 2500 : false })
-    const available = status.data?.available === true
-    const graph = useQuery({ queryKey: ['evolved', 'code-graph', project!.id, focus, status.data?.version], enabled: available, queryFn: ({ signal }) => api.request<CodeGraph>(`${path}/graph${focus ? `?nodeId=${encodeURIComponent(focus)}` : ''}`, { signal }) })
-    const search = useQuery({ queryKey: ['evolved', 'code-search', project!.id, searchQuery], enabled: available && !!searchQuery, queryFn: ({ signal }) => api.request<{ nodes: CodeNode[] }>(`${path}/search?q=${encodeURIComponent(searchQuery)}`, { signal }) })
-    const detail = useQuery({ queryKey: ['evolved', 'code-node', project!.id, selected], enabled: available && !!selected, queryFn: ({ signal }) => api.request<CodeDetail>(`${path}/node?nodeId=${encodeURIComponent(selected!)}`, { signal }) })
-    const impact = useQuery({ queryKey: ['evolved', 'code-impact', project!.id, selected], enabled: available && !!selected, queryFn: ({ signal }) => api.request<Impact>(`${path}/impact?nodeId=${encodeURIComponent(selected!)}`, { signal }) })
-    const affected = useQuery({ queryKey: ['evolved', 'code-affected', project!.id, affectedFiles], enabled: available && !!affectedFiles, queryFn: ({ signal }) => api.request<Impact>(`${path}/affected?files=${encodeURIComponent(affectedFiles!)}`, { signal }) })
+    const scope = [api.baseUrl, me.user.id, project!.id, project!.role]
+    const status = useQuery({ queryKey: ['evolved', 'code-status', ...scope], queryFn: ({ signal }) => api.request<CodeStatus>(`${path}/status`, { signal }), retry: false, gcTime: 0, refetchInterval: query => query.state.error ? false : query.state.data?.state === 'indexing' ? 2500 : query.state.data?.watching ? 5000 : false })
+    const current = !status.error ? status.data : undefined
+    const available = current?.available === true
+    const indexVersion = current?.lastIndexedAt ?? current?.version
+    const graph = useQuery<CodeGraph>({ placeholderData: (data, previous) => previous?.queryKey[6] === focus ? data : undefined, queryKey: ['evolved', 'code-graph', ...scope, focus, indexVersion], enabled: available, queryFn: ({ signal }) => api.request<CodeGraph>(`${path}/graph${focus ? `?nodeId=${encodeURIComponent(focus)}` : ''}`, { signal }) })
+    const search = useQuery<{ nodes: CodeNode[] }>({ placeholderData: (data, previous) => previous?.queryKey[6] === searchQuery ? data : undefined, queryKey: ['evolved', 'code-search', ...scope, searchQuery, indexVersion], enabled: available && !!searchQuery, queryFn: ({ signal }) => api.request<{ nodes: CodeNode[] }>(`${path}/search?q=${encodeURIComponent(searchQuery)}`, { signal }) })
+    const detail = useQuery<CodeDetail>({ placeholderData: (data, previous) => previous?.queryKey[6] === selected ? data : undefined, queryKey: ['evolved', 'code-node', ...scope, selected, indexVersion], enabled: available && !!selected, queryFn: ({ signal }) => api.request<CodeDetail>(`${path}/node?nodeId=${encodeURIComponent(selected!)}`, { signal }) })
+    const impact = useQuery<Impact>({ placeholderData: (data, previous) => previous?.queryKey[6] === selected ? data : undefined, queryKey: ['evolved', 'code-impact', ...scope, selected, indexVersion], enabled: available && !!selected, queryFn: ({ signal }) => api.request<Impact>(`${path}/impact?nodeId=${encodeURIComponent(selected!)}`, { signal }) })
+    const affected = useQuery<Impact>({ placeholderData: (data, previous) => previous?.queryKey[6] === affectedFiles ? data : undefined, queryKey: ['evolved', 'code-affected', ...scope, affectedFiles, indexVersion], enabled: available && !!affectedFiles, queryFn: ({ signal }) => api.request<Impact>(`${path}/affected?files=${encodeURIComponent(affectedFiles!)}`, { signal }) })
     const select = (id: string) => { setSelected(id) }
-    const stateNames: Record<string, string> = { unconfigured: 'Nicht eingerichtet', indexing: 'Wird indiziert', ready: 'Bereit', error: 'Fehler' }
-    return <div className="ev-stack"><Panel title="Codegraph" description="Erkunde Symbole, Abhängigkeiten und Auswirkungen im freigegebenen Repository."><div className="ev-row"><div><span className="ev-badge">{stateNames[status.data?.state ?? ''] ?? 'Verbindung wird geprüft'}</span>{status.data && <p className="ev-muted">{status.data.watching ? 'Dateiüberwachung aktiv' : 'Dateiüberwachung inaktiv'} · {status.data.pendingFiles ?? 0} ausstehende Dateien{status.data.version ? ` · Stand ${status.data.version}` : ''}</p>}</div><div className="ev-actions"><button onClick={() => { void status.refetch(); if (available) void graph.refetch() }}>Aktualisieren</button>{canWriteProject(project!.role) && <button disabled={action.busy || status.data?.state === 'indexing'} onClick={() => void action.run(async () => { await api.request(`${path}/reindex`, { method: 'POST', body: {} }); await status.refetch(); if (available) await graph.refetch() }, 'Indizierung angefordert.')}>Neu indizieren</button>}</div></div>
-        <ErrorNotice error={status.error || status.data?.error} />{status.data?.stats && <div className="ev-stats">{Object.entries(status.data.stats).map(([key, value]) => <span key={key}><strong>{value}</strong> {key}</span>)}</div>}
-        {!available && !status.isPending && <Empty>{project?.rootPath ? 'Der Codegraph ist derzeit nicht verfügbar. Prüfe den Indexstatus oder starte eine Indizierung.' : 'Diesem Projekt ist noch kein Repository-Verzeichnis zugeordnet. Lege ein Projekt mit einem freigegebenen Repository-Pfad an.'}</Empty>}
+    const unconfigured = current?.state === 'unconfigured' || status.error instanceof EvolvedApiError && status.error.code === 'codegraph_unconfigured'
+    const denied = status.error instanceof EvolvedApiError && [401, 403].includes(status.error.status)
+    const empty = available && current?.stats?.nodeCount === 0
+    const stateNames: Record<string, string> = { unconfigured: 'Nicht eingerichtet', indexing: 'Index wird aufgebaut', ready: 'Bereit', error: 'Indizierung fehlgeschlagen' }
+    const stateLabel = denied ? 'Zugriff nicht möglich' : unconfigured ? 'Nicht eingerichtet' : status.error ? 'Dienst nicht erreichbar' : empty ? 'Noch kein Code im Index' : stateNames[current?.state ?? ''] ?? 'Verbindung wird geprüft'
+    // Old sidecars can return nested SDK statistics. Never render unchecked response values.
+    const counts = ([['nodeCount', 'Symbole'], ['edgeCount', 'Beziehungen'], ['fileCount', 'Dateien']] as const)
+        .flatMap(([key, label]) => {
+            const value = current?.stats?.[key]
+            return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? [{ key, label, value }] : []
+        })
+    const reindex = () => void action.run(async () => {
+        await api.request(`${path}/reindex`, { method: 'POST', body: {} })
+        await status.refetch()
+        if (available) await graph.refetch()
+    }, 'Indizierung angefordert. Der Status wird automatisch aktualisiert.')
+    return <div className="ev-stack"><Panel title="Codegraph" description="Erkunde Symbole, Abhängigkeiten und Auswirkungen der Codedateien in deinem Projektordner.">
+        <div className="ev-row"><div><span className="ev-badge" role="status">{stateLabel}</span>{current && <p className="ev-muted">{current.watching ? 'Dateiüberwachung aktiv' : 'Dateiüberwachung inaktiv'} · {typeof current.pendingFiles === 'number' ? current.pendingFiles : 0} ausstehende Dateien</p>}</div><div className="ev-actions"><button disabled={status.isFetching} onClick={() => { void status.refetch(); if (available) void graph.refetch() }}>Status aktualisieren</button>{canWriteProject(project!.role) && current && !unconfigured && <button disabled={action.busy || status.isFetching || current.state === 'indexing'} onClick={reindex}>Neu indizieren</button>}</div></div>
+        {status.isPending && <Loading />}
+        {unconfigured ? <Empty>{project!.rootPath ? 'Der Codegraph-Dienst ist für diese Installation noch nicht eingerichtet. Der Betreiber muss den Dienst mit dem Projektordner verbinden. Danach den Status aktualisieren.' : 'Diesem Projekt ist noch kein Projektordner zugeordnet. Ordne unter Projekte einen freigegebenen Ordner zu.'}</Empty> : status.error ? <><ErrorNotice error={status.error} /><p className="ev-muted">{denied ? 'Prüfe deine Anmeldung und Projektberechtigung. Es werden keine gespeicherten Graphdaten angezeigt.' : 'Der Indexstatus konnte nicht geladen werden. Das bedeutet nicht, dass der Graph leer ist. Versuche „Status aktualisieren“; bleibt der Fehler bestehen, muss der Betreiber den Codegraph-Dienst prüfen.'}</p></> : <>
+            {current?.state === 'indexing' && <p className="ev-muted">Der Codegraph wird automatisch aufgebaut. Du musst keinen Graphen anlegen. Diese Ansicht aktualisiert sich, sobald die Indizierung fertig ist.</p>}
+            {current?.state === 'error' && <><ErrorNotice error={current.error || 'Der Codeindex konnte nicht aufgebaut werden.'} /><p className="ev-muted">{canWriteProject(project!.role) ? 'Versuche „Neu indizieren“. Bleibt der Fehler bestehen, muss der Betreiber den Projektordner und Codegraph-Dienst prüfen.' : 'Bitte ein Projektmitglied mit Schreibzugriff, die Indizierung erneut zu starten.'}</p></>}
+            {empty && <div className="ev-empty"><p>Im Projektordner sind noch keine unterstützten Codesymbole indiziert. Ein neuer, leerer Projektordner ist kein Fehler.</p><p>Klone ein Repository in den Projektordner oder füge Codedateien hinzu. Der Codegraph erkennt Änderungen automatisch. Eine GitHub-Freigabe allein lädt noch keinen Code herunter.</p><WorkspaceLink tab="github" projectId={project!.id} className="ew-text-link">Repository verbinden</WorkspaceLink></div>}
+            {counts.length > 0 && <div className="ev-stats">{counts.map(({ key, label, value }) => <span key={key}><strong>{value}</strong> {label}</span>)}</div>}
+        </>}
     </Panel>
     {available && <><Panel title="Symbole und Beziehungen"><form className="ev-inline-form" onSubmit={submit(() => setSearchQuery(query.trim()))}><Field label="Symbol oder Datei suchen"><input type="search" value={query} onChange={event => { setQuery(event.target.value); if (!event.target.value) setSearchQuery('') }} /></Field><button>Suchen</button>{focus && <button type="button" onClick={() => setFocus(null)}>Gesamten Graph zeigen</button>}</form>
-        <ErrorNotice error={search.error || graph.error} />{searchQuery && (search.isFetching ? <Loading /> : search.data?.nodes.length ? <NodeList nodes={search.data.nodes} select={id => { select(id); setFocus(id) }} selected={selected} /> : <Empty>Keine Symbole gefunden.</Empty>)}
-        {graph.isPending ? <Loading /> : graph.data?.nodes.length ? <CodeGraphCanvas graph={graph.data} selected={selected} onSelect={select} /> : <Empty>Der Index enthält noch keine Symbole.</Empty>}
+        <ErrorNotice error={search.error || graph.error} />{searchQuery && !search.error && (search.isFetching ? <Loading /> : search.data?.nodes.length ? <NodeList nodes={search.data.nodes} select={id => { select(id); setFocus(id) }} selected={selected} /> : <Empty>Keine Symbole gefunden.</Empty>)}
+        {graph.isPending ? <Loading /> : graph.error ? <p className="ev-muted">Der Graphausschnitt konnte nicht geladen werden. Aktualisiere den Status oder suche erneut nach einem Symbol.</p> : graph.data?.nodes.length ? <CodeGraphCanvas graph={graph.data} selected={selected} onSelect={select} /> : <Empty>{empty ? 'Sobald Code im Projektordner liegt, erscheinen hier seine Symbole und Beziehungen.' : 'Für diesen Ausschnitt wurden keine Symbole gefunden. Suche nach einem Symbol oder einer Datei.'}</Empty>}
     </Panel>
-    {selected && <div className="ev-code-detail-grid"><Panel title={detail.data?.node.name ?? 'Symbol'}><ErrorNotice error={detail.error} />{detail.isPending ? <Loading /> : detail.data && <>
+    {selected && <div className="ev-code-detail-grid"><Panel title={!detail.error ? detail.data?.node.name ?? 'Symbol' : 'Symbol'}><ErrorNotice error={detail.error} />{detail.isPending ? <Loading /> : !detail.error && detail.data && <>
         <p className="ev-muted">{detail.data.node.kind} · {detail.data.node.file}:{detail.data.node.line}{detail.data.node.endLine ? `–${detail.data.node.endLine}` : ''}</p><button onClick={() => setFocus(selected)}>Graph auf dieses Symbol fokussieren</button>
         <pre className="ev-source" tabIndex={0} aria-label={`Quelltext ${detail.data.node.file}`}><code>{detail.data.source || 'Für dieses Symbol ist kein Quelltext verfügbar.'}</code></pre>
         <details open><summary>Aufrufer ({detail.data.callers?.length ?? 0})</summary><NodeList nodes={detail.data.callers ?? []} select={select} /></details><details><summary>Aufgerufene Symbole ({detail.data.callees?.length ?? 0})</summary><NodeList nodes={detail.data.callees ?? []} select={select} /></details>
-    </>}</Panel><Panel title="Auswirkungen"><ErrorNotice error={impact.error} />{impact.isPending ? <Loading /> : <><p className="ev-muted">Abhängige Symbole bei einer Änderung dieses Knotens.</p><NodeList nodes={impact.data?.nodes ?? []} select={select} />{impact.data?.files?.map(file => <p key={file}><code>{file}</code></p>)}{!impact.data?.nodes?.length && !impact.data?.files?.length && <Empty>Keine abhängigen Symbole gefunden.</Empty>}{impact.data?.truncated && <p className="ev-muted">Die Auswirkungsanalyse wurde begrenzt.</p>}</>}</Panel></div>}
-    <Panel title="Betroffene Dateien und Tests"><form className="ev-stack" onSubmit={submit(() => setAffectedFiles(files.split(/[\n,]/).map(file => file.trim()).filter(Boolean).join(',')))}><Field label="Geänderte Pfade" hint="Repository-relative Dateipfade, eine Datei pro Zeile."><textarea required rows={3} value={files} onChange={event => setFiles(event.target.value)} /></Field><button disabled={!files.trim()}>Auswirkungen prüfen</button></form><ErrorNotice error={affected.error} />{affectedFiles && (affected.isFetching ? <Loading /> : <><NodeList nodes={affected.data?.nodes ?? []} select={id => { select(id); setFocus(id) }} />{affected.data?.files?.map(file => <p key={file}><code>{file}</code></p>)}{!affected.data?.nodes?.length && !affected.data?.files?.length && <Empty>Keine weiteren betroffenen Dateien gefunden.</Empty>}</>)}
+    </>}</Panel><Panel title="Auswirkungen"><ErrorNotice error={impact.error} />{impact.isPending ? <Loading /> : !impact.error && <><p className="ev-muted">Abhängige Symbole bei einer Änderung dieses Knotens.</p><NodeList nodes={impact.data?.nodes ?? []} select={select} />{impact.data?.files?.map(file => <p key={file}><code>{file}</code></p>)}{!impact.data?.nodes?.length && !impact.data?.files?.length && <Empty>Keine abhängigen Symbole gefunden.</Empty>}{impact.data?.truncated && <p className="ev-muted">Die Auswirkungsanalyse wurde begrenzt.</p>}</>}</Panel></div>}
+    <Panel title="Betroffene Dateien und Tests"><form className="ev-stack" onSubmit={submit(() => setAffectedFiles(files.split(/[\n,]/).map(file => file.trim()).filter(Boolean).join(',')))}><Field label="Geänderte Pfade" hint="Repository-relative Dateipfade, eine Datei pro Zeile."><textarea required rows={3} value={files} onChange={event => setFiles(event.target.value)} /></Field><button disabled={!files.trim()}>Auswirkungen prüfen</button></form><ErrorNotice error={affected.error} />{affectedFiles && !affected.error && (affected.isFetching ? <Loading /> : <><NodeList nodes={affected.data?.nodes ?? []} select={id => { select(id); setFocus(id) }} />{affected.data?.files?.map(file => <p key={file}><code>{file}</code></p>)}{!affected.data?.nodes?.length && !affected.data?.files?.length && <Empty>Keine weiteren betroffenen Dateien gefunden.</Empty>}</>)}
     </Panel></>}<ActionStatus action={action} /></div>
 }
