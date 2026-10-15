@@ -1,0 +1,324 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-15",
+  "scope": "Runner RPC recovery after upstream Hub disconnect, stale acknowledgement isolation, and authoritative project ownership for Hub RPC registrations and responses.",
+  "reviewedBaseCommit": "0c32b0efa6048814f19c3c0d28b9d441dd3c9b3f",
+  "branch": "fix/runner-rpc-reconnect",
+  "status": "Approved after actual Claude Opus 5.5 closure of the final source delta; no unresolved blocking findings in the reviewed scope.",
+  "actualCalls": [
+    {
+      "stage": "design",
+      "at": "2026-10-15T18:10:41.884941+00:00",
+      "requestedModel": "claude-opus-5-5",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "inputSha256": "000aaa020e05e0a82090f5b18994a9d7e46e4b34694d523af0d99b1aac7ff0e4",
+      "outputSha256": "e69727b1f99bdd4c7a67fdaa7450a80024808fc8b239bdbcfc32c47b53d0976a"
+    },
+    {
+      "stage": "method-replay-design",
+      "at": "2026-10-15T18:13:49.042683+00:00",
+      "requestedModel": "claude-opus-5-5",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "inputSha256": "aaf858802a138870252ea499f1696ccc48859a4a55b36ecae278253354312f4d",
+      "outputSha256": "4645cb3f8fc7e4be6abdb23a15ac504f5d6b1adca341a247f4a7233cf5fb160f"
+    },
+    {
+      "stage": "hub-ownership-design",
+      "at": "2026-10-15T18:17:11.454836+00:00",
+      "requestedModel": "claude-opus-5-5",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "inputSha256": "593429f94f9a883e0cea0391ecd2075499031cd2c89081d78325a0f6d93e0a9a",
+      "outputSha256": "47fc9ee42fcf80838f71fb9d3a7d035f66757ba96b2c75cbb7a59f73e6e640cc"
+    },
+    {
+      "stage": "final",
+      "at": "2026-10-15T18:25:40.577898+00:00",
+      "requestedModel": "claude-opus-5-5",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "inputSha256": "9c6f7e94af47e591bd5f5c231bc8a88e57c8adc9e832b025bced7b85c56e9dae",
+      "outputSha256": "1c431456d7d5b4c999b81339469d4b00672ca250e454c5b15e3d60ace38d5c74"
+    },
+    {
+      "stage": "closure",
+      "at": "2026-10-15T18:34:26.288168+00:00",
+      "requestedModel": "claude-opus-5-5",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "inputSha256": "32b12cc4a3c860530f8d93520c8d7511d50e474bad5397ae8561119391667b87",
+      "outputSha256": "0e1d94b3b14de39045958443da50f9d0785defb23386a0001416d9c0942e1c66"
+    }
+  ],
+  "designDecisions": [
+    {
+      "proposal": "Close the downstream Engine.IO transport on upstream disconnect to trigger native CLI reconnect.",
+      "disposition": "Rejected after source inspection: native ApiSessionClient closes its terminal subprocesses on disconnect, so normal short-lived capability rotation would introduce repeated terminal termination."
+    },
+    {
+      "proposal": "Replay the current, bounded set of declarative RPC method registrations.",
+      "disposition": "Accepted: only normalized method names are retained, with bounded count and UTF-8 size; unregister updates the current set immediately; replay precedes the existing pending live-event queue. No invocation or acknowledgement replay cache is introduced."
+    },
+    {
+      "proposal": "Trust a registration prefix matching the downstream handshake.",
+      "disposition": "Rejected as an authority boundary: handshake identifiers are untrusted. The Hub independently checks the authenticated namespace against the current stored target and current capability."
+    }
+  ],
+  "findings": [
+    {
+      "id": "proxy-rpc-registration-loss",
+      "status": "resolved",
+      "evidence": [
+        "services/runner-proxy/server.ts",
+        "services/runner-proxy/server.test.ts",
+        "cli/src/api/rpc/RpcHandlerManager.ts"
+      ],
+      "cause": "Upstream reconnect removed the Hub registry entries while the still-connected native CLI had no reason to register its methods again.",
+      "resolution": "Per downstream connection retain only its current normalized method names; replay before pending events on upstream connect. Limits: 256 methods, 64 KiB total, 512 UTF-8 bytes per method and 128 per scope identifier. Reject invalid/new overflow entries without evicting existing registrations or forcing downstream disconnect."
+    },
+    {
+      "id": "stale-ack-id-reuse",
+      "status": "resolved",
+      "evidence": [
+        "services/runner-proxy/server.ts",
+        "services/runner-proxy/server.test.ts"
+      ],
+      "cause": "A delayed acknowledgement to an old Hub request could be sent by the reused upstream client object into a newer Hub connection with a reused acknowledgement ID.",
+      "resolution": "Forwarded acknowledgement callbacks are bound to the upstream connection generation and drop after disconnect, replacement or proxy closure."
+    },
+    {
+      "id": "cross-namespace-registry-poisoning",
+      "status": "resolved",
+      "evidence": [
+        "hub/src/socket/handlers/cli/index.ts",
+        "hub/src/socket/handlers/cli/rpcHandlers.ts",
+        "hub/src/socket/handlers/cli/rpcOwnership.test.ts"
+      ],
+      "cause": "Global method registration accepted claimed target identifiers without verifying ownership in the authenticated namespace.",
+      "resolution": "Registration requires declared scope consistency plus a fresh server-side session/machine lookup in the authenticated namespace and current live authorization; untrusted handshake fields cannot supply authority."
+    },
+    {
+      "id": "session-machine-id-collision",
+      "status": "resolved",
+      "evidence": [
+        "hub/src/socket/rpcRegistry.ts",
+        "hub/src/sync/rpcGateway.ts",
+        "hub/src/socket/handlers/cli/rpcOwnership.test.ts"
+      ],
+      "cause": "An identical textual ID for a session and a machine could collide in a global method key.",
+      "resolution": "Registry keys and gateway lookup distinguish session and machine kinds while retaining the existing wire method string."
+    },
+    {
+      "id": "stale-rpc-authority-or-registration",
+      "status": "resolved",
+      "evidence": [
+        "hub/src/socket/rpcRegistry.ts",
+        "hub/src/sync/rpcGateway.ts",
+        "hub/src/socket/handlers/cli/rpcOwnership.test.ts"
+      ],
+      "cause": "A previously valid target could be deleted, moved, revoked or re-registered while an RPC was pending.",
+      "resolution": "Registry entries retain a fresh authority validator; lookup before dispatch is fail-closed. After acknowledgement the gateway requires the exact same still-authorized registration entry. Old unregister/disconnect cannot remove a replacement registration."
+    },
+    {
+      "id": "exact-target-id-alias",
+      "status": "resolved",
+      "evidence": [
+        "hub/src/socket/rpcRegistry.ts",
+        "hub/src/sync/rpcGateway.ts",
+        "hub/src/socket/handlers/cli/rpcOwnership.test.ts",
+        "shared/src/apiTypes.ts"
+      ],
+      "cause": "Machine IDs may contain colons. A runner authorized for target a could register a method whose concatenation matched the method for a distinct target a:b if lookup used only kind and method.",
+      "resolution": "Registry keys are structural tuples of kind, exact target ID and method. Stored authority includes the exact ID; the gateway passes the original target ID both before dispatch and after acknowledgement. A real cross-namespace colon-ID regression verifies that the foreign target receives no dispatch."
+    },
+    {
+      "id": "duplicate-declarative-registration",
+      "status": "resolved",
+      "evidence": [
+        "hub/src/socket/rpcRegistry.ts",
+        "hub/src/socket/handlers/cli/rpcOwnership.test.ts"
+      ],
+      "cause": "Replacing an entry for an identical declarative registration could unnecessarily invalidate a legitimate pending response.",
+      "resolution": "An identical same-socket registration preserves the entry. Explicit unregister followed by register creates a new entry and invalidates the old pending acknowledgement."
+    },
+    {
+      "id": "post-dispatch-uncertain-outcome",
+      "status": "resolved",
+      "evidence": [
+        "hub/src/sync/rpcGateway.ts",
+        "hub/src/socket/handlers/cli/rpcOwnership.test.ts",
+        "hub/src/sync/syncEngine.ts"
+      ],
+      "cause": "Treating an invalidated reply as a target missing before dispatch could hide that an operation had already executed, including rewind actions.",
+      "resolution": "RpcResponseInvalidatedError distinguishes a sent request whose authority or entry changed before acknowledgement from RpcTargetMissingError. Its message states that the action may have completed; existing generic uncertain-outcome handling remains active."
+    }
+  ],
+  "verification": [
+    {
+      "scope": "Hub package",
+      "result": "1807 passed, 3 skipped, 0 failed; 6310 assertions across 147 files; Hub typecheck passed. Includes 14 real Socket.IO/Store/Registry/Gateway integration tests.",
+      "evidenceFiles": [
+        "evolved-rpc-hub-full.log",
+        "evolved-rpc-ownership-typecheck.log"
+      ]
+    },
+    {
+      "scope": "Proxy package",
+      "result": "30 passed, 0 failed; 221 assertions across 5 files; Proxy typecheck passed.",
+      "evidenceFiles": [
+        "evolved-rpc-proxy-full.log",
+        "evolved-rpc-proxy-typecheck.log"
+      ]
+    },
+    {
+      "scope": "Focused closure regression suite",
+      "result": "38 passed, 0 failed;113 assertions across 3 files, including colon target-ID binding, duplicate preservation and distinct post-dispatch invalidation.",
+      "evidenceFiles": [
+        "evolved-rpc-ownership-delta.log"
+      ]
+    },
+    {
+      "scope": "Regression demonstrated before fix",
+      "result": "Two real Socket.IO registry recovery tests failed against the old proxy. Separately disabling only the acknowledgement-generation guard reproduced an old response resolving a new request.",
+      "evidenceFiles": [
+        "evolved-proxy-rpc-before.log",
+        "evolved-proxy-ack-before.log"
+      ]
+    },
+    {
+      "scope": "Dependency change",
+      "result": "Hub adds the already-resolved socket.io-client 4.8.3 as a test-only dependency; no package resolution changed."
+    },
+    {
+      "scope": "Release delta secret check",
+      "result": "Gitleaks 8.30.1 with redacted output scanned all 13 changed/new product, test, lockfile and documentation files before this review record was added: 0 candidates. The generated review record was separately scanned: 0 candidates. Final source hashes match and git diff --check passes.",
+      "evidenceFiles": [
+        "delta-scan-summary.json"
+      ]
+    }
+  ],
+  "sourceHashes": [
+    {
+      "path": "services/runner-proxy/server.ts",
+      "sha256": "bfabe4274166aa381a28ae6bae38d3b412e42ec7e22c5afe4da8375c0cb8a69c"
+    },
+    {
+      "path": "services/runner-proxy/server.test.ts",
+      "sha256": "d52b19c0631148b149e33f21addfbfac85a5b5ff2ad9c488ea72532e8e852305"
+    },
+    {
+      "path": "hub/src/socket/rpcRegistry.ts",
+      "sha256": "b75a21ac3bac378018598660b5d4e9b032499f02e45e20fe89eee8240ad1f9b8"
+    },
+    {
+      "path": "hub/src/socket/handlers/cli/index.ts",
+      "sha256": "4a1de07570e73fc86506fb3ecbefe86d05c1d96c7eac9cb8dcb080f6ea257725"
+    },
+    {
+      "path": "hub/src/socket/handlers/cli/rpcHandlers.ts",
+      "sha256": "caa171f6a37df6980488db4fa99e91459a8d66c40f940bf08fddf0915c9e4403"
+    },
+    {
+      "path": "hub/src/socket/handlers/cli/rpcOwnership.test.ts",
+      "sha256": "4835236530312e2584ad599888d2e26126bdc907dd8e04ff0e8b120faa700753"
+    },
+    {
+      "path": "hub/src/sync/rpcGateway.ts",
+      "sha256": "7933b297fa8c1d9ac0bad4ffe451ed76ed5034ece506d04bbe16cc6c9968deb2"
+    },
+    {
+      "path": "hub/src/sync/rpcGateway.test.ts",
+      "sha256": "e732bbb29ad9233304c3436a7043ea1f8cf8549b1b747c158aa3c33f7f719a91"
+    },
+    {
+      "path": "hub/src/sync/syncEngineSpawnPrealloc.test.ts",
+      "sha256": "405b971a6b74d07bb6bc7183d8afebcfdfe417a3083a972490fee2201397d59e"
+    },
+    {
+      "path": "hub/package.json",
+      "sha256": "d2d8b9d5e5aac432c0819dd45a91261f5f857db89cad47c5c770ed7e60359136"
+    },
+    {
+      "path": "bun.lock",
+      "sha256": "f2f08ea4260b71574f9fbd37768666db24e0f581af7c1fe01c6b44776fba3ee4"
+    }
+  ],
+  "evidenceHashes": [
+    {
+      "name": "evolved-rpc-hub-full.log",
+      "sha256": "6b0c170ab6960dd8147a827f27c50d9ffeee5b7fa63271f3dd9ebf7538c493ef"
+    },
+    {
+      "name": "evolved-rpc-ownership-typecheck.log",
+      "sha256": "6e0c423dcae445f4147b9c3326cf723025cda182e303a2e767f97ff3f0800a2a"
+    },
+    {
+      "name": "evolved-rpc-proxy-full.log",
+      "sha256": "0b13d2bfa0312530b03c88ed4da3b691be2f96bb5d59645cd9da7e12cfdb0be5"
+    },
+    {
+      "name": "evolved-rpc-proxy-typecheck.log",
+      "sha256": "8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92"
+    },
+    {
+      "name": "evolved-rpc-ownership-delta.log",
+      "sha256": "07b43fbb8ca32b78fc46262f308e1bf816e7e3bbb1013e7c02a98d3dcde827d6"
+    },
+    {
+      "name": "evolved-proxy-rpc-before.log",
+      "sha256": "801feecc31ec570cf3632b8288f46b844cc08f083e83af09e1b5c22995f9b0f5"
+    },
+    {
+      "name": "evolved-proxy-ack-before.log",
+      "sha256": "009579cd3457bf7fa3259400201d27d740d7c6c9b79c2780e26035c26363bb52"
+    },
+    {
+      "name": "design-source-hashes.json",
+      "sha256": "359fc8aea452ce6a8751448b99291004a6a5649141db82682eb98029d5ef8147"
+    },
+    {
+      "name": "final-source-hashes.json",
+      "sha256": "82222077204bddf9e39b8425468493fa47d6189669c530686becff668483c83c"
+    },
+    {
+      "name": "delta-scan-summary.json",
+      "sha256": "fc627ddf00a08082aaeeb1b662d83151c9ef360094d8ccb2e419f537016d5c57"
+    }
+  ],
+  "limits": [
+    "This is an internal source/design review with actual model identity recorded, not an external security certification.",
+    "Existing bounded pending live-event behavior is retained. Overflow, genuine authorization loss or process shutdown can still disconnect a client; uninterrupted terminal restoration across a real Hub restart is not claimed.",
+    "The fix deliberately avoids introducing periodic downstream disconnection during normal capability renewal. It does not redesign the Hub terminal registry or native agent process lifecycle.",
+    "Supported current native session and machine clients declare their scope. Undeclared, forged, cross-namespace or otherwise invalid RPC registrations are rejected.",
+    "Within one authenticated project namespace, authorized runners remain trusted to serve that project. The web/API caller must independently pass its existing project/namespace access checks.",
+    "No provider-account login, paid inference, publication, deployed-version verification or anonymous-access result is claimed by this source review. The coordinator performs final integration/deployment/publication verification.",
+    "Earlier public-launch review records and their historical source/test hashes remain unchanged.",
+    "A temporary store/authority-check failure fails closed and may remove a registration until the next valid CLI registration or upstream replay. No availability fallback bypasses ownership checks.",
+    "Post-dispatch invalidation does not undo an operation that may already have run. Its distinct error preserves uncertain-outcome handling; no automatic replay of that action is introduced."
+  ],
+  "finalReviewDisposition": {
+    "reviewStage": "final",
+    "initialVerdict": "changes_requested",
+    "closureStage": "closure",
+    "closureVerdict": "approved",
+    "independentTestExecutionByReviewer": false,
+    "closureBlockers": 0
+  },
+  "closureNotes": [
+    {
+      "topic": "Fresh target authority wiring",
+      "disposition": "The narrow closure excerpt omitted the registration wiring; this was a supplied-context limitation, not a new finding. The coordinator independently checked the final source: registerRpcHandlers in hub/src/socket/handlers/cli/index.ts compares the current socket namespace, invokes the live isAuthorized check when present, and resolves sessions with fresh:true or performs a fresh machine lookup. The complete wiring had already been supplied in the preceding full adversarial source review."
+    },
+    {
+      "topic": "Accepted custom identifier compatibility boundary",
+      "disposition": "RPC scope identifiers must be nonempty, at most 128 UTF-8 bytes, and contain no colon, whitespace or control characters. Supported native IDs conform; custom machine IDs accepted by the broader creation schema may be unable to register RPC methods. This fail-closed boundary is explicit and the colon-target alias regression prevents routing them to another target."
+    }
+  ]
+}

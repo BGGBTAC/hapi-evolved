@@ -6,9 +6,261 @@ import { createRunnerProxy, allowedProxyPath, queuedPacketBytes } from './server
 import { Server as Engine } from '@socket.io/bun-engine'
 import { Server } from 'socket.io'
 import { io as connect } from 'socket.io-client'
+import { RpcRegistry } from '../../hub/src/socket/rpcRegistry'
+import { registerRpcHandlers } from '../../hub/src/socket/handlers/cli/rpcHandlers'
+import type { CliSocketWithData } from '../../hub/src/socket/socketTypes'
 
 const cleanup: Array<() => void> = []
 afterEach(() => { for (const close of cleanup.splice(0).reverse()) close() })
+
+async function eventually(predicate: () => boolean, message: string): Promise<void> {
+    const deadline = Date.now() + 5000
+    while (!predicate()) {
+        if (Date.now() >= deadline) throw new Error(message)
+        await Bun.sleep(10)
+    }
+}
+
+function rpcFixture(auth: Record<string, unknown> = { clientType: 'machine-scoped', machineId: 'machine-a' }) {
+    const directory = mkdtempSync(join(tmpdir(), 'evolved-proxy-rpc-')), leaseFile = join(directory, 'lease')
+    cleanup.push(() => rmSync(directory, { recursive: true, force: true }))
+    writeFileSync(leaseFile, 'synthetic-lease', { mode: 0o600 })
+    const state = { leaseCalls: 0, effects: 0, revoked: false }
+    function startHub(port = 0) {
+        const engine = new Engine({ path: '/socket.io/' }), io = new Server(), registry = new RpcRegistry()
+        const registrations: string[] = [], registrationPayloads: unknown[][] = [], observed: string[] = []
+        io.bind(engine)
+        const namespace = io.of('/cli')
+        namespace.use((socket, next) => socket.handshake.auth.token === 'x'.repeat(43) ? next() : next(new Error('bad token')))
+        namespace.on('connection', socket => {
+            registerRpcHandlers(socket as CliSocketWithData, registry, {
+                authorizeTarget: (kind, id) => id === (kind === 'machine' ? 'machine-a' : 'session-a') && !state.revoked,
+            })
+            socket.on('disconnect', () => registry.unregisterAll(socket))
+            socket.on('rpc-register', (...args: unknown[]) => {
+                registrations.push((args[0] as { method: string }).method); registrationPayloads.push(args)
+            })
+            socket.on('effect', (value: unknown, ack: (value: unknown) => void) => { state.effects++; ack(value) })
+            socket.on('echo', (value: unknown, ack: (value: unknown) => void) => ack(value))
+            socket.on('observe-registry', (method: string, ack: (value: boolean) => void) => {
+                observed.push(method)
+                ack(registry.getSocketIdForMethod(method, 'machine') === socket.id)
+            })
+        })
+        const handler = engine.handler()
+        const server = Bun.serve({ ...handler, hostname: '127.0.0.1', port, fetch(request, server) {
+            if (new URL(request.url).pathname.startsWith('/socket.io/')) return handler.fetch(request, server)
+            if (new URL(request.url).pathname === '/api/evolved/runner/token') {
+                state.leaseCalls++
+                return state.revoked ? Response.json({ error: 'revoked' }, { status: 401 })
+                    : Response.json({ token: 'x'.repeat(43), projectId: 'a', expiresAt: Date.now() + 900_000 })
+            }
+            return new Response('Not found', { status: 404 })
+        } })
+        return { server, io, namespace, registry,
+            lookup: (method: string) => registry.getSocketIdForMethod(method, auth.clientType === 'session-scoped' ? 'session' : 'machine'),
+            registrations, registrationPayloads, observed, close() { io.close(); return server.stop(true) } }
+    }
+    let hub = startHub()
+    cleanup.push(() => { void hub.close() })
+    const proxy = createRunnerProxy({ hubUrl: hub.server.url.toString(), leaseFile, projectId: 'a', port: 0 })
+    cleanup.push(proxy.close)
+    const client = connect(new URL('/cli', proxy.server.url).toString(), {
+        transports: ['websocket'], autoConnect: false,
+        auth: { token: 'evolved-local', ...auth },
+    })
+    cleanup.push(() => { client.disconnect() })
+    return { state, client, get hub() { return hub }, async restart(beforeRestart?: () => void | Promise<void>) {
+        const port = hub.server.port!
+        // A real Hub outage loses the transport, without an explicit namespace
+        // disconnect packet (which is how capability expiry is signalled).
+        for (const socket of hub.namespace.sockets.values()) socket.conn.close()
+        void hub.close()
+        await beforeRestart?.()
+        hub = startHub(port)
+    } }
+}
+
+for (const reason of ['hub restart', 'capability renewal'] as const) test(`RPC registrations recover after ${reason} without reconnecting the CLI or replaying side effects`, async () => {
+    const fixture = rpcFixture(), { client, state } = fixture
+    const method = 'machine-a:read-state', removed = 'machine-a:removed'
+    let connects = 0, disconnects = 0
+    // Native RpcHandlerManager re-registers only on downstream connect.
+    client.on('connect', () => { connects++; client.emit('rpc-register', { method }); client.emit('rpc-register', { method: removed }) })
+    client.on('disconnect', () => { disconnects++ })
+    client.on('rpc-request', (request: { method: string }, ack: (value: unknown) => void) => ack({ method: request.method, readOnly: true }))
+    client.connect()
+    await eventually(() => fixture.hub.lookup(removed) !== null, 'initial RPC registrations missing')
+    client.emit('rpc-unregister', { method: removed })
+    await eventually(() => fixture.hub.lookup(removed) === null, 'RPC unregister missing')
+    expect(fixture.hub.registrations.filter(value => value === method)).toHaveLength(1)
+    expect(await client.timeout(5000).emitWithAck('effect', 'acknowledged once')).toBe('acknowledged once')
+    const previousSocketId = fixture.hub.lookup(method)!
+    if (reason === 'hub restart') await fixture.restart()
+    else fixture.hub.namespace.sockets.get(previousSocketId)!.disconnect(true)
+    await eventually(() => {
+        const id = fixture.hub.lookup(method)
+        return id !== null && id !== previousSocketId
+    }, `RPC registration was not restored after ${reason}`)
+    expect(fixture.hub.lookup(removed)).toBeNull()
+    const active = fixture.hub.namespace.sockets.get(fixture.hub.lookup(method)!)!
+    expect(await active.timeout(5000).emitWithAck('rpc-request', { method })).toEqual({ method, readOnly: true })
+    expect(Buffer.from(await client.timeout(5000).emitWithAck('echo', Buffer.from([0, 1, 254, 255])))).toEqual(Buffer.from([0, 1, 254, 255]))
+    expect(state.effects).toBe(1)
+    expect(connects).toBe(1)
+    expect(disconnects).toBe(0)
+    expect(state.leaseCalls).toBe(reason === 'hub restart' ? 1 : 2)
+    expect(fixture.hub.registrations.filter(value => value === method)).toHaveLength(reason === 'hub restart' ? 1 : 2)
+}, 12_000)
+
+test('only the final RPC registration state is restored before queued events', async () => {
+    const fixture = rpcFixture(), { client } = fixture
+    const oldMethod = 'machine-a:old', newMethod = 'machine-a:new', transient = 'machine-a:transient'
+    client.on('connect', () => client.emit('rpc-register', { method: oldMethod }))
+    client.connect()
+    await eventually(() => fixture.hub.lookup(oldMethod) !== null, 'initial registration missing')
+    let queued: Promise<unknown> | undefined
+    await fixture.restart(async () => {
+        await Bun.sleep(30)
+        client.emit('rpc-unregister', { method: oldMethod })
+        client.emit('rpc-register', { method: transient })
+        client.emit('rpc-unregister', { method: transient })
+        client.emit('rpc-register', { method: newMethod, ignored: 'do not retain' })
+        client.emit('rpc-register', { method: newMethod })
+        queued = client.timeout(5000).emitWithAck('observe-registry', newMethod)
+        await Bun.sleep(30)
+    })
+    expect(await queued).toBe(true)
+    expect(fixture.hub.registrations).toEqual([newMethod])
+    expect(fixture.hub.registrationPayloads).toEqual([[{ method: newMethod }]])
+    expect(fixture.hub.lookup(oldMethod)).toBeNull()
+    expect(fixture.hub.lookup(transient)).toBeNull()
+}, 10_000)
+
+test('a delayed old Hub acknowledgement cannot satisfy a new Hub RPC with the same packet ID', async () => {
+    const fixture = rpcFixture(), { client } = fixture
+    const method = 'machine-a:delayed'
+    const callbacks: Array<(value: string) => void> = []
+    client.on('connect', () => client.emit('rpc-register', { method }))
+    client.on('rpc-request', (_request: unknown, ack: (value: string) => void) => { callbacks.push(ack) })
+    client.connect()
+    await eventually(() => fixture.hub.lookup(method) !== null, 'initial registration missing')
+    const oldSocket = fixture.hub.namespace.sockets.get(fixture.hub.lookup(method)!)!
+    // Both fresh Hub namespaces allocate their first outgoing acknowledgement ID.
+    oldSocket.emit('rpc-request', { method }, () => {})
+    await eventually(() => callbacks.length === 1, 'old RPC missing')
+    await fixture.restart()
+    await eventually(() => fixture.hub.lookup(method) !== null, 'restored registration missing')
+    const newSocket = fixture.hub.namespace.sockets.get(fixture.hub.lookup(method)!)!
+    let result: unknown
+    const newReply = newSocket.timeout(5000).emitWithAck('rpc-request', { method }).then(value => { result = value; return value })
+    await eventually(() => callbacks.length === 2, 'new RPC missing')
+    callbacks[0]!('obsolete response')
+    await Bun.sleep(30)
+    expect(result).toBeUndefined()
+    callbacks[1]!('current response')
+    expect(await newReply).toBe('current response')
+}, 10_000)
+
+test('RPC registrations validate scope, normalize payloads and bound retained state without disconnecting the CLI', async () => {
+    const fixture = rpcFixture(), { client } = fixture
+    const errors: unknown[] = []
+    let disconnected = false
+    client.on('error', error => { errors.push(error) })
+    client.on('disconnect', () => { disconnected = true })
+    client.connect()
+    await eventually(() => client.connected, 'CLI did not connect')
+    for (const payload of [null, [], { method: 1 }, { method: '' }, { method: 'other:read' }, { method: 'machine-a:' },
+        { method: 'machine-a:line\nbreak' }, { method: `machine-a:${'ä'.repeat(252)}` }]) client.emit('rpc-register', payload)
+    const first = 'machine-a:method-0'
+    client.emit('rpc-register', { method: first, extra: { payload: Buffer.alloc(1024) } }, () => {})
+    for (let index = 0; index < 256; index++) client.emit('rpc-register', { method: `machine-a:method-${index}` })
+    client.emit('rpc-register', { method: 'machine-a:overflow' })
+    // A normal event is an ordering barrier for registration controls.
+    expect(await client.timeout(5000).emitWithAck('echo', 'barrier')).toBe('barrier')
+    expect(errors).toHaveLength(9)
+    expect(fixture.hub.lookup('machine-a:overflow')).toBeNull()
+    expect(fixture.hub.registrationPayloads.every(args => args.length === 1 && Object.keys(args[0] as object).join(',') === 'method')).toBe(true)
+    expect(disconnected).toBe(false)
+    client.emit('rpc-unregister', { method: first })
+    client.emit('rpc-register', { method: 'machine-a:replacement' })
+    expect(await client.timeout(5000).emitWithAck('echo', 'barrier')).toBe('barrier')
+    await fixture.restart()
+    await eventually(() => fixture.hub.lookup('machine-a:replacement') !== null, 'replacement registration missing')
+    expect(fixture.hub.registrations).toHaveLength(256)
+    expect(new Set(fixture.hub.registrations).size).toBe(256)
+    expect(fixture.hub.lookup(first)).toBeNull()
+    expect(disconnected).toBe(false)
+}, 10_000)
+
+test('RPC registration aggregate byte budget is reclaimed by unregister', async () => {
+    const fixture = rpcFixture(), { client } = fixture
+    let errors = 0
+    client.on('error', () => { errors++ })
+    client.connect()
+    await eventually(() => client.connected, 'CLI did not connect')
+    const method = (index: number) => `machine-a:${String(index).padStart(3, '0')}:${'a'.repeat(498)}`
+    expect(Buffer.byteLength(method(0))).toBe(512)
+    for (let index = 0; index < 128; index++) client.emit('rpc-register', { method: method(index) })
+    client.emit('rpc-register', { method: method(128) })
+    expect(await client.timeout(5000).emitWithAck('echo', 'barrier')).toBe('barrier')
+    expect(errors).toBe(1)
+    expect(fixture.hub.lookup(method(128))).toBeNull()
+    client.emit('rpc-unregister', { method: method(0) })
+    client.emit('rpc-register', { method: method(128) })
+    expect(await client.timeout(5000).emitWithAck('observe-registry', method(128))).toBe(true)
+    expect(errors).toBe(1)
+}, 10_000)
+
+test('session-scoped registrations recover while the downstream session stays connected', async () => {
+    const fixture = rpcFixture({ clientType: 'session-scoped', sessionId: 'session-a' }), { client } = fixture
+    const method = 'session-a:terminal-open'
+    let connects = 0
+    client.on('connect', () => { connects++; client.emit('rpc-register', { method }) })
+    client.connect()
+    await eventually(() => fixture.hub.lookup(method) !== null, 'initial session registration missing')
+    await fixture.restart()
+    await eventually(() => fixture.hub.lookup(method) !== null, 'restored session registration missing')
+    expect(fixture.hub.registrations).toEqual([method])
+    expect(connects).toBe(1)
+}, 10_000)
+
+test('ambiguous or oversized handshake scopes cannot be used for cached registrations', async () => {
+    for (const auth of [
+        { clientType: 'unknown', machineId: 'machine-a' },
+        { clientType: 'machine-scoped', machineId: '' },
+        { clientType: 'machine-scoped', machineId: 'machine-a:other' },
+        { clientType: 'machine-scoped', machineId: 'ä'.repeat(65) },
+        { clientType: 'machine-scoped', machineId: 'machine-a\n' },
+    ]) {
+        const fixture = rpcFixture(auth), { client } = fixture
+        let rejected = 0
+        client.on('error', () => { rejected++ })
+        client.connect()
+        await eventually(() => client.connected, 'CLI did not connect')
+        client.emit('rpc-register', { method: `${auth.machineId}:read` })
+        expect(await client.timeout(5000).emitWithAck('echo', 'barrier')).toBe('barrier')
+        expect(fixture.hub.registrations).toHaveLength(0)
+        expect(rejected).toBe(1)
+    }
+})
+
+test('capability renewal after lease revocation disconnects instead of replaying registrations', async () => {
+    const fixture = rpcFixture(), { client, state } = fixture
+    const method = 'machine-a:read'
+    client.on('connect', () => client.emit('rpc-register', { method }))
+    client.connect()
+    await eventually(() => fixture.hub.lookup(method) !== null, 'initial registration missing')
+    const socketId = fixture.hub.lookup(method)!
+    state.revoked = true
+    fixture.hub.namespace.sockets.get(socketId)!.disconnect(true)
+    await eventually(() => !client.connected, 'revoked runner remained connected')
+    expect(state.leaseCalls).toBe(2)
+    expect(client.active).toBe(false)
+    expect(fixture.hub.lookup(method)).toBeNull()
+    expect(fixture.hub.registrations).toEqual([method])
+})
+
 test('proxy routes cannot expose account, vault, bootstrap or lease operations', () => {
     for (const path of ['/api/auth', '/api/evolved/auth/bootstrap', '/api/evolved/runner/token', '/api/evolved/projects/a/secrets', '/api/evolved/projects/a/capabilities']) expect(allowedProxyPath(path)).toBe(false)
     expect(allowedProxyPath('/api/evolved/projects/a/codegraph/impact')).toBe(true)

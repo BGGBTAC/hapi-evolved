@@ -40,7 +40,7 @@ import type {
     UploadFileResponse
 } from '@hapi/protocol/apiTypes'
 import type { Server } from 'socket.io'
-import type { RpcRegistry } from '../socket/rpcRegistry'
+import type { RpcRegistry, RpcTargetKind } from '../socket/rpcRegistry'
 
 const DEFAULT_RPC_TIMEOUT_MS = 30_000
 const MODEL_LIST_RPC_TIMEOUT_MS = 120_000
@@ -63,6 +63,14 @@ export class RpcTargetMissingError extends Error {
         this.name = 'RpcTargetMissingError'
         this.code = reason
         this.method = method
+    }
+}
+
+/** The request was sent, so its effects must not be classified as "CLI gone". */
+export class RpcResponseInvalidatedError extends Error {
+    constructor(method: string) {
+        super(`RPC authority changed before acknowledgement; the action may have completed: ${method}`)
+        this.name = 'RpcResponseInvalidatedError'
     }
 }
 
@@ -610,7 +618,7 @@ export class RpcGateway {
         params: unknown,
         timeoutMs: number = DEFAULT_RPC_TIMEOUT_MS
     ): Promise<unknown> {
-        return await this.rpcCall(`${sessionId}:${method}`, params, timeoutMs)
+        return await this.rpcCall(`${sessionId}:${method}`, params, timeoutMs, 'session', sessionId)
     }
 
     private async machineRpc(
@@ -619,16 +627,16 @@ export class RpcGateway {
         params: unknown,
         timeoutMs: number = DEFAULT_RPC_TIMEOUT_MS
     ): Promise<unknown> {
-        return await this.rpcCall(`${machineId}:${method}`, params, timeoutMs)
+        return await this.rpcCall(`${machineId}:${method}`, params, timeoutMs, 'machine', machineId)
     }
 
-    private async rpcCall(method: string, params: unknown, timeoutMs: number = DEFAULT_RPC_TIMEOUT_MS): Promise<unknown> {
-        const socketId = this.rpcRegistry.getSocketIdForMethod(method)
-        if (!socketId) {
+    private async rpcCall(method: string, params: unknown, timeoutMs: number, kind: RpcTargetKind, targetId: string): Promise<unknown> {
+        const registration = this.rpcRegistry.getRegistration(method, kind, targetId)
+        if (!registration) {
             throw new RpcTargetMissingError(method, 'handler-not-registered')
         }
 
-        const socket = this.io.of('/cli').sockets.get(socketId)
+        const socket = this.io.of('/cli').sockets.get(registration.socketId)
         if (!socket) {
             throw new RpcTargetMissingError(method, 'socket-disconnected')
         }
@@ -637,6 +645,11 @@ export class RpcGateway {
             method,
             params: JSON.stringify(params)
         }) as unknown
+
+        // A response cannot outlive its project/target/grant authority or a replacement connection.
+        if (this.rpcRegistry.getRegistration(method, kind, targetId) !== registration) {
+            throw new RpcResponseInvalidatedError(method)
+        }
 
         if (typeof response !== 'string') {
             return response

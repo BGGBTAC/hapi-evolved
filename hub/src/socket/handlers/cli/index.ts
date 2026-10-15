@@ -169,7 +169,12 @@ export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlers
         socket.emit('error', { message, code: reason, scope, id })
     }
 
-    registerRpcHandlers(socket, rpcRegistry)
+    registerRpcHandlers(socket, rpcRegistry, {
+        authorizeTarget: (kind, id) => {
+            if (socket.data.namespace !== namespace || (socket.data.isAuthorized && !socket.data.isAuthorized())) return false
+            return kind === 'session' ? resolveSessionAccess(id, { fresh: true }).ok : resolveMachineAccess(id).ok
+        }
+    })
     registerSessionHandlers(socket, {
         store,
         resolveSessionAccess,

@@ -4,6 +4,34 @@ Dieser datierte Bericht belegt den damaligen Quellstand, nicht automatisch die
 aktuelle Veröffentlichung. Einstieg und heutiger Umfang: [Quickstart](QUICKSTART.md)
 und [Projekt](PROJECT.md).
 
+## Runner-Wiederverbindung und RPC-Zuordnung am 15.10.2026
+
+Der Folgefix auf `fix/runner-rpc-reconnect` basiert auf dem zusammengeführten
+Stand `0c32b0efa6048814f19c3c0d28b9d441dd3c9b3f`. Ein echter Socket.IO-Test
+reproduzierte verlorene Runner-Befehle nach Hub-Neustart und erneuerter
+Zugangsfreigabe. Der Proxy stellt jetzt ausschließlich begrenzte, geprüfte
+Methodenregistrierungen wieder her; ausgeführte Befehle werden nicht erneut
+gesendet. Die native Verbindung bleibt bestehen, damit ihre Browser-Terminals
+bei einer regelmäßigen Zugangserneuerung nicht geschlossen werden.
+
+Verspätete Bestätigungen bleiben an ihre ursprüngliche Verbindung gebunden.
+Ein gesonderter Negativtest ohne diesen Schutz reproduzierte die falsche
+Zuordnung einer alten Antwort zu einem neuen Aufruf. Der Hub prüft die
+aktuelle Projektzugehörigkeit und Zugangsfreigabe bei Registrierung, vor
+Versand und nach der Antwort. Maschinen- und Sitzungsmethoden haben getrennte
+Registrierungsschlüssel.
+
+Die vollständigen betroffenen Suiten bestanden 1.807 Hub-Tests und
+30 Runner-Proxy-Tests; drei bestehende bedingte Hub-Integrationstests wurden
+übersprungen. Beide Typechecks bestanden. Vierzehn neue Hub-Tests prüfen die
+Zuordnung und Berechtigungsänderungen über echte Socket.IO-Verbindungen.
+Die Prüfungen verwenden isolierte
+Testdienste und synthetische Berechtigungen, keine persönlichen Providerkonten
+oder kostenpflichtigen Modellaufrufe. Die unveränderten Web-, CLI- und
+Landingpage-Prüfungen des nachfolgenden Abschnitts bleiben deren Beleg.
+Die tatsächlichen Opus-Designgespräche, Reviewbefunde und deren Abschluss
+stehen im [separaten Reviewbeleg](reviews/runner-rpc-reconnect-2026-10-15.json).
+
 ## Projektordner und öffentliche Dokumentation am 15.10.2026
 
 Die Änderung auf `docs/evolved-public-launch` basiert auf
