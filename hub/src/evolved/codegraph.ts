@@ -3,7 +3,8 @@ import { EvolvedError, EvolvedStore, type EvolvedPrincipal } from './store'
 import { authenticateEvolvedRequest, requireScope } from './security'
 
 type CodegraphEnv = { Variables: { principal: EvolvedPrincipal } }
-export type CodegraphOptions = { store: EvolvedStore; adapterUrl?: string; serviceToken?: string; origin?: string }
+export type CodegraphStatusSnapshot = { rootPath: string; checkedAt: number; status: number; result: Record<string, unknown> }
+export type CodegraphOptions = { store: EvolvedStore; adapterUrl?: string; serviceToken?: string; origin?: string; statusCache?: Map<string, CodegraphStatusSnapshot> }
 function cleanupSchema(store: EvolvedStore): void {
     store.db.exec('CREATE TABLE IF NOT EXISTS evolved_codegraph_cleanup(project_id TEXT PRIMARY KEY,root_path TEXT NOT NULL,created_at INTEGER NOT NULL)')
 }
@@ -70,8 +71,13 @@ export function startCodegraphSync(options: CodegraphOptions): () => void {
                 const response = await queryCodegraph(options, { id: removal.project_id, rootPath: removal.root_path }, 'drop')
                 if (response.status === 200) options.store.db.query('DELETE FROM evolved_codegraph_cleanup WHERE project_id=?').run(removal.project_id)
             }
-            for (const project of options.store.listProjectsForService()) {
-                if (project.rootPath) await queryCodegraph(options, project, 'status')
+            const projects = options.store.listProjectsForService()
+            for (const id of options.statusCache?.keys() ?? []) if (!projects.some(project => project.id === id)) options.statusCache?.delete(id)
+            for (const project of projects) {
+                if (project.rootPath) {
+                    const response = await queryCodegraph(options, project, 'status')
+                    options.statusCache?.set(project.id, { rootPath: project.rootPath, checkedAt: options.store.now(), ...response })
+                }
             }
         } finally { running = false }
     }

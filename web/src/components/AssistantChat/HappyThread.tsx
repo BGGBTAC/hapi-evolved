@@ -40,6 +40,7 @@ import { useTransientScrollbar } from '@/hooks/useTransientScrollbar'
 import { queryKeys } from '@/lib/query-keys'
 import { useMinuteTick } from '@/hooks/useMinuteTick'
 import { matchesSearchQuery } from '@hapi/protocol'
+import { MessageMemoryProvider } from '@/evolved/MessageMemoryProvider'
 
 type ScrollAnchor = {
     id: string
@@ -2320,7 +2321,7 @@ export function HappyThread(props: {
     }, [props.session])
 
     return (
-        <HappyChatProvider value={{
+        <MessageMemoryProvider sessionId={props.sessionId}><HappyChatProvider value={{
             api: props.api,
             sessionId: props.sessionId,
             metadata: props.metadata,
@@ -2491,6 +2492,6 @@ export function HappyThread(props: {
                     onClose={() => setShareTurn(null)}
                 />
             </ThreadPrimitive.Root>
-        </HappyChatProvider>
+        </HappyChatProvider></MessageMemoryProvider>
     )
 }

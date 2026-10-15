@@ -5,6 +5,7 @@ import { chmod, lstat, mkdir, mkdtemp, readFile, rename, rm, stat, symlink, writ
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createRepositoryWorkspace, RepositoryWorkspaceError, type WorkspaceRepository } from './repositoryWorkspace'
+import { RepoDiffSchema, RepoWorktreeSchema } from '@hapi/protocol/evolvedWorkspace'
 
 const cleanEnv = { PATH: '/usr/bin:/bin', HOME: '/nonexistent', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', LANG: 'C' }
 const git = (cwd: string, ...args: string[]) => execFileSync('/usr/bin/git', ['-c', 'user.name=Synthetic Test', '-c', 'user.email=test@example.invalid', ...args], { cwd, env: cleanEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
@@ -52,6 +53,184 @@ async function upstream(file = 'README.md', contents = 'updated\n') {
     await writeFile(join(source, file), contents); git(source, 'add', '-f', file); git(source, 'commit', '-m', 'update'); git(source, 'push', 'origin', 'main')
 }
 const pull = () => workspace.syncRepository(root, repo, 'pull', authorize)
+
+describe('read-only project worktree and diff', () => {
+    const observe = () => workspace.readRepositoryWorktree(root, repo)
+    const diff = async (path: string, side: 'staged' | 'unstaged' = 'unstaged', snapshotId?: string) => {
+        const snapshot = snapshotId ?? (await observe()).snapshotId
+        expect(snapshot).toMatch(/^[a-f0-9]{64}$/)
+        const reply = await workspace.readRepositoryDiff(root, repo, { path, side, snapshotId: snapshot! })
+        expect(RepoDiffSchema.safeParse(reply).success).toBe(true)
+        return reply
+    }
+    it('observes a clean checkout without changing the index, HEAD, config or contacting a remote', async () => {
+        await clone(); requests.length = 0
+        const index = join(repo.path, '.git/index'), config = join(repo.path, '.git/config')
+        const before = { index: await readFile(index), stat: await stat(index, { bigint: true }), config: await readFile(config), head: git(repo.path, 'rev-parse', 'HEAD') }
+        const first = await observe(), second = await observe()
+        expect(RepoWorktreeSchema.safeParse(first).success).toBe(true)
+        expect(first).toMatchObject({ state: 'ready', branch: 'main', detached: false, head: before.head, files: [], truncated: false, upstream: { name: 'origin/main', ahead: 0, behind: 0 } })
+        expect(second.snapshotId).toBe(first.snapshotId)
+        expect(await readFile(index)).toEqual(before.index)
+        expect((await stat(index, { bigint: true })).mtimeNs).toBe(before.stat.mtimeNs)
+        expect(await readFile(config)).toEqual(before.config)
+        expect(git(repo.path, 'rev-parse', 'HEAD')).toBe(before.head); expect(requests).toHaveLength(0)
+    })
+    it('separates staged and unstaged patches and retains index contents and timestamps', async () => {
+        await clone(); requests.length = 0
+        await writeFile(join(repo.path, 'README.md'), 'staged change\n'); git(repo.path, 'add', '--', 'README.md')
+        await writeFile(join(repo.path, 'README.md'), 'unstaged change\n')
+        const index = join(repo.path, '.git/index'), original = await readFile(index), timestamp = (await stat(index, { bigint: true })).mtimeNs
+        const worktree = await observe()
+        expect(worktree.files).toEqual([{ path: 'README.md', index: 'M', worktree: 'M', kind: 'file' }])
+        const staged = await diff('README.md', 'staged', worktree.snapshotId!)
+        expect(staged.patch).toContain('-initial\n+staged change'); expect(staged.patch).not.toContain('unstaged change')
+        const unstaged = await diff('README.md', 'unstaged', worktree.snapshotId!)
+        expect(unstaged.patch).toContain('-staged change\n+unstaged change')
+        expect(await readFile(index)).toEqual(original); expect((await stat(index, { bigint: true })).mtimeNs).toBe(timestamp)
+        expect(requests).toHaveLength(0)
+    })
+    it('reads detached and unborn worktrees while keeping mutation restrictions separate', async () => {
+        await clone(); git(repo.path, 'checkout', '--detach')
+        await writeFile(join(repo.path, 'README.md'), 'detached change\n')
+        expect(await observe()).toMatchObject({ state: 'ready', branch: null, detached: true, head: expect.stringMatching(/^[a-f0-9]{40}$/) })
+        expect((await diff('README.md')).patch).toContain('+detached change')
+        await rm(repo.path, { recursive: true }); await rm(bare, { recursive: true }); git(directory, 'init', '--bare', '--initial-branch=main', bare)
+        await clone(); await writeFile(join(repo.path, 'first.txt'), 'first staged\n'); git(repo.path, 'add', '--', 'first.txt')
+        expect(await observe()).toMatchObject({ state: 'ready', branch: git(repo.path, 'symbolic-ref', '--short', 'HEAD'), detached: false, head: null, files: [{ path: 'first.txt', index: 'A' }] })
+        expect((await diff('first.txt', 'staged')).patch).toContain('+first staged')
+    })
+    it('preserves spaces, Unicode and literal Git pathspec characters', async () => {
+        await clone()
+        for (const path of ['a[1].txt', 'a1.txt', ':(glob)*.txt', '-option.txt', 'Größe space.txt']) {
+            await writeFile(join(repo.path, path), `first ${path}\n`)
+            git(repo.path, '--literal-pathspecs', 'add', '--', path)
+        }
+        git(repo.path, 'commit', '-m', 'literal paths')
+        for (const path of ['a[1].txt', 'a1.txt', ':(glob)*.txt', '-option.txt', 'Größe space.txt']) await writeFile(join(repo.path, path), `changed ${path}\n`)
+        const state = await observe()
+        expect(state.files.map(file => file.path)).toEqual(expect.arrayContaining(['a[1].txt', 'a1.txt', ':(glob)*.txt', '-option.txt', 'Größe space.txt']))
+        expect((await diff('a[1].txt')).patch).toContain('+changed a[1].txt')
+        expect((await diff('a[1].txt')).patch).not.toContain('changed a1.txt')
+        expect((await diff(':(glob)*.txt')).patch).not.toContain('changed a1.txt')
+        expect((await diff('-option.txt')).patch).toContain('+changed -option.txt')
+    })
+    it('lists renames and checks the old path for sensitive material too', async () => {
+        await clone(); git(repo.path, 'mv', '--', 'README.md', 'renamed document.md')
+        expect((await observe()).files).toEqual([{ path: 'renamed document.md', oldPath: 'README.md', index: 'R', worktree: ' ', kind: 'file' }])
+        expect((await diff('renamed document.md', 'staged')).patch).toContain('rename from README.md')
+        git(repo.path, 'commit', '-m', 'rename'); await writeFile(join(repo.path, '.env.example'), 'synthetic harmless fixture\n')
+        git(repo.path, 'add', '-f', '--', '.env.example'); git(repo.path, 'commit', '-m', 'sensitive source fixture')
+        git(repo.path, 'mv', '--', '.env.example', 'public.txt')
+        expect((await observe()).files).toContainEqual(expect.objectContaining({ path: 'public.txt', oldPath: '.env.example', excluded: 'sensitive_path' }))
+        expect(await diff('public.txt', 'staged')).toMatchObject({ patch: null, withheld: 'sensitive_path' })
+    })
+    it('never previews untracked files or excluded paths', async () => {
+        await clone(); await writeFile(join(repo.path, 'untracked.txt'), 'must not be returned')
+        await writeFile(join(repo.path, '.ENV.local'), 'must not be returned')
+        expect(await diff('untracked.txt')).toMatchObject({ patch: null, withheld: 'untracked' })
+        expect(await diff('.ENV.local')).toMatchObject({ patch: null, withheld: 'sensitive_path' })
+        git(repo.path, 'add', '-f', '--', '.ENV.local')
+        expect(await diff('.ENV.local', 'staged')).toMatchObject({ patch: null, withheld: 'sensitive_path' })
+    })
+    it('withholds the whole patch if either removed or added lines contain credential patterns', async () => {
+        await clone()
+        const marker = `ghp_${'SyntheticCredential'.repeat(2)}`
+        await writeFile(join(repo.path, 'README.md'), `ordinary context\n${marker}\n`)
+        expect(await diff('README.md')).toMatchObject({ patch: null, withheld: 'credential_pattern', truncated: false })
+        git(repo.path, 'add', '--', 'README.md'); git(repo.path, 'commit', '-m', 'synthetic removed-line fixture')
+        await writeFile(join(repo.path, 'README.md'), 'ordinary replacement\n')
+        expect(await diff('README.md')).toMatchObject({ patch: null, withheld: 'credential_pattern' })
+    })
+    it('returns binary metadata without a payload and withholds oversized UTF-8 patches entirely', async () => {
+        await clone(); await writeFile(join(repo.path, 'image.bin'), Buffer.from([1, 0, 2, 3])); git(repo.path, 'add', '--', 'image.bin')
+        expect(await diff('image.bin', 'staged')).toMatchObject({ patch: null, binary: true, truncated: false })
+        await writeFile(join(repo.path, 'README.md'), `${'é'.repeat(140000)}\n`)
+        expect(await diff('README.md')).toMatchObject({ patch: null, binary: false, truncated: true })
+    })
+    it('reads only a symlink target name and never its target contents', async () => {
+        await clone(); const outside = join(directory, 'outside-private-fixture.txt')
+        await writeFile(outside, 'SYNTHETIC_TARGET_CONTENT_NEVER_RETURN')
+        await symlink(outside, join(repo.path, 'link.txt')); git(repo.path, 'add', '--', 'link.txt')
+        expect((await observe()).files).toContainEqual(expect.objectContaining({ path: 'link.txt', kind: 'symlink' }))
+        const reply = await diff('link.txt', 'staged')
+        expect(reply.patch).toContain(outside); expect(reply.patch).not.toContain('SYNTHETIC_TARGET_CONTENT_NEVER_RETURN')
+    })
+    it('redacts raw filenames that cannot be safely rendered and keeps distinct opaque references', async () => {
+        await clone()
+        const badNames = [Buffer.from('line\nbreak.txt'), Buffer.from('bidi\u202ename.txt'), Buffer.from([0xff, 0x2e, 0x74, 0x78, 0x74])]
+        for (const name of badNames) await writeFile(Buffer.concat([Buffer.from(`${repo.path}/`), name]), 'untracked fixture')
+        const state = await observe()
+        expect(state.state).toBe('ready'); expect(state.files).toHaveLength(3)
+        for (const file of state.files) expect(file).toMatchObject({ path: '', kind: 'unknown', excluded: 'unrepresentable', pathRef: expect.stringMatching(/^[a-f0-9]{64}$/) })
+        expect(new Set(state.files.map(file => file.pathRef)).size).toBe(3)
+        expect(JSON.stringify(state)).not.toContain('bidi')
+    })
+    it('rejects changed file observations even if Git status remains the same', async () => {
+        await clone(); await writeFile(join(repo.path, 'README.md'), 'change one\n')
+        const first = await observe(); await writeFile(join(repo.path, 'README.md'), 'change two\n')
+        await expect(diff('README.md', 'unstaged', first.snapshotId!)).rejects.toMatchObject({ code: 'changed' })
+        expect((await observe()).snapshotId).not.toBe(first.snapshotId)
+    })
+    it('does not report unavailable or unsafe roots as missing and never recreates them', async () => {
+        expect(await observe()).toMatchObject({ state: 'missing', snapshotId: null })
+        await expect(stat(join(root, 'repositories'))).rejects.toMatchObject({ code: 'ENOENT' })
+        await rm(root, { recursive: true })
+        expect(await observe()).toMatchObject({ state: 'unknown', snapshotId: null })
+        await expect(stat(root)).rejects.toMatchObject({ code: 'ENOENT' })
+    })
+    it('rejects a FIFO config promptly without blocking on an absent writer', async () => {
+        await clone(); await rm(join(repo.path, '.git/config')); execFileSync('/usr/bin/mkfifo', [join(repo.path, '.git/config')])
+        const started = Date.now()
+        expect(await observe()).toMatchObject({ state: 'blocked', snapshotId: null })
+        expect(Date.now() - started).toBeLessThan(1500)
+    })
+    it('blocks unsafe Git config and submodules without executing a nested repository command', async () => {
+        await clone(); requests.length = 0
+        git(repo.path, 'update-index', '--add', '--cacheinfo', '160000', git(repo.path, 'rev-parse', 'HEAD'), 'nested')
+        // --ignore-submodules=all omits even staged gitlinks, without opening a nested Git repository.
+        const state = await observe()
+        expect(state).toMatchObject({ state: 'ready', files: [] })
+        await expect(diff('nested', 'staged', state.snapshotId!)).rejects.toMatchObject({ code: 'changed' })
+        git(repo.path, 'config', '--local', 'diff.external', '/synthetic/never-execute')
+        expect(await observe()).toMatchObject({ state: 'blocked', snapshotId: null })
+        expect(requests).toHaveLength(0)
+    })
+    it('fails closed on traversal, invalid snapshots and paths not in the observation', async () => {
+        await clone(); await writeFile(join(repo.path, 'README.md'), 'change\n'); const state = await observe()
+        for (const path of ['../outside', '/etc/passwd', 'src/../README.md', 'README.md\0tail']) {
+            await expect(workspace.readRepositoryDiff(root, repo, { path, side: 'unstaged', snapshotId: state.snapshotId! })).rejects.toMatchObject({ code: 'invalid_repository' })
+        }
+        await expect(diff('missing.txt', 'unstaged', state.snapshotId!)).rejects.toMatchObject({ code: 'changed' })
+        await expect(diff('README.md', 'unstaged', 'a'.repeat(64))).rejects.toMatchObject({ code: 'changed' })
+    })
+    it('bounds a large status listing and never permits a path omitted from its snapshot', async () => {
+        await clone()
+        await Promise.all(Array.from({ length: 2001 }, (_, i) => writeFile(join(repo.path, `untracked-${String(i).padStart(4, '0')}.txt`), 'fixture')))
+        const state = await observe()
+        expect(state).toMatchObject({ state: 'ready', totalFiles: 2001, truncated: true })
+        expect(state.files).toHaveLength(2000)
+        expect(Buffer.byteLength(JSON.stringify(state))).toBeLessThan(1_048_576)
+        expect(RepoWorktreeSchema.safeParse(state).success).toBe(true)
+        await expect(diff('untracked-2000.txt', 'unstaged', state.snapshotId!)).rejects.toMatchObject({ code: 'changed' })
+    })
+    it('represents unmerged files without generating a combined conflict patch', async () => {
+        await clone(); git(repo.path, 'checkout', '-b', 'side')
+        await writeFile(join(repo.path, 'README.md'), 'side version\n'); git(repo.path, 'add', '--', 'README.md'); git(repo.path, 'commit', '-m', 'side')
+        git(repo.path, 'checkout', 'main'); await writeFile(join(repo.path, 'README.md'), 'main version\n'); git(repo.path, 'add', '--', 'README.md'); git(repo.path, 'commit', '-m', 'main')
+        expect(() => git(repo.path, 'merge', 'side')).toThrow()
+        expect((await observe()).files).toEqual([{ path: 'README.md', index: 'U', worktree: 'U', kind: 'file' }])
+        expect(await diff('README.md')).toMatchObject({ patch: null, withheld: 'unsupported' })
+    })
+    it('shows deletions on each side without attempting to read the deleted path', async () => {
+        await clone(); await rm(join(repo.path, 'README.md'))
+        expect((await observe()).files).toEqual([{ path: 'README.md', index: ' ', worktree: 'D', kind: 'file' }])
+        expect((await diff('README.md')).patch).toContain('-initial')
+        git(repo.path, 'add', '--', 'README.md')
+        expect((await observe()).files).toEqual([{ path: 'README.md', index: 'D', worktree: ' ', kind: 'file' }])
+        expect((await diff('README.md', 'staged')).patch).toContain('-initial')
+    })
+})
 
 describe('project repository workspace', () => {
     it('clones over the fixed HTTP broker path, preserves the root, and fast-forwards a read-only grant', async () => {
@@ -116,6 +295,7 @@ describe('project repository workspace', () => {
     })
     it('rejects detached HEAD without changing it', async () => {
         await clone(); git(repo.path, 'checkout', '--detach'); requests.length = 0
+        expect((await workspace.inspectRepositories(root, [repo]))[0]?.local).toMatchObject({ state: 'ready', branch: null, dirty: false })
         await expect(pull()).rejects.toMatchObject({ code: 'detached' }); expect(requests).toHaveLength(0)
     })
     it.each(['include.path', 'includeIf.gitdir:/.path', 'core.hooksPath', 'core.fsmonitor', 'filter.evil.smudge', 'core.sshCommand', 'url.http://evil.invalid/.insteadOf', 'remote.origin.pushurl', 'remote.origin.proxy', 'extensions.worktreeConfig'])('rejects unsafe local configuration %s before any transport', async key => {

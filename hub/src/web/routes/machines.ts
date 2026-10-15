@@ -13,9 +13,10 @@ import { RpcTargetMissingError } from '../../sync/rpcGateway'
 import type { WebAppEnv } from '../middleware/auth'
 import { requireMachine } from './guards'
 import { projectPermissionMode, projectSpawnDirectory } from '../../evolved/bridge'
+import type { RepositoryStartResolver, RepositoryStartTarget } from '../../evolved/repositoryWorkflow'
 import { EvolvedError } from '../../evolved/store'
 
-export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Hono<WebAppEnv> {
+export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null, options: { repositoryStart?: RepositoryStartResolver } = {}): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
 
     app.get('/machines', (c) => {
@@ -90,10 +91,18 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         const access = c.get('evolvedAccess')
         const project = access?.project
         let spawnBody = body
+        let repository: RepositoryStartTarget | undefined
+        if (!project && body?.repositoryId !== undefined) return c.json({ error: 'Repository selection requires Evolved project access.' }, 400)
+        if (!project && (typeof body?.directory !== 'string' || !body.directory.trim())) return c.json({ error: 'Directory is required.' }, 400)
         if (project && body && typeof body === 'object' && !Array.isArray(body)) {
             try {
-                // Normalize only the Evolved route. The shared/legacy schema keeps directory required.
-                spawnBody = { ...body, directory: projectSpawnDirectory(project, body.directory, body.sessionType, body.worktreeName) }
+                if (body.repositoryId !== undefined) {
+                    if (Object.hasOwn(body, 'directory')) throw new EvolvedError('directory_conflict', 'Repository selection cannot include a directory.', 400)
+                    projectSpawnDirectory(project, undefined, body.sessionType, body.worktreeName)
+                    if (!options.repositoryStart) throw new EvolvedError('repository_unavailable', 'Repository starts are unavailable.', 409)
+                    repository = await options.repositoryStart(access!, body.repositoryId, machineId)
+                    spawnBody = { ...body, directory: repository.directory }
+                } else spawnBody = { ...body, directory: projectSpawnDirectory(project, body.directory, body.sessionType, body.worktreeName) }
             } catch (error) {
                 if (error instanceof EvolvedError) return c.json({ error: error.message, code: error.code }, error.status as 400)
                 throw error
@@ -118,7 +127,10 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
             if (!access.valid()) return c.json({ error: 'Session or project access changed. Retry with current project access.', code: 'project_access_changed' }, 401)
             const currentMachine = requireMachine(c, engine, machineId)
             if (currentMachine instanceof Response) return currentMachine
-            try { parsed.data.directory = projectSpawnDirectory(access.project, parsed.data.directory, parsed.data.sessionType, parsed.data.worktreeName) }
+            try {
+                if (repository) { await repository.recheck(); parsed.data.directory = repository.directory }
+                else parsed.data.directory = projectSpawnDirectory(access.project, parsed.data.directory, parsed.data.sessionType, parsed.data.worktreeName)
+            }
             catch (error) {
                 if (error instanceof EvolvedError) return c.json({ error: error.message, code: error.code }, error.status as 400)
                 throw error
@@ -128,7 +140,7 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
 
         const result = await engine.spawnSession(
             machineId,
-            parsed.data.directory,
+            parsed.data.directory!,
             parsed.data.agent,
             parsed.data.model,
             parsed.data.modelReasoningEffort,
@@ -145,7 +157,8 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
             startingMode,
             namespace,
             // A lost project mount must fail, never silently create a replacement.
-            project ? false : undefined
+            project ? false : undefined,
+            repository?.onReserved
         )
         return c.json(result)
     })

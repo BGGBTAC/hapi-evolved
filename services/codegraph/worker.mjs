@@ -96,16 +96,18 @@ async function execute(operation, params) {
     if (operation === 'affected') {
         const files = Array.isArray(params.files) ? params.files : String(params.files ?? '').split(',').filter(Boolean);
         if (!files.length || files.length > 20) throw new AdapterError('Provide between 1 and 20 changed files');
-        const nodes = new Map(); const edges = new Map();
+        const nodes = new Map(); const edges = new Map(); const skipped = []; const accepted = [];
         for (const file of files) {
-            await sourcePath(workerData.root, file);
+            try { await sourcePath(workerData.root, file); }
+            catch { skipped.push({ file, reason: 'unavailable' }); continue; }
+            accepted.push(file);
             for (const node of graph.getNodesInFile(file).slice(0, 20)) {
                 const sub = graph.traverse(node.id, { direction: 'incoming', maxDepth: 2, limit });
                 for (const n of sub.nodes.values()) { if (nodes.size < limit) nodes.set(n.id, n); }
                 for (const e of sub.edges) { if (edges.size < limit * 4) edges.set(`${e.source}:${e.target}:${e.kind}`, e); }
             }
         }
-        return { ...normalizeGraph({ nodes, edges }, limit), files };
+        return { ...normalizeGraph({ nodes, edges }, limit), files: accepted, skipped, lastIndexedAt, pendingFiles };
     }
     let nodeId = String(params.nodeId ?? '');
     if (!nodeId && operation === 'graph') {

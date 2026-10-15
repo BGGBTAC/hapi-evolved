@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useEvolved } from './auth'
+import { useProjectWorkflow } from './ProjectWorkflowContext'
 import { canWriteProject, EvolvedApiError, projectPath, type CodeDetail, type CodeGraph, type CodeNode, type CodeStatus } from './api'
 import { WorkspaceLink } from './workspaceNavigation'
 import { ActionStatus, Empty, ErrorNotice, Field, Loading, Panel, submit, useAction } from './ui'
@@ -74,12 +75,14 @@ export function CodegraphPanel() {
 }
 function CodegraphForProject() {
     const { api, me, project } = useEvolved()
+    const workflow = useProjectWorkflow()
     const path = `${projectPath(project!.id)}/codegraph`
     const action = useAction()
     const [query, setQuery] = useState('')
     const [searchQuery, setSearchQuery] = useState('')
-    const [selected, setSelected] = useState<string | null>(null)
-    const [focus, setFocus] = useState<string | null>(null)
+    const [selected, setSelected] = useState<string | null>(workflow?.nodeId ?? null)
+    const [focus, setFocus] = useState<string | null>(workflow?.nodeId ?? null)
+    useEffect(() => { if (workflow?.nodeId) { setSelected(workflow.nodeId); setFocus(workflow.nodeId); workflow.setNodeId(null) } }, [workflow?.nodeId])
     const [files, setFiles] = useState('')
     const [affectedFiles, setAffectedFiles] = useState<string | null>(null)
     const scope = [api.baseUrl, me.user.id, project!.id, project!.role]

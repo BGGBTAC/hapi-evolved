@@ -1,22 +1,30 @@
 import { open, realpath, stat } from 'node:fs/promises'
+import { excludedSourcePath, containsCredential as currentContainsCredential } from '@hapi/protocol/evolvedSourcePolicy'
 import { constants } from 'node:fs'
 import { isAbsolute, relative, resolve, sep, extname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { MemoryError, MemoryLedger, memoryHash, type MemorySource } from './memoryStore'
 import { EvolvedStore, EvolvedError } from './store'
 
-export function excludedMemoryPath(path: string): boolean {
+function legacyExcludedMemoryPath(path: string): boolean {
     return path.split(/[\\/]/).some(part => /^(?:\.env(?:\..*)?|secrets?|credentials?|\.ssh|\.aws|\.gnupg|\.git|\.codegraph.*|node_modules)$/i.test(part))
         || /\.(?:pem|p12|pfx|key|keystore|sqlite|db)$/i.test(path)
 }
-export function containsCredential(content: string): boolean {
+function legacyContainsCredential(content: string): boolean {
     return /-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|AKIA[A-Z0-9]{16})\b/.test(content)
         || /\b(?:password|passwd|api[_-]?key|client[_-]?secret|access[_-]?token)\b["']?\s*[:=]\s*["']?[^\s"'${}]{12,}/i.test(content)
 }
 
+export const excludedMemoryPath = excludedSourcePath
+export const containsCredential = currentContainsCredential
+
 const memoryExtensions = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.py', '.rs', '.go', '.java', '.c', '.h', '.cpp', '.swift', '.md', '.txt', '.json', '.yaml', '.yml', '.toml'])
 
-export async function readMemorySource(root: string, path: string): Promise<string> {
+export async function readMemorySource(root: string, path: string, policy: 'current' | 'legacy' = 'current'): Promise<string> {
+    // Existing ledger facts keep their original policy during reconciliation.
+    // Expanding intake exclusions must not silently purge previously accepted knowledge.
+    const excludedMemoryPath = policy === 'legacy' ? legacyExcludedMemoryPath : excludedSourcePath
+    const containsCredential = policy === 'legacy' ? legacyContainsCredential : currentContainsCredential
     if (!root || !path || isAbsolute(path) || excludedMemoryPath(path)) throw new MemoryError('Source path is excluded', 403)
     const canonicalRoot = await realpath(root)
     const canonicalFile = await realpath(resolve(canonicalRoot, path)).catch((error: NodeJS.ErrnoException) => {
@@ -26,10 +34,12 @@ export async function readMemorySource(root: string, path: string): Promise<stri
     const rel = relative(canonicalRoot, canonicalFile)
     if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel) || excludedMemoryPath(rel)) throw new MemoryError('Source outside project or excluded', 403)
     if (!memoryExtensions.has(extname(canonicalFile).toLowerCase())) throw new MemoryError('Unsupported memory source type', 403)
-    const file = await open(canonicalFile, constants.O_RDONLY | constants.O_NOFOLLOW)
+    const file = await open(canonicalFile, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
     try {
         // Validate the opened inode, not just a path that a workspace process
         // could replace with a symlink between realpath and read.
+        const openedInfo = await file.stat()
+        if (!openedInfo.isFile() || policy !== 'legacy' && openedInfo.nlink !== 1) throw new MemoryError('Source must be a regular non-linked file', 403)
         const openedPath = process.platform === 'linux' ? await realpath(`/proc/self/fd/${file.fd}`) : await realpath(canonicalFile)
         const openedRelative = relative(canonicalRoot, openedPath)
         if (openedRelative === '..' || openedRelative.startsWith(`..${sep}`) || isAbsolute(openedRelative) || excludedMemoryPath(openedRelative)) throw new MemoryError('Source outside project or excluded', 403)
@@ -189,7 +199,7 @@ export class MemoryService {
                 for (const { itemId, source } of this.ledger.fileSources(project.id)) {
                     if (!['code', 'attachment'].includes(source.kind)) continue
                     try {
-                        if (!source.path || memoryHash(await readMemorySource(project.rootPath, source.path)) !== source.hash) invalid.add(itemId)
+                        if (!source.path || memoryHash(await readMemorySource(project.rootPath, source.path, 'legacy')) !== source.hash) invalid.add(itemId)
                     } catch (error) {
                         if (error instanceof MemoryError && [403, 404, 413, 422].includes(error.status)) invalid.add(itemId)
                         else throw error

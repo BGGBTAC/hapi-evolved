@@ -289,6 +289,7 @@ describe('global specialists retain project authorization', () => {
         expect(t.started[0]![5]).toBe(false)
         expect(t.started[0]![10]).toBe(provider === 'claude' ? 'plan' : 'read-only')
         expect(t.started[0]![16]).toBe(t.project.namespace)
+        expect(t.started[0]![17]).toBe(false)
         expect(t.messages.get(result.sessionId)![0]!.text).toStartWith('HAPI-Spezialistenauftrag.')
         const replay = await t.call(t.startPath, body, { user: 'member' }); expect(replay.status).toBe(200)
         expect((await replay.json() as { sessionId: string }).sessionId).toBe(result.sessionId)

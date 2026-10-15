@@ -8,6 +8,7 @@ const context = vi.hoisted(() => ({ api: { baseUrl: 'https://hub.example' }, me:
 const runtime = vi.hoisted(() => ({ getSessions: vi.fn(), getMachines: vi.fn() }))
 vi.mock('./auth', () => ({ useEvolved: () => context }))
 vi.mock('@/lib/app-context', () => ({ useAppContext: () => ({ api: runtime }) }))
+vi.mock('./ProjectReadiness', () => ({ ProjectReadinessPanel: () => <div>Readiness section</div> }))
 vi.mock('./Capacity', () => ({ CapacityPanel: () => <div>Capacity section</div> }))
 vi.mock('@tanstack/react-router', () => ({ Link: ({ children, to, params: _params, search: _search, ...props }: React.PropsWithChildren<{ to: string; params?: unknown; search?: unknown }>) => <a href={to} {...props}>{children}</a> }))
 function session(id: string, overrides: Partial<SessionSummary> = {}): SessionSummary {

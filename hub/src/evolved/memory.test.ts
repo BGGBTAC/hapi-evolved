@@ -4,10 +4,11 @@ import { Hono } from 'hono'
 import { chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { execFileSync } from 'node:child_process'
 import { EvolvedStore } from './store'
 import { MemoryLedger, memoryHash } from './memoryStore'
 import { MemoryService, containsCredential, readMemorySource, type MemoryBackend } from './memoryService'
-import { createMemoryRoutes } from './memory'
+import { createMemoryRoutes, proposeMemoryFile } from './memory'
 import { createCodegraphRoutes } from './codegraph'
 
 const resources: Array<() => void> = []
@@ -105,6 +106,41 @@ describe('Memory ledger budgets and source lifecycle', () => {
         await fixture.service.reconcileReservations()
         expect(fixture.service.ledger.budget(projectId)).toMatchObject({ spentMicros: 7, reservedMicros: 40 })
     })
+    test('new source exclusions do not purge unchanged legacy knowledge during reconciliation', async () => {
+        const { service, store, project } = setup()
+        const root = mkdtempSync(join(tmpdir(), 'evolved-memory-policy-')); resources.push(() => rmSync(root, { recursive: true, force: true }))
+        store.db.query('UPDATE evolved_projects SET root_path=? WHERE id=?').run(root, project.id)
+        const body = 'A historical security design note.'
+        writeFileSync(join(root, 'secret-handling.md'), body)
+        const item = service.ledger.create(project.id, 'alice', 'Existing policy note', body, [{ kind: 'code', projectId: project.id, path: 'secret-handling.md', hash: memoryHash(body) }])
+        await expect(readMemorySource(root, 'secret-handling.md')).rejects.toThrow('excluded')
+        await service.reconcileSources([project.id])
+        expect(service.ledger.get(project.id, item.id)).not.toBeNull()
+    })
+    test('repository file proposals recheck the grant after file I/O and preserve proposed provenance', async () => {
+        const f = setup(), root = mkdtempSync(join(tmpdir(), 'evolved-memory-repo-'))
+        resources.push(() => rmSync(root, { recursive: true, force: true }))
+        f.store.db.query('UPDATE evolved_projects SET root_path=? WHERE id=?').run(root, f.project.id)
+        writeFileSync(join(root, 'source.ts'), 'export const value = 1')
+        const request = new Request('https://hapi.test', { headers: { cookie: `__Host-hapi-evolved=${f.store.createSession('alice')}` } })
+        const args = { store: f.store, service: f.service, request, projectId: f.project.id, path: 'source.ts' }
+        await expect(proposeMemoryFile({ ...args, recheck: async () => { throw new Error('Grant revoked') } })).rejects.toThrow('Grant revoked')
+        expect(f.service.ledger.list(f.project.id)).toHaveLength(0)
+        const { item } = await proposeMemoryFile({ ...args, recheck: async () => {} })
+        expect(item.status).toBe('proposed'); expect(item.sources[0]).toMatchObject({ kind: 'code', path: 'source.ts', hash: memoryHash('export const value = 1') })
+        expect(item.sources[0]?.commit).toBeUndefined()
+        f.store.setMember('alice', f.team.id, 'bob', 'admin')
+        await expect(proposeMemoryFile({ ...args, recheck: async () => { f.store.setMember('bob', f.team.id, 'alice', null) } })).rejects.toThrow()
+        expect(f.service.ledger.list(f.project.id)).toHaveLength(1)
+    })
+    test('a FIFO source is rejected without waiting for a writer', async () => {
+        if (process.platform !== 'linux') return
+        const root = mkdtempSync(join(tmpdir(), 'evolved-memory-fifo-')); resources.push(() => rmSync(root, { recursive: true, force: true }))
+        execFileSync('mkfifo', [join(root, 'source.md')])
+        const start = performance.now()
+        await expect(readMemorySource(root, 'source.md')).rejects.toThrow('regular')
+        expect(performance.now() - start).toBeLessThan(1000)
+    })
     test('temporary filesystem access failures preserve source facts instead of purging them', async () => {
         if (process.getuid?.() === 0) return // Root bypasses the POSIX permission fixture.
         const { service, store, project } = setup()
@@ -188,7 +224,7 @@ describe('Memory and codegraph authorization', () => {
         writeFileSync(join(root, '.npmrc'), 'synthetic registry configuration')
         symlinkSync(join(root, '.npmrc'), join(root, 'alias.txt'))
         await expect(readMemorySource(root, '.env')).rejects.toThrow('excluded')
-        await expect(readMemorySource(root, 'alias.txt')).rejects.toThrow('Unsupported')
+        await expect(readMemorySource(root, 'alias.txt')).rejects.toThrow('excluded')
         await expect(readMemorySource(root, '../outside.ts')).rejects.toThrow()
         expect(await readMemorySource(root, 'test.ts')).toContain('safe')
         expect(containsCredential('-----BEGIN PRIVATE KEY-----')).toBe(true)

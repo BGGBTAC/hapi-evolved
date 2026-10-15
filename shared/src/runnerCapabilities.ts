@@ -33,6 +33,8 @@ export const MACHINE_CAPABILITIES = {
     CursorChatStoreStatus: RPC_METHODS.CursorChatStoreStatus,
     StopRunner: RPC_METHODS.StopRunner,
     EvolvedRepositories: RPC_METHODS.EvolvedRepositories,
+    // Versioned action support on the existing EvolvedRepositories RPC.
+    EvolvedRepositoryWorktree: 'evolvedRepositories.worktree.v1',
 } as const
 
 export type MachineCapability =
@@ -44,6 +46,7 @@ export const CURRENT_MACHINE_CAPABILITIES: readonly MachineCapability[] = [
     MACHINE_CAPABILITIES.CursorChatStoreStatus,
     MACHINE_CAPABILITIES.StopRunner,
     MACHINE_CAPABILITIES.EvolvedRepositories,
+    MACHINE_CAPABILITIES.EvolvedRepositoryWorktree,
 ]
 
 /**

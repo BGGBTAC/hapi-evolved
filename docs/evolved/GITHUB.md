@@ -39,8 +39,9 @@ Vault; connection responses and agent requests never return it.
 In **GitHub → Freigegebene Repositorys**, select **Ins Projekt klonen**. HAPI
 uses the saved repository identity and creates
 `<project folder>/repositories/<owner>/<repository>` automatically. Each
-repository has its own directory; the project folder shown when starting a
-session stays the same. The repository card shows its exact checkout path.
+repository has its own directory. A session defaults to the project folder;
+explicitly select a granted checkout to start directly inside that repository.
+The repository card shows its exact checkout path.
 
 After cloning, **Aktualisieren** fetches and fast-forwards the current branch.
 It does not reset, clean, force-push, rebase or discard local commits. Dirty
@@ -195,3 +196,25 @@ GitHub if it should no longer exist at the provider. Expired, revoked or
 organization-pending tokens require reconnecting with valid authorization.
 Connection management is reserved for human project administrators with fresh
 passkey authentication; agents cannot create grants for themselves.
+
+## Inspect, review and hand off
+
+Open **Arbeitsstand** on a granted repository to see the branch, local upstream
+counts, changed files, and staged/unstaged diffs without a model session. The
+view performs no fetch and never stages, commits or pushes. A new runner
+capability gates these reads; an older runner reports that an update is needed.
+Untracked contents are not previewed. Binary, excluded and oversized patches
+are identified instead of displayed as an empty diff. Sensitive-path and common
+credential-pattern checks apply at both runner and Hub; they are conservative
+filters, not a guarantee that all secrets can be detected.
+
+Select changed files to inspect Codegraph relationships or prepare a review
+specialist in this checkout. Deleted or excluded files are reported as skipped.
+A changed worktree invalidates the selection. The snapshot is an observation,
+not a frozen filesystem. The Hub owns session-to-repository links, and current
+project membership and repository grants still control every new operation.
+
+A supported source file can become a knowledge proposal with its current
+server-read contents and checksum. The proposal is not automatically verified
+and expires through the existing source lifecycle when the file changes.
+See [the integrated workflow](PROJECT_WORKFLOW.md) and [user guide](USER_GUIDE.md).

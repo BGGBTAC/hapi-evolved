@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
     evolved: false,
     projectId: 'project-1',
     projectRoot: '/projects/project-1',
+    repositoryChoices: [] as Array<{ id: string; fullName: string; path: string; local: { state: string }; job?: { state: string } }>,
     recentPaths: [] as string[],
     lastMachineId: null as string | null,
     pathProbes: [] as string[][],
@@ -49,7 +50,9 @@ const mocks = vi.hoisted(() => ({
     addToast: vi.fn()
 }))
 
-vi.mock('@/evolved/auth', () => ({ useOptionalEvolved: () => mocks.evolved ? { project: { id: mocks.projectId, rootPath: mocks.projectRoot } } : null }))
+vi.mock('@/evolved/auth', () => ({ useOptionalEvolved: () => mocks.evolved ? { api: { baseUrl: '' }, me: { user: { id: 'human' } }, project: { id: mocks.projectId, rootPath: mocks.projectRoot, role: 'admin', profile: 'workspace' } } : null }))
+vi.mock('@/evolved/repositoryCatalog', () => ({ useProjectRepositories: () => ({ current: { runner: { status: 'ready' }, repositories: mocks.repositoryChoices }, isFetching: false, error: null, refetch: vi.fn() }) }))
+vi.mock('@/evolved/workspaceNavigation', () => ({ WorkspaceLink: ({ children }: React.PropsWithChildren) => <span>{children}</span> }))
 vi.mock('@/evolved/useProviderModels', () => ({ useProviderModels: () => ({ enabled: mocks.evolved, canRefresh: true, data: { provider: 'codex', status: 'ready', models: [{ id: 'new-native-model', label: 'Fresh native model', reasoningEfforts: ['high'] }] }, isLoading: false, error: null, refresh: vi.fn() }) }))
 vi.mock('@/lib/use-translation', () => ({
     useTranslation: () => ({ t: (key: string) => key })
@@ -327,6 +330,7 @@ describe('NewSession launch preferences', () => {
                 .map((agent) => ({ agent, available: true }))
         )
         mocks.evolved = false
+        mocks.repositoryChoices = []
         mocks.projectId = 'project-1'
         mocks.projectRoot = '/projects/project-1'
         mocks.recentPaths = []
@@ -372,6 +376,55 @@ describe('NewSession launch preferences', () => {
         fireEvent.click(screen.getByTestId('create'))
         await waitFor(() => expect(mocks.spawnSession).toHaveBeenCalled())
         expect(mocks.spawnSession.mock.calls[0][0].model).toBe('newer-native-id')
+    })
+
+    it('selects a granted checkout explicitly and sends only its repository ID', async () => {
+        mocks.evolved = true
+        mocks.repositoryChoices = [{ id: '101', fullName: 'example/app', path: '/projects/project-1/repositories/example/app', local: { state: 'ready' } }]
+        mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'repo-session' })
+        render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" initialDirectory="/hostile" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        fireEvent.change(screen.getByLabelText(/^Arbeitsort/), { target: { value: '101' } })
+        expect(screen.getByText('/projects/project-1/repositories/example/app')).toBeInTheDocument()
+        fireEvent.click(screen.getByTestId('create'))
+        await waitFor(() => expect(mocks.spawnSession).toHaveBeenCalled())
+        expect(mocks.spawnSession.mock.calls[0][0]).toMatchObject({ repositoryId: '101', directory: undefined, sessionType: 'simple' })
+        expect(mocks.checkPathsExists).toHaveBeenCalledWith(['/projects/project-1/repositories/example/app'])
+    })
+
+    it('does not silently fall back to root for a missing selected checkout', () => {
+        mocks.evolved = true
+        mocks.repositoryChoices = [{ id: '101', fullName: 'example/app', path: '/projects/project-1/repositories/example/app', local: { state: 'missing' } }]
+        render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        fireEvent.change(screen.getByLabelText(/^Arbeitsort/), { target: { value: '101' } })
+        expect(screen.getByTestId('create')).toBeDisabled()
+        expect(mocks.spawnSession).not.toHaveBeenCalled()
+        expect(screen.getByText(/Es wird kein anderer Ordner gewählt/)).toBeInTheDocument()
+    })
+
+    it('cancels a previous repository check when the explicit repository changes', async () => {
+        mocks.evolved = true
+        mocks.repositoryChoices = ['101', '102'].map(id => ({ id, fullName: `example/app${id}`, path: `/projects/project-1/repositories/example/app${id}`, local: { state: 'ready' } }))
+        let finish!: (value: unknown) => void
+        mocks.checkPathsExists.mockImplementation(() => new Promise(resolve => { finish = resolve }))
+        render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        fireEvent.change(screen.getByLabelText(/^Arbeitsort/), { target: { value: '101' } })
+        fireEvent.click(screen.getByTestId('create'))
+        fireEvent.change(screen.getByLabelText(/^Arbeitsort/), { target: { value: '102' } })
+        await act(async () => finish({ exists: { '/projects/project-1/repositories/example/app101': true } }))
+        expect(mocks.spawnSession).not.toHaveBeenCalled()
+        expect(screen.getByText('/projects/project-1/repositories/example/app102')).toBeInTheDocument()
+    })
+
+    it('accepts an explicit repository link only for its matching project and does not silently fall back', () => {
+        mocks.evolved = true
+        mocks.repositoryChoices = [{ id: '101', fullName: 'example/app', path: '/projects/project-1/repositories/example/app', local: { state: 'ready' } }]
+        const props = { api, machines: [machine], initialRepositoryId: '101', initialProjectId: 'project-1', onSuccess: mocks.onSuccess, onCancel: () => {} }
+        const view = render(<NewSession {...props} />)
+        expect(screen.getByLabelText(/^Arbeitsort/)).toHaveValue('101')
+        view.rerender(<NewSession {...props} initialProjectId="other-project" />)
+        expect(screen.getByRole('alert')).toHaveTextContent('nicht zum aktuellen Projekt')
+        expect(screen.queryByTestId('create')).not.toBeInTheDocument()
+        expect(mocks.spawnSession).not.toHaveBeenCalled()
     })
 
     it('starts directly in the stored project folder without a directory selection', async () => {

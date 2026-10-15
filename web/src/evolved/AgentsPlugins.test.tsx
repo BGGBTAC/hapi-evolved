@@ -4,9 +4,12 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { EvolvedApiError, type EvolvedProject } from './api'
 import { AgentsPluginsPanel } from './AgentsPlugins'
+import { ProjectWorkflowProvider, useProjectWorkflow } from './ProjectWorkflowContext'
 
+const repositoryChoices = vi.hoisted(() => ({ items: [] as Array<{ id: string; fullName: string; local: { state: string } }> }))
 const context = vi.hoisted(() => ({ api: { baseUrl: '', request: vi.fn() }, me: { user: { id: 'human', isAdmin: true } }, project: null as EvolvedProject | null }))
 vi.mock('./auth', () => ({ useEvolved: () => context }))
+vi.mock('./repositoryCatalog', () => ({ useProjectRepositories: () => ({ current: { runner: { status: 'ready' }, repositories: repositoryChoices.items }, error: null, isFetching: false, refetch: vi.fn() }) }))
 vi.mock('./useProviderModels', () => ({ useProviderModels: ({ provider }: { provider: string }) => ({ enabled: true, canRefresh: false, data: { provider, status: 'ready', source: 'native-cli', models: [{ id: 'future-dynamic-model', label: 'Future dynamic model' }] }, isLoading: false, error: null, refresh: vi.fn() }) }))
 vi.mock('@tanstack/react-router', () => ({ Link: ({ to, params, search, children, ...props }: { to: string; params?: { sessionId?: string }; search?: Record<string, string>; children: ReactNode }) => <a href={to.replace('$sessionId', params?.sessionId ?? '') + (search ? `?${new URLSearchParams(search)}` : '')} {...props}>{children}</a> }))
 const agent = { id: 'specialist', name: 'Prüfer', description: 'Prüft das Projekt.', instructions: 'Prüfe sorgfältig.', providerPreference: 'either', skills: [] as string[], origin: 'builtin', available: true }
@@ -20,7 +23,7 @@ function mount() {
     return { ...render(<QueryClientProvider client={client}><AgentsPluginsPanel /></QueryClientProvider>), client }
 }
 beforeEach(() => {
-    canManage = true; agents = [agent]; plugins = []
+    canManage = true; agents = [agent]; plugins = []; repositoryChoices.items = []
     context.project = { id: 'project-1', name: 'Projekt Alpha', teamId: 'team', role: 'admin', profile: 'restricted' }
     context.api.request.mockReset().mockImplementation(async (path: string) => path === '/plugins' ? { plugins } : catalog())
 })
@@ -243,4 +246,36 @@ it('context switch aborts in-flight mutations and old responses never populate t
     expect(signal!.aborted).toBe(true)
     await act(async () => finish?.({ preview }))
     expect(screen.queryByRole('button', { name: 'Diese Fassung installieren' })).not.toBeInTheDocument()
+})
+
+it('an explicit repository selection is retained unchanged across an uncertain specialist start', async () => {
+    repositoryChoices.items = [{ id: '101', fullName: 'example/app', local: { state: 'ready' } }]
+    const starts: Record<string, unknown>[] = []
+    context.api.request.mockImplementation(async (path, options) => {
+        if (path.endsWith('/start')) { starts.push(options.body); throw new Error('Lost response') }
+        return path === '/plugins' ? { plugins } : catalog()
+    })
+    mount(); fireEvent.click(await screen.findByRole('button', { name: 'Aufgabe starten' }))
+    fireEvent.change(screen.getByLabelText(/^Arbeitsort/), { target: { value: '101' } })
+    fireEvent.change(screen.getByLabelText('Aufgabe'), { target: { value: 'Check scoped code' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Jetzt starten' }))
+    await screen.findByText(/Die Startbestätigung fehlt/)
+    expect(screen.getByLabelText(/^Arbeitsort/)).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Startbestätigung erneut prüfen' }))
+    await waitFor(() => expect(starts).toHaveLength(2))
+    expect(starts[0].repositoryId).toBe('101'); expect(starts[1]).toEqual(starts[0])
+    expect(starts[0]).not.toHaveProperty('directory')
+})
+it('review context prefills only the builtin reviewer and requires explicit start with typed snapshot paths', async () => {
+    agents = [{ ...agent, id: 'builtin:review' }]
+    repositoryChoices.items = [{ id: '101', fullName: 'example/app', local: { state: 'ready' } }]
+    function Trigger() { const workflow = useProjectWorkflow()!; return <><button onClick={() => workflow.setReview({ repositoryId: '101', snapshotId: 'b'.repeat(64), paths: ['src/a,b.ts'] })}>Prepare fixture</button><AgentsPluginsPanel /></> }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><ProjectWorkflowProvider><Trigger /></ProjectWorkflowProvider></QueryClientProvider>)
+    await screen.findByText('Prüfer'); fireEvent.click(screen.getByRole('button', { name: 'Prepare fixture' }))
+    expect(await screen.findByLabelText(/^Arbeitsort/)).toHaveValue('101')
+    expect(screen.getByLabelText(/^Arbeitsort/)).toBeDisabled()
+    expect(context.api.request.mock.calls.some(([path]) => path.endsWith('/start'))).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Jetzt starten' }))
+    await waitFor(() => expect(context.api.request).toHaveBeenCalledWith('/projects/project-1/agent-catalog/builtin%3Areview/start', expect.objectContaining({ body: expect.objectContaining({ repositoryId: '101', review: { snapshotId: 'b'.repeat(64), paths: ['src/a,b.ts'] } }) })))
 })

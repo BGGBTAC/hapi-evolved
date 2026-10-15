@@ -156,7 +156,13 @@ export function createProjectAuthMiddleware(store: EvolvedStore, secret: Uint8Ar
             if (path.endsWith('/spawn')) {
                 if (body.agent !== undefined && !['claude', 'codex'].includes(String(body.agent))) return c.json({ error: 'v1 supports Claude and Codex.' }, 400)
                 if (/^\/api\/machines\/[^/]+\/spawn$/.test(path)) {
-                    try { projectSpawnDirectory(access.project, body.directory, body.sessionType, body.worktreeName) }
+                    try {
+                        if (body.repositoryId !== undefined) {
+                            if (typeof body.repositoryId !== 'string' || !/^[1-9][0-9]{0,19}$/.test(body.repositoryId)) throw new EvolvedError('invalid_repository', 'Invalid repository.', 400)
+                            if (Object.hasOwn(body, 'directory')) throw new EvolvedError('directory_conflict', 'A repository selection cannot include a directory.', 400)
+                            projectSpawnDirectory(access.project, undefined, body.sessionType, body.worktreeName)
+                        } else projectSpawnDirectory(access.project, body.directory, body.sessionType, body.worktreeName)
+                    }
                     catch (error) {
                         if (error instanceof EvolvedError) return c.json({ error: error.message, code: error.code }, error.status as 400)
                         throw error

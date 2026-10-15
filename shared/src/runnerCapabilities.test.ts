@@ -9,6 +9,12 @@ import {
 } from './runnerCapabilities'
 
 describe('runnerCapabilities', () => {
+    it('advertises worktree inspection without forcing older runners to upgrade for session creation', () => {
+        expect(MACHINE_CAPABILITIES.EvolvedRepositoryWorktree).toBe('evolvedRepositories.worktree.v1')
+        expect(CURRENT_MACHINE_CAPABILITIES).toContain(MACHINE_CAPABILITIES.EvolvedRepositoryWorktree)
+        expect(REQUIRED_MACHINE_CAPABILITIES).not.toContain(MACHINE_CAPABILITIES.EvolvedRepositoryWorktree)
+        expect(isMachineCapabilitySkewed(CURRENT_MACHINE_CAPABILITIES.filter(value => value !== MACHINE_CAPABILITIES.EvolvedRepositoryWorktree))).toBe(false)
+    })
     it('requires machine RPCs that session creation hard-depends on', () => {
         expect(REQUIRED_MACHINE_CAPABILITIES).toContain(MACHINE_CAPABILITIES.AgentAvailability)
         expect(REQUIRED_MACHINE_CAPABILITIES).toContain(MACHINE_CAPABILITIES.CursorChatStoreStatus)

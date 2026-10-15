@@ -1036,7 +1036,7 @@ export class ApiClient {
 
     async spawnSession(
         machineId: string,
-        directory: string,
+        directory: string | undefined,
         agent?: AgentFlavor,
         model?: string,
         modelReasoningEffort?: string,
@@ -1048,12 +1048,14 @@ export class ApiClient {
         serviceTier?: 'fast' | 'standard',
         collaborationMode?: CodexCollaborationMode,
         copilotAgentMode?: CopilotAgentMode,
-        startingMode?: 'remote' | 'pty'
+        startingMode?: 'remote' | 'pty',
+        repositoryId?: string
     ): Promise<SpawnResponse> {
         return await this.request<SpawnResponse>(`/api/machines/${encodeURIComponent(machineId)}/spawn`, {
             method: 'POST',
             body: JSON.stringify({
-                directory,
+                directory: repositoryId ? undefined : directory,
+                repositoryId,
                 agent,
                 model,
                 modelReasoningEffort,

@@ -50,6 +50,7 @@ const githubFetcher = (async (input, init) => {
     if (new Headers(init?.headers).get('authorization') !== 'Bearer github_pat_synthetic_browser_credential_only') return new Response('denied', { status: 401 })
     if (url === 'https://api.github.com/user') return Response.json({ id: 42, login: 'synthetic-github-account' })
     if (url === 'https://api.github.com/repos/synthetic-owner/browser-repo') return Response.json({ id: 123, full_name: 'synthetic-owner/browser-repo' })
+    if (process.env.EVOLVED_TEST_WORKFLOW === '1' && url === 'https://api.github.com/repos/synthetic/workflow') return Response.json({ id: 101, full_name: 'synthetic/workflow' })
     return new Response('Synthetic fixture endpoint unavailable', { status: 404 })
 }) as typeof fetch
 const vault=new EvolvedVault({dbPath:join(tmp,'vault.db'),masterKeyFile:join(tmp,'master.key'),githubFetcher})
@@ -90,6 +91,7 @@ if (process.env.EVOLVED_TEST_CODEGRAPH === '1') {
     Object.assign(process.env, { EVOLVED_CODEGRAPH_URL: `http://127.0.0.1:${port}`, EVOLVED_SERVICE_TOKEN_FILE: tokenFile })
 }
 const hub=await startHub({args:['--no-relay']})
-const stop=async()=>{codegraphProcess?.kill('SIGTERM');await hub.stop();vaultServer.stop(true);sideProvider.stop(true);vault.close();process.exit(0)}
+const stopWorkflow = process.env.EVOLVED_TEST_WORKFLOW === '1' ? (await import('./evolved-workflow-fixture.ts')).startWorkflowFixture(tmp, origin) : undefined
+const stop=async()=>{stopWorkflow?.();codegraphProcess?.kill('SIGTERM');await hub.stop();vaultServer.stop(true);sideProvider.stop(true);vault.close();process.exit(0)}
 process.on('SIGINT',stop);process.on('SIGTERM',stop)
 console.log('Synthetic Evolved browser fixture ready')

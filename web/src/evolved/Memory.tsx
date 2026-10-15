@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useEvolved } from './auth'
 import { canWriteProject, isProjectAdmin, projectPath, type MemoryItem, type MemoryResponse, type MemorySettings, type MemorySource } from './api'
 import { ActionStatus, ConfirmButton, Empty, ErrorNotice, Field, Loading, Panel, formatDate, submit, useAction } from './ui'
+import { MemoryProposalFields } from './MemoryProposalFields'
 
 function MemoryCard({ item, editable, admin, busy, onVerify, onForget }: {
     item: MemoryItem; editable: boolean; admin: boolean; busy: boolean; onVerify: () => void; onForget: () => void
@@ -27,15 +28,15 @@ function BudgetSettings({ data, save, busy }: { data: MemorySettings; save: (val
     </form>
 }
 export function MemoryPanel() {
-    const { api, project } = useEvolved()
+    const { api, me, project } = useEvolved()
     const path = `${projectPath(project!.id)}/memory`
     const action = useAction()
-    const memory = useQuery({ queryKey: ['evolved', 'memory', project!.id], queryFn: ({ signal }) => api.request<MemoryResponse>(path, { signal }) })
+    const memory = useQuery({ queryKey: ['evolved', 'memory', api.baseUrl, me.user.id, project!.id, project!.role], gcTime: 0, retry: false, queryFn: ({ signal }) => api.request<MemoryResponse>(path, { signal }) })
     const [query, setQuery] = useState('')
     const [submittedQuery, setSubmittedQuery] = useState('')
     const [searchMode, setSearchMode] = useState<'ledger' | 'hybrid'>('ledger')
     const [status, setStatus] = useState<'all' | 'proposed' | 'verified'>('all')
-    const search = useQuery({ queryKey: ['evolved', 'memory-search', project!.id, submittedQuery, searchMode], enabled: submittedQuery.length > 0, queryFn: ({ signal }) => api.request<{ results: MemoryItem[]; mode: string; backendAvailable: boolean }>(`/memory/search?q=${encodeURIComponent(submittedQuery)}&projectId=${encodeURIComponent(project!.id)}&mode=${searchMode}`, { signal }) })
+    const search = useQuery({ queryKey: ['evolved', 'memory-search', api.baseUrl, me.user.id, project!.id, project!.role, submittedQuery, searchMode], enabled: submittedQuery.length > 0, gcTime: 0, retry: false, queryFn: ({ signal }) => api.request<{ results: MemoryItem[]; mode: string; backendAvailable: boolean }>(`/memory/search?q=${encodeURIComponent(submittedQuery)}&projectId=${encodeURIComponent(project!.id)}&mode=${searchMode}`, { signal }) })
     const [title, setTitle] = useState('')
     const [body, setBody] = useState('')
     const [kind, setKind] = useState<MemorySource['kind']>('manual')
@@ -45,7 +46,7 @@ export function MemoryPanel() {
     const [messageId, setMessageId] = useState('')
     const editable = canWriteProject(project?.role)
     const admin = isProjectAdmin(project?.role)
-    const results = (submittedQuery ? search.data?.results : memory.data?.items) ?? []
+    const results = (submittedQuery ? !search.error ? search.data?.results : undefined : !memory.error ? memory.data?.items : undefined) ?? []
     const reload = async () => { await memory.refetch(); if (submittedQuery) await search.refetch() }
     const budget = memory.data?.budget
     const usage = budget && budget.limitMicros > 0 ? Math.min(100, (budget.spentMicros + budget.reservedMicros) / budget.limitMicros * 100) : 0
@@ -57,11 +58,11 @@ export function MemoryPanel() {
             onVerify={() => void action.run(async () => { await api.request(`${path}/${encodeURIComponent(item.id)}`, { method: 'PATCH', body: { status: 'verified' } }); await reload() }, 'Wissen verifiziert.')}
             onForget={() => void action.run(async () => { await api.request(`${path}/${encodeURIComponent(item.id)}`, { method: 'DELETE' }); await reload() }, 'Eintrag aus der Suche entfernt. Die Bereinigung des Graphindex wurde vorgemerkt.')} />)}</div>}
     </Panel>
-    {editable && <Panel title="Erkenntnis vorschlagen"><form className="ev-stack" onSubmit={submit(() => void action.run(async () => {
+    {editable && <Panel title="Erkenntnis vorschlagen"><button onClick={() => { setTitle(`Übergabe ${new Date().toLocaleDateString('de-DE')}`); setBody(''); setKind('manual'); setSourcePath(''); setCommit(''); setSessionId(''); setMessageId('') }}>Übergabe vorschlagen</button><p className="ev-muted">Eine Übergabe ist deine eigene Beobachtung. Es wird keine automatische Zusammenfassung erzeugt.</p><form className="ev-stack" onSubmit={submit(() => void action.run(async () => {
         const source: MemorySource = { kind, ...((kind === 'code' || kind === 'attachment') && sourcePath.trim() ? { path: sourcePath.trim() } : {}), ...(kind === 'code' && commit.trim() ? { commit: commit.trim() } : {}), ...(kind === 'chat' ? { sessionId: sessionId.trim(), messageId: messageId.trim() } : {}) }
         await api.request(path, { method: 'POST', body: { title: title.trim(), body: body.trim(), sources: [source] } }); setTitle(''); setBody(''); await reload()
     }, 'Vorschlag gespeichert.'))}>
-        <Field label="Titel"><input required maxLength={200} value={title} onChange={event => setTitle(event.target.value)} /></Field><Field label="Erkenntnis"><textarea required rows={5} maxLength={50000} value={body} onChange={event => setBody(event.target.value)} /></Field>
+        <MemoryProposalFields title={title} body={body} onTitle={setTitle} onBody={setBody} disabled={action.busy} />
         <div className="ev-form-grid"><Field label="Quelle"><select value={kind} onChange={event => setKind(event.target.value as MemorySource['kind'])}><option value="manual">Eigene Beobachtung</option><option value="code">Quellcode</option><option value="chat">Manuelle Sessionreferenz</option><option value="attachment">Anhang</option></select></Field>
             {(kind === 'code' || kind === 'attachment') && <Field label="Dateipfad"><input required value={sourcePath} onChange={event => setSourcePath(event.target.value)} /></Field>}{kind === 'code' && <Field label="Commit (optional)"><input value={commit} onChange={event => setCommit(event.target.value)} /></Field>}{kind === 'chat' && <><Field label="Session-ID"><input required value={sessionId} onChange={event => setSessionId(event.target.value)} /></Field><Field label="Nachrichten-ID"><input required value={messageId} onChange={event => setMessageId(event.target.value)} /></Field></>}
         </div><button className="ev-primary" disabled={action.busy || !title.trim() || !body.trim()}>Vorschlag speichern</button>

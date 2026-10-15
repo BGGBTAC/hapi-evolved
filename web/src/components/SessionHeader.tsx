@@ -1,4 +1,5 @@
 import { SessionPrChip, GithubPrControl } from '@/components/SessionGithubPr'
+import { SessionRepositoryLink } from '@/evolved/SessionRepositoryLink'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useIsMutating, useQueryClient } from '@tanstack/react-query'
 import type { Session } from '@/types/api'
@@ -406,6 +407,7 @@ export function SessionHeader(props: {
                             {title}
                         </div>
                         <SessionPrChip api={api} refs={session.metadata?.externalRefs} link />
+                        <SessionRepositoryLink sessionId={session.id} />
                         {showMobileMetadata ? (
                             <div className="flex min-w-0 flex-nowrap items-center gap-2 overflow-hidden text-xs text-[var(--app-hint)] sm:hidden">
                                 {headerMetadata.agent && agentLabel ? (

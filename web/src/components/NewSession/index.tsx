@@ -10,6 +10,9 @@ import { useCodexModels } from '@/hooks/queries/useCodexModels'
 import { useOptionalEvolved } from '@/evolved/auth'
 import { useProviderModels } from '@/evolved/useProviderModels'
 import { ModelCatalogInput } from '@/evolved/ModelCatalogInput'
+import { RepositoryPicker } from '@/evolved/RepositoryPicker'
+import { useProjectRepositories } from '@/evolved/repositoryCatalog'
+import type { EvolvedSession } from '@/evolved/auth'
 import { useCursorModelsForMachine } from '@/hooks/queries/useCursorModelsForMachine'
 import { useAgyModels } from '@/hooks/queries/useAgyModels'
 import { useOpencodeModelsForCwd } from '@/hooks/queries/useOpencodeModelsForCwd'
@@ -95,17 +98,34 @@ type NewSessionProps = {
     onChooseFolder?: (args: { machineId: string | null; directory: string }) => void
     initialDirectory?: string
     initialMachineId?: string
+    initialRepositoryId?: string
+    initialProjectId?: string
 }
 
 export function NewSession(props: NewSessionProps) {
     const evolved = useOptionalEvolved()
     // A different project/root gets a fresh form. In-flight callbacks from the
     // previous form must never start or navigate into the newly selected scope.
-    const scope = evolved ? `project:${evolved.project?.id ?? ''}:${evolved.project?.rootPath ?? ''}` : 'legacy'
-    return <NewSessionForm key={scope} {...props} projectDirectory={evolved ? evolved.project?.rootPath ?? '' : null} />
+    const scope = evolved ? `project:${evolved.api.baseUrl}:${evolved.me.user.id}:${evolved.project?.id ?? ''}:${evolved.project?.rootPath ?? ''}:${evolved.project?.role}:${evolved.project?.profile}` : 'legacy'
+    return evolved?.project ? <ProjectNewSession key={`${scope}:${props.initialProjectId ?? ""}:${props.initialRepositoryId ?? ""}`} {...props} evolved={evolved} /> : <NewSessionForm key={scope} {...props} projectDirectory={evolved ? '' : null} />
 }
 
-function NewSessionForm(props: NewSessionProps & { projectDirectory: string | null }) {
+function ProjectNewSession(props: NewSessionProps & { evolved: EvolvedSession }) {
+    const [repositoryId, setRepositoryId] = useState(props.initialRepositoryId ?? '')
+    const choices = useProjectRepositories(props.evolved)
+    const repository = choices.current?.repositories.find(item => item.id === repositoryId)
+    const ready = repository?.local.state === 'ready' && repository.job?.state !== 'running' && choices.current?.runner.status === 'ready'
+    const directory = repositoryId ? ready ? repository!.path : '' : props.evolved.project!.rootPath ?? ''
+    if (props.initialRepositoryId && (props.initialProjectId !== props.evolved.project!.id || !/^[1-9][0-9]{0,19}$/.test(props.initialRepositoryId))) {
+        return <p role="alert" className="p-4">Diese Repository-Auswahl gehört nicht zum aktuellen Projekt. Öffne das zugehörige Projekt und wähle das Repository dort erneut.</p>
+    }
+    return <>
+        <div className="px-3 py-3"><RepositoryPicker choices={choices} value={repositoryId} onChange={setRepositoryId} projectId={props.evolved.project!.id} /></div>
+        <NewSessionForm key={`${repositoryId}:${directory}`} {...props} projectDirectory={directory} repositoryId={repositoryId || undefined} />
+    </>
+}
+
+function NewSessionForm(props: NewSessionProps & { projectDirectory: string | null; repositoryId?: string }) {
     const { haptic } = usePlatform()
     const { t } = useTranslation()
     const { addToast } = useToast()
@@ -1718,7 +1738,8 @@ function NewSessionForm(props: NewSessionProps & { projectDirectory: string | nu
 
             const result = await spawnSession({
                 machineId,
-                directory: trimmedDirectory,
+                directory: props.repositoryId ? undefined : trimmedDirectory,
+                repositoryId: props.repositoryId,
                 agent,
                 model: resolvedModel,
                 effort: resolvedEffort,

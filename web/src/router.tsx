@@ -1011,7 +1011,7 @@ function NewSessionPage() {
     const queryClient = useQueryClient()
     const { machines, isLoading: machinesLoading, error: machinesError } = useMachines(api, true)
     const { t } = useTranslation()
-    const { directory: initialDirectory, machineId: initialMachineId, shareTransferId } = newSessionRoute.useSearch()
+    const { directory: initialDirectory, machineId: initialMachineId, shareTransferId, repositoryId, projectId } = newSessionRoute.useSearch()
 
     const handleCancel = useCallback(() => {
         if (shareTransferId) {
@@ -1091,6 +1091,8 @@ function NewSessionPage() {
                     onChooseFolder={handleChooseFolder}
                     initialDirectory={initialDirectory}
                     initialMachineId={initialMachineId}
+                    initialRepositoryId={repositoryId}
+                    initialProjectId={projectId}
                 />
             </div>
         </div>
@@ -1258,6 +1260,8 @@ const sessionFileRoute = createRoute({
 })
 
 type NewSessionSearch = {
+    repositoryId?: string
+    projectId?: string
     directory?: string
     machineId?: string
     shareTransferId?: string
@@ -1268,6 +1272,10 @@ const newSessionRoute = createRoute({
     path: 'new',
     validateSearch: (search: Record<string, unknown>): NewSessionSearch => {
         const result: NewSessionSearch = {}
+        if (typeof search.repositoryId === 'string' && /^[1-9][0-9]{0,19}$/.test(search.repositoryId)) {
+            result.repositoryId = search.repositoryId
+            if (typeof search.projectId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(search.projectId)) result.projectId = search.projectId
+        }
         if (typeof search.directory === 'string' && search.directory) {
             result.directory = search.directory
         }

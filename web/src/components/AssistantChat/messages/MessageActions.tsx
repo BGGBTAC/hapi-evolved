@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import { ShareTurnButton } from './ShareTurnButton'
 import { MessageActionButton } from './MessageActionButton'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { useMessageMemoryAction } from '@/evolved/messageMemoryContext'
 
 export type MessageHistoryAction = {
     kind: 'forkCurrent' | 'forkAtMessage' | 'rewind'
@@ -26,6 +27,7 @@ type MessageActionsProps = {
     historyActionPending?: boolean
     onFork?: () => Promise<void>
     onRewind?: () => Promise<void>
+    memorySourceIds?: readonly string[]
 }
 
 type MessageActionsAuiState = {
@@ -54,10 +56,12 @@ export function MessageActions({
     showRewind = false,
     historyActionPending = false,
     onFork,
-    onRewind
+    onRewind,
+    memorySourceIds
 }: MessageActionsProps) {
     const { copied, copy } = useCopyToClipboard()
     const { t } = useTranslation()
+    const proposeMemory = useMessageMemoryAction()
     const threadIsRunning = useAuiState((state) => selectThreadIsRunning(state))
     const canCopy = Boolean(copyText)
     const hasMetadata = metadata ? buildMessageMetadataLabels(metadata).length > 0 : false
@@ -122,6 +126,7 @@ export function MessageActions({
                 {align === 'start' ? shareButton : null}
                 {align === 'start' && hasMetadata && metadata ? <MessageInfoPopover metadata={metadata} /> : null}
                 {align === 'start' ? <DesktopTimestamp /> : null}
+                {proposeMemory && memorySourceIds?.length && !actionsLocked ? <MessageActionButton label="Als Wissen vorschlagen" onClick={() => proposeMemory(memorySourceIds)}><svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M5 4h14v17l-7-4-7 4V4Z" /></svg></MessageActionButton> : null}
             </div>
 
             <ConfirmDialog

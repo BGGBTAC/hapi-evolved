@@ -17,7 +17,7 @@ export const workspacePages = [
     { id: 'team', label: 'Team & Konto', group: 'Verwaltung', description: 'Zusammenarbeit, Rollen und deinen Zugang verwalten.' },
 ] as const
 export type WorkspaceTab = typeof workspacePages[number]['id']
-export type WorkspaceSearch = { tab?: WorkspaceTab; project?: string }
+export type WorkspaceSearch = { tab?: WorkspaceTab; project?: string; repository?: string }
 export const workspaceGroups = ['Arbeitsplatz', 'Projektwerkzeuge', 'Verwaltung'] as const
 export function isWorkspaceTab(value: unknown): value is WorkspaceTab {
     return typeof value === 'string' && workspacePages.some(page => page.id === value)
@@ -26,6 +26,7 @@ export function parseWorkspaceSearch(search: Record<string, unknown>): Workspace
     return {
         ...(isWorkspaceTab(search.tab) ? { tab: search.tab } : {}),
         ...(typeof search.project === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(search.project) ? { project: search.project } : {}),
+        ...(search.tab === 'github' && typeof search.repository === 'string' && /^[1-9][0-9]{0,19}$/.test(search.repository) ? { repository: search.repository } : {}),
     }
 }
 export function requiresProject(tab: WorkspaceTab) { return !['overview', 'projects', 'team', 'providers', 'agents'].includes(tab) }

@@ -219,6 +219,11 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubInstan
     })
 
     syncEngine = new SyncEngine(store, socketServer.io, socketServer.rpcRegistry, sseManager)
+    evolved?.setMemoryMessageResolver((namespace, sessionId, messageId) => {
+        const session = store.sessions.getSession(sessionId)
+        if (!session || session.namespace !== namespace) return null
+        return store.messages.getMessageById(sessionId, messageId)
+    })
     if (evolved) syncEngine.subscribe(event => {
         if (!event.namespace?.startsWith('evolved-') || !('sessionId' in event)) return
         if (event.type === 'message-received') {
