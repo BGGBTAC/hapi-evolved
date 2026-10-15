@@ -66,8 +66,8 @@ Use GitHub-hosted runners for public contributions.
 
 Only GitHub-owned actions and the explicitly listed third-party actions in
 `.github/actions-allowlist.json` are allowed. Workflow action references are pinned
-to full commit SHAs, with the original version retained in a comment. Dependabot
-can propose updates; it cannot bypass the required checks. Review a new action
+to full commit SHAs, with the original version retained in a comment. Dependency
+updates use maintainer-reviewed PRs and the required checks. Review a new action
 before adding it to the allowlist. GitHub's managed CodeQL default setup is
 separate from the checked-in workflows.
 Pinning direct action references does not rewrite dependencies inside third-party
@@ -75,8 +75,22 @@ composite actions. The inherited, disabled Pages workflow still references a
 composite action with a floating internal dependency; review that dependency
 before enabling any upstream publishing workflow here.
 
-Secret Scanning and Push Protection are enabled, along with Dependabot alerts
-and security-update PRs. Private vulnerability reporting is enabled at the
+Secret Scanning and Push Protection are enabled, along with Dependabot alerts.
+Automatic Dependabot version-update and security-update PRs are disabled to
+reduce notification and rebase noise. In `.github/dependabot.yml`, every ecosystem
+has `open-pull-requests-limit: 0` and `rebase-strategy: disabled`; the repository's
+separate **Dependabot security updates** setting is also disabled. The zero PR
+limit alone does not disable security-update PRs. Existing bot PRs are closed,
+not merged, and security alerts remain visible for maintainer triage. Review and
+apply dependency fixes through ordinary PRs; no automatic dependency upgrades
+or alert dismissals are performed by this policy.
+
+Personal email delivery preferences are separate from these repository settings.
+Security-alert emails may still arrive according to the account's
+[notification preferences](https://github.com/settings/notifications); GitHub
+also offers a [digest for Dependabot alerts](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/manage-your-dependency-security/configure-dependabot-notifications).
+
+Private vulnerability reporting is enabled at the
 [Security tab](https://github.com/BGGBTAC/hapi-evolved/security); follow
 [SECURITY.md](https://github.com/BGGBTAC/hapi-evolved/blob/main/SECURITY.md). A scanner is not a replacement for checking
 logs, screenshots, fixtures and other published material for private information.
@@ -120,6 +134,7 @@ gh api repos/BGGBTAC/hapi-evolved/actions/permissions/workflow
 gh api repos/BGGBTAC/hapi-evolved/actions/permissions/fork-pr-contributor-approval
 gh api repos/BGGBTAC/hapi-evolved/code-scanning/default-setup
 gh api repos/BGGBTAC/hapi-evolved/automated-security-fixes
+gh api repos/BGGBTAC/hapi-evolved/vulnerability-alerts
 gh api repos/BGGBTAC/hapi-evolved/private-vulnerability-reporting
 ```
 
@@ -136,6 +151,14 @@ default setup uses `PATCH` on `code-scanning/default-setup`. Enable Actions with
 only after the pinned workflows have landed and their checks have succeeded.
 Additional API settings for read-only tokens and outside-contributor approval
 are documented above and must be verified separately.
+
+To apply the dependency notification policy, use
+`gh api --method DELETE repos/BGGBTAC/hapi-evolved/automated-security-fixes`, then
+read the same endpoint with `GET` and verify `enabled: false`. Keep vulnerability
+alerts enabled (`GET .../vulnerability-alerts` returns `204`). The disabled
+version-update limits must be present on the default branch. To resume automatic
+PRs later, explicitly review the limits, grouping and rebase settings and enable
+security updates separately if desired.
 
 See GitHub's documentation for [rulesets](https://docs.github.com/en/rest/repos/rules),
 [Actions permissions](https://docs.github.com/en/rest/actions/permissions), and

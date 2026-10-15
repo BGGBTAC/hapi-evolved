@@ -1,11 +1,14 @@
 version: 2
-# Review-only dependency PRs. Nothing here enables auto-merge or publishing.
+# Automatic version-update PRs are disabled to avoid notification/rebase noise.
+# Security-update PRs are disabled separately in the repository settings;
+# Dependabot alerts and CodeQL remain enabled. See docs/evolved/GITHUB_GOVERNANCE.md.
 updates:
     - package-ecosystem: github-actions
       directory: /
       schedule:
           interval: weekly
-      open-pull-requests-limit: 3
+      open-pull-requests-limit: 0
+      rebase-strategy: disabled
       groups:
           actions:
               patterns: ['*']
@@ -13,7 +16,8 @@ updates:
       directory: /
       schedule:
           interval: weekly
-      open-pull-requests-limit: 3
+      open-pull-requests-limit: 0
+      rebase-strategy: disabled
       groups:
           compatible:
               update-types: [minor, patch]
@@ -21,7 +25,8 @@ updates:
       directory: /services/codegraph
       schedule:
           interval: weekly
-      open-pull-requests-limit: 3
+      open-pull-requests-limit: 0
+      rebase-strategy: disabled
       groups:
           compatible:
               update-types: [minor, patch]
@@ -33,12 +38,14 @@ updates:
           - /relay
       schedule:
           interval: weekly
-      open-pull-requests-limit: 3
+      open-pull-requests-limit: 0
+      rebase-strategy: disabled
     - package-ecosystem: gradle
       directory: /android
       schedule:
           interval: monthly
-      open-pull-requests-limit: 2
+      open-pull-requests-limit: 0
+      rebase-strategy: disabled
 # Memory's requirements.lock is a separately generated, complete environment.
 # Update requirements.txt and regenerate/test the lock together; a pip-only PR
 # would leave the deployed lock stale. The conditional Swift manifest likewise
