@@ -101,7 +101,7 @@ test('empty workspaces return a usable empty graph and acquire a default seed af
         assert.deepEqual(await call('graph'), { nodes: [], edges: [], truncated: false });
         await assert.rejects(call('node', { nodeId: 'missing' }), /Node not found/);
         await writeFile(join(root, 'names.ts'), 'export const orbitalMarker = 42;\nexport class Satellite {}\n');
-        const indexed = await waitFor(status => status.stats.nodeCount > 0);
+        const indexed = await waitFor(status => status.stats.nodeCount > 0 && status.pendingFiles === 0);
         assert.ok(indexed.lastIndexedAt > 0);
         assert.ok(Object.values(indexed.stats).every(value => typeof value === 'number'));
         const graph = await call('graph');
