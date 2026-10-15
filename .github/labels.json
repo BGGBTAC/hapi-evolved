@@ -1,0 +1,22 @@
+[
+  {
+    "name": "security",
+    "color": "b60205",
+    "description": "Security hardening and reviewed security fixes; report vulnerabilities privately."
+  },
+  {
+    "name": "feature",
+    "color": "a2eeef",
+    "description": "New functionality included in release notes."
+  },
+  {
+    "name": "fix",
+    "color": "d73a4a",
+    "description": "Corrections to existing behavior."
+  },
+  {
+    "name": "skip-changelog",
+    "color": "ededed",
+    "description": "Exclude this PR from generated release notes after maintainer review."
+  }
+]

@@ -1,0 +1,11 @@
+{
+  "state": "configured",
+  "languages": [
+    "actions",
+    "javascript-typescript",
+    "python"
+  ],
+  "query_suite": "extended",
+  "threat_model": "remote_and_local",
+  "runner_type": "standard"
+}

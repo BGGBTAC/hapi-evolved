@@ -84,6 +84,14 @@ site, its build command is `bun run --cwd docs docs:build`.
 
 ## Prepare the pull request
 
+`main` requires a pull request, resolved review conversations and the current
+GitHub Actions checks `test`, `integration`, `windows-codex-mcp` and
+`evolved-services`. Update your branch when it falls behind the target branch.
+The sole maintainer currently works through the same checks without a required
+second-person approval; CODEOWNERS does not permit self-approval. See
+[repository governance](docs/evolved/GITHUB_GOVERNANCE.md) for the live rules,
+security scanning and the procedure for adding maintainers.
+
 Explain the previous behavior, the new behavior, and how you verified it. Link
 related issues from this repository. When adapting an upstream patch, link the
 original issue or pull request and describe Evolved-specific changes.
