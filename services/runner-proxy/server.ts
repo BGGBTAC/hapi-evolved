@@ -28,7 +28,15 @@ export function queuedPacketBytes(value: unknown, depth = 0): number {
     }
     return 8
 }
-export function allowedProxyPath(path: string): boolean {
+export function allowedProxyPath(path: string, method = 'GET', search = ''): boolean {
+    const repositories = /^\/api\/evolved\/projects\/[A-Za-z0-9_-]{1,80}\/(repositories(?:\/([1-9][0-9]{0,19})\/(sync|authorization))?|repository-jobs\/([a-fA-F0-9-]+))$/.exec(path)
+    if (repositories) {
+        const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+        if (repositories[4]) return method === 'GET' && search === '' && uuid.test(repositories[4])
+        if (repositories[3] === 'sync') return method === 'POST' && search === ''
+        if (repositories[3] === 'authorization') return method === 'GET' && search.startsWith('?jobId=') && uuid.test(search.slice(7))
+        return method === 'GET' && ['', '?workspace=0', '?workspace=1'].includes(search)
+    }
     // No browser authentication, vault administration or lease issuance through the proxy.
     return path === '/health' || /^\/cli\//.test(path)
         || /^\/api\/evolved\/peers(?:\/[a-zA-Z0-9_-]+)?$/.test(path)
@@ -40,8 +48,8 @@ export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; p
     if (hub.username || hub.password || !['http:', 'https:'].includes(hub.protocol)) throw new Error('Invalid Hub URL')
     let grant: Grant | null = null, renewing: Promise<Grant> | null = null
     const gitTransfers = new Set<AbortController>()
-    async function current(): Promise<Grant> {
-        if (grant && grant.expiresAt > Date.now() + 30_000) return grant
+    async function current(minRemainingMs = 30_000): Promise<Grant> {
+        if (grant && grant.expiresAt > Date.now() + minRemainingMs) return grant
         if (renewing) return renewing
         renewing = (async () => {
             const lease = privateFile(config.leaseFile).toString('utf8').trim()
@@ -199,10 +207,13 @@ export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; p
                     return Response.json({ projectId: state.projectId, profile: state.profile, rootPath: state.rootPath, expiresAt: state.expiresAt }, { headers: { 'cache-control': 'no-store' } })
                 } catch { return new Response('Runner authority unavailable', { status: 503 }) }
             }
-            if (!allowedProxyPath(url.pathname)) return new Response('Endpoint denied', { status: 403 })
+            if (!allowedProxyPath(url.pathname, request.method, url.search)) return new Response('Endpoint denied', { status: 403 })
             if (/^\/api\/evolved\/projects\//.test(url.pathname) && url.pathname.split('/')[4] !== config.projectId) return new Response('Project denied', { status: 403 })
             try {
-                const access = await current()
+                // A sync job can run for five minutes. Renew before admission so its
+                // initiating capability cannot naturally expire during that window.
+                const repositorySync = request.method === 'POST' && /\/repositories\/[1-9][0-9]{0,19}\/sync$/.test(url.pathname)
+                const access = await current(repositorySync ? 360_000 : 30_000)
                 const headers = new Headers({ authorization: `Bearer ${access.token}` })
                 for (const name of ['content-type', 'idempotency-key']) { const value = request.headers.get(name); if (value) headers.set(name, value) }
                 const response = await fetch(new URL(url.pathname + url.search, hub), { method: request.method, headers,

@@ -84,8 +84,13 @@ eines Projekts löscht dessen Quelldateien nicht. Der Pfad dient Codegraph, bele
 Dateiquellen, Vorschauen und dem isolierten Projekt-Runner.
 
 Unter **GitHub** verbindet ein Projektadministrator GitHub und vergibt Repository-
-Lese- oder Schreibrechte. Danach verwenden Projekt-Agenten normale Git-Befehle
-ohne eigene GitHub-Anmeldung. Einrichtung und Grenzen stehen in [GITHUB.md](GITHUB.md).
+Lese- oder Schreibrechte. **Ins Projekt klonen** legt das Repository automatisch
+unter `repositories/<owner>/<repository>` im Projektordner ab. Danach holt
+**Aktualisieren** neue Commits, solange sie ohne Überschreiben lokaler Arbeit
+übernommen werden können. Pfad, Branch und lokale Änderungen stehen direkt am Repo.
+Projekt-Agenten finden dieselben Freigaben über ihre Repository-Werkzeuge und
+verwenden Git ohne eigene GitHub-Anmeldung. Einrichtung und Grenzen stehen in
+[GITHUB.md](GITHUB.md).
 
 Das Ausführungsprofil ist eine weitere Grenze für Agentenaktionen:
 
@@ -151,7 +156,7 @@ Ein eingerichtetes Repository und ein erreichbarer Codegraphdienst sind nötig.
 Die Statusanzeige nennt Indexzustand, Dateiüberwachung und ausstehende Dateien.
 Der Index wird automatisch aufgebaut; du musst keinen Graphen von Hand anlegen.
 **Index wird aufgebaut** aktualisiert sich automatisch. **Noch kein Code im Index**
-ist bei einem neuen Projekt normal: Klone ein Repository in dessen Projektordner
+ist bei einem neuen Projekt normal: Nutze **GitHub → Ins Projekt klonen**
 oder füge unterstützte Codedateien hinzu. Eine GitHub-Freigabe allein klont noch
 kein Repository. Die Dateiüberwachung erkennt neue und geänderte Quellen.
 

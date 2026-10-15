@@ -55,6 +55,13 @@
 .ev-workspace-path { margin-block: 12px !important; overflow-wrap: anywhere; }
 .ev-github-steps { list-style: decimal; padding-left: 22px; display: grid; gap: 8px; }
 .ev-github-steps a { color: var(--ev-accent); text-decoration: underline; }
+.ev-repository-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.ev-repository-toolbar p { flex: 1 1 340px; color: var(--app-hint); max-width: 76ch; }
+.ev-repository-info { flex-basis: 300px !important; }
+.ev-repository-location { margin-block: 8px 3px !important; overflow-wrap: anywhere; }
+.ev-repository-progress { color: var(--ev-accent); margin-top: 8px !important; }
+.ev-repository-hint { flex-basis: 100%; color: var(--app-hint); }
+.ev-repository-row > .ev-actions { flex-basis: 100%; padding-top: 8px; }
 .ev-inline-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-bottom: 18px; }
 .ev-inline-form .ev-field { flex: 1; min-width: min(210px, 100%); }
 .ev-check { display: flex; align-items: center; gap: 10px; min-height: 44px; }
