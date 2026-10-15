@@ -5,7 +5,9 @@ import { getTelegramWebApp, isTelegramApp } from '@/hooks/useTelegram'
 import { initializeChatSurfaceColors } from '@/hooks/useChatSurfaceColors'
 import { initializeTheme } from '@/hooks/useTheme'
 import { initializeThemeColors } from '@/hooks/useThemeColors'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuth, type AuthSource } from '@/hooks/useAuth'
+import { EvolvedBoundary, type EvolvedBridge } from '@/evolved/auth'
+import EvolvedWorkspace from '@/evolved/Workspace'
 import { useAuthSource } from '@/hooks/useAuthSource'
 import { useServerUrl } from '@/hooks/useServerUrl'
 import { useSSE } from '@/hooks/useSSE'
@@ -59,17 +61,47 @@ export function App() {
     return (
         <ToastProvider>
             <PwaUpdateProvider>
-                <AppInner />
+                <EvolvedBoundary
+                    legacy={<LegacyAppInner />}
+                    onboarding={<EvolvedWorkspace />}
+                    authenticated={bridge => <EvolvedAppInner bridge={bridge} />}
+                />
             </PwaUpdateProvider>
         </ToastProvider>
     )
 }
 
-function AppInner() {
+type AppAuthentication = ReturnType<typeof useAuth> & {
+    authSource: AuthSource | { type: 'evolved' } | null
+    isAuthSourceLoading: boolean
+    setAccessToken: (token: string) => void
+}
+
+function LegacyAppInner() {
+    const { baseUrl } = useServerUrl()
+    const { authSource, isLoading: isAuthSourceLoading, setAccessToken } = useAuthSource(baseUrl)
+    const authentication = useAuth(authSource, baseUrl)
+    return <AppInner authentication={{ ...authentication, authSource, isAuthSourceLoading, setAccessToken }} />
+}
+
+function EvolvedAppInner({ bridge }: { bridge: EvolvedBridge }) {
+    return <AppInner key={bridge.projectId} authentication={{
+        ...bridge,
+        user: null,
+        authSource: { type: 'evolved' },
+        isAuthSourceLoading: false,
+        isLoading: false,
+        error: null,
+        needsBinding: false,
+        bind: async () => { throw new Error('Passkey-Anmeldung erforderlich.') },
+        setAccessToken: () => { throw new Error('Passkey-Anmeldung erforderlich.') },
+    }} />
+}
+
+function AppInner({ authentication }: { authentication: AppAuthentication }) {
     const { t } = useTranslation()
     const { serverUrl, baseUrl, setServerUrl, clearServerUrl } = useServerUrl()
-    const { authSource, isLoading: isAuthSourceLoading, setAccessToken } = useAuthSource(baseUrl)
-    const { token, api, isLoading: isAuthLoading, error: authError, needsBinding, bind } = useAuth(authSource, baseUrl)
+    const { authSource, isAuthSourceLoading, setAccessToken, token, api, isLoading: isAuthLoading, error: authError, needsBinding, bind } = authentication
     const [titleSuggestionAvailable, setTitleSuggestionAvailable] = useState(false)
     const goBack = useAppGoBack()
     const pathname = useLocation({ select: (location) => location.pathname })

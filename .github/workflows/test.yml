@@ -20,6 +20,8 @@ jobs:
             - run: docker pull mcr.microsoft.com/powershell:latest
             - run: bun run test:e2e -- terminal-wrap-fidelity.spec.ts composer-copy.spec.ts session-list-scroll.spec.ts cold-initial-tail.spec.ts scrollbar-auto-hide.spec.ts
             - run: bun run test
+            - run: bun run build:web
+            - run: bun run --cwd web test:evolved:e2e
 
     # Serial runner-integration suite: starts real detached runner/session
     # process trees against an isolated temp hub, so it runs in its own job
@@ -39,3 +41,18 @@ jobs:
             - uses: oven-sh/setup-bun@v2
             - run: bun install --frozen-lockfile
             - run: bun run --cwd cli test -- src/codex/utils/codexMcpProxy.test.ts
+
+    evolved-services:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: '24'
+            - uses: actions/setup-python@v5
+              with:
+                  python-version: '3.12'
+            - run: npm ci --prefix services/codegraph --ignore-scripts
+            - run: node --test services/codegraph/test/*.test.mjs
+            - run: pip install -r services/memory/requirements.lock
+            - run: python -m unittest discover -s services/memory -p 'test_*.py'

@@ -1,6 +1,5 @@
 import { EnhancedMode, PermissionMode } from "./loop";
 import { query, type QueryOptions as Options, type SDKMessage, type SDKSystemMessage, AbortError, SDKUserMessage } from '@/claude/sdk'
-import { claudeCheckSession } from "./utils/claudeCheckSession";
 import { join } from 'node:path';
 import { parseSpecialCommand } from "@/parsers/specialCommands";
 import { logger } from "@/lib";
@@ -43,11 +42,10 @@ export async function claudeRemote(opts: {
 }) {
     const debugPrefix = '[claudeRemote][async-debug]';
 
-    // Check if session is valid
+    // Preserve the requested target. The provider performs transcript discovery;
+    // a local absence check cannot safely distinguish a missing transcript from
+    // a different config root or an empty but valid native session.
     let startFrom = opts.sessionId;
-    if (opts.sessionId && !claudeCheckSession(opts.sessionId, opts.path)) {
-        startFrom = null;
-    }
     
     // Extract --resume from claudeArgs if present (for first spawn)
     if (!startFrom && opts.claudeArgs) {

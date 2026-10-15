@@ -18,6 +18,8 @@ import {
     PRESERVE_SESSION_SIDEBAR_SCROLL,
 } from '@/lib/sessionNavigation'
 import { App } from '@/App'
+import EvolvedPage from '@/routes/evolved'
+import { useOptionalEvolved } from '@/evolved/auth'
 import { SessionChat } from '@/components/SessionChat'
 import { SessionList } from '@/components/SessionList'
 import { NewSession } from '@/components/NewSession'
@@ -156,6 +158,7 @@ function SettingsIcon(props: { className?: string }) {
 }
 
 function SessionsPage() {
+    const evolved = useOptionalEvolved()
     const { api, baseUrl, titleSuggestionAvailable = false } = useAppContext()
     const navigate = useNavigate()
     const pathname = useLocation({ select: location => location.pathname })
@@ -249,6 +252,7 @@ function SessionsPage() {
                         renderHeader={false}
                         headerActions={(
                             <div className="flex items-center gap-2">
+                                {evolved && <button type="button" onClick={() => navigate({ to: '/evolved' })} className="rounded-lg px-2 py-2 text-sm font-semibold text-[var(--app-link)]" title="Projekte, Team, Tresor, Gedächtnis und Codegraph">Evolved</button>}
                                 {canBrowse && (
                                     <button
                                         type="button"
@@ -1039,7 +1043,10 @@ const rootRoute = createRootRoute({
 const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/',
-    component: () => <Navigate to="/sessions" replace />,
+    component: function HomeRedirect() {
+        const evolved = useOptionalEvolved()
+        return <Navigate to={evolved ? '/evolved' : '/sessions'} replace />
+    },
 })
 
 const sessionsRoute = createRoute({
@@ -1181,6 +1188,12 @@ const browseRoute = createRoute({
     component: BrowsePage,
 })
 
+const evolvedRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/evolved',
+    component: EvolvedPage,
+})
+
 const settingsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/settings',
@@ -1277,6 +1290,7 @@ export const routeTree = rootRoute.addChildren([
         ]),
     ]),
     browseRoute,
+    evolvedRoute,
     settingsRoute.addChildren([
         settingsIndexRoute,
         settingsGeneralRoute,

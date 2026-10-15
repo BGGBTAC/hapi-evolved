@@ -12,6 +12,7 @@ import type { SyncEngine } from '../../sync/syncEngine'
 import { RpcTargetMissingError } from '../../sync/rpcGateway'
 import type { WebAppEnv } from '../middleware/auth'
 import { requireMachine } from './guards'
+import { projectPermissionMode } from '../../evolved/bridge'
 
 export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
@@ -98,6 +99,8 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         }
         const startingMode = parsed.data.startingMode
         const namespace = c.get('namespace')
+        const project = c.get('evolvedAccess')?.project
+        const permissionMode = project ? projectPermissionMode(project, parsed.data.agent, parsed.data.permissionMode) : parsed.data.permissionMode
 
         const result = await engine.spawnSession(
             machineId,
@@ -110,7 +113,7 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
             parsed.data.worktreeName,
             undefined, // resumeSessionId
             parsed.data.effort,
-            parsed.data.permissionMode,
+            permissionMode,
             parsed.data.serviceTier,
             undefined,
             parsed.data.collaborationMode,

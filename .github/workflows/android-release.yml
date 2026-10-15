@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
     build:
-        if: github.ref == 'refs/heads/main'
+        if: github.repository == 'tiann/hapi' && github.ref == 'refs/heads/main'
         runs-on: ubuntu-latest
         defaults:
             run:

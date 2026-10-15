@@ -53,17 +53,28 @@ function toVisibleDecryptedMessages(messages: StoredMessageForDelivery[]): Decry
     return messages.filter(isWebVisibleStoredMessage).map(toDecryptedMessage)
 }
 
+/**
+ * Messages folded per page while sizing an export. The cap is 20k messages, so
+ * this only decides how many pages a session is walked in.
+ */
+const EXPORT_SCAN_BATCH = 100
+
 function jsonByteLength(value: unknown): number {
     const json = JSON.stringify(value)
     return json === undefined ? Number.MAX_SAFE_INTEGER : Buffer.byteLength(json, 'utf8')
 }
 
-function estimateSessionExportBytes(
+/**
+ * Byte size of everything in the export payload except the message array.
+ *
+ * Split out so a paged scan can compare `head + <bytes seen so far> + tail`
+ * against the cap without holding the whole message array.
+ */
+function sessionExportFraming(
     session: Session,
     exportedAt: number,
-    messages: StoredMessageForDelivery[],
     scratchlist: HapiSessionExport['scratchlist']
-): number {
+): { head: number; tail: number } | null {
     const prefix = JSON.stringify({
         schemaVersion: HAPI_SESSION_EXPORT_SCHEMA_VERSION,
         exportedAt,
@@ -71,17 +82,18 @@ function estimateSessionExportBytes(
     })
     const suffix = JSON.stringify({ scratchlist })
     if (prefix === undefined || suffix === undefined) {
-        return Number.MAX_SAFE_INTEGER
+        return null
     }
+    return {
+        head: Buffer.byteLength(prefix.slice(0, -1), 'utf8')
+            + Buffer.byteLength(',"messages":[', 'utf8'),
+        tail: Buffer.byteLength(`],${suffix.slice(1)}`, 'utf8')
+    }
+}
 
-    const messageBytes = messages.reduce(
-        (total, message, index) => total + jsonByteLength(toDecryptedMessage(message)) + (index > 0 ? 1 : 0),
-        0
-    )
-    return Buffer.byteLength(prefix.slice(0, -1), 'utf8')
-        + Buffer.byteLength(',"messages":[', 'utf8')
-        + messageBytes
-        + Buffer.byteLength(`],${suffix.slice(1)}`, 'utf8')
+/** Bytes one message contributes to the array, including its separating comma. */
+function exportMessageBytes(message: StoredMessageForDelivery, index: number): number {
+    return jsonByteLength(toDecryptedMessage(message)) + (index > 0 ? 1 : 0)
 }
 
 function isQueuedUserMessage(message: StoredMessageForDelivery): boolean {
@@ -212,13 +224,10 @@ export class MessageService {
         session: Session,
         options: { force?: boolean } = {}
     ): HapiSessionExportResult {
-        const storedMessages = this.store.messages.getAllMessages(sessionId)
-            .filter(isExportVisibleStoredMessage)
-            .sort((a, b) => {
-                const aAt = a.invokedAt ?? a.createdAt
-                const bAt = b.invokedAt ?? b.createdAt
-                return aAt !== bAt ? aAt - bAt : a.seq - b.seq
-            })
+        const exportedAt = Date.now()
+
+        // Only visible rows count toward the export limit. Stored bytes include
+        // bookkeeping and cannot justify rejecting an otherwise small export.
 
         // Chronological ASC for archive readability (store list is DESC).
         const scratchlist = this.store.scratchlist.list(sessionId)
@@ -235,25 +244,72 @@ export class MessageService {
                 attachments: row.attachments
             }))
 
-        const exportedAt = Date.now()
-        const estimatedBytes = estimateSessionExportBytes(session, exportedAt, storedMessages, scratchlist)
-        if (estimatedBytes > SESSION_EXPORT_MAX_BYTES) {
+        const framing = sessionExportFraming(session, exportedAt, scratchlist)
+        if (!framing) {
             return {
                 type: 'too-large',
-                count: storedMessages.length,
+                count: this.store.messages.countMessages(sessionId),
+                estimatedBytes: Number.MAX_SAFE_INTEGER,
+                maxBytes: SESSION_EXPORT_MAX_BYTES
+            }
+        }
+
+        // Fold the session in pages. `getMessagesAfterSeqLimit` walks exactly the
+        // rows, and the order, that `getAllMessages` returned, so the accepted
+        // payload is byte-for-byte what it was — but the peak is one page rather
+        // than the whole session.
+        const visible: StoredMessageForDelivery[] = []
+        let count = 0
+        let messageBytes = 0
+        let cursor = 0
+        let overByteLimit = false
+        for (;;) {
+            const page = this.store.messages.getMessagesAfterSeqLimit(sessionId, cursor, EXPORT_SCAN_BATCH)
+            if (page.length === 0) break
+            for (const message of page) {
+                if (!isExportVisibleStoredMessage(message)) continue
+                count += 1
+                messageBytes += exportMessageBytes(message, count - 1)
+                if (overByteLimit) continue
+                if (framing.head + messageBytes + framing.tail > SESSION_EXPORT_MAX_BYTES) {
+                    overByteLimit = true
+                    visible.length = 0
+                    continue
+                }
+                visible.push(message)
+            }
+            cursor = page[page.length - 1]!.seq
+            // The verdict can no longer change; stop decoding the rest.
+            if (overByteLimit) break
+        }
+
+        const estimatedBytes = framing.head + messageBytes + framing.tail
+        if (overByteLimit || estimatedBytes > SESSION_EXPORT_MAX_BYTES) {
+            // When the scan stopped early these totals are lower bounds, which is
+            // enough to justify the refusal — and reachable without inflating the
+            // remainder of the session.
+            return {
+                type: 'too-large',
+                count,
                 estimatedBytes,
                 maxBytes: SESSION_EXPORT_MAX_BYTES
             }
         }
 
-        if (!options.force && storedMessages.length > SESSION_EXPORT_MESSAGE_LIMIT) {
+        if (!options.force && count > SESSION_EXPORT_MESSAGE_LIMIT) {
             return {
                 type: 'warning',
-                count: storedMessages.length,
+                count,
                 limit: SESSION_EXPORT_MESSAGE_LIMIT,
                 estimatedBytes
             }
         }
+
+        visible.sort((a, b) => {
+            const aAt = a.invokedAt ?? a.createdAt
+            const bAt = b.invokedAt ?? b.createdAt
+            return aAt !== bAt ? aAt - bAt : a.seq - b.seq
+        })
 
         return {
             type: 'success',
@@ -261,7 +317,7 @@ export class MessageService {
                 schemaVersion: HAPI_SESSION_EXPORT_SCHEMA_VERSION,
                 exportedAt,
                 session,
-                messages: storedMessages.map(toDecryptedMessage),
+                messages: visible.map(toDecryptedMessage),
                 scratchlist
             }
         }

@@ -6,6 +6,8 @@ export type WebAppEnv = {
     Variables: {
         userId: number
         namespace: string
+        isAuthorized?: () => boolean
+        evolvedAccess?: import('../../evolved/bridge').EvolvedAccess
     }
 }
 

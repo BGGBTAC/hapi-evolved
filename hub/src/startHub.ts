@@ -29,6 +29,7 @@ import { ServerChanChannel } from './serverchan/channel'
 import QRCode from 'qrcode'
 import type { Server as BunServer } from 'bun'
 import type { WebSocketData } from '@socket.io/bun-engine'
+import { createEvolvedRuntime } from './evolved/runtime'
 
 /** Format config source for logging */
 function formatSource(source: ConfigSource | 'generated'): string {
@@ -123,6 +124,8 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubInstan
     const relayFlag = resolveRelayFlag(options.args ?? process.argv)
     const officialWebUrl = process.env.HAPI_OFFICIAL_WEB_URL || 'https://app.hapi.run'
     const config = await createConfiguration()
+    const evolvedEnabled = process.env.HAPI_EVOLVED_ENABLED === '1'
+    if (evolvedEnabled && relayFlag.enabled) throw new Error('Evolved v1 requires a private-network HTTPS reverse proxy; public relay is disabled.')
     const baseCorsOrigins = normalizeOrigins(config.corsOrigins)
     const relayCorsOrigin = normalizeOrigin(officialWebUrl)
     const corsOrigins = relayFlag.enabled
@@ -130,7 +133,9 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubInstan
         : baseCorsOrigins
 
     // Display CLI API token information
-    if (config.cliApiTokenIsNew) {
+    if (evolvedEnabled) {
+        console.log('[Evolved] Passkey authentication enabled; legacy shared tokens are disabled.')
+    } else if (config.cliApiTokenIsNew) {
         console.log('')
         console.log('='.repeat(70))
         console.log('  NEW CLI_API_TOKEN GENERATED')
@@ -179,6 +184,7 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubInstan
 
     const store = new Store(config.dbPath)
     const jwtSecret = await getOrCreateJwtSecret()
+    const evolved = evolvedEnabled ? createEvolvedRuntime(config.dataDir, jwtSecret) : undefined
     const vapidKeys = await getOrCreateVapidKeys(config.dataDir)
     const vapidSubject = process.env.VAPID_SUBJECT ?? 'mailto:admin@hapi.run'
     const pushService = new PushService(vapidKeys, vapidSubject, store)
@@ -189,7 +195,8 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubInstan
     const socketServer = createSocketServer({
         store,
         jwtSecret,
-        corsOrigins,
+        evolved: evolved?.store,
+        corsOrigins: evolved ? [evolved.origin] : corsOrigins,
         getSession: (sessionId) => {
             if (syncEngine) {
                 return syncEngine.getSession(sessionId) ?? null
@@ -209,6 +216,17 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubInstan
     })
 
     syncEngine = new SyncEngine(store, socketServer.io, socketServer.rpcRegistry, sseManager)
+    if (evolved) syncEngine.subscribe(event => {
+        if (!event.namespace?.startsWith('evolved-') || !('sessionId' in event)) return
+        if (event.type === 'message-received') {
+            evolved.memory.ingestHubEvent({ namespace: event.namespace, sessionId: event.sessionId,
+                messageId: event.message.id, body: JSON.stringify(event.message.content) })
+        } else if (event.type === 'session-removed' || event.type === 'messages-invalidated') {
+            evolved.memory.forgetSession(event.namespace, event.sessionId)
+        } else if (event.type === 'message-cancelled' && event.messageId) {
+            evolved.memory.forgetMessage(event.namespace, event.sessionId, event.messageId)
+        }
+    })
     // Accountable principal for A2A work-graph notify ingest (P3).
     syncEngine.setHubOwnerUserId(await getOrCreateOwnerId())
 
@@ -288,7 +306,8 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubInstan
         socketEngine: socketServer.engine,
         corsOrigins,
         relayMode: relayFlag.enabled,
-        officialWebUrl
+        officialWebUrl,
+        evolved
     })
 
     // Start the bot if configured
@@ -397,6 +416,9 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubInstan
             syncEngine?.stop()
             sseManager?.stop()
             webServer?.stop()
+            socketServer.stopAuthGuard()
+            socketServer.io.close()
+            evolved?.close()
         }
     }
 }

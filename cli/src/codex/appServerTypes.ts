@@ -149,6 +149,8 @@ export type ResponseItem = Record<string, unknown>;
 
 export interface ThreadResumeParams {
     threadId: string;
+    /** Return metadata/live state; history is loaded separately through paginated reads. */
+    excludeTurns?: boolean;
     history?: ResponseItem[];
     path?: string;
     model?: string;

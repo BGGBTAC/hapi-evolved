@@ -6,6 +6,7 @@ import { PermissionRequestNotFoundError } from '../../sync/rpcGateway'
 import type { SyncEngine } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
 import { requireSessionFromParam, requireSyncEngine } from './guards'
+import { permissionAllowed } from '../../evolved/bridge'
 
 const decisionSchema = z.enum(['approved', 'approved_for_session', 'denied', 'abort'])
 
@@ -24,7 +25,7 @@ const approveBodySchema = z.object({
 })
 
 const denyBodySchema = z.object({
-    decision: decisionSchema.optional()
+    decision: z.enum(['denied', 'abort']).optional()
 })
 
 export function createPermissionsRoutes(getSyncEngine: () => SyncEngine | null): Hono<WebAppEnv> {
@@ -53,6 +54,20 @@ export function createPermissionsRoutes(getSyncEngine: () => SyncEngine | null):
         const requests = session.agentState?.requests ?? null
         if (!requests || !requests[requestId]) {
             return c.json({ error: 'Request not found' }, 404)
+        }
+
+        const project = c.get('evolvedAccess')?.project
+        if (project) {
+            const question = ['AskUserQuestion', 'request_user_input'].includes(requests[requestId].tool)
+            // Codex workspace-write executes ordinary project operations without
+            // approval. These requests grant sandbox/permission escalation.
+            const codexEscalation = ['CodexBash', 'CodexPatch', 'CodexPermission'].includes(requests[requestId].tool)
+            if (!permissionAllowed(project, parsed.data.mode)
+                || (project.profile === 'restricted' && !question)
+                || (project.profile === 'workspace' && codexEscalation)
+                || (project.profile !== 'extended' && ((parsed.data.allowTools?.length ?? 0) > 0 || parsed.data.decision === 'approved_for_session'))) {
+                return c.json({ error: 'Project profile forbids this permission grant.' }, 403)
+            }
         }
 
         const mode = parsed.data.mode

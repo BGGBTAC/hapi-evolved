@@ -1,6 +1,5 @@
 import { mkdirSync } from "node:fs";
 import { logger } from "@/ui/logger";
-import { claudeCheckSession } from "./utils/claudeCheckSession";
 import { getProjectPath } from "./utils/path";
 import { appendMcpConfigArg } from "./utils/mcpConfig";
 import { getSystemPrompt } from "./utils/systemPrompt";
@@ -55,10 +54,10 @@ export async function claudeLocal(opts: {
     // Determine session strategy:
     // - If resuming an existing session: use --resume (unless user already supplied session control)
     // - If starting fresh: let Claude create a new session ID (reported via SessionStart hook)
-    let startFrom = opts.sessionId;
-    if (opts.sessionId && !claudeCheckSession(opts.sessionId, opts.path)) {
-        startFrom = null;
-    }
+    // Claude owns transcript discovery (custom config roots, renamed worktrees,
+    // and newly created empty sessions). A local probe must never silently
+    // replace an explicit resume with a fresh, context-free session.
+    const startFrom = opts.sessionId;
 
     if (opts.abort.aborted) {
         logger.debug('[ClaudeLocal] Abort already signaled before spawn; skipping launch');

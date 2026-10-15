@@ -85,6 +85,23 @@ export function createEventsRoutes(
         }
 
         const response = streamSSE(c, async (stream) => {
+            const authorized = c.get('isAuthorized') ?? (() => true)
+            let closed = false
+            let finish!: () => void
+            const finished = new Promise<void>(resolve => { finish = () => { closed = true; resolve() } })
+            c.req.raw.signal.addEventListener('abort', finish, { once: true })
+            stream.onAbort(finish)
+            if (c.req.raw.signal.aborted) finish()
+            const revoke = async () => {
+                manager.unsubscribe(subscriptionId)
+                finish()
+                await stream.close()
+            }
+            const sendAuthorized = async (event: unknown, id?: string) => {
+                if (closed) return
+                if (!authorized()) { await revoke(); return }
+                await stream.writeSSE({ data: JSON.stringify(event), id })
+            }
             // Reconnects supply the last SSE id they saw; when the manager
             // still has everything after it, the missed events are replayed
             // here and the client skips its REST resync (`resume: 'ok'`).
@@ -96,8 +113,10 @@ export function createEventsRoutes(
                 machineId,
                 visibility,
                 resumeFrom,
-                send: (event, eventId) => stream.writeSSE({ data: JSON.stringify(event), id: eventId }),
+                send: sendAuthorized,
                 sendHeartbeat: async () => {
+                    if (closed) return
+                    if (!authorized()) { await revoke(); return }
                     await stream.writeSSE({
                         data: JSON.stringify({
                             type: 'heartbeat',
@@ -126,16 +145,14 @@ export function createEventsRoutes(
                 })
 
                 for (const item of replay) {
-                    await stream.writeSSE({ data: JSON.stringify(item.event), id: item.eventId })
+                    if (closed) break
+                    await sendAuthorized(item.event, item.eventId)
                 }
                 await manager.drainPending(subscriptionId)
 
-                await new Promise<void>((resolve) => {
-                    const done = () => resolve()
-                    c.req.raw.signal.addEventListener('abort', done, { once: true })
-                    stream.onAbort(done)
-                })
+                await finished
             } finally {
+                c.req.raw.signal.removeEventListener('abort', finish)
                 manager.unsubscribe(subscriptionId)
             }
         })

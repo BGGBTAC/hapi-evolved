@@ -116,6 +116,8 @@ export interface TranscriptionCredentialsUpdate {
 type ApiClientOptions = {
     baseUrl?: string
     getToken?: () => string | null
+    getProjectId?: () => string | null
+    credentials?: RequestCredentials
     onUnauthorized?: () => Promise<string | null>
 }
 
@@ -153,12 +155,16 @@ export class ApiClient {
     private token: string
     private readonly baseUrl: string | null
     private readonly getToken: (() => string | null) | null
+    private readonly getProjectId: (() => string | null) | null
+    private readonly credentials: RequestCredentials | undefined
     private readonly onUnauthorized: (() => Promise<string | null>) | null
 
     constructor(token: string, options?: ApiClientOptions) {
         this.token = token
         this.baseUrl = options?.baseUrl ?? null
         this.getToken = options?.getToken ?? null
+        this.getProjectId = options?.getProjectId ?? null
+        this.credentials = options?.credentials
         this.onUnauthorized = options?.onUnauthorized ?? null
     }
 
@@ -180,6 +186,8 @@ export class ApiClient {
         overrideToken?: string | null
     ): Promise<T> {
         const headers = new Headers(init?.headers)
+        const projectId = this.getProjectId?.()
+        if (projectId) headers.set('x-hapi-project-id', projectId)
         const liveToken = this.getToken ? this.getToken() : null
         const authToken = overrideToken !== undefined
             ? (overrideToken ?? (liveToken ?? this.token))
@@ -193,6 +201,7 @@ export class ApiClient {
 
         const res = await fetch(this.buildUrl(path), {
             ...init,
+            ...(this.credentials ? { credentials: this.credentials } : {}),
             headers
         })
 

@@ -1,0 +1,69 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, writeFile, readFile, symlink, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Worker } from 'node:worker_threads';
+
+test('real Codegraph indexes calls, excludes secret source, and updates incrementally', { timeout: 45_000 }, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'evolved-codegraph-real-'));
+    const indexRoot = await mkdtemp(join(tmpdir(), 'evolved-codegraph-index-'));
+    let worker;
+    try {
+        await writeFile(join(root, 'example.ts'), 'export function square(x: number) { return x * x }\nexport function calculate(x: number) { return square(x) }\n');
+        // A workspace-controlled SQLite directory must never be opened by the SDK.
+        const foreign = await mkdtemp(join(tmpdir(), 'evolved-codegraph-foreign-'));
+        await writeFile(join(foreign, 'sentinel'), 'foreign data must survive');
+        await symlink(foreign, join(root, '.codegraph-evolved-test'));
+        await writeFile(join(indexRoot, 'stale.ts'), 'export function stalePrivateFact() { return true }');
+        await mkdir(join(root, 'secrets'));
+        await writeFile(join(root, 'secrets', 'hidden.ts'), 'export function privateCredentialSymbol() { return "synthetic" }');
+        worker = new Worker(new URL('../worker.mjs', import.meta.url), { workerData: { root, indexRoot }, env: {
+            ...process.env, DO_NOT_TRACK: '1', CODEGRAPH_TELEMETRY: '0', CODEGRAPH_NO_UPDATE_CHECK: '1', CODEGRAPH_NO_DOWNLOAD: '1', CODEGRAPH_DIR: '.codegraph-evolved-test'
+        } });
+        let serial = 0;
+        const pending = new Map();
+        worker.on('message', message => {
+            const job = pending.get(message.id); if (!job) return;
+            pending.delete(message.id);
+            message.error ? job.reject(new Error(message.error)) : job.resolve(message.result);
+        });
+        worker.on('error', error => { for (const job of pending.values()) job.reject(error); });
+        const call = (operation, params = {}) => new Promise((resolve, reject) => {
+            const id = ++serial; pending.set(id, { resolve, reject }); worker.postMessage({ id, operation, params });
+        });
+        async function waitForReady() {
+            for (let attempt = 0; attempt < 100; attempt++) {
+                const status = await call('status');
+                if (status.state === 'error') throw new Error(status.error);
+                if (status.state === 'ready') return status;
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            throw new Error('Index did not become ready');
+        }
+        const status = await waitForReady();
+        assert.equal(status.watching, true);
+        assert.equal(await readFile(join(foreign, 'sentinel'), 'utf8'), 'foreign data must survive');
+        await assert.rejects(readFile(join(indexRoot, 'stale.ts')));
+        await rm(foreign, { recursive: true, force: true });
+        const found = await call('search', { q: 'square' });
+        assert.ok(found.nodes.some(node => node.name === 'square'));
+        const node = found.nodes.find(node => node.name === 'square');
+        const graph = await call('impact', { nodeId: node.id });
+        assert.ok(graph.nodes.some(node => node.name === 'calculate'));
+        assert.ok(graph.edges.length > 0);
+        const secret = await call('search', { q: 'privateCredentialSymbol' });
+        assert.equal(secret.nodes.length, 0);
+        const preview = await call('node', { nodeId: node.id });
+        assert.match(preview.source, /return x \* x/);
+        await writeFile(join(root, 'example.ts'), 'export function replacement() { return 42 }\n');
+        let updated = false;
+        for (let attempt = 0; attempt < 60; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 150));
+            const results = await call('search', { q: 'replacement' });
+            if (results.nodes.some(node => node.name === 'replacement')) { updated = true; break; }
+        }
+        assert.equal(updated, true);
+        assert.equal((await call('search', { q: 'square' })).nodes.length, 0);
+    } finally { if (worker) await worker.terminate(); await rm(root, { recursive: true, force: true }); await rm(indexRoot, { recursive: true, force: true }); }
+});

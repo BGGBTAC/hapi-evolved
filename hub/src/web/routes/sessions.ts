@@ -35,6 +35,7 @@ import { loadScratchlistAttachmentLimitsFromEnv } from '../../config/scratchlist
 import { validateScratchlistAttachmentsForWrite, scratchlistSessionBytesBeforeForPut } from '../../scratchlistAttachments/validate'
 import { TitleSuggestionError } from '../../sync/titleSuggestion'
 import { requireSessionFromParam, requireSyncEngine } from './guards'
+import { permissionAllowed, projectPermissionMode, withinProject } from '../../evolved/bridge'
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
@@ -222,12 +223,22 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
             return c.json({ error: 'Invalid body' }, 400)
         }
 
-        const { permissionMode } = parsed.data
+        let { permissionMode } = parsed.data
         if (permissionMode !== undefined) {
             const flavor = sessionResult.session.metadata?.flavor ?? 'claude'
             if (!isPermissionModeAllowedForFlavor(permissionMode, flavor)) {
                 return c.json({ error: 'Invalid permission mode for session flavor' }, 400)
             }
+        }
+
+        const project = c.get('evolvedAccess')?.project
+        if (project) {
+            const directory = sessionResult.session.metadata?.path
+            if (!directory || !withinProject(project, directory)) return c.json({ error: 'Session directory is outside this project.' }, 403)
+            if (!permissionAllowed(project, permissionMode)) return c.json({ error: 'Project profile forbids this permission mode.' }, 403)
+            const previous = sessionResult.session.permissionMode
+            permissionMode = projectPermissionMode(project, sessionResult.session.metadata?.flavor,
+                permissionMode ?? (permissionAllowed(project, previous) ? previous : undefined))
         }
 
         const namespace = c.get('namespace')
@@ -543,7 +554,12 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
         if (!session.session.active) {
             // All clients intercept /clear and /new. Resume here so they share
             // the normal Runner lifecycle instead of reimplementing it.
-            const result = await engine.resumeSession(sessionId, namespace, { permissionMode: session.session.permissionMode })
+            const project = c.get('evolvedAccess')?.project
+            if (project && (!session.session.metadata?.path || !withinProject(project, session.session.metadata.path))) return c.json({ error: 'Session directory is outside this project.' }, 403)
+            const previous = session.session.permissionMode
+            const permissionMode = project ? projectPermissionMode(project, session.session.metadata?.flavor,
+                permissionAllowed(project, previous) ? previous : undefined) : previous
+            const result = await engine.resumeSession(sessionId, namespace, { permissionMode })
             if (result.type === 'error') {
                 const status = result.code === 'no_machine_online' ? 503
                     : result.code === 'access_denied' ? 403

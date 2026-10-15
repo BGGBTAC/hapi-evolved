@@ -634,6 +634,7 @@ export function reduceTimeline(
                     pendingAgentRunCardByFingerprint.set(fingerprint, cardId)
                 }
 
+                const hadExistingToolBlock = toolBlocksById.has(cardId)
                 const block = ensureAgentRunBlock(cardId, {
                     createdAt: msg.createdAt,
                     invokedAt: msg.invokedAt,
@@ -655,12 +656,13 @@ export function reduceTimeline(
                     const startedAt = getAgentRunStartedAt(event) ?? msg.createdAt
                     patchAgentRunInput(block, {
                         agentId,
+                        statusUnknown: false,
                         agentStatus: status,
                         statusText: getEventString(event, 'statusText') ?? getEventString(event, 'status_text') ?? 'Starting',
                         ...getAgentRunDisplayPatch(event)
                     })
                     const nextState = mapAgentRunStatusToToolState(status)
-                    block.tool = { ...block.tool, state: nextState }
+                    block.tool = { ...block.tool, state: nextState, ...(isNonTerminalAgentRunState(nextState) ? { completedAt: null } : {}) }
                     if (nextState === 'running') {
                         setEarliestStartedAt(block, startedAt)
                     }
@@ -679,11 +681,12 @@ export function reduceTimeline(
                     }
                     patchAgentRunInput(block, {
                         agentId,
+                        statusUnknown: false,
                         agentStatus: status,
                         statusText: getEventString(event, 'statusText') ?? getEventString(event, 'status_text') ?? status,
                         ...getAgentRunDisplayPatch(event)
                     })
-                    block.tool = { ...block.tool, state: nextState }
+                    block.tool = { ...block.tool, state: nextState, ...(isNonTerminalAgentRunState(nextState) ? { completedAt: null } : {}) }
                     if (nextState === 'running') {
                         setEarliestStartedAt(block, startedAt ?? msg.createdAt)
                     }
@@ -704,7 +707,6 @@ export function reduceTimeline(
                 if (msg.content.type === 'agent-run-trace') {
                     const traceAgentId = agentId
                     if (!traceAgentId) continue
-                    const startedAt = getAgentRunStartedAt(event)
                     const traceCardId = agentRunCardByAgentId.get(traceAgentId) ?? cardId
                     const traceBlock = ensureAgentRunBlock(traceCardId, {
                         createdAt: msg.createdAt,
@@ -714,13 +716,20 @@ export function reduceTimeline(
                         meta: msg.meta,
                         input: agentRunBlocksByCardId.has(traceCardId) ? undefined : { agentId: traceAgentId }
                     })
+                    // A trace may be replayed history, or its lifecycle messages may
+                    // be outside the loaded page. It alone does not prove liveness.
+                    const input = isObject(traceBlock.tool.input) ? traceBlock.tool.input : {}
+                    const statusUnknown = input.statusUnknown === true
+                        || (!hadExistingToolBlock && typeof input.agentStatus !== 'string')
                     const tracePatch: Record<string, unknown> = {
                         agentId: traceAgentId,
-                        agentStatus: traceBlock.tool.state,
+                        agentStatus: statusUnknown ? 'pending' : traceBlock.tool.state,
+                        statusUnknown,
                         ...getAgentRunDisplayPatch(event)
                     }
                     if (!isTerminalAgentRunState(traceBlock.tool.state)) {
-                        tracePatch.statusText = getEventString(event, 'statusText') ?? getEventString(event, 'status_text') ?? 'Running'
+                        tracePatch.statusText = statusUnknown ? 'History — status unavailable'
+                            : getEventString(event, 'statusText') ?? getEventString(event, 'status_text') ?? (traceBlock.tool.state === 'pending' ? 'Pending' : 'Running')
                     }
                     patchAgentRunInput(traceBlock, {
                         ...tracePatch
@@ -729,9 +738,12 @@ export function reduceTimeline(
                     traceMessages.push(...normalizeTraceMessage(traceAgentId, event.message, msg))
                     agentRunTraceMessagesByCardId.set(traceCardId, traceMessages)
                     refreshAgentRunChildren(traceCardId)
-                    if (traceBlock.tool.state !== 'completed' && traceBlock.tool.state !== 'error') {
-                        traceBlock.tool.state = 'running'
-                        setEarliestStartedAt(traceBlock, startedAt ?? msg.createdAt)
+                    // Only a trace-created placeholder needs a state correction.
+                    // A real tool call or lifecycle event already supplies its
+                    // own state and clock; replayed output must not change either.
+                    if (statusUnknown && !isTerminalAgentRunState(traceBlock.tool.state)) {
+                        traceBlock.tool.state = 'pending'
+                        traceBlock.tool.startedAt = null
                     }
                     continue
                 }

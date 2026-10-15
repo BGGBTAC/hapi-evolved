@@ -4,6 +4,7 @@ import type { Session, SyncEngine } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
 import { PermissionRequestNotFoundError } from '../../sync/rpcGateway'
 import { createPermissionsRoutes } from './permissions'
+import type { AgentProfile } from '../../evolved/store'
 
 function createSession(): Session {
     return {
@@ -38,8 +39,11 @@ function createSession(): Session {
 function createApp(opts?: {
     approvePermission?: SyncEngine['approvePermission']
     denyPermission?: SyncEngine['denyPermission']
+    profile?: AgentProfile
+    tool?: string
 }) {
     const session = createSession()
+    if (opts?.tool) session.agentState!.requests!['request-1'].tool = opts.tool
     const engine = {
         resolveSessionAccess: () => ({ ok: true, sessionId: session.id, session }),
         approvePermission: opts?.approvePermission ?? (async () => {}),
@@ -49,6 +53,7 @@ function createApp(opts?: {
     const app = new Hono<WebAppEnv>()
     app.use('*', async (c, next) => {
         c.set('namespace', 'default')
+        if (opts?.profile) c.set('evolvedAccess', { project: { profile: opts.profile } } as NonNullable<WebAppEnv['Variables']['evolvedAccess']>)
         await next()
     })
     app.route('/api', createPermissionsRoutes(() => engine as SyncEngine))
@@ -58,6 +63,27 @@ function createApp(opts?: {
 // tiann/hapi#1735: a stale/canceled permission request must not silently
 // accept an answer — the operator needs to see it failed.
 describe('permissions routes (tiann/hapi#1735)', () => {
+    it('restricted projects permit question answers but reject tool grants disguised as answers', async () => {
+        let called = 0
+        const request = { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ answers: { answer: ['yes'] } }) }
+        for (const tool of ['AskUserQuestion', 'request_user_input']) {
+            const app = createApp({ profile: 'restricted', tool, approvePermission: async () => { called++ } })
+            expect((await app.request('/api/sessions/session-1/permissions/request-1/approve', request)).status).toBe(200)
+        }
+        for (const tool of ['Bash', 'Write', 'ExitPlanMode']) {
+            const app = createApp({ profile: 'restricted', tool, approvePermission: async () => { called++ } })
+            expect((await app.request('/api/sessions/session-1/permissions/request-1/approve', request)).status).toBe(403)
+        }
+        expect(called).toBe(2)
+    })
+    it('workspace projects cannot silently install broad persistent approvals', async () => {
+        const app = createApp({ profile: 'workspace', tool: 'Bash', approvePermission: async () => { throw new Error('must not reach engine') } })
+        for (const body of [{ allowTools: ['Bash'] }, { decision: 'approved_for_session' }, { mode: 'bypassPermissions' }]) expect((await app.request('/api/sessions/session-1/permissions/request-1/approve', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).status).toBe(403)
+        for (const tool of ['CodexBash', 'CodexPatch', 'CodexPermission']) {
+            const codex = createApp({ profile: 'workspace', tool })
+            expect((await codex.request('/api/sessions/session-1/permissions/request-1/approve', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(403)
+        }
+    })
     it('approves a pending request', async () => {
         const app = createApp()
         const res = await app.request('/api/sessions/session-1/permissions/request-1/approve', {

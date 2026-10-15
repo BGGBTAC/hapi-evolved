@@ -1125,6 +1125,22 @@ export function clearMessageWindow(sessionId: string): void {
     }, true)
 }
 
+/** Remove private transcripts at an authentication boundary, preserving request-generation guards. */
+export function clearAllMessageWindows(): void {
+    // Include persisted windows that this page has never hydrated. Composer
+    // drafts and attachments are separate stores and must remain untouched.
+    if (isSessionStorageAvailable()) {
+        try {
+            for (let index = sessionStorage.length - 1; index >= 0; index--) {
+                const key = sessionStorage.key(index)
+                if (key?.startsWith(STORAGE_KEY_PREFIX)) sessionStorage.removeItem(key)
+            }
+        } catch { /* Storage may be unavailable in private browsing. */ }
+    }
+    appliedRewindLocalIds.clear()
+    for (const sessionId of [...states.keys()]) clearMessageWindow(sessionId)
+}
+
 function markMessageWindowForLatestReset(sessionId: string, messages: DecryptedMessage[]): void {
     const previous = states.get(sessionId)
     if (!previous) return

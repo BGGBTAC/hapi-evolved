@@ -1,0 +1,2100 @@
+[
+  {
+    "number": 2023,
+    "category": "feature",
+    "area": "voice",
+    "priority": "P2",
+    "related_prs": [],
+    "rationale": "Separater Text-Seitenkanal fehlt; bestehende Voice-Guidance leitet Entwicklungsfragen automatisch an Hauptagent weiter. Persistenz und Provider entscheiden.",
+    "title": "feat(web): /btw-style side questions with text output, reusing the voice assistant's context logic",
+    "url": "https://github.com/tiann/hapi/issues/2023",
+    "comments_reviewed": 1,
+    "related_pr_urls": [],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 2022,
+    "category": "feature",
+    "area": "attachments",
+    "priority": "P2",
+    "related_prs": [],
+    "rationale": "Web lädt Originale hoch; native Clients haben Kompression. Originalwahl, Transparenz und Fehlerfall bewahren; mit 1681 koordinieren.",
+    "title": "feat(web): add automatic image compression with original-image controls",
+    "url": "https://github.com/tiann/hapi/issues/2022",
+    "comments_reviewed": 1,
+    "related_pr_urls": [],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 2020,
+    "category": "feature",
+    "area": "orchestration",
+    "priority": "P1",
+    "related_prs": [
+      2021
+    ],
+    "rationale": "Archivieren als Gegenstück zu spawn_peer spart RAM; Peer-Done ist nicht gleich sicher beendeter Prozess. Parent-/Self-Autorisierung fehlt.",
+    "title": "feat(cli+hub): archive_peer MCP/CLI — soft stand-down twin of spawn_peer",
+    "url": "https://github.com/tiann/hapi/issues/2020",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/2021"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 2019,
+    "category": "bug",
+    "area": "web-ux",
+    "priority": "P2",
+    "related_prs": [],
+    "rationale": "Clear-Trefferfläche sehr klein; 48px Ziel und getrennte Datumskontrolle mit Fokusverhalten umsetzen.",
+    "title": "bug(web): session search clear hit target too small for touch / Quest pointer",
+    "url": "https://github.com/tiann/hapi/issues/2019",
+    "comments_reviewed": 1,
+    "related_pr_urls": [],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 2016,
+    "category": "partially-complete",
+    "area": "agent-config",
+    "priority": "P1",
+    "related_prs": [
+      1994
+    ],
+    "rationale": "CLI unterstützt --approve-for-me bereits; Web/native Modus und Reviewer-Zustand fehlen. Sandbox erhalten, nicht in YOLO umdeuten.",
+    "title": "Expose Codex native “Approve for me” / auto-review mode in HAPI",
+    "url": "https://github.com/tiann/hapi/issues/2016",
+    "comments_reviewed": 2,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1994"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 2015,
+    "category": "feature",
+    "area": "web-navigation",
+    "priority": "P2",
+    "related_prs": [
+      2018
+    ],
+    "rationale": "Ausgewählte Session wird markiert, aber nicht sichtbar gescrollt. Ergänzt 1732, ersetzt keinen Scrollbar-Marker.",
+    "title": "feat(web): scroll selected session row into view on navigation",
+    "url": "https://github.com/tiann/hapi/issues/2015",
+    "comments_reviewed": 2,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/2018"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 2011,
+    "category": "feature",
+    "area": "web-composer",
+    "priority": "P2",
+    "related_prs": [
+      2012
+    ],
+    "rationale": "Terminalauswahl/Scrollback als Entwurf an Session-Composer übergeben, niemals automatisch senden. Bestehenden Entwurf erhalten.",
+    "title": "Web: To agent control to put terminal scrollback or selection into the chat composer",
+    "url": "https://github.com/tiann/hapi/issues/2011",
+    "comments_reviewed": 3,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/2012"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 2002,
+    "category": "feature",
+    "area": "web-navigation",
+    "priority": "P2",
+    "related_prs": [
+      1772
+    ],
+    "rationale": "Temporäre Active-/Working-Filter fehlen; hängt auf noch offenem Filtermenü und 1996. Persistente Display-Einstellung ist anderer Anwendungsfall.",
+    "title": "feat(web): Active + Working lenses in session list filter menu",
+    "url": "https://github.com/tiann/hapi/issues/2002",
+    "comments_reviewed": 0,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1772"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 2000,
+    "category": "feature",
+    "area": "orchestration",
+    "priority": "P2",
+    "related_prs": [
+      1424
+    ],
+    "rationale": "Strukturiertes stale-Flag für Job-Liste auf gleicher 15-Minuten-Schwelle wie Web. Keine automatische Tötung ruhiger Jobs.",
+    "title": "session_job list: return stale boolean matching web isAttachedJobStale",
+    "url": "https://github.com/tiann/hapi/issues/2000",
+    "comments_reviewed": 0,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1424"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1996,
+    "category": "feature",
+    "area": "web-navigation",
+    "priority": "P2",
+    "related_prs": [
+      1772
+    ],
+    "rationale": "Blocked-Lens in gemeinsames Filtermenü integrieren; baut auf 1717 und 1772 auf, nicht auf unverändertem main.",
+    "title": "feat(web): fold blocked-only lens into combined session list filter menu",
+    "url": "https://github.com/tiann/hapi/issues/1996",
+    "comments_reviewed": 0,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1772"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1993,
+    "category": "rfc",
+    "area": "history",
+    "priority": "P1",
+    "related_prs": [
+      1876
+    ],
+    "rationale": "Kindidentität und bestätigte Modell-/Effort-Werte über Replay sichern. Vorgeschlagener Fallback liest interne Codex-Rolloutformate; stabile Schnittstelle/Versionierung entscheiden.",
+    "title": "Codex child cards: preserve task identity and confirmed model/reasoning across replay",
+    "url": "https://github.com/tiann/hapi/issues/1993",
+    "comments_reviewed": 0,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1876"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1989,
+    "category": "feature",
+    "area": "web-ux",
+    "priority": "P3",
+    "related_prs": [
+      1990
+    ],
+    "rationale": "Binäre Settings mit beschrifteten Zuständen statt Schaltern; Designpräferenz, kein universeller Defekt.",
+    "title": "Settings binary rows should be labeled dual-pole sliders, not unlabeled toggles",
+    "url": "https://github.com/tiann/hapi/issues/1989",
+    "comments_reviewed": 0,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1990"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1986,
+    "category": "bug",
+    "area": "lifecycle",
+    "priority": "P1",
+    "related_prs": [
+      1528,
+      1877,
+      1878,
+      1889,
+      1942
+    ],
+    "rationale": "Bericht über periodische falsche SSE-offline-Zustände; Rohstream bestätigt vom Reporter, aktuelle Ursache lokal noch nicht reproduziert. Lifecycle-PRs überlappen.",
+    "title": "bug(hub): SSE periodically broadcasts fake active:false for live machines/sessions (20s true / +3.2s false pattern) — clients flicker offline/online",
+    "url": "https://github.com/tiann/hapi/issues/1986",
+    "comments_reviewed": 0,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1528",
+      "https://github.com/tiann/hapi/pull/1877",
+      "https://github.com/tiann/hapi/pull/1878",
+      "https://github.com/tiann/hapi/pull/1889",
+      "https://github.com/tiann/hapi/pull/1942"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1977,
+    "category": "bug",
+    "area": "web-ux",
+    "priority": "P2",
+    "related_prs": [
+      1978
+    ],
+    "rationale": "Deaktivierte Agent-Abfrage ohne verbundenen Runner wird als keine installierten Agents dargestellt; Abfragestatus unterscheiden.",
+    "title": "New Session shows “no supported Agents” when no runner is connected",
+    "url": "https://github.com/tiann/hapi/issues/1977",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1978"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1974,
+    "category": "bug",
+    "area": "messaging",
+    "priority": "P1",
+    "related_prs": [
+      1875
+    ],
+    "rationale": "pingPeer lässt localId aus; Codex-Mirror legt deshalb zweite Zeile an. Kein Beleg für doppelte Modellausführung. Eigenständiger Fix neben 1945/1874.",
+    "title": "bug(peer): missing localId duplicates ping_peer messages in shared Codex history",
+    "url": "https://github.com/tiann/hapi/issues/1974",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1875"
+    ],
+    "code_evidence": [
+      "cli/src/modules/pingPeer/pingPeer.ts:352"
+    ],
+    "verification": "local-code-inspection"
+  },
+  {
+    "number": 1956,
+    "category": "rfc",
+    "area": "performance",
+    "priority": "P1",
+    "related_prs": [
+      1542,
+      1257,
+      1126
+    ],
+    "rationale": "Begrenzter Seitencache, Virtualisierung und stabile Leseanker in separaten Schritten. Nicht mit nativer Codex-SQLite-Anbindung vermischen.",
+    "title": "Proposal: bounded page reuse and stable virtualized scrolling for long conversations",
+    "url": "https://github.com/tiann/hapi/issues/1956",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1542",
+      "https://github.com/tiann/hapi/pull/1257",
+      "https://github.com/tiann/hapi/pull/1126"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1952,
+    "category": "partially-complete",
+    "area": "lifecycle",
+    "priority": "P1",
+    "related_prs": [
+      2021
+    ],
+    "rationale": "Manuelles Archive und inaktive 409 existieren; sicherer Archivierungsschritt bei Sessionrotation fehlt. Aufrufer/Übergabe entscheiden.",
+    "title": "Add explicit archive/park action during session rotation",
+    "url": "https://github.com/tiann/hapi/issues/1952",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/2021"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1950,
+    "category": "bug",
+    "area": "claude",
+    "priority": "P1",
+    "related_prs": [
+      1934
+    ],
+    "rationale": "Lokaler Transcript-Scanner fixiert ursprünglichen cwd; Claude verschiebt Datei beim Worktree-Wechsel. Cross-path Cursor/Deduplikation und Resume zusammen prüfen.",
+    "title": "bug(cli): local-mode Claude messages stop reaching web while the session is in a git worktree (transcript relocated by Claude Code)",
+    "url": "https://github.com/tiann/hapi/issues/1950",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1934"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1947,
+    "category": "feature",
+    "area": "orchestration",
+    "priority": "P2",
+    "related_prs": [],
+    "rationale": "Codex-Abschluss meldet nicht automatisch an Parent. Ziel, Erfolg/Fehler/Abbruch und rekursive Benachrichtigungsschleifen definieren.",
+    "title": "Auto-report Codex turn completion to configured peer",
+    "url": "https://github.com/tiann/hapi/issues/1947",
+    "comments_reviewed": 1,
+    "related_pr_urls": [],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1945,
+    "category": "rfc",
+    "area": "security",
+    "priority": "P0",
+    "related_prs": [
+      1618,
+      1922,
+      1537
+    ],
+    "rationale": "Hub-authentifizierte Peer-Capabilities, reservierte Provenienz, Idempotenz und sichere Daten-Envelopes fehlen. BGGBTAC-Referenzbranch vorhanden; ersetzt keine OS-Credential-Grenze aus 1535.",
+    "title": "RFC: hub-authenticated peer messages — scoped capabilities, forgery-proof provenance, idempotent reply-addressable delivery (#1203, #1618)",
+    "url": "https://github.com/tiann/hapi/issues/1945",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1618",
+      "https://github.com/tiann/hapi/pull/1922",
+      "https://github.com/tiann/hapi/pull/1537"
+    ],
+    "code_evidence": [
+      "cli/src/modules/pingPeer/pingPeer.ts:350",
+      "hub/src/web/routes/auth.ts:63"
+    ],
+    "verification": "local-code-inspection"
+  },
+  {
+    "number": 1941,
+    "category": "rfc",
+    "area": "notifications",
+    "priority": "P1",
+    "related_prs": [],
+    "rationale": "SSE-Epoch/Puffer ist flüchtig; Restart liefert gap, kein dauerhaftes Notification-Replay. Eventjournal oder Transcript-Backfill als API-Produktentscheidung.",
+    "title": "Proposal: supported notification recovery after Hub SSE epoch loss",
+    "url": "https://github.com/tiann/hapi/issues/1941",
+    "comments_reviewed": 1,
+    "related_pr_urls": [],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1939,
+    "category": "bug",
+    "area": "lifecycle",
+    "priority": "P1",
+    "related_prs": [
+      1940
+    ],
+    "rationale": "Wiederentdeckter lebender PID bestätigt Resume ohne Hub-Verbindung; ACK muss erreichbaren Runtime-Zustand beweisen.",
+    "title": "bug(runner): recovered live PID can ACK resume while CLI is disconnected",
+    "url": "https://github.com/tiann/hapi/issues/1939",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1940"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1937,
+    "category": "bug",
+    "area": "performance",
+    "priority": "P1",
+    "related_prs": [
+      1938
+    ],
+    "rationale": "5-Minuten-Machine-Modellcache startet app-server erneut; aktiver Session-RPC wird ignoriert. Session-first und gezielte Cache-Invaliderung.",
+    "title": "Codex model list cold path repeatedly starts app-server and can time out",
+    "url": "https://github.com/tiann/hapi/issues/1937",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1938"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1935,
+    "category": "bug",
+    "area": "claude",
+    "priority": "P1",
+    "related_prs": [
+      1934
+    ],
+    "rationale": "Bekannte Lücke in noch offenem Resume-Fix: Child-CLAUDE_CONFIG_DIR wird beim Hub-Probe nicht verwendet. Nur nötigen Configpfad speichern, nicht ganze Env.",
+    "title": "Hub ClaudeTranscriptStatus should probe session CLAUDE_CONFIG_DIR",
+    "url": "https://github.com/tiann/hapi/issues/1935",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1934"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1933,
+    "category": "bug",
+    "area": "history",
+    "priority": "P0",
+    "related_prs": [
+      1934
+    ],
+    "rationale": "Unbedingtes onSessionFound überschreibt angeforderten Claude-Resume-Zeiger A mit frischem B. Hub-Historie bleibt, Agentkontext geht verloren; Mismatch sichtbar verweigern.",
+    "title": "bug(cli,hub): Claude reopen can mint a new session id and overwrite claudeSessionId — hub history intact, agent amnesia",
+    "url": "https://github.com/tiann/hapi/issues/1933",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1934"
+    ],
+    "code_evidence": [
+      "cli/src/agent/sessionBase.ts:112",
+      "cli/src/claude/session.ts:62"
+    ],
+    "verification": "local-code-inspection"
+  },
+  {
+    "number": 1931,
+    "category": "feature",
+    "area": "orchestration",
+    "priority": "P2",
+    "related_prs": [
+      1922
+    ],
+    "rationale": "Cross-host --machine in spawn_peer; Modul/Tool existiert noch nicht auf main. Laut Kommentar in 1922 integriert, kein unabhängiger Doppel-PR.",
+    "title": "feat(cli): MCP/CLI spawn_peer --machine for cross-host remitted spawn",
+    "url": "https://github.com/tiann/hapi/issues/1931",
+    "comments_reviewed": 3,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1922"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1925,
+    "category": "bug",
+    "area": "lifecycle",
+    "priority": "P1",
+    "related_prs": [
+      1927,
+      1926
+    ],
+    "rationale": "DSH-ACP-Exit beendet Wrapperzustand nicht; Hub akzeptiert Nachrichten ohne bearbeitenden Agent. Health/ACK und Wiederaufnahme getrennt reparieren.",
+    "title": "dsh: session still reports active/running after its ACP process exits, and silently swallows messages",
+    "url": "https://github.com/tiann/hapi/issues/1925",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1927",
+      "https://github.com/tiann/hapi/pull/1926"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1924,
+    "category": "feature",
+    "area": "dsh",
+    "priority": "P1",
+    "related_prs": [
+      1926
+    ],
+    "rationale": "Aktueller DSH-ACP unterstützt session/resume, HAPI fresh-only Annahme ist veraltet. Native ID, Wiederaufnahme und fehlendes History-Replay separat verdrahten.",
+    "title": "dsh: the ACP server does provide resume - as session/resume, not session/load",
+    "url": "https://github.com/tiann/hapi/issues/1924",
+    "comments_reviewed": 3,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1926"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1923,
+    "category": "upstream-blocked",
+    "area": "codex",
+    "priority": "P2",
+    "related_prs": [],
+    "rationale": "Codex wendet YOLO-Wechsel nur auf nächste Turn an; Issue verlangt ausdrücklich keine HAPI-Änderung und verweist auf openai/codex#32612.",
+    "title": "tracking(codex): mid-turn Yolo changes apply only on the next turn (upstream)",
+    "url": "https://github.com/tiann/hapi/issues/1923",
+    "comments_reviewed": 1,
+    "related_pr_urls": [],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1919,
+    "category": "bug",
+    "area": "dsh",
+    "priority": "P2",
+    "related_prs": [
+      1920
+    ],
+    "rationale": "DSH startet keine HAPI-MCP-Bridge; Doctor meldet Erfolg anhand anderer Sessions. PR1920 berichtigt Packaged-Diagnose, liefert keine vollständige DSH-Medienintegration.",
+    "title": "bug(cli): inline media is unreachable in dsh sessions — no hapi MCP bridge or shell fallback",
+    "url": "https://github.com/tiann/hapi/issues/1919",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1920"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1918,
+    "category": "bug",
+    "area": "cli-diagnostics",
+    "priority": "P2",
+    "related_prs": [
+      1920
+    ],
+    "rationale": "Doctor interpretiert Bun-VFS-Pfad B: als echten Checkout. In gepackten Installs Fallback als nicht anwendbar ausweisen.",
+    "title": "bug(cli): hapi doctor inline-media prints a fabricated B:\\ helper-script path in packaged installs",
+    "url": "https://github.com/tiann/hapi/issues/1918",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1920"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1917,
+    "category": "bug",
+    "area": "files",
+    "priority": "P2",
+    "related_prs": [
+      1727,
+      1718
+    ],
+    "rationale": "Markdown-Dateivorschau reicht ihren Basisdateipfad nicht an Renderer; relative Assets fehlen. HTTPS ist schon erlaubt, benötigt Fehlerdarstellung statt pauschaler Freigabe.",
+    "title": "fix(web): resolve relative Markdown assets and support HTTPS images in file preview (follow-up to #1870)",
+    "url": "https://github.com/tiann/hapi/issues/1917",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1727",
+      "https://github.com/tiann/hapi/pull/1718"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1915,
+    "category": "partially-complete",
+    "area": "testing",
+    "priority": "P1",
+    "related_prs": [
+      1930
+    ],
+    "rationale": "1911 wurde gemerged und Produktionsguards existieren; gezielte Negativtests für signalled ps, leere CIM-Ausgabe, PID-Registry und rejecting host.end fehlen.",
+    "title": "test(cli): pin #1911 fail-closed orphan/reap guards (+ Codex end catch regression)",
+    "url": "https://github.com/tiann/hapi/issues/1915",
+    "comments_reviewed": 3,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1930"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1914,
+    "category": "bug",
+    "area": "windows",
+    "priority": "P2",
+    "related_prs": [
+      1930
+    ],
+    "rationale": "Synchrones tasklist-Polling kann Runner blockieren; dauerhafte CIM-Fehler bleiben zurecht fail-closed. Async-Probes/Diagnostik ohne unsicheren Kill-Fallback.",
+    "title": "follow-up: Windows StopSession sync tasklist polling + WinMgmt fail-closed",
+    "url": "https://github.com/tiann/hapi/issues/1914",
+    "comments_reviewed": 2,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1930"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1912,
+    "category": "bug",
+    "area": "history",
+    "priority": "P2",
+    "related_prs": [],
+    "rationale": "Codex-Rundendauer wird aus sichtbaren Nachrichten errechnet und verschwindet bei kurzen History-Fenstern. Dauer beim echten Turn-Ende persistieren, Replay nicht erfinden.",
+    "title": "bug(web,cli): preserve Codex Round duration across refresh and session reopen",
+    "url": "https://github.com/tiann/hapi/issues/1912",
+    "comments_reviewed": 1,
+    "related_pr_urls": [],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1908,
+    "category": "bug",
+    "area": "cursor",
+    "priority": "P1",
+    "related_prs": [
+      1909
+    ],
+    "rationale": "Auto-Modell ist spawn-only; in-place Wechsel benötigt Relaunch unter gleichem Hub-/Native-Kontext. Laufende Arbeit und Resume-Fehler explizit behandeln.",
+    "title": "bug(cursor): cannot switch running session to Auto in place (quota migration; regressed at #1819)",
+    "url": "https://github.com/tiann/hapi/issues/1908",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1909"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1905,
+    "category": "feature",
+    "area": "web-navigation",
+    "priority": "P2",
+    "related_prs": [
+      1597,
+      1093
+    ],
+    "rationale": "Chat-Markerrail für User-Turns, getrennt von Sidebar-Marker. Teilweise geladene Historie ehrlich anzeigen, mit Virtualisierung abstimmen.",
+    "title": "feat(web): add user-message markers beside the chat scrollbar",
+    "url": "https://github.com/tiann/hapi/issues/1905",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1597",
+      "https://github.com/tiann/hapi/pull/1093"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1904,
+    "category": "bug",
+    "area": "claude",
+    "priority": "P1",
+    "related_prs": [
+      1903,
+      658
+    ],
+    "rationale": "Nicht zuordenbare Sidechains verschwinden; kann Permissionkarten unbedienbar machen. Korrelation plus sichtbarer Fallback; PR1903 ist nur Permissionkarten-Teilfix.",
+    "title": "bug(cli,web): untraceable sidechain messages are silently dropped — subagent activity invisible (no parentToolUseId from current Claude Code)",
+    "url": "https://github.com/tiann/hapi/issues/1904",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1903",
+      "https://github.com/tiann/hapi/pull/658"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1891,
+    "category": "feature",
+    "area": "security",
+    "priority": "P1",
+    "related_prs": [
+      1892,
+      1922
+    ],
+    "rationale": "Verlangt default als omit umzudeuten und dadurch Stock-YOLO zu aktivieren. Widerspricht sicherem Default; vor Umsetzung Produktentscheidung, kein harmloser Bugfix.",
+    "title": "fix(spawn-peer): treat permissionMode default as omit so peerSpawnDefaults/stock yolo wins",
+    "url": "https://github.com/tiann/hapi/issues/1891",
+    "comments_reviewed": 2,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1892",
+      "https://github.com/tiann/hapi/pull/1922"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1887,
+    "category": "bug",
+    "area": "performance",
+    "priority": "P0",
+    "related_prs": [
+      1886
+    ],
+    "rationale": "Usage-Backfill lädt/dekomprimiert komplette Historien synchron; Host-OOM plausibel durch Code bestätigt. Begrenzte Seiten, Yield, Wiederanlauf und parallele Requests absichern.",
+    "title": "hub: opening the token usage dashboard on a large DB exhausts memory and takes the host down",
+    "url": "https://github.com/tiann/hapi/issues/1887",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1886"
+    ],
+    "code_evidence": [
+      "hub/src/sync/usageService.ts:217",
+      "hub/src/sync/usageService.ts:224"
+    ],
+    "verification": "local-code-inspection"
+  },
+  {
+    "number": 1874,
+    "category": "bug",
+    "area": "messaging",
+    "priority": "P1",
+    "related_prs": [
+      1875,
+      1876
+    ],
+    "rationale": "DB dedupliziert stable localId, Socket-Sideeffects laufen weiter; Web setzt reine historische Kindtraces auf Running. Zwei unabhängige Fixes, native Reducer zusätzlich prüfen.",
+    "title": "bug: reconnect replay repeats message side effects and historical child traces appear Running",
+    "url": "https://github.com/tiann/hapi/issues/1874",
+    "comments_reviewed": 0,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1875",
+      "https://github.com/tiann/hapi/pull/1876"
+    ],
+    "code_evidence": [
+      "hub/src/socket/handlers/cli/sessionHandlers.ts:162",
+      "hub/src/socket/handlers/cli/sessionHandlers.ts:252"
+    ],
+    "verification": "local-code-inspection"
+  },
+  {
+    "number": 1868,
+    "category": "bug",
+    "area": "ios-testing",
+    "priority": "P2",
+    "related_prs": [
+      1564
+    ],
+    "rationale": "iPad-Sidebar-Test misst 420 statt 360; Layout-/Messproblem unterscheiden. Reproduktion erfordert Apple-Toolchain, kein Anlass zu bezahltem Cloud-Lauf ohne Auftrag.",
+    "title": "flaky(ios,ci): SessionSplitPresentationTests sidebar width 420>360 on iPad app-build",
+    "url": "https://github.com/tiann/hapi/issues/1868",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1564"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1866,
+    "category": "bug",
+    "area": "testing",
+    "priority": "P2",
+    "related_prs": [
+      1867
+    ],
+    "rationale": "Test-Hub fehlt Ownershipmarker; gleicher Marker wie per-test Worker würde Hub mitten im Test töten. Lifecycle-spezifische Reaping-Ausnahme nötig.",
+    "title": "fix(cli): Vitest test hub should carry HAPI_TEST_MARKER for orphan reap",
+    "url": "https://github.com/tiann/hapi/issues/1866",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1867"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1864,
+    "category": "bug",
+    "area": "claude",
+    "priority": "P1",
+    "related_prs": [],
+    "rationale": "Lokaler Claude setzt thinking nie. Hook-Lifecycle inklusive Abort/Permissionzustände statt heuristischem Dauer-Running abbilden.",
+    "title": "bug(claude): local-mode sessions never report thinking — web UI shows them idle for the whole run",
+    "url": "https://github.com/tiann/hapi/issues/1864",
+    "comments_reviewed": 1,
+    "related_pr_urls": [],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1863,
+    "category": "bug",
+    "area": "ios-testing",
+    "priority": "P2",
+    "related_prs": [],
+    "rationale": "QuestionCard-Test setzt onAppear mit Viewport-Recycling gleich; bislang kein nachgewiesener Produktionsdatenverlust. Viewport-Instrumentierung und Apple-Repro nötig.",
+    "title": "bug(ios): stabilize QuestionCard recycling and transcript layout",
+    "url": "https://github.com/tiann/hapi/issues/1863",
+    "comments_reviewed": 1,
+    "related_pr_urls": [],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1858,
+    "category": "bug",
+    "area": "claude",
+    "priority": "P2",
+    "related_prs": [],
+    "rationale": "Lokale 1M-Sessions zeigen 190k. Reporter korrigiert zentrale Annahme: cost-state kommt erst bei Teardown, ist kein Live-Signal; ursprünglichen Fix nicht übernehmen.",
+    "title": "bug(web): local-mode Claude 1M sessions still show a 190k denominator — Fable is special-cased, Opus/Sonnet [1m] are not",
+    "url": "https://github.com/tiann/hapi/issues/1858",
+    "comments_reviewed": 2,
+    "related_pr_urls": [],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1857,
+    "category": "bug",
+    "area": "claude",
+    "priority": "P1",
+    "related_prs": [],
+    "rationale": "service_tier null scheitert an Zod und API-Fehler werden verschluckt. Auch Errorflags erhalten und Nullusage nicht echte letzte Usage überschreiben lassen.",
+    "title": "bug(cli): every Claude API error is dropped before the web — usage.service_tier: null fails RawJSONLinesSchema",
+    "url": "https://github.com/tiann/hapi/issues/1857",
+    "comments_reviewed": 1,
+    "related_pr_urls": [],
+    "code_evidence": [
+      "cli/src/claude/types.ts:19"
+    ],
+    "verification": "local-code-inspection"
+  },
+  {
+    "number": 1856,
+    "category": "bug",
+    "area": "security",
+    "priority": "P1",
+    "related_prs": [
+      1613,
+      1618
+    ],
+    "rationale": "Gemeinsames Cursor-cwd kann falsche MCP-Mailbox nutzen und Sender verwechseln. 1613-Tip hard-failed Spawn; 1618-Namensschild löst Isolation nicht.",
+    "title": "fix(cursor): same-cwd MCP mailbox still misattributes ping_peer after overlay refuse",
+    "url": "https://github.com/tiann/hapi/issues/1856",
+    "comments_reviewed": 2,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1613",
+      "https://github.com/tiann/hapi/pull/1618"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1855,
+    "category": "bug",
+    "area": "web-navigation",
+    "priority": "P1",
+    "related_prs": [
+      1512,
+      1983,
+      1984
+    ],
+    "rationale": "Routine-agentState rückt recency/unread vor; fachliche Aktivität vom Synchronisationszeitpunkt trennen. Sortierungsvertrag für alle Clients festlegen.",
+    "title": "bug(web,hub): idle active sessions reorder on agent-state/usage refreshes",
+    "url": "https://github.com/tiann/hapi/issues/1855",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1512",
+      "https://github.com/tiann/hapi/pull/1983",
+      "https://github.com/tiann/hapi/pull/1984"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1837,
+    "category": "rfc",
+    "area": "security",
+    "priority": "P2",
+    "related_prs": [
+      1838
+    ],
+    "rationale": "Interactive Preview über öffentliche unauthentifizierte Token-URL; SSRF/Root-/Origin-/Freigabegrenzen entscheiden, nicht stillschweigend als Standard übernehmen.",
+    "title": "Preview MCP tools: mount static sites and dev servers on the hub port (nginx-style)",
+    "url": "https://github.com/tiann/hapi/issues/1837",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1838"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1830,
+    "category": "feature",
+    "area": "pi",
+    "priority": "P2",
+    "related_prs": [
+      1831,
+      1715
+    ],
+    "rationale": "Pi fehlt injiziertes Bildtool und Toolresult-Image-Konvertierung. Bestehende Signatur-/MIME-/Größenprüfungen wiederverwenden.",
+    "title": "feat(pi): inject hapi_display_image and render inline tool-result images",
+    "url": "https://github.com/tiann/hapi/issues/1830",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1831",
+      "https://github.com/tiann/hapi/pull/1715"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1827,
+    "category": "rfc",
+    "area": "agent-config",
+    "priority": "P2",
+    "related_prs": [
+      1091,
+      1922
+    ],
+    "rationale": "Projektgebundene Agent-/Authdefaults fehlen; explizite Spawnwerte, Projektwerte, globale Defaults und Herkunft sichtbar regeln. Credentials nicht als Metadaten speichern.",
+    "title": "feat(hub,web,cli): per-project default agent override (with per-project auth)",
+    "url": "https://github.com/tiann/hapi/issues/1827",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1091",
+      "https://github.com/tiann/hapi/pull/1922"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1804,
+    "category": "feature",
+    "area": "attachments",
+    "priority": "P3",
+    "related_prs": [
+      1665
+    ],
+    "rationale": "Pending-Image-Editor mit Crop/Pen/Undo fehlt; ersetzt Attachment erst nach erfolgreichem Save/Upload. Mit Kompression2022 koordinieren.",
+    "title": "feat(web): edit pending image attachments before sending",
+    "url": "https://github.com/tiann/hapi/issues/1804",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1665"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1795,
+    "category": "feature",
+    "area": "web-navigation",
+    "priority": "P2",
+    "related_prs": [
+      1801
+    ],
+    "rationale": "Include/Exclude im Hauptfilter; leere Suche darf nicht alles ausblenden, Share-Picker unverändert lassen.",
+    "title": "feat(web): add include/exclude mode to session list search",
+    "url": "https://github.com/tiann/hapi/issues/1795",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1801"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1792,
+    "category": "feature",
+    "area": "web-ux",
+    "priority": "P3",
+    "related_prs": [
+      1793
+    ],
+    "rationale": "Absolute Datums-Tooltips aus exakt demselben Zeitwert wie relativer Text; einfache UI-Ergänzung.",
+    "title": "feat(web): absolute-date tooltips on relative time labels",
+    "url": "https://github.com/tiann/hapi/issues/1792",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1793"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1790,
+    "category": "feature",
+    "area": "documentation",
+    "priority": "P3",
+    "related_prs": [
+      1791
+    ],
+    "rationale": "Gebündelte Releasehistorie und Releaseprozess; gewünschte Sprachen für Evolved entscheiden statt en/zh blind kopieren.",
+    "title": "feat(web): add bilingual release history to Settings > About",
+    "url": "https://github.com/tiann/hapi/issues/1790",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1791"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1769,
+    "category": "rfc",
+    "area": "architecture",
+    "priority": "P1",
+    "related_prs": [
+      1771,
+      1537
+    ],
+    "rationale": "Null HAPI-Promptguidance und CLI-first Skills verlangen Adapter-/MCP-/Skill-Zustellung auf allen Hosts. Generisches ACP hat keine standardisierte Skills-Schnittstelle.",
+    "title": "RFC: remove HAPI prompt guidance — CLI-first session control and on-demand skills",
+    "url": "https://github.com/tiann/hapi/issues/1769",
+    "comments_reviewed": 2,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1771",
+      "https://github.com/tiann/hapi/pull/1537"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1764,
+    "category": "duplicate",
+    "area": "usage",
+    "priority": "P2",
+    "related_prs": [
+      1787,
+      1788,
+      1901
+    ],
+    "rationale": "Konkrete Claude-5h/7d-Quota-Anforderung gehört in Umbrella846; Teil-PRs vorhanden, normale Tokenstatistik erfüllt sie nicht. Anforderungen nicht beim Zusammenlegen verlieren.",
+    "title": "能不能增加显示token用量的功能，比如claudecode 5h余量 周余量",
+    "url": "https://github.com/tiann/hapi/issues/1764",
+    "comments_reviewed": 2,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1787",
+      "https://github.com/tiann/hapi/pull/1788",
+      "https://github.com/tiann/hapi/pull/1901"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1756,
+    "category": "feature",
+    "area": "search",
+    "priority": "P2",
+    "related_prs": [
+      1762,
+      1598
+    ],
+    "rationale": "In-Session FTS-Ergebnisliste ergänzt Sidebar-Contentfilter1554, kein Duplikat. PR1762 draft/conflicting und auf1598 gestapelt.",
+    "title": "feat(web): in-session message search (ranked FTS jump, not a session-list filter)",
+    "url": "https://github.com/tiann/hapi/issues/1756",
+    "comments_reviewed": 2,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1762",
+      "https://github.com/tiann/hapi/pull/1598"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1732,
+    "category": "feature",
+    "area": "web-navigation",
+    "priority": "P3",
+    "related_prs": [
+      1733
+    ],
+    "rationale": "Nur visueller Positionsmarker für aktuelle Sidebar-Session; eigener Vertrag neben2015. Kommentar nennt offene Reflow-/Animationslücke im PR.",
+    "title": "feat(web): session-list scrollbar tick for open session position",
+    "url": "https://github.com/tiann/hapi/issues/1732",
+    "comments_reviewed": 2,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1733"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1724,
+    "category": "bug",
+    "area": "cursor",
+    "priority": "P1",
+    "related_prs": [
+      1725,
+      987
+    ],
+    "rationale": "Cursor-Promptfailure wird ready ohne Blocked-Signal; strukturierte Fehler und begrenzte Recovery statt unbegrenzter Continue-Schleife.",
+    "title": "Cursor unexpected stop should stamp Blocked via AGENT_NOTIFY_SUMMARY footer",
+    "url": "https://github.com/tiann/hapi/issues/1724",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1725",
+      "https://github.com/tiann/hapi/pull/987"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1717,
+    "category": "feature",
+    "area": "web-navigation",
+    "priority": "P2",
+    "related_prs": [
+      1772,
+      1725
+    ],
+    "rationale": "Blocker in/außerhalb Sidebar sichtbar machen; durable Status fehlt im SessionSummary. Zusammen mit1996/2002 designen.",
+    "title": "feat(web): loud session-list blocked affordance + off-viewport scroll cues",
+    "url": "https://github.com/tiann/hapi/issues/1717",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1772",
+      "https://github.com/tiann/hapi/pull/1725"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1710,
+    "category": "feature",
+    "area": "search",
+    "priority": "P2",
+    "related_prs": [
+      2010
+    ],
+    "rationale": "list_peers ist recency/100-beschränkt; namespace-sichere Suche über Metadaten für alte Sessions fehlt. Keine DB-Archaeologie als Produktweg.",
+    "title": "feat(cli,hub): search_peers MCP/CLI — find sessions by keyword beyond list_peers recency",
+    "url": "https://github.com/tiann/hapi/issues/1710",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/2010"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1701,
+    "category": "feature",
+    "area": "usage",
+    "priority": "P3",
+    "related_prs": [],
+    "rationale": "Optionale TTFT/Streamingdauer/Speed für messende Adapter; fehlende Werte Unknown, keine erfundenen Tokens oder Replayzeiten.",
+    "title": "feat(web): show first-token latency and output speed in message metadata",
+    "url": "https://github.com/tiann/hapi/issues/1701",
+    "comments_reviewed": 1,
+    "related_pr_urls": [],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1700,
+    "category": "feature",
+    "area": "web-composer",
+    "priority": "P2",
+    "related_prs": [],
+    "rationale": "Kommentar konkretisiert: ab4000 Zeichen oder40 Zeilen explizite Text/.txt-Wahl; 10-Zeilen-Ansicht, Copy immer vollständig.",
+    "title": "Collapse long user messages and offer “Send as text file” for large pasted text",
+    "url": "https://github.com/tiann/hapi/issues/1700",
+    "comments_reviewed": 3,
+    "related_pr_urls": [],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1697,
+    "category": "bug",
+    "area": "web-ux",
+    "priority": "P2",
+    "related_prs": [],
+    "rationale": "600-Gewicht ist im DOM vorhanden; Android-Fontauflösung/visuelle Hierarchie prüfen. Nach0.30.7 erneut bestätigt, nicht als erledigt schließen.",
+    "title": "Web/PWA: bold and heading text render at the same font weight/size as regular text (markdown parsed, no visual emphasis)",
+    "url": "https://github.com/tiann/hapi/issues/1697",
+    "comments_reviewed": 5,
+    "related_pr_urls": [],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1688,
+    "category": "partially-complete",
+    "area": "workspace",
+    "priority": "P2",
+    "related_prs": [
+      1092
+    ],
+    "rationale": "Simple+existierender Worktree funktioniert inklusive Metadaten; Picker/Runner-Auflistung fehlen. Bestehende Worktrees niemals beim Sessionende löschen.",
+    "title": "feat(web): support creating sessions from an existing Git worktree",
+    "url": "https://github.com/tiann/hapi/issues/1688",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1092"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1681,
+    "category": "feature",
+    "area": "attachments",
+    "priority": "P1",
+    "related_prs": [
+      1684,
+      1852
+    ],
+    "rationale": "Normale Uploads leben CLI-temporär; durable Hub-Originale mit IDs und Ownership fehlen. Fork/Merge/GC braucht minimale Referenzzählung bereits in erster Stufe.",
+    "title": "feat(attachments): add durable attachment storage and prepare content-addressed deduplication",
+    "url": "https://github.com/tiann/hapi/issues/1681",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1684",
+      "https://github.com/tiann/hapi/pull/1852"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1652,
+    "category": "feature",
+    "area": "web-composer",
+    "priority": "P3",
+    "related_prs": [
+      1659
+    ],
+    "rationale": "Frontend-only #/＃ History über geladene Usertexte; Startposition, Deduplikation und Text-only Attachmentrecall beachten.",
+    "title": "feat(web): add frontend composer history for loaded session messages",
+    "url": "https://github.com/tiann/hapi/issues/1652",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1659"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1651,
+    "category": "feature",
+    "area": "web-composer",
+    "priority": "P3",
+    "related_prs": [
+      1660
+    ],
+    "rationale": "IME-￥ als Alias für Skills; Erkennung/Routing normalisieren und kanonisches $skill einsetzen.",
+    "title": "Support full-width yen sign as an alias for $ skill autocomplete",
+    "url": "https://github.com/tiann/hapi/issues/1651",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1660"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1639,
+    "category": "feature",
+    "area": "voice",
+    "priority": "P2",
+    "related_prs": [],
+    "rationale": "Separater browser-cloud SpeechRecognition-Provider; sendet Audio extern und ist nicht on-device. Mobile Browserverhalten testen und Privacy klar machen.",
+    "title": "Add browser cloud speech recognition (classic Web Speech API) as a transcription provider — the actual path to mobile STT parity",
+    "url": "https://github.com/tiann/hapi/issues/1639",
+    "comments_reviewed": 1,
+    "related_pr_urls": [],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1612,
+    "category": "feature",
+    "area": "notifications",
+    "priority": "P3",
+    "related_prs": [
+      1615
+    ],
+    "rationale": "Opt-in WxPusher als Kanal; background-only meint Namespace-Sichtbarkeit. Providerlimits nicht fest codieren.",
+    "title": "feat: add optional WxPusher App notifications with background-only delivery",
+    "url": "https://github.com/tiann/hapi/issues/1612",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1615"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1594,
+    "category": "feature",
+    "area": "voice",
+    "priority": "P3",
+    "related_prs": [],
+    "rationale": "Long-press-Diktat in Session-Suche über vorhandene Providerabstraktion; Standard vs Realtime nicht ungefragt verengen.",
+    "title": "Add long-press-to-talk on session search box (uses configured dictation provider)",
+    "url": "https://github.com/tiann/hapi/issues/1594",
+    "comments_reviewed": 1,
+    "related_pr_urls": [],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1593,
+    "category": "upstream-blocked",
+    "area": "voice",
+    "priority": "P2",
+    "related_prs": [],
+    "rationale": "Browser-on-device mobile Gate schützt vor nativen Renderercrashes; Kommentarfolge1639 bestätigt fehlende mobile Modelle. Erst Browsernachweise, nicht Gate entfernen.",
+    "title": "Re-examine mobile fail-closed restriction on Browser on-device (native SpeechRecognition) STT",
+    "url": "https://github.com/tiann/hapi/issues/1593",
+    "comments_reviewed": 1,
+    "related_pr_urls": [],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1554,
+    "category": "feature",
+    "area": "search",
+    "priority": "P2",
+    "related_prs": [
+      1598,
+      1762
+    ],
+    "rationale": "Opt-in persistente Volltextsuche über Nachrichten fehlt; Kostenbegrenzung, inkrementeller Index und Namespace-Isolation. Gemeinsame Basis für1756.",
+    "title": "feat(web,hub): add opt-in search for session message content",
+    "url": "https://github.com/tiann/hapi/issues/1554",
+    "comments_reviewed": 2,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1598",
+      "https://github.com/tiann/hapi/pull/1762"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1536,
+    "category": "bug",
+    "area": "files",
+    "priority": "P2",
+    "related_prs": [
+      1727,
+      1718,
+      1946
+    ],
+    "rationale": "Offline-Filepreview zeigt rohe RPC-Fehler und refetcht nach Reopen nicht; strukturierte Codes/Runner-Fallback mit Workspaceberechtigung.",
+    "title": "feat(web): actionable file-preview errors when session CLI offline + refetch after reopen",
+    "url": "https://github.com/tiann/hapi/issues/1536",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1727",
+      "https://github.com/tiann/hapi/pull/1718",
+      "https://github.com/tiann/hapi/pull/1946"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1535,
+    "category": "rfc",
+    "area": "security",
+    "priority": "P0",
+    "related_prs": [
+      1537,
+      1618,
+      1091
+    ],
+    "rationale": "Ein CLI_TOKEN ist Besitzerberechtigung und beim selben UID lesbar; scopes ohne Credential-Custody helfen nicht. Separate OS-Principals/Broker vs unabhängige Einzelgenehmigung entscheiden.",
+    "title": "Security boundary: session-scoped agent credentials and cross-session authorization",
+    "url": "https://github.com/tiann/hapi/issues/1535",
+    "comments_reviewed": 2,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1537",
+      "https://github.com/tiann/hapi/pull/1618",
+      "https://github.com/tiann/hapi/pull/1091"
+    ],
+    "code_evidence": [
+      "hub/src/web/routes/auth.ts:63",
+      "hub/src/web/routes/guards.ts:22"
+    ],
+    "verification": "local-code-inspection"
+  },
+  {
+    "number": 1526,
+    "category": "rfc",
+    "area": "lifecycle",
+    "priority": "P1",
+    "related_prs": [
+      1527,
+      1528,
+      1614,
+      1091
+    ],
+    "rationale": "Vier Subsysteme in Fork: SIGHUP-Survival, Terminalattach, Accounts, Machines. Erste PRs sind eng Claude/SIGHUP, kein allgemeines Terminal-Survivalversprechen.",
+    "title": "Proposal: upstreaming cross-machine terminal attach, session survival, and multi-account support — how would you like it split?",
+    "url": "https://github.com/tiann/hapi/issues/1526",
+    "comments_reviewed": 2,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1527",
+      "https://github.com/tiann/hapi/pull/1528",
+      "https://github.com/tiann/hapi/pull/1614",
+      "https://github.com/tiann/hapi/pull/1091"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1524,
+    "category": "feature",
+    "area": "orchestration",
+    "priority": "P2",
+    "related_prs": [],
+    "rationale": "Persistenter Cron fehlt; Einmal-scheduled messages wecken keine inaktiven Sessions. Namespace, Missed/Overlap, Idempotenz und Rechte entscheiden.",
+    "title": "feat: add native persistent Cron Jobs for recurring Agent runs",
+    "url": "https://github.com/tiann/hapi/issues/1524",
+    "comments_reviewed": 1,
+    "related_pr_urls": [],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1516,
+    "category": "feature",
+    "area": "cursor",
+    "priority": "P3",
+    "related_prs": [
+      1564
+    ],
+    "rationale": "display_links zur bytegenauen URL-Ausgabe; spätere Kommentare grenzen Tool auf Cursor ein, ursprünglicher globaler Vorschlag überholt.",
+    "title": "feat(cli): display_links MCP to paint clickable URLs into session chat",
+    "url": "https://github.com/tiann/hapi/issues/1516",
+    "comments_reviewed": 2,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1564"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1509,
+    "category": "feature",
+    "area": "orchestration",
+    "priority": "P1",
+    "related_prs": [
+      1922,
+      1618
+    ],
+    "rationale": "Spawn+Remit+Readback als verifizierter Vorgang fehlt. 1922 ersetzt1511, liefert aber keine trusted Parent-Provenienz; Security-Voraussetzungen getrennt.",
+    "title": "feat(cli): first-class peer spawn with remit — hapi spawn-peer + MCP spawn_peer",
+    "url": "https://github.com/tiann/hapi/issues/1509",
+    "comments_reviewed": 4,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1922",
+      "https://github.com/tiann/hapi/pull/1618"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1499,
+    "category": "feature",
+    "area": "documentation",
+    "priority": "P3",
+    "related_prs": [],
+    "rationale": "Leichtgewichtige PR-Vorlage mit Summary/Validation/Related; reine Beitragskonvention, kein Runtimefeature.",
+    "title": "Proposal: standardize pull request descriptions with a lightweight template",
+    "url": "https://github.com/tiann/hapi/issues/1499",
+    "comments_reviewed": 1,
+    "related_pr_urls": [],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1489,
+    "category": "feature",
+    "area": "orchestration",
+    "priority": "P2",
+    "related_prs": [
+      1424
+    ],
+    "rationale": "Opt-in Jobterminalzustand weckt Besitzer über resume/wait/send. Genau-einmal Terminaledge, Replay und Autorisierung mit Cron/Peers abstimmen.",
+    "title": "feat: wake owning session when attached job completes/fails",
+    "url": "https://github.com/tiann/hapi/issues/1489",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1424"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1488,
+    "category": "feature",
+    "area": "security",
+    "priority": "P1",
+    "related_prs": [
+      1618,
+      1844
+    ],
+    "rationale": "Turnursache human/agent/unknown muss aus vertrauenswürdigem Eingang abgeleitet werden; Emitter/Provenienz sind verschieden. Hängt an1945/1535.",
+    "title": "feat(a2a): record human vs agent cause on notify→work_ad elevation",
+    "url": "https://github.com/tiann/hapi/issues/1488",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1618",
+      "https://github.com/tiann/hapi/pull/1844"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1485,
+    "category": "feature",
+    "area": "pi",
+    "priority": "P3",
+    "related_prs": [],
+    "rationale": "Pi bietet nur RPC-Remote; TUI erfordert eigenen Local-/Remote-Handoff mit Resumeidentität, kein kleiner UI-Schalter.",
+    "title": "Pi Agent TUI Support",
+    "url": "https://github.com/tiann/hapi/issues/1485",
+    "comments_reviewed": 1,
+    "related_pr_urls": [],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1446,
+    "category": "feature",
+    "area": "usage",
+    "priority": "P2",
+    "related_prs": [
+      1468
+    ],
+    "rationale": "ACP-Token/Cost-Carriers normalisieren; kumulative vs Delta-Werte und Contextusage strikt trennen. Provider ohne Werte ehrlich ausweisen.",
+    "title": "feat(usage): account for ACP agent token usage when available",
+    "url": "https://github.com/tiann/hapi/issues/1446",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1468"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1438,
+    "category": "rfc",
+    "area": "agent-config",
+    "priority": "P1",
+    "related_prs": [
+      1662,
+      1692,
+      1059,
+      1715
+    ],
+    "rationale": "Capability-Descriptors für Model/Effort/Permission statt Flavorbedingungen. Pi-providerqualifizierte und Cursor-Variant-IDs erhalten; zentrale Grundlage für neue Modi.",
+    "title": "Unify agent configuration with capability-driven Model, Effort, and Permission controls",
+    "url": "https://github.com/tiann/hapi/issues/1438",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1662",
+      "https://github.com/tiann/hapi/pull/1692",
+      "https://github.com/tiann/hapi/pull/1059",
+      "https://github.com/tiann/hapi/pull/1715"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1435,
+    "category": "feature",
+    "area": "voice",
+    "priority": "P2",
+    "related_prs": [
+      1436
+    ],
+    "rationale": "Dictation-Abschluss wird beim Navigieren verworfen; Hintergrundpipeline muss an Ursprungs-Session gebunden und abbrechbar sein.",
+    "title": "feat(web): persist and send voice input message across session navigation",
+    "url": "https://github.com/tiann/hapi/issues/1435",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1436"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1416,
+    "category": "feature",
+    "area": "web-composer",
+    "priority": "P3",
+    "related_prs": [
+      1418
+    ],
+    "rationale": "Session-Drag erzeugt vorhandenen @-Mentionatom; keine Navigation beim Drag, Filedrops erhalten.",
+    "title": "feat(web): drag sessions into composer to create @ mentions",
+    "url": "https://github.com/tiann/hapi/issues/1416",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1418"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1404,
+    "category": "feature",
+    "area": "orchestration",
+    "priority": "P2",
+    "related_prs": [
+      1424
+    ],
+    "rationale": "Dauerhafte Session-Jobs für Arbeit jenseits Agentprozess fehlen; Kommentar ergänzt phase/body-Diagnose bei transienten409. Wake ist separater1489-Scope.",
+    "title": "feat: session-attached long-running jobs (visible on session list)",
+    "url": "https://github.com/tiann/hapi/issues/1404",
+    "comments_reviewed": 3,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1424"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1403,
+    "category": "bug",
+    "area": "web-composer",
+    "priority": "P2",
+    "related_prs": [
+      1729,
+      1728
+    ],
+    "rationale": "Expanded Composer sendet bei Enter trotz Longform-Kontext; Newline, Ctrl/Cmd+Enter-Send und IME-Ausnahmen beibehalten.",
+    "title": "web: Enter should insert newline when composer is expanded",
+    "url": "https://github.com/tiann/hapi/issues/1403",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1729",
+      "https://github.com/tiann/hapi/pull/1728"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1401,
+    "category": "feature",
+    "area": "security",
+    "priority": "P1",
+    "related_prs": [
+      1537
+    ],
+    "rationale": "Peer-Tool-/Prompttoggle fehlt; Kommentare korrigieren frühere Sicherheitsbehauptung. Exposition abschalten schützt nicht REST/Credentialgrenze1535.",
+    "title": "Operator toggle to disable Layer 0 peer tools (ping_peer / list_peers / inspect_peer) per hub",
+    "url": "https://github.com/tiann/hapi/issues/1401",
+    "comments_reviewed": 7,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1537"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1395,
+    "category": "feature",
+    "area": "web-ux",
+    "priority": "P3",
+    "related_prs": [
+      1635
+    ],
+    "rationale": "Projektpfad im Header fehlt; Worktree-basePath und Branch unabhängig anzeigen.",
+    "title": "feat(web): show project/path in configurable session header",
+    "url": "https://github.com/tiann/hapi/issues/1395",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1635"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1272,
+    "category": "feature",
+    "area": "web-ux",
+    "priority": "P3",
+    "related_prs": [],
+    "rationale": "App-Onboarding fehlt; neues lokales Flag unterscheidet Upgrade-Nutzer nicht von neuen. Opt-in/Tour-Eignung definieren.",
+    "title": "feat(web): app-shell first-user onboarding (guided tour)",
+    "url": "https://github.com/tiann/hapi/issues/1272",
+    "comments_reviewed": 1,
+    "related_pr_urls": [],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1259,
+    "category": "bug",
+    "area": "web-ux",
+    "priority": "P2",
+    "related_prs": [
+      1664
+    ],
+    "rationale": "Maschinengesundheit und Sessionzahl verschwinden bei nur einer Maschine/touch. Nach Cleanup erneut verifiziert, vorhandener PR kandidat.",
+    "title": "regression(web): retain machine health and session counts for single-machine and touch layouts",
+    "url": "https://github.com/tiann/hapi/issues/1259",
+    "comments_reviewed": 3,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1664"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1236,
+    "category": "feature",
+    "area": "import",
+    "priority": "P2",
+    "related_prs": [
+      945
+    ],
+    "rationale": "Claude/Cursor Discovery muss Runner statt Hub-FS scannen; laut Kommentaren in945 implementiert aber nicht main. Maschinepicker weiter abdecken.",
+    "title": "feat(hub,cli): Claude/Cursor import discovery via machine RPC (parity with Codex #1088)",
+    "url": "https://github.com/tiann/hapi/issues/1236",
+    "comments_reviewed": 2,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/945"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1203,
+    "category": "feature",
+    "area": "security",
+    "priority": "P1",
+    "related_prs": [
+      1618,
+      1922
+    ],
+    "rationale": "Replyadresse/Peer-Badge fehlen; 1618 liefert nur soft attribution, Kommentare verlangen teils trusted Quelle. 1945 ist Sicherheitsnachfolger, Scope klären.",
+    "title": "feat(peer): make ping_peer handoffs reply-addressable",
+    "url": "https://github.com/tiann/hapi/issues/1203",
+    "comments_reviewed": 4,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1618",
+      "https://github.com/tiann/hapi/pull/1922"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1162,
+    "category": "feature",
+    "area": "integrations",
+    "priority": "P3",
+    "related_prs": [
+      1163
+    ],
+    "rationale": "Opt-in GitHub-PR-Zuordnung mit UI/CLI/API; keine GitHub-Abfragen bei Off und keine Vererbung auf Forks.",
+    "title": "feat: opt-in GitHub PR awareness + explicit session↔PR attach",
+    "url": "https://github.com/tiann/hapi/issues/1162",
+    "comments_reviewed": 2,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1163"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1160,
+    "category": "duplicate",
+    "area": "integrations",
+    "priority": "P3",
+    "related_prs": [
+      1163
+    ],
+    "rationale": "externalRefs-Basis und PR-Chip werden durch1162/PR1163 mitgeführt; gemeinsam liefern, nicht zweimal implementieren.",
+    "title": "feat: structured session externalRefs + clickable GitHub PR chip",
+    "url": "https://github.com/tiann/hapi/issues/1160",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1163"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 1104,
+    "category": "feature",
+    "area": "web-composer",
+    "priority": "P3",
+    "related_prs": [],
+    "rationale": "Namespaceweite Saved Prompts im Hub, getrennt von Scratchlist. Kommentare: Cursorinsertion, manuelle Reihenfolge, kein Echtzeit-SSE nötig.",
+    "title": "feat(web,hub): add synced saved prompts for reusable messages",
+    "url": "https://github.com/tiann/hapi/issues/1104",
+    "comments_reviewed": 3,
+    "related_pr_urls": [],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 894,
+    "category": "rfc",
+    "area": "history",
+    "priority": "P1",
+    "related_prs": [
+      1611
+    ],
+    "rationale": "Delete mit Summary+Scratchlistmigration ist Design-TBD; unsichtbare Sessionmerge-Löschungen brauchen ebenfalls Transferpolicy. Keine automatische Zusammenfassung ohne Kosten-/Fehlerregeln.",
+    "title": "tracking: scratchlist v2.1 - delete-session with summarize-and-migrate flow",
+    "url": "https://github.com/tiann/hapi/issues/894",
+    "comments_reviewed": 2,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1611"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 881,
+    "category": "feature",
+    "area": "workspace",
+    "priority": "P3",
+    "related_prs": [
+      1607,
+      1871
+    ],
+    "rationale": "Projekt-Kontextmenü für Bulkarchive/Delete/Rename; destructive Aktionen und selektive Fehler klar behandeln.1827-Defaults spätere Erweiterung.",
+    "title": "feat(web): right-click context menu for project/workspace groups in sidebar",
+    "url": "https://github.com/tiann/hapi/issues/881",
+    "comments_reviewed": 2,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1607",
+      "https://github.com/tiann/hapi/pull/1871"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 878,
+    "category": "feature",
+    "area": "cursor",
+    "priority": "P1",
+    "related_prs": [
+      987,
+      1725
+    ],
+    "rationale": "Erkennen/anzeigen/begrenzt recovern bei Cursor-Modellfehlern. Kommentare ersetzen Regex-only durch strukturierte Signale zuerst und warnen vor Retry-Endlosschleifen.",
+    "title": "feat: detect inline model errors (T: [resource_exhausted] / Connection stalled) and surface with pulsing session-row indicator",
+    "url": "https://github.com/tiann/hapi/issues/878",
+    "comments_reviewed": 6,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/987",
+      "https://github.com/tiann/hapi/pull/1725"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 849,
+    "category": "bug",
+    "area": "usage",
+    "priority": "P2",
+    "related_prs": [
+      1901
+    ],
+    "rationale": "Standalone account/rateLimits/updated wird verworfen; separater quotazustand statt fiktiven Tokenverbrauchs und neue Tests.",
+    "title": "Codex: surface standalone account/rateLimits/updated app-server events",
+    "url": "https://github.com/tiann/hapi/issues/849",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1901"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 848,
+    "category": "duplicate",
+    "area": "usage",
+    "priority": "P3",
+    "related_prs": [
+      1901,
+      1788
+    ],
+    "rationale": "i18n-Nacharbeit bezog sich auf alten offenen847-Entwurf; neuer1901 ersetzt ihn. Anforderungen in aktuellen Budget-PR übernehmen, nicht alten Stack importieren.",
+    "title": "Codex usage indicator: i18n for hard-coded English strings",
+    "url": "https://github.com/tiann/hapi/issues/848",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1901",
+      "https://github.com/tiann/hapi/pull/1788"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 846,
+    "category": "rfc",
+    "area": "usage",
+    "priority": "P2",
+    "related_prs": [
+      1901,
+      1787,
+      1788,
+      1468
+    ],
+    "rationale": "Cross-flavor Quota-Umbrella; Contexttokens, Subscriptionquota und Kosten sind verschiedene Daten. Verfügbarkeit/Quelle/frische pro Adapter abbilden.",
+    "title": "feat(web+cli+hub): cross-flavor agent budget/quota gauges in composer (umbrella)",
+    "url": "https://github.com/tiann/hapi/issues/846",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1901",
+      "https://github.com/tiann/hapi/pull/1787",
+      "https://github.com/tiann/hapi/pull/1788",
+      "https://github.com/tiann/hapi/pull/1468"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 732,
+    "category": "partially-complete",
+    "area": "import",
+    "priority": "P2",
+    "related_prs": [
+      945,
+      1429,
+      1677,
+      536,
+      535,
+      518
+    ],
+    "rationale": "Codex-Import hat bereits Teilplumbing; vollständiger Runner-Import Claude/Cursor/History fehlt. Phase3 Operatorcontext wurde nach1239 ausgelagert.",
+    "title": "RFC: Import external agent sessions + hub-scoped operator context",
+    "url": "https://github.com/tiann/hapi/issues/732",
+    "comments_reviewed": 2,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/945",
+      "https://github.com/tiann/hapi/pull/1429",
+      "https://github.com/tiann/hapi/pull/1677",
+      "https://github.com/tiann/hapi/pull/536",
+      "https://github.com/tiann/hapi/pull/535",
+      "https://github.com/tiann/hapi/pull/518"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 600,
+    "category": "feature",
+    "area": "notifications",
+    "priority": "P3",
+    "related_prs": [
+      553
+    ],
+    "rationale": "WeCom benötigt bidirektionale Approvals, ServerChan-one-way ist kein Ersatz. Bottyp und Besitzernachweis für Approvalkanal klären.",
+    "title": "WeCom push channel support",
+    "url": "https://github.com/tiann/hapi/issues/600",
+    "comments_reviewed": 3,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/553"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 572,
+    "category": "partially-complete",
+    "area": "import",
+    "priority": "P2",
+    "related_prs": [
+      945,
+      535,
+      536,
+      518
+    ],
+    "rationale": "Cursor-CLI-resume existiert; Webimport verbessert945, deckt aber laut letztem Kommentar nicht jede IDE/externe Session ab. Nicht vorschnell als Duplikat schließen.",
+    "title": "Resume existing session (started outside of hapi)",
+    "url": "https://github.com/tiann/hapi/issues/572",
+    "comments_reviewed": 3,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/945",
+      "https://github.com/tiann/hapi/pull/535",
+      "https://github.com/tiann/hapi/pull/536",
+      "https://github.com/tiann/hapi/pull/518"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 508,
+    "category": "partially-complete",
+    "area": "attachments",
+    "priority": "P2",
+    "related_prs": [
+      1831,
+      1715,
+      1665
+    ],
+    "rationale": "Lightbox/Attachment-Previews existieren inzwischen; allgemeine Toolresult-Imageabdeckung prüfen. Alter Bottext behauptet fälschlich keinen Viewer im heutigen main.",
+    "title": "[Enhancement] Render images inline in tool results and attachments with lightbox preview",
+    "url": "https://github.com/tiann/hapi/issues/508",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1831",
+      "https://github.com/tiann/hapi/pull/1715",
+      "https://github.com/tiann/hapi/pull/1665"
+    ],
+    "code_evidence": [
+      "web/src/components/AssistantChat/AttachmentItem.tsx:119"
+    ],
+    "verification": "local-code-inspection"
+  },
+  {
+    "number": 477,
+    "category": "partially-complete",
+    "area": "web-navigation",
+    "priority": "P2",
+    "related_prs": [
+      1512,
+      1447,
+      1758,
+      1656,
+      1099
+    ],
+    "rationale": "Pinning/Unread/Teil-Sortierung existieren inzwischen; Recency und optionale Replysortierung fehlen. Alter Botkommentar ist nicht aktueller Hauptbranchzustand.",
+    "title": "feat(web): improve session sidebar with pinning, sorting, and unread indicators",
+    "url": "https://github.com/tiann/hapi/issues/477",
+    "comments_reviewed": 3,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1512",
+      "https://github.com/tiann/hapi/pull/1447",
+      "https://github.com/tiann/hapi/pull/1758",
+      "https://github.com/tiann/hapi/pull/1656",
+      "https://github.com/tiann/hapi/pull/1099"
+    ],
+    "code_evidence": [
+      "web/src/components/SessionList.tsx:109",
+      "web/src/components/SessionList.tsx:310"
+    ],
+    "verification": "local-code-inspection"
+  },
+  {
+    "number": 366,
+    "category": "partially-complete",
+    "area": "agent-config",
+    "priority": "P2",
+    "related_prs": [
+      1714,
+      1193
+    ],
+    "rationale": "Lokale Codex-Profile können durchgereicht werden; gewünschter Web-Create-Profilname und persistente Restorewege fehlen.",
+    "title": "支持codex的多profile模式",
+    "url": "https://github.com/tiann/hapi/issues/366",
+    "comments_reviewed": 2,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1714",
+      "https://github.com/tiann/hapi/pull/1193"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  },
+  {
+    "number": 271,
+    "category": "partially-complete",
+    "area": "web-ux",
+    "priority": "P2",
+    "related_prs": [
+      1982,
+      1976,
+      1672
+    ],
+    "rationale": "Manuelle Namen haben bereits Vorrang vor Summary; vollständiger Disable-/Titlelock-Modus fehlt. Überlappende1976/1982 zuerst gemeinsam prüfen.",
+    "title": "Add an option to disable automatic session title changes",
+    "url": "https://github.com/tiann/hapi/issues/271",
+    "comments_reviewed": 1,
+    "related_pr_urls": [
+      "https://github.com/tiann/hapi/pull/1982",
+      "https://github.com/tiann/hapi/pull/1976",
+      "https://github.com/tiann/hapi/pull/1672"
+    ],
+    "code_evidence": [],
+    "verification": "issue-and-comment-triage; PR bodies/cross-references, no runtime reproduction"
+  }
+]

@@ -18,6 +18,12 @@ type EmitAccessError = (scope: 'session' | 'machine', id: string, reason: Access
 
 type SocketNamespace = ReturnType<SocketServer['of']>
 
+function authorizedSocket(namespace: SocketNamespace, id: string) {
+    const socket = namespace.sockets.get(id)
+    if (socket?.data.isAuthorized && !socket.data.isAuthorized()) { socket.disconnect(true); return undefined }
+    return socket
+}
+
 const terminalReadySchema = TerminalReadyPayloadSchema
 const terminalOutputSchema = TerminalOutputPayloadSchema
 const terminalExitSchema = TerminalExitPayloadSchema
@@ -47,7 +53,7 @@ export function registerTerminalHandlers(socket: CliSocketWithData, deps: Termin
     const resolveOwnedTerminal = (payload: { sessionId: string; terminalId: string }) => {
         const entry = resolveOwnedEntry(payload)
         if (!entry) return null
-        const terminalSocket = terminalNamespace.sockets.get(entry.socketId)
+        const terminalSocket = authorizedSocket(terminalNamespace, entry.socketId)
         return terminalSocket ? { entry, terminalSocket } : null
     }
 
@@ -82,7 +88,7 @@ export function registerTerminalHandlers(socket: CliSocketWithData, deps: Termin
         // Keep buffering while the web socket is detached so its replacement
         // can replay everything the still-running PTY emitted in the gap.
         appendUserTerminalOutput(parsed.data.sessionId, parsed.data.terminalId, parsed.data.data)
-        terminalNamespace.sockets.get(entry.socketId)?.emit('terminal:output', parsed.data)
+        authorizedSocket(terminalNamespace, entry.socketId)?.emit('terminal:output', parsed.data)
     })
 
     socket.on('agent-terminal:output', (data: unknown) => {
@@ -102,7 +108,11 @@ export function registerTerminalHandlers(socket: CliSocketWithData, deps: Termin
         // Broadcast to the agent-terminal room (distinct from the user-terminal's
         // `session:${id}` room) so only agent-terminal viewers receive PTY output
         // and the streaming-teardown viewer count stays accurate.
-        terminalNamespace.to(`agent-session:${parsed.data.sessionId}`).emit('agent-terminal:output', parsed.data)
+        if (socket.data.isAuthorized) {
+            for (const target of terminalNamespace.sockets.values()) {
+                if (target.rooms.has(`agent-session:${parsed.data.sessionId}`) && authorizedSocket(terminalNamespace, target.id)) target.emit('agent-terminal:output', parsed.data)
+            }
+        } else terminalNamespace.to(`agent-session:${parsed.data.sessionId}`).emit('agent-terminal:output', parsed.data)
     })
 
     socket.on('agent-terminal:reset', (data: unknown) => {
@@ -134,7 +144,7 @@ export function registerTerminalHandlers(socket: CliSocketWithData, deps: Termin
         // remove() fires the registry's onRemove → clears this terminal's
         // scrollback buffer (without touching the session's other terminals).
         terminalRegistry.remove(parsed.data.terminalId)
-        const terminalSocket = terminalNamespace.sockets.get(entry.socketId)
+        const terminalSocket = authorizedSocket(terminalNamespace, entry.socketId)
         if (!terminalSocket) {
             return
         }
@@ -159,7 +169,7 @@ export function registerTerminalHandlers(socket: CliSocketWithData, deps: Termin
             return
         }
 
-        const terminalSocket = terminalNamespace.sockets.get(entry.socketId)
+        const terminalSocket = authorizedSocket(terminalNamespace, entry.socketId)
         terminalRegistry.remove(parsed.data.terminalId)
         terminalSocket?.emit('terminal:error', parsed.data)
     })
@@ -168,7 +178,7 @@ export function registerTerminalHandlers(socket: CliSocketWithData, deps: Termin
 export function cleanupTerminalHandlers(socket: CliSocketWithData, deps: { terminalRegistry: TerminalRegistry; terminalNamespace: SocketNamespace }): void {
     const removed = deps.terminalRegistry.removeByCliSocket(socket.id)
     for (const entry of removed) {
-        const terminalSocket = deps.terminalNamespace.sockets.get(entry.socketId)
+        const terminalSocket = authorizedSocket(deps.terminalNamespace, entry.socketId)
         terminalSocket?.emit('terminal:error', {
             terminalId: entry.terminalId,
             message: 'CLI disconnected.'
