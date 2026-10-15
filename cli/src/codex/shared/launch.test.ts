@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sharedLaunchConfig, takeReservedSessionId } from './launch';
+import { sharedLaunchConfig, takeReservedSessionId, newSharedThreadParams } from './launch';
 import { parseCodexCliOverrides } from '../utils/codexCliOverrides';
 import { resolveCodexPermissionModeConfig } from '../utils/permissionModeConfig';
 
@@ -24,6 +24,12 @@ describe('shared launch configuration', () => {
                 '-c', `sandbox_mode=${JSON.stringify(sandbox)}`, '-c', 'approvals_reviewer="user"'
             ]);
         }
+    });
+    it('represents Approve for me without disabling the sandbox', () => {
+        const result = sharedLaunchConfig({ permissionMode: 'autoReview', codexArgs: ['--yolo'] }, '/tmp');
+        expect(result.threadParams).toMatchObject({ approvalPolicy: 'on-request', approvalsReviewer: 'auto_review', sandbox: 'workspace-write' });
+        expect(result.serverArgs).toContain('approvals_reviewer="auto_review"');
+        expect(result.tuiArgs).not.toContain('--yolo');
     });
     it('keeps unspecified settings inherited and explicit Standard distinct', () => {
         expect(sharedLaunchConfig({}, '/tmp').threadParams).not.toHaveProperty('serviceTier');
@@ -59,5 +65,14 @@ describe('takeReservedSessionId', () => {
         expect(takeReservedSessionId(options)).toBe('aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee');
         expect(options.reservedSessionId).toBeUndefined();
         expect(takeReservedSessionId(options)).toBeUndefined();
+    });
+});
+
+describe('new shared thread history mode', () => {
+    it('keeps older native protocol unchanged and makes 0.157+ empty roots reconnectable', () => {
+        expect(newSharedThreadParams({ cwd: '/project' }, false)).toEqual({ cwd: '/project' });
+        expect(newSharedThreadParams({ cwd: '/project' }, true)).toEqual({ cwd: '/project', historyMode: 'legacy' });
+        expect(newSharedThreadParams({ historyMode: 'legacy' }, true)).toEqual({ historyMode: 'legacy' });
+        expect(() => newSharedThreadParams({ historyMode: 'paginated' }, true)).toThrow('Existing paginated threads');
     });
 });

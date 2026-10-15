@@ -6,6 +6,7 @@ import { VaultPanel } from './Vault'
 import { MemoryPanel } from './Memory'
 import { CodegraphPanel } from './Codegraph'
 import { RunnerPanel } from './Runner'
+import { AutomationPanel } from './Automation'
 import { PreviewsPanel } from './Previews'
 import { ErrorNotice, useAction } from './ui'
 import './evolved.css'
@@ -16,6 +17,7 @@ const tabs = [
     { id: 'vault', label: 'Tresor', mark: '◇' },
     { id: 'memory', label: 'Gedächtnis', mark: '✧' },
     { id: 'codegraph', label: 'Codegraph', mark: '⌘' },
+    { id: 'automation', label: 'Automatisierung', mark: '◷' },
     { id: 'runner', label: 'Runner', mark: '▷' },
     { id: 'previews', label: 'Vorschauen', mark: '▧' },
 ] as const
@@ -31,7 +33,7 @@ export default function EvolvedWorkspace() {
         {project && <Link className="ev-session-link" to="/sessions">Sessions öffnen ↗</Link>}<button disabled={action.busy} onClick={() => void action.run(logout)}>Abmelden</button>
     </div></header><div className="ev-workspace-body"><nav className="ev-tabs" aria-label="Arbeitsbereich">{tabs.map(item => <button key={item.id} aria-current={tab === item.id ? 'page' : undefined} disabled={!project && item.id !== 'projects' && item.id !== 'team'} onClick={() => setTab(item.id)}><span aria-hidden="true">{item.mark}</span>{item.label}</button>)}<div className="ev-identity"><strong>{me.user.displayName}</strong><small>{project ? project.name : 'Noch kein Projekt ausgewählt'}</small></div></nav>
         <div className="ev-content" key={`${project?.id ?? 'none'}:${tab}`}><ErrorNotice error={action.error} />{!project && <div className="ev-callout">Willkommen. Lege unter „Team & Konto“ dein Team an und erstelle anschließend dein erstes Projekt.</div>}
-            {tab === 'projects' ? <ProjectsPanel /> : tab === 'team' ? <TeamPanel /> : project && tab === 'vault' ? <VaultPanel /> : project && tab === 'memory' ? <MemoryPanel /> : project && tab === 'codegraph' ? <CodegraphPanel /> : project && tab === 'runner' ? <RunnerPanel /> : project && tab === 'previews' ? <PreviewsPanel /> : null}
+            {tab === 'projects' ? <ProjectsPanel /> : tab === 'team' ? <TeamPanel /> : project && tab === 'vault' ? <VaultPanel /> : project && tab === 'memory' ? <MemoryPanel /> : project && tab === 'codegraph' ? <CodegraphPanel /> : project && tab === 'automation' ? <AutomationPanel /> : project && tab === 'runner' ? <RunnerPanel /> : project && tab === 'previews' ? <PreviewsPanel /> : null}
         </div>
     </div></main>
 }

@@ -1,6 +1,8 @@
 import { Hono } from 'hono'
 import { isWildcardSearch, matchesSearchQuery, toSearchGlob } from '@hapi/protocol'
 import { z } from 'zod'
+import { RPC_TARGET_MISSING_ERROR_CODE } from '@hapi/protocol/rpcMethods'
+import { RpcTargetMissingError } from '../../sync/rpcGateway'
 import type { SyncEngine } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
 import { requireSessionFromParam, requireSyncEngine } from './guards'
@@ -38,10 +40,11 @@ function parseBooleanParam(value: string | undefined): boolean | undefined {
     return undefined
 }
 
-async function runRpc<T>(fn: () => Promise<T>): Promise<T | { success: false; error: string }> {
+async function runRpc<T>(fn: () => Promise<T>, options?: { rethrowTargetMissing?: boolean }): Promise<T | { success: false; error: string }> {
     try {
         return await fn()
     } catch (error) {
+        if (options?.rethrowTargetMissing && error instanceof RpcTargetMissingError) throw error
         return { success: false, error: error instanceof Error ? error.message : String(error) }
     }
 }
@@ -141,12 +144,17 @@ export function createGitRoutes(getSyncEngine: () => SyncEngine | null): Hono<We
         }
 
         const staged = parseBooleanParam(c.req.query('staged'))
-        const result = await runRpc(() => engine.getGitDiffFile(sessionResult.sessionId, {
+        try {
+            const result = await runRpc(() => engine.getGitDiffFile(sessionResult.sessionId, {
             cwd: sessionPath,
             filePath: parsed.data.path,
             staged
-        }))
-        return c.json(result)
+        }), { rethrowTargetMissing: true })
+            return c.json(result)
+        } catch (error) {
+            if (error instanceof RpcTargetMissingError) return c.json({ success: false, error: error.message, code: RPC_TARGET_MISSING_ERROR_CODE }, 503)
+            throw error
+        }
     })
 
     app.get('/sessions/:id/file', async (c) => {
@@ -170,8 +178,13 @@ export function createGitRoutes(getSyncEngine: () => SyncEngine | null): Hono<We
             return c.json({ error: 'Invalid file path' }, 400)
         }
 
-        const result = await runRpc(() => engine.readSessionFile(sessionResult.sessionId, parsed.data.path))
-        return c.json(result)
+        try {
+            const result = await runRpc(() => engine.readSessionFile(sessionResult.sessionId, parsed.data.path), { rethrowTargetMissing: true })
+            return c.json(result)
+        } catch (error) {
+            if (error instanceof RpcTargetMissingError) return c.json({ success: false, error: error.message, code: RPC_TARGET_MISSING_ERROR_CODE }, 503)
+            throw error
+        }
     })
 
     app.get('/sessions/:id/generated-images/:imageId', async (c) => {

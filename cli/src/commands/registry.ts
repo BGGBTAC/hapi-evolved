@@ -21,6 +21,9 @@ import { notifyCommand } from './notify'
 import { hubCommand } from './hub'
 import { pingPeerCommand } from './pingPeer'
 import { inspectPeerCommand } from './inspectPeer'
+import { searchPeersCommand } from './searchPeers'
+import { spawnPeerCommand, archivePeerCommand } from './peerLifecycle'
+import { linkPrCommand } from './linkPr'
 import { evolvedCommand } from './evolved'
 import type { CommandContext, CommandDefinition } from './types'
 
@@ -40,6 +43,9 @@ const removedGeminiCommand: CommandDefinition = {
 }
 
 const COMMANDS: CommandDefinition[] = [
+    linkPrCommand,
+    spawnPeerCommand,
+    archivePeerCommand,
     evolvedCommand,
     agyCommand,
     authCommand,
@@ -64,7 +70,8 @@ const COMMANDS: CommandDefinition[] = [
     runnerCommand,
     notifyCommand,
     pingPeerCommand,
-    inspectPeerCommand
+    inspectPeerCommand,
+    searchPeersCommand
 ]
 
 const commandMap = new Map<string, CommandDefinition>()

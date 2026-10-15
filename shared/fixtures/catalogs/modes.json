@@ -56,6 +56,11 @@
                 "tone": "neutral"
             },
             {
+                "label": "Auto-review",
+                "mode": "autoReview",
+                "tone": "warning"
+            },
+            {
                 "label": "Read Only",
                 "mode": "read-only",
                 "tone": "warning"

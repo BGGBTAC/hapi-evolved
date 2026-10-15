@@ -1,7 +1,7 @@
 import { SESSION_LIFECYCLE_IDLE, SESSION_LIFECYCLE_RUNNING } from '@hapi/protocol'
-import { AgentStateSchema, MetadataSchema, SessionPatchSchema, TeamStateSchema } from '@hapi/protocol/schemas'
+import { AgentStateSchema, AttachmentMetadataSchema, MetadataSchema, SessionPatchSchema, TeamStateSchema } from '@hapi/protocol/schemas'
 import type { CodexCollaborationMode, CopilotAgentMode, PermissionMode, Session, SessionPatch } from '@hapi/protocol/types'
-import type { Store } from '../store'
+import type { Store, StoredMessage } from '../store'
 import { clampAliveTime } from './aliveTime'
 import { EventPublisher } from './eventPublisher'
 import { extractTodoWriteTodosFromMessageContent, TodosSchema } from './todos'
@@ -15,6 +15,26 @@ const QUEUED_MESSAGE_THINKING_GRACE_MS = 15_000
 // HTTP caller as 409 instead of spinning forever.
 const METADATA_RETRY_ATTEMPTS = 5
 type RuntimeConfigKey = 'permissionMode' | 'model' | 'modelReasoningEffort' | 'effort' | 'serviceTier' | 'collaborationMode' | 'copilotAgentMode'
+
+function collectDurableAttachmentIds(messages: StoredMessage[]): string[] {
+    const ids = new Set<string>()
+    for (const message of messages) {
+        if (!isRecord(message.content) || message.content.role !== 'user') continue
+        const content = message.content.content
+        if (!isRecord(content) || !Array.isArray(content.attachments)) continue
+        for (const attachment of content.attachments) {
+            const parsed = AttachmentMetadataSchema.safeParse(attachment)
+            if (parsed.success && parsed.data.attachmentId) {
+                ids.add(parsed.data.attachmentId)
+            }
+        }
+    }
+    return Array.from(ids)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
 
 export class SessionCache {
     private readonly sessions: Map<string, Session> = new Map()
@@ -230,6 +250,7 @@ export class SessionCache {
             seq: stored.seq,
             createdAt: stored.createdAt,
             updatedAt: stored.updatedAt,
+            ...this.store.messages.getConversationActivity(sessionId),
             pinned: stored.pinned,
             globalPinned: stored.globalPinned,
             active: existing?.active ?? stored.active,
@@ -436,8 +457,11 @@ export class SessionCache {
             && this.store.messages.getImmediateQueuedLocalMessages(session.id).length > 0
 
         session.active = true
-        session.activeAt = Math.max(session.activeAt, t)
+        // Keep the sender clock for versioned runtime settings, but measure
+        // transport liveness locally so clock skew cannot cause offline flicker.
+        session.activeAt = hubNow
         session.thinking = requestedThinking || preserveQueuedThinking
+        if (session.thinking) session.notifyStatus = null
         session.thinkingAt = t
         if (!requestedThinking && preserveQueuedThinking && hasUnconsumedPrompt) {
             session.activeTurnStartedAt = hubNow
@@ -516,6 +540,7 @@ export class SessionCache {
                     active: true,
                     activeAt: session.activeAt,
                     thinking: session.thinking,
+                    notifyStatus: session.thinking ? null : session.notifyStatus,
                     activeTurnStartedAt: session.activeTurnStartedAt,
                     permissionMode: session.permissionMode,
                     model: session.model,
@@ -559,6 +584,7 @@ export class SessionCache {
         const previousUpdatedAt = session.updatedAt
 
         session.thinking = true
+        session.notifyStatus = null
         session.thinkingAt = nextTime
         if (!wasThinking) session.activeTurnStartedAt = activeTurnStartedAt
         session.updatedAt = Math.max(session.updatedAt, nextTime)
@@ -629,6 +655,15 @@ export class SessionCache {
             namespace: session.namespace,
             data: { updatedAt: session.updatedAt } satisfies SessionPatch
         })
+    }
+
+    refreshMessageActivity(sessionId: string): void {
+        const session = this.sessions.get(sessionId)
+        if (!session) return
+        const activity = this.store.messages.getConversationActivity(sessionId)
+        if (session.lastMessageAt === activity.lastMessageAt && session.lastAssistantMessageAt === activity.lastAssistantMessageAt && session.notifyStatus === activity.notifyStatus) return
+        Object.assign(session, activity)
+        this.publisher.emit({ type: 'session-updated', sessionId, namespace: session.namespace, data: activity })
     }
 
     /**
@@ -1235,6 +1270,18 @@ export class SessionCache {
             throw new Error('Failed to delete session')
         }
 
+        try {
+            await this.store.attachments.deleteAllForSession(session.namespace, sessionId)
+        } catch {
+            console.warn('[attachments] Deleted session cleanup deferred to startup', { sessionId })
+        }
+        this.finalizeDeletedSession(sessionId, session.namespace, scratchlistAttachments)
+    }
+
+    finalizeDeletedSession(sessionId: string, namespace: string, scratchlistAttachments: import('@hapi/protocol').ScratchlistAttachmentMetadata[] = []): void {
+        const session = this.sessions.get(sessionId)
+        if (!session || session.namespace !== namespace) return
+
         this.sessions.delete(sessionId)
         this.conversationContentScanBySessionId.delete(sessionId)
         this.lastBroadcastAtBySessionId.delete(sessionId)
@@ -1249,10 +1296,10 @@ export class SessionCache {
         }) => {
             const hapiHome = getHapiHomeDir()
             await deleteScratchlistAttachmentFiles(hapiHome, scratchlistAttachments)
-            await deleteScratchlistSessionAttachmentDir(hapiHome, session.namespace, sessionId)
+            await deleteScratchlistSessionAttachmentDir(hapiHome, namespace, sessionId)
         })
 
-        this.publisher.emit({ type: 'session-removed', sessionId, namespace: session.namespace })
+        this.publisher.emit({ type: 'session-removed', sessionId, namespace })
     }
 
     async mergeSessions(oldSessionId: string, newSessionId: string, namespace: string): Promise<void> {
@@ -1287,7 +1334,7 @@ export class SessionCache {
             throw new Error('Session not found for merge')
         }
 
-        const movedMessages = this.store.messages.mergeSessionMessages(oldSessionId, newSessionId)
+        const movedMessages = this.store.mergeMessagesAndAttachments(namespace, oldSessionId, newSessionId, options.deleteOldSession)
         // mergeSessions deletes the source. mergeSessionHistory keeps it alive
         // with the original socket, so its notify chain must stay on that id.
         if (options.deleteOldSession) {
@@ -1479,6 +1526,9 @@ export class SessionCache {
         }
 
         if (options.deleteOldSession) {
+            // Capture durable attachment uploads that completed during the
+            // awaited scratchlist migration above before deleting the source.
+            this.store.attachments.transferSession(namespace, oldSessionId, newSessionId)
             const deleted = this.store.sessions.deleteSession(oldSessionId, namespace)
             if (!deleted) {
                 throw new Error('Failed to delete old session during merge')

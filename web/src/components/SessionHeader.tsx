@@ -1,3 +1,4 @@
+import { SessionPrChip, GithubPrControl } from '@/components/SessionGithubPr'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useIsMutating, useQueryClient } from '@tanstack/react-query'
 import type { Session } from '@/types/api'
@@ -17,6 +18,7 @@ import { useTranslation } from '@/lib/use-translation'
 import { AgentFlavorIcon } from '@/components/AgentFlavorIcon'
 import { isFastServiceTier } from '@/components/AssistantChat/codexFastMode'
 import { getSessionTitle } from '@/lib/sessionTitle'
+import { getSessionProjectLabel, getSessionProjectPath } from '@/lib/sessionProjectLabel'
 import { useToast } from '@/lib/toast-context'
 import { queryKeys } from '@/lib/query-keys'
 import { markCodexSessionsImported } from '@/lib/codexImportedSessions'
@@ -27,6 +29,7 @@ import { useSessionHeaderMetadata } from '@/hooks/useSessionHeaderMetadata'
 import { formatSessionHeaderTimestamp } from '@/lib/sessionHeaderTimestamp'
 import { selectMobileSessionHeaderSecondary } from '@/lib/sessionHeaderMobileMetadata'
 import { useMinuteTick } from '@/hooks/useMinuteTick'
+import { SessionInChatSearch } from '@/components/SessionInChatSearch'
 import { markSessionUnread } from '@/lib/sessionLastSeen'
 
 /** Same preference order as session-list chips: display label → host → short id. */
@@ -146,6 +149,7 @@ export function SessionHeader(props: {
     outlineActive?: boolean
     onToggleTerminal?: () => void
     terminalActive?: boolean
+    onSearchMessage?: (messageId: string, query: string) => void
     api: ApiClient | null
     titleSuggestionAvailable?: boolean
     canReopen?: boolean
@@ -159,6 +163,8 @@ export function SessionHeader(props: {
     const { addToast } = useToast()
     const { session, api, onSessionDeleted, onSessionReopened } = props
     const title = useMemo(() => getSessionTitle(session), [session])
+    const projectPath = getSessionProjectPath(session.metadata)
+    const projectLabel = projectPath ? getSessionProjectLabel(projectPath) : null
     const worktreeBranch = session.metadata?.worktree?.branch?.trim() || null
     const { preferences: headerMetadata } = useSessionHeaderMetadata()
     const modelLabel = getSessionModelLabel(session)
@@ -202,6 +208,7 @@ export function SessionHeader(props: {
     )
     const ageAbsolute = ageLabel ? formatAbsoluteDateTime(lastActiveAt) : null
     const mobileSecondary = selectMobileSessionHeaderSecondary({
+        project: headerMetadata.project && projectLabel !== null,
         model: headerMetadata.model && modelLabel !== null,
         reasoning: headerMetadata.reasoning && reasoningLabel !== null,
         machine: headerMetadata.machine && machineLabel !== null,
@@ -397,6 +404,7 @@ export function SessionHeader(props: {
                         <div className="truncate font-semibold">
                             {title}
                         </div>
+                        <SessionPrChip api={api} refs={session.metadata?.externalRefs} link />
                         {showMobileMetadata ? (
                             <div className="flex min-w-0 flex-nowrap items-center gap-2 overflow-hidden text-xs text-[var(--app-hint)] sm:hidden">
                                 {headerMetadata.agent && agentLabel ? (
@@ -405,6 +413,7 @@ export function SessionHeader(props: {
                                         {agentLabel}
                                     </span>
                                 ) : null}
+                                {mobileSecondary === 'project' && projectLabel ? <span className="truncate" title={projectPath ?? undefined}>{headerMetadata.showLabels ? `${t('session.item.project')}: ` : ''}{projectLabel}</span> : null}
                                 {mobileSecondary === 'model' && modelLabel ? <span className="inline-flex truncate items-center gap-1.5">{headerMetadata.showLabels ? `${t(modelLabel.key)}: ` : ''}{modelLabel.value}{isModelChanging ? <ModelChangingStatus /> : null}</span> : null}
                                 {mobileSecondary === 'reasoning' && reasoningLabel ? <span className="truncate">{reasoningLabel}</span> : null}
                                 {mobileSecondary === 'machine' && machineLabel ? <span className="truncate">{headerMetadata.showLabels ? `${t('session.item.machine')}: ` : ''}{machineLabel}</span> : null}
@@ -420,6 +429,11 @@ export function SessionHeader(props: {
                                 <span className="inline-flex items-center gap-1">
                                     <AgentFlavorIcon flavor={session.metadata?.flavor} className="h-3.5 w-3.5 shrink-0 -translate-y-px" />
                                     {agentLabel}
+                                </span>
+                            ) : null}
+                            {headerMetadata.project && projectLabel ? (
+                                <span data-testid="session-header-project" className="max-w-[12rem] truncate" title={projectPath ?? undefined}>
+                                    {headerMetadata.showLabels ? `${t('session.item.project')}: ` : ''}{projectLabel}
                                 </span>
                             ) : null}
                             {headerMetadata.machine && machineLabel ? (
@@ -467,6 +481,15 @@ export function SessionHeader(props: {
                         >
                             <FilesIcon />
                         </button>
+                    ) : null}
+
+                    <GithubPrControl api={api} sessionId={session.id} refs={session.metadata?.externalRefs} />
+                    {api && props.onSearchMessage ? (
+                        <SessionInChatSearch
+                            api={api}
+                            sessionId={session.id}
+                            onSelectMatch={props.onSearchMessage}
+                        />
                     ) : null}
 
                     {props.onToggleOutline ? (

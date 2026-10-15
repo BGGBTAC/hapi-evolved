@@ -3,12 +3,15 @@ import type { ApprovalPolicyPreset, SandboxMode, SandboxPolicy } from '../appSer
 
 export type CodexPermissionModeConfig = {
     approvalPolicy: ApprovalPolicyPreset;
+    approvalsReviewer?: 'user' | 'auto_review';
     sandbox: SandboxMode;
     sandboxPolicy: SandboxPolicy;
 };
 
 export function resolveCodexPermissionModeConfig(mode: CodexPermissionMode): CodexPermissionModeConfig {
     switch (mode) {
+        case 'autoReview':
+            return { approvalPolicy: 'on-request', approvalsReviewer: 'auto_review', sandbox: 'workspace-write', sandboxPolicy: { type: 'workspaceWrite' } };
         case 'default':
             return {
                 // Remote Codex sessions rely on HAPI's approval UI for sandbox escalation.
@@ -46,6 +49,7 @@ export function resolveCodexPermissionModeConfig(mode: CodexPermissionMode): Cod
 }
 
 export function buildCodexPermissionModeCliArgs(mode: Exclude<CodexPermissionMode, 'default'>): string[] {
+    if (mode === 'autoReview') return ['-c', 'approvals_reviewer="auto_review"', '--ask-for-approval', 'on-request', '--sandbox', 'workspace-write'];
     const config = resolveCodexPermissionModeConfig(mode);
     return ['--ask-for-approval', config.approvalPolicy, '--sandbox', config.sandbox];
 }

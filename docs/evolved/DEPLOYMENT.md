@@ -166,6 +166,31 @@ widerrufbar. Ihr Inhalt läuft in einer isolierten Browser-Sandbox ohne Kontocoo
 Für konsistente Sicherungen diesen Stack anhalten und Datenverzeichnisse **und** private Schlüssel
 gemeinsam in ein verschlüsseltes Backup übernehmen. Ohne Vault-Master sind Vault-Daten nicht
 wiederherstellbar. Backups benötigen eine eigene Aufbewahrungs-/Löschregel für entfernte Quellen.
+`hapi.db` (einschließlich des zugehörigen WAL-/SHM-Zustands, falls vorhanden) und das
+komplette Anhangsverzeichnis müssen aus **demselben gestoppten Stand** stammen. Im
+Compose-Hub sind die Laufzeitpfade `/data/hapi.db` und `/data/attachments`; der
+Host-Mount ist `${EVOLVED_STATE_DIR}/hub`. Die Datenbank speichert absolute
+Anhangspfade. Beim Restore dieselben absoluten Laufzeitpfade wiederherstellen;
+ein anderer Hostpfad ist nur bei unverändertem Container-Mount `/data` möglich.
+Keinen laufenden Hub, Runner oder anderen Schreiber während Backup/Restore benutzen.
+
+Vor dem ersten Hubstart im wiederhergestellten Linux-Container zuerst prüfen,
+dann die Notification-Epoche rotieren (hier aus dem Projektverzeichnis):
+
+```sh
+docker compose --env-file /absolut/evolved/runtime.env -f deploy/evolved/compose.yml run --rm --no-deps hub bun hub/scripts/check-restored-attachments.ts /data/hapi.db /data/attachments
+docker compose --env-file /absolut/evolved/runtime.env -f deploy/evolved/compose.yml run --rm --no-deps hub bun hub/scripts/invalidate-restored-notifications.ts /data/hapi.db
+```
+
+Erst bei erfolgreicher Prüfung und Rotation den Stack starten. Der Prüfer öffnet
+SQLite nur lesend, führt keine Migration/Reparatur/Löschung aus und folgt weder
+Symlinks noch Pfaden außerhalb des verankerten Anhangsverzeichnisses. Er meldet
+fehlende Dateien, Größen-/SHA-256-Abweichungen, ungültige Pfade sowie verwaiste
+Dateien mit exakten Zählern und höchstens 100 Beispielen. Offene Löschjournalzeilen
+werden als erwarteter Cleanup ausgewiesen. Exitcode 0 bedeutet konsistent,
+1 Integritätsbefunde und 2 ungültige Eingabe/Prüffehler. Bei Befunden die passende
+vollständige Sicherung wiederherstellen; keine automatische Löschbereinigung ausführen.
+
 Die laufenden Dienste verwenden private Dateien statt Geheimnissen in Compose-Umgebungsvariablen.
 Hostroot und der Betriebssystembenutzer bleiben Teil der Vertrauensgrenze.
 

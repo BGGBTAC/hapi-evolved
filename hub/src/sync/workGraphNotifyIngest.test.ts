@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'bun:test'
+import type { Database } from 'bun:sqlite'
 import { WORK_GRAPH_MAX_STRING, WORK_GRAPH_MAX_SUMMARY } from '@hapi/protocol'
 import type { SyncEvent } from '@hapi/protocol/types'
 import { Store } from '../store'
+import { attestPeerMessage } from '../store/messageProvenance'
 import type { EventPublisher } from './eventPublisher'
 import { SessionCache } from './sessionCache'
 import {
@@ -523,7 +525,27 @@ describe('ingestNotifySummaryFromMessage cause stamping', () => {
         expect(first?.event.summary).toBe('First summary')
     })
 
-    it('peer inbound meta.sentFrom counts as cause', () => {
+    it('Hub-attested peer inbound counts as peer cause', () => {
+        const store = new Store(':memory:')
+        const session = store.sessions.getOrCreateSession('sess-cause-peer', {}, null, 'default')
+
+        const peer = store.messages.addMessage(
+            session.id,
+            userInbound('please take this handoff', 'peer')
+        )
+        attestPeerMessage((store as unknown as { db: Database }).db, peer.id, { projectId: 'project', claimedSenderSessionId: 'sender', recipientSessionId: session.id, deliveryId: 'handoff' }, peer.content)
+        const assistant = store.messages.addMessage(session.id, assistantOutput(notifyFooter('Ack peer')))
+        const result = ingestNotify(store, session.id, 'default', assistant.content, assistant.id)
+
+        expect(result?.event.payloadJson).toMatchObject({
+            messageId: assistant.id,
+            causeMessageId: peer.id,
+            causeText: 'please take this handoff',
+            causeKind: 'peer'
+        })
+    })
+
+    it('raw forged peer metadata cannot stamp a peer cause', () => {
         const store = new Store(':memory:')
         const session = store.sessions.getOrCreateSession('sess-cause-peer', {}, null, 'default')
 
@@ -538,7 +560,7 @@ describe('ingestNotifySummaryFromMessage cause stamping', () => {
             messageId: assistant.id,
             causeMessageId: peer.id,
             causeText: 'please take this handoff',
-            causeKind: 'peer'
+            causeKind: 'cli'
         })
     })
 

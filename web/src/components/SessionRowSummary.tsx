@@ -1,12 +1,13 @@
 import { useMemo } from 'react'
 import type { SessionSummary } from '@/types/api'
 import { AgentFlavorIcon } from '@/components/AgentFlavorIcon'
-import { ScheduleIcon } from '@/components/icons'
+import { InfoIcon, ScheduleIcon } from '@/components/icons'
 import { HoverTooltip, SESSION_ROW_TOOLTIP_FOCUS_CLASS, useSessionRowTooltipIds } from '@/components/HoverTooltip'
 import { getAttentionLabel, SessionAttentionIndicator } from '@/components/SessionAttentionIndicator'
 import { classifySessionAttention } from '@/lib/sessionAttention'
 import { getSessionLastSeenAt, getSessionManualUnreadAt } from '@/lib/sessionLastSeen'
-import { formatRelativeTime } from '@/lib/relativeTime'
+import { sessionActivityAt, isSessionBlocked } from '@/lib/sessionActivity'
+import { formatAbsoluteDateTime, formatRelativeTime } from '@/lib/relativeTime'
 import { formatScheduledTooltipDetail } from '@/lib/scheduledTime'
 import { getCodexImportedAt } from '@/lib/codexImportedSessions'
 import { getSessionTitle } from '@/lib/sessionTitle'
@@ -89,7 +90,7 @@ function getSessionTimeLabel(
     if (importedAt !== null) {
         return formatCodexImportedRelativeTime(importedAt, t)
     }
-    return formatRelativeTime(session.updatedAt, t)
+    return formatRelativeTime(sessionActivityAt(session), t)
 }
 
 /**
@@ -119,6 +120,10 @@ export function SessionRowSummary(props: {
     projectLabel?: string
     /** Machine label shown next to the project name (pinned "in progress" rows). */
     machineLabel?: string
+    /** Context returned by the opt-in session message-content search. */
+    contentSnippet?: string
+    /** The indexed message exceeded the search index budget. */
+    contentSearchTruncated?: boolean
 }) {
     const {
         session: s,
@@ -133,6 +138,8 @@ export function SessionRowSummary(props: {
         inRunningSection = false,
         projectLabel,
         machineLabel,
+        contentSnippet,
+        contentSearchTruncated = false,
     } = props
     const { t } = useTranslation()
     const sessionName = getSessionTitle(s)
@@ -161,6 +168,7 @@ export function SessionRowSummary(props: {
     )
     const attentionId = attentionTooltipIdProp ?? ownedIds.attentionId
     const scheduleId = scheduleTooltipIdProp ?? ownedIds.scheduleId
+    const blocked = isSessionBlocked(s)
     const timeLabel = getSessionTimeLabel(s, t)
 
     return (
@@ -187,6 +195,8 @@ export function SessionRowSummary(props: {
                             title={attentionLabel ?? undefined}
                             aria-label={attentionLabel ?? undefined}
                         />
+                    ) : s.metadata?.lastModelError && !s.metadata.lastModelError.acknowledgedAt ? (
+                        <span role="status" className="text-amber-500" title={s.metadata.lastModelError.message} aria-label={`Modellfehler: ${s.metadata.lastModelError.message}`}>⚠</span>
                     ) : s.active && s.thinking ? (
                         <LoaderIcon className="h-3.5 w-3.5 shrink-0 animate-spin-slow text-[var(--app-badge-success-text)]" />
                     ) : urgentAttention && nestedTooltips && attentionId ? (
@@ -283,11 +293,31 @@ export function SessionRowSummary(props: {
                             {t('session.item.pending')} {s.pendingRequestsCount}
                         </span>
                     ) : null}
+                    {blocked ? <span className="font-bold text-amber-600 dark:text-amber-300" role="status">Blockiert</span> : null}
                     {timeLabel ? (
-                        <span className="min-w-0 truncate whitespace-nowrap tabular-nums text-[var(--app-hint)]">{timeLabel}</span>
+                        <span title={formatAbsoluteDateTime(sessionActivityAt(s)) ?? undefined} className="min-w-0 truncate whitespace-nowrap tabular-nums text-[var(--app-hint)]">{timeLabel}</span>
                     ) : null}
                 </div>
             </div>
+            {contentSnippet ? (
+                <div
+                    className="line-clamp-2 text-xs text-[var(--app-fg)]/80"
+                    title={contentSearchTruncated
+                        ? `${contentSnippet}\n${t('sessions.search.content.truncated')}`
+                        : contentSnippet}
+                >
+                    {contentSnippet}
+                    {contentSearchTruncated ? (
+                        <span
+                            className="ml-1 inline-flex align-[-2px] text-[var(--app-badge-warning-text)]"
+                            title={t('sessions.search.content.truncated')}
+                            aria-label={t('sessions.search.content.truncated')}
+                        >
+                            <InfoIcon className="h-3 w-3" />
+                        </span>
+                    ) : null}
+                </div>
+            ) : null}
             {projectLabel || machineLabel ? (
                 <div className="truncate text-xs text-[var(--app-hint)]" title={[projectLabel, machineLabel].filter(Boolean).join(' · ')}>
                     {[projectLabel, machineLabel].filter(Boolean).join(' · ')}

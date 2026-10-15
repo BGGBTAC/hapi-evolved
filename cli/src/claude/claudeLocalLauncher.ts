@@ -1,3 +1,4 @@
+import { annotateLocalClaudeContext, resolveLocalClaudeModel } from './utils/localContextWindow';
 import { claudeLocal } from "./claudeLocal";
 import { Session } from "./session";
 import { createSessionScanner } from "./utils/sessionScanner";
@@ -8,10 +9,14 @@ import { resolveClaudeLocalResumeGuardId } from "./utils/claudeResumeGuard";
 
 export async function claudeLocalLauncher(session: Session): Promise<'switch' | 'exit'> {
 
+    session.localContextModelObserved = false;
+    session.localContextModel = await resolveLocalClaudeModel({ path: session.path, model: session.getModel(), args: session.claudeArgs, env: session.claudeEnvVars });
+
     // Create scanner
     const scanner = await createSessionScanner({
         sessionId: session.sessionId,
         workingDirectory: session.path,
+        claudeConfigDir: session.claudeEnvVars?.CLAUDE_CONFIG_DIR,
         onMessage: (message) => {
             session.localPermissionBridge.onTranscript(message);
             // Preserve the AI-generated title emitted by Claude Code's native
@@ -36,7 +41,7 @@ export async function claudeLocalLauncher(session: Session): Promise<'switch' | 
             if (!isClaudeChatVisibleMessage(message)) {
                 return
             }
-            session.client.sendClaudeSessionMessage(message)
+            session.client.sendClaudeSessionMessage(annotateLocalClaudeContext(message, session.localContextModel, session.localContextModelObserved))
         }
     });
 

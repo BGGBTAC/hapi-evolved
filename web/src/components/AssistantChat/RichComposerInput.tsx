@@ -1,3 +1,4 @@
+import { parseSessionMentionDrag, SESSION_MENTION_DRAG_MIME } from '@/lib/sessionMentionDrag'
 import {
     forwardRef,
     useCallback,
@@ -33,9 +34,12 @@ import {
 } from '@/lib/sessionReference'
 import { SessionRowSummary } from '@/components/SessionRowSummary'
 import type { SessionSummary } from '@/types/api'
+import { DEFAULT_AUTOCOMPLETE_PREFIXES } from '@/lib/autocomplete'
 
 export type RichComposerInputHandle = {
     focus: () => void
+    insertPlainTextAtSelection: (text: string, selection: ComposerSelection) => void
+    replaceText: (text: string, selection?: ComposerSelection) => { text: string; selection: ComposerSelection }
     /**
      * Re-read the contenteditable → serialize session chips to
      * `[title](/sessions/<id>)` and push into composer state. Call before
@@ -74,6 +78,7 @@ type Props = {
     onKeyDown?: (e: ReactKeyboardEvent<HTMLDivElement>) => void
     onPaste?: (e: ReactClipboardEvent<HTMLDivElement>) => void
     onFocus?: (e: ReactFocusEvent<HTMLDivElement>) => void
+    onSessionMentionDrop?: (mention: { id: string; title: string }) => void
     onEdit?: () => void
     /** Live session meta for chip hover / aria-label (from useSessions). */
     resolveSessionMentionTooltip?: ResolveSessionMentionTooltip
@@ -681,6 +686,7 @@ export const RichComposerInput = forwardRef<RichComposerInputHandle, Props>(func
         onPaste,
         onFocus,
         onEdit,
+        onSessionMentionDrop,
         resolveSessionMentionTooltip,
     },
     ref
@@ -771,6 +777,24 @@ export const RichComposerInput = forwardRef<RichComposerInputHandle, Props>(func
     }, [autoFocus, disabled])
 
     useImperativeHandle(ref, () => ({
+        replaceText: (next, selection) => {
+            const mirror = mirrorComposerSegments(parseComposerSegments(next))
+            const nextSelection = selection ?? { start: mirror.length, end: mirror.length }
+            syncFromValue(next, nextSelection)
+            onValueChange(next)
+            return { text: next, selection: nextSelection }
+        },
+        insertPlainTextAtSelection: (text, selection) => {
+            const root = rootRef.current
+            if (!root) return
+            const result = insertPlainTextInComposerSegments(segmentsFromEditor(root), selection, text, [], false)
+            const serialized = serializeComposerSegments(result.segments)
+            renderEditorSegments(root, result.segments)
+            lastEmittedRef.current = serialized
+            setMirrorSelection(root, result.selection)
+            onValueChange(serialized)
+            onMirrorChange({ text: mirrorComposerSegments(result.segments), selection: result.selection })
+        },
         focus: () => {
             rootRef.current?.focus()
         },
@@ -787,7 +811,7 @@ export const RichComposerInput = forwardRef<RichComposerInputHandle, Props>(func
             })
             return serialized
         },
-        insertSessionMention: (mention, prefixes = ['@', '/', '$']) => {
+        insertSessionMention: (mention, prefixes = [...DEFAULT_AUTOCOMPLETE_PREFIXES]) => {
             const root = rootRef.current
             if (!root) {
                 return { text: value, selection: { start: value.length, end: value.length } }
@@ -806,7 +830,7 @@ export const RichComposerInput = forwardRef<RichComposerInputHandle, Props>(func
             })
             return { text: serialized, selection: result.selection }
         },
-        applyPlainSuggestion: (suggestionText, prefixes = ['@', '/', '$']) => {
+        applyPlainSuggestion: (suggestionText, prefixes = [...DEFAULT_AUTOCOMPLETE_PREFIXES]) => {
             const root = rootRef.current
             if (!root) {
                 return { text: value, selection: { start: value.length, end: value.length } }
@@ -825,7 +849,7 @@ export const RichComposerInput = forwardRef<RichComposerInputHandle, Props>(func
             })
             return { text: serialized, selection: result.selection }
         },
-    }), [onMirrorChange, onValueChange, renderEditorSegments, value])
+    }), [onMirrorChange, onValueChange, renderEditorSegments, syncFromValue, value])
 
     useEffect(() => () => {
         if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current)
@@ -965,17 +989,23 @@ export const RichComposerInput = forwardRef<RichComposerInputHandle, Props>(func
     ])
 
     const handlePaste = useCallback((e: ReactClipboardEvent<HTMLDivElement>) => {
-        const files = Array.from(e.clipboardData?.files ?? [])
-        const hasImage = files.some((file) => file.type.startsWith('image/'))
-        if (hasImage) {
-            onPaste?.(e)
-            return
-        }
+        onPaste?.(e)
+        if (e.defaultPrevented) return
         // Contenteditable default paste inserts HTML; nested blocks collapse in
         // segmentsFromEditor without depth-aware breaks. Force plain text.
         e.preventDefault()
         insertPlainClipboardText(e.clipboardData?.getData('text/plain') ?? '')
     }, [insertPlainClipboardText, onPaste])
+
+    const handleDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+        if (disabled || !event.dataTransfer.types.includes(SESSION_MENTION_DRAG_MIME)) return
+        event.preventDefault(); event.dataTransfer.dropEffect = 'copy'
+    }, [disabled])
+    const handleDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+        const mention = parseSessionMentionDrag(event.dataTransfer)
+        if (!mention || disabled) return
+        event.preventDefault(); onSessionMentionDrop?.(mention)
+    }, [disabled, onSessionMentionDrop])
 
     const applyBackwardDelete = useCallback((
         root: HTMLElement,
@@ -1140,6 +1170,8 @@ export const RichComposerInput = forwardRef<RichComposerInputHandle, Props>(func
                 onCopy={(e) => handleCopyOrCut(e, false)}
                 onCut={(e) => handleCopyOrCut(e, true)}
                 onPaste={handlePaste}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
                 onCompositionStart={() => {
                     composingRef.current = true
                 }}

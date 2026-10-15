@@ -162,6 +162,7 @@ function pickExistingSessionMetadata(metadata: Metadata | null | undefined): Par
     if (metadata.kimiSessionId !== undefined) preserved.kimiSessionId = metadata.kimiSessionId
     if (metadata.copilotSessionId !== undefined) preserved.copilotSessionId = metadata.copilotSessionId
     if (metadata.piSessionId !== undefined) preserved.piSessionId = metadata.piSessionId
+    if (metadata.dshSessionId !== undefined) preserved.dshSessionId = metadata.dshSessionId
     if (metadata.piResumeAttempt !== undefined) preserved.piResumeAttempt = metadata.piResumeAttempt
     if (metadata.ptyResumeAttempt !== undefined) preserved.ptyResumeAttempt = metadata.ptyResumeAttempt
     if (metadata.preferredPermissionMode !== undefined) preserved.preferredPermissionMode = metadata.preferredPermissionMode
@@ -190,6 +191,12 @@ function pickExistingSessionMetadata(metadata: Metadata | null | undefined): Par
     }
     if (metadata.forkedFrom !== undefined) {
         preserved.forkedFrom = metadata.forkedFrom
+    }
+    if (metadata.forkedAtMessageLocalId !== undefined) {
+        preserved.forkedAtMessageLocalId = metadata.forkedAtMessageLocalId
+    }
+    if (metadata.forkedThroughMessageLocalId !== undefined) {
+        preserved.forkedThroughMessageLocalId = metadata.forkedThroughMessageLocalId
     }
     if (metadata.capabilities?.conversationHistory !== undefined) {
         preserved.capabilities = {

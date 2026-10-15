@@ -87,6 +87,8 @@ export async function setup() {
         CLI_API_TOKEN: token,
         TELEGRAM_NOTIFICATION: 'false',
         SERVERCHAN_NOTIFICATION: 'false',
+        // Separate ownership marker: per-test CLI sweeps must preserve the shared hub.
+        [TEST_OWNED_MARKER_KEY]: `hub:${tmpHome}`,
     }
 
     // Write config so setupFile.ts can inject env vars into each test worker
@@ -134,7 +136,10 @@ export async function teardown() {
     let auditError: Error | null = null
     if (tmpHome && process.platform !== 'win32') {
         try {
-            const leftovers = await reapTestOwnedProcesses(`${TEST_OWNED_MARKER_KEY}=${tmpHome}`)
+            const leftovers = [
+                ...await reapTestOwnedProcesses(`${TEST_OWNED_MARKER_KEY}=${tmpHome}`),
+                ...await reapTestOwnedProcesses(`${TEST_OWNED_MARKER_KEY}=hub:${tmpHome}`)
+            ]
             if (leftovers.length > 0) {
                 const detail = leftovers
                     .map((p) => `  pid=${p.pid} ppid=${p.ppid} rss=${p.rssKb}KB ${p.command}`)

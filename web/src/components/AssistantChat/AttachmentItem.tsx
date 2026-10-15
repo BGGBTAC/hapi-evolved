@@ -1,3 +1,5 @@
+import type { ImagePreparation } from '@/lib/imageUpload'
+import { ImageVersionControl } from './ImageVersionControl'
 import { AttachmentPrimitive, useAuiState } from '@assistant-ui/react'
 import type { PendingAttachment } from '@assistant-ui/react'
 import type { KeyboardEventHandler, MouseEventHandler, PointerEventHandler, PointerEvent as ReactPointerEvent } from 'react'
@@ -7,6 +9,10 @@ import { useComposerParking } from '@/components/AssistantChat/composerParkingCo
 
 type ComposerAttachmentWithPreview = PendingAttachment & {
     previewUrl?: string
+    imagePreparation?: ImagePreparation
+    processingImage?: boolean
+    uploadError?: string
+    uploadSessionId?: string
 }
 
 export type AttachmentDragHandleProps = {
@@ -94,8 +100,8 @@ function DragHandle(props: AttachmentDragHandleProps & { isFile?: boolean }) {
     )
 }
 
-export function AttachmentItem(props: { dragHandleProps?: AttachmentDragHandleProps } = {}) {
-    const { name, status, previewUrl } = useAuiState((s) => s.attachment) as ComposerAttachmentWithPreview
+export function AttachmentItem(props: { dragHandleProps?: AttachmentDragHandleProps; allowImageVersionChange?: boolean } = {}) {
+    const { id, name, status, previewUrl, imagePreparation, processingImage, uploadSessionId, uploadError } = useAuiState((s) => s.attachment) as ComposerAttachmentWithPreview
     const isParking = useComposerParking()
     const isUploading = status.type === 'running'
     const isError = status.type === 'incomplete'
@@ -109,9 +115,11 @@ export function AttachmentItem(props: { dragHandleProps?: AttachmentDragHandlePr
         }
         : undefined
 
+    const versionControl = props.allowImageVersionChange !== false && imagePreparation && uploadSessionId && /^image\//.test(imagePreparation.original.type) && imagePreparation.original.size > 4 * 1024 * 1024
+        ? <ImageVersionControl id={id} sessionId={uploadSessionId} preparation={imagePreparation} disabled={isParking || isUploading} /> : null
     if (previewUrl && !isError) {
         return (
-            <AttachmentPrimitive.Root
+            <div className="flex flex-col gap-1"><AttachmentPrimitive.Root
                 className="group relative h-16 w-24 overflow-hidden rounded-lg bg-[var(--app-subtle-bg)]"
                 onPointerDown={surfacePointerDown}
                 onContextMenu={props.dragHandleProps?.onSurfaceContextMenu}
@@ -151,7 +159,7 @@ export function AttachmentItem(props: { dragHandleProps?: AttachmentDragHandlePr
                         </span>
                     </AttachmentPrimitive.Remove>
                 ) : null}
-            </AttachmentPrimitive.Root>
+            </AttachmentPrimitive.Root>{versionControl}</div>
         )
     }
 
@@ -169,7 +177,9 @@ export function AttachmentItem(props: { dragHandleProps?: AttachmentDragHandlePr
                 </span>
             ) : null}
             <span className={`max-w-[150px] truncate ${isError ? 'text-red-500 line-through' : ''}`}>{name}</span>
-            {isError ? <span className="text-xs text-red-500 whitespace-nowrap">Upload failed</span> : null}
+            {processingImage ? <span role="status" className="text-xs">Bild wird optimiert …</span> : null}
+            {versionControl}
+            {isError ? <span className="text-xs text-red-500 whitespace-nowrap">{uploadError || 'Upload failed'}</span> : null}
             {!isParking ? (
                 <AttachmentPrimitive.Remove
                     className="hapi-composer-attachment-control hapi-composer-attachment-file-control -mx-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-transparent text-[var(--app-hint)] transition-colors hover:text-[var(--app-fg)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--app-link)]"

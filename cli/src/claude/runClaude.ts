@@ -1,3 +1,4 @@
+import { getRuntimeAgentConfigDescriptor } from '@hapi/protocol';
 import { logger } from '@/ui/logger';
 import { loop } from '@/claude/loop';
 import { AgentState, SessionEffort, SessionModel } from '@/api/types';
@@ -21,6 +22,7 @@ import { PermissionModeSchema } from '@hapi/protocol/schemas';
 import { formatAttachmentsForClaude, formatMessageWithAttachments } from '@/utils/attachmentFormatter';
 import { normalizeClaudeSessionModel } from './model';
 import { normalizeClaudeSessionEffort } from './effort';
+import { LocalClaudeActivity } from './utils/localClaudeActivity';
 import { normalizeHookPermissionMode } from './utils/hookPermissionMode';
 import { getInvokedCwd } from '@/utils/invokedCwd';
 import {
@@ -84,9 +86,11 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
             reservedSessionId: options.reservedSessionId
         });
     const { api, session, sessionInfo } = bootstrap;
+    session.updateMetadata(metadata => ({ ...metadata, agentConfig: getRuntimeAgentConfigDescriptor('claude') }));
     logger.debug(`Session created: ${sessionInfo.id}`);
 
     const currentSessionRef: { current: Session | null } = { current: null };
+    const localActivity = new LocalClaudeActivity(() => currentSessionRef.current);
     let resolveSessionReady!: (session: Session) => void;
     const sessionReady = new Promise<Session>((resolve) => {
         resolveSessionReady = resolve;
@@ -172,6 +176,11 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
 
             const currentSession = currentSessionRef.current;
             currentSession?.localPermissionBridge.onHook(data);
+            localActivity.onHook(sessionId, data);
+            if (currentSession?.mode === 'local' && currentSession.sessionId === sessionId && data.hook_event_name === 'PostModelSwitch') {
+                currentSession.localContextModel = typeof data.to_model === 'string' ? data.to_model : undefined;
+                currentSession.localContextModelObserved = true;
+            }
             if (currentSession && (data.hook_event_name === 'SessionStart' || data.hook_event_name === undefined)) {
                 const previousSessionId = currentSession.sessionId;
                 if (previousSessionId !== sessionId) {
@@ -237,6 +246,7 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
         logTag: 'claude',
         stopKeepAlive: () => currentSessionRef.current?.stopKeepAlive(),
         onAfterClose: () => {
+            localActivity.stop();
             happyServer.stop();
             currentSessionRef.current?.localPermissionBridge.stop();
             hookServer.stop();

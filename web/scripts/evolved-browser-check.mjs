@@ -1,4 +1,9 @@
+import { checkComposer } from './evolved-composer-check.mjs';
+import { checkMarkdownFiles } from './evolved-markdown-check.mjs';
+import { checkPrAndAttachments } from './evolved-pr-attachment-check.mjs';
 import { chromium } from 'playwright';
+import { seedLongHistory, checkLongHistory } from './evolved-long-history-check.mjs';
+import { seedSearchSession, checkSearch } from './evolved-search-check.mjs';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -72,6 +77,8 @@ try {
  await page.getByRole('button',{name:'Runner-Zugang erstellen',exact:true}).click();
  const leaseToken=await page.getByLabel('Einmaliger Runner-Schlüssel',{exact:true}).inputValue();
  if(!leaseToken)throw Error('Lease was not issued');
+ const searchSessionId=await seedSearchSession(origin,leaseToken,join(state,'workspace'));
+ const longHistorySessionId=await seedLongHistory(origin,leaseToken,join(state,'workspace'));
  const downloadPromise=page.waitForEvent('download');
  await page.getByRole('button',{name:'Operator-Datei herunterladen',exact:true}).click();
  const download=await downloadPromise;
@@ -96,7 +103,9 @@ try {
  const frameReady=page.waitForEvent('framenavigated',{predicate:frame=>frame.url()===ticketUrl});
  await page.evaluate(url=>{const frame=document.createElement('iframe');frame.id='preview-security-frame';frame.src=url;document.body.append(frame)},ticketUrl);
  const frame=await frameReady;
- await frame.waitForFunction(()=>document.getElementById('result')?.textContent!=='pending');
+ // Sandboxed frames may not receive animation frames when Chromium considers
+ // them offscreen. Poll the actual probe result independently of paint timing.
+ await frame.waitForFunction(()=>{const result=document.getElementById('result')?.textContent;return Boolean(result&&result!=='pending')},null,{polling:100}).catch(async error=>{throw Error('Preview iframe timed out; synthetic response: '+(await frame.locator('body').innerText())+'; '+String(error))});
  const frameProbe=JSON.parse(await frame.locator('#result').innerText());
  if(frameProbe.parentDocument!=='blocked')throw Error('Preview can access parent document');
  await page.evaluate(()=>document.getElementById('preview-security-frame').remove());
@@ -132,6 +141,21 @@ try {
  await page.getByText('Persistente Browsererkenntnis',{exact:true}).waitFor();
  if(!apiResponses.some(([p,s])=>p==='/api/evolved/session-token'&&s===200))throw Error('Bridge token not issued');
  if(!apiResponses.some(([p,s])=>p==='/api/sessions'&&s===200))throw Error('Legacy sessions bridge not used successfully');
+ await checkSearch(page,origin,searchSessionId);
+ await checkLongHistory(page,origin,longHistorySessionId);
+ await checkPrAndAttachments(page,origin,searchSessionId);
+ await checkMarkdownFiles(page,origin,searchSessionId,join(state,'workspace'));
+ await page.getByRole('button',{name:'/btw',exact:true}).click();
+ await page.getByRole('dialog',{name:'Separate Textfrage'}).waitFor();
+ await page.getByRole('textbox',{name:'Separate Frage',exact:true}).fill('SYNTHETIC_SIDE_QUESTION');
+ await page.getByRole('button',{name:'An Anbieter senden',exact:true}).click();
+ await page.getByTestId('sidechannel-reply').getByText('SYNTHETIC_SIDE_REPLY: separate text-only answer',{exact:true}).waitFor();
+ const side = JSON.parse(readFileSync(join(state,'side-request.json'),'utf8'));
+ if(side.count!==1||JSON.stringify(side.body)!==JSON.stringify({model:'synthetic-side-model',messages:[{role:'user',content:'SYNTHETIC_SIDE_QUESTION'}],max_tokens:1024,stream:false}))throw Error('Side channel sent unexpected context or duplicate request');
+ console.log('PASS real separate /btw browser dialog with explicit provider/model/budget, single synthetic text request, no main transcript/tools');
+ await page.keyboard.press('Escape');
+ await checkComposer(page,origin,searchSessionId);
+
  if(errors.length)throw Error('Page errors: '+errors.join('; '));
  console.log('PASS full startHub/legacy JWT bridge, WebAuthn + enrollment reload + step-up, projects, remote encrypted vault, persistent memory, one-time runner lease download/revoke, preview sandbox + expiring share/revoke, mobile layout, recovery + replacement passkey and logout/login');
 } finally {await context.close()}

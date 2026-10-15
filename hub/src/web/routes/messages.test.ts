@@ -12,6 +12,7 @@ import type { WebAppEnv } from '../middleware/auth'
 import { createMessagesRoutes } from './messages'
 
 type GetMessagesPage = SyncEngine['getMessagesPage']
+type GetMessageContext = SyncEngine['getMessageContext']
 
 // TS note: engine is cast to unknown→SyncEngine so test helpers don't need to
 // satisfy the full SyncEngine shape (only the subset the route under test uses).
@@ -22,14 +23,17 @@ type GetMessagesPage = SyncEngine['getMessagesPage']
 
 function createApp(opts: {
     active?: boolean
+    durableAttachments?: boolean
     sendMessage?: (sessionId: string, payload: unknown) => Promise<void>
     getMessagesPage?: GetMessagesPage
+    getMessageContext?: GetMessageContext
     getQueuedState?: (sessionId: string, localIds: string[]) => {
         queuedLocalIds: string[]
         indeterminateLocalIds: string[]
         invokedLocalMessages: Array<{ localId: string; invokedAt: number }>
     }
     steerQueuedMessage?: (sessionId: string, messageId: string) => Promise<unknown>
+    hasAttachment?: (sessionId: string, namespace: string, attachmentId: string) => boolean
 }) {
     const sentMessages: Array<{ sessionId: string; payload: unknown }> = []
     const queuedStateCalls: Array<{ sessionId: string; localIds: string[] }> = []
@@ -62,18 +66,21 @@ function createApp(opts: {
             hasMore: false
         }
     }))
+    const getMessageContext = opts.getMessageContext ?? (() => null)
 
     const engine = {
         resolveSessionAccess: () => ({
             ok: true,
             sessionId: 'session-1',
-            session: { id: 'session-1', active: opts.active !== false }
+            session: { id: 'session-1', active: opts.active !== false, metadata: { capabilities: { durableAttachments: opts.durableAttachments !== false } } }
         }),
         sendMessage,
         getQueuedState,
+        hasAttachment: opts.hasAttachment ?? (() => true),
         cancelQueuedMessage: async () => ({ status: 'cancelled' }),
         steerQueuedMessage: opts.steerQueuedMessage ?? (async () => ({ status: 'failed', error: 'Steer failed', localId: null })),
         getMessagesPage,
+        getMessageContext,
     } as unknown as SyncEngine
 
     const app = new Hono<WebAppEnv>()
@@ -193,6 +200,45 @@ describe('GET /api/sessions/:id/messages', () => {
         expect(response.status).toBe(400)
         expect(await response.json()).toMatchObject({ error: 'Invalid query' })
         expect(called).toBe(false)
+    })
+})
+
+describe('GET /api/sessions/:id/messages/:messageId/context', () => {
+    it('returns a bounded message context for an authorized session', async () => {
+        const context = {
+            messages: [],
+            targetMessageId: 'message-target',
+            page: {
+                epoch: 3,
+                nextBeforeSeq: 10,
+                nextBeforeAt: 1_000,
+                snapshotHeadSeq: 20,
+                snapshotHeadAt: 2_000,
+                hasMore: true
+            }
+        }
+        const calls: Array<{ sessionId: string; messageId: string }> = []
+        const { app } = createApp({
+            getMessageContext: (sessionId, messageId) => {
+                calls.push({ sessionId, messageId })
+                return context
+            }
+        })
+
+        const response = await app.request('/api/sessions/session-1/messages/message-target/context')
+
+        expect(response.status).toBe(200)
+        expect(calls).toEqual([{ sessionId: 'session-1', messageId: 'message-target' }])
+        expect(await response.json()).toEqual(context)
+    })
+
+    it('returns null when the target message no longer exists', async () => {
+        const { app } = createApp({ getMessageContext: () => null })
+
+        const response = await app.request('/api/sessions/session-1/messages/missing/context')
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toBeNull()
     })
 })
 
@@ -407,6 +453,74 @@ describe('POST /api/sessions/:id/messages — scheduledAt + attachments rejected
 
         expect(response.status).toBe(200)
         expect(sentMessages).toHaveLength(1)
+    })
+
+    it('accepts pathless durable attachment references after ownership validation', async () => {
+        const ownershipCalls: string[][] = []
+        const { app, sentMessages } = createApp({
+            hasAttachment: (sessionId, namespace, attachmentId) => {
+                ownershipCalls.push([sessionId, namespace, attachmentId])
+                return true
+            }
+        })
+
+        const response = await app.request('/api/sessions/session-1/messages', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                text: 'hello',
+                attachments: [{
+                    id: 'att-3',
+                    filename: 'b.png',
+                    mimeType: 'image/png',
+                    size: 10,
+                    attachmentId: 'attachment-1'
+                }]
+            })
+        })
+
+        expect(response.status).toBe(200)
+        expect(ownershipCalls).toEqual([['session-1', 'default', 'attachment-1']])
+        expect(sentMessages[0]?.payload).toEqual(expect.objectContaining({
+            attachments: [{
+                id: 'att-3',
+                filename: 'b.png',
+                mimeType: 'image/png',
+                size: 10,
+                attachmentId: 'attachment-1'
+            }]
+        }))
+    })
+
+    it('rejects pathless attachments for older live runners before sending any part of the message', async () => {
+        const { app, sentMessages } = createApp({ durableAttachments: false })
+        const response = await app.request('/api/sessions/session-1/messages', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: 'must not be silently lost', attachments: [{ id: 'a', attachmentId: 'durable-id', filename: 'a.txt', mimeType: 'text/plain', size: 4 }] }) })
+        expect(response.status).toBe(409)
+        expect(await response.json()).toMatchObject({ code: 'runner_upgrade_required' })
+        expect(sentMessages).toHaveLength(0)
+    })
+
+    it('rejects a durable attachment owned by another session', async () => {
+        const { app, sentMessages } = createApp({ hasAttachment: () => false })
+
+        const response = await app.request('/api/sessions/session-1/messages', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                text: 'hello',
+                attachments: [{
+                    id: 'att-4',
+                    filename: 'secret.pdf',
+                    mimeType: 'application/pdf',
+                    size: 10,
+                    attachmentId: 'attachment-other'
+                }]
+            })
+        })
+
+        expect(response.status).toBe(400)
+        expect(await response.json()).toEqual({ error: 'Attachment not found or not owned by this session' })
+        expect(sentMessages).toHaveLength(0)
     })
 })
 

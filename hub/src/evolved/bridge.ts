@@ -101,7 +101,8 @@ export function projectPermissionMode(project: EvolvedProject, agent: string | n
 export function createProjectAuthMiddleware(store: EvolvedStore, secret: Uint8Array, origin: string): MiddlewareHandler<WebAppEnv> {
     return async (c, next) => {
         const path = c.req.path
-        const write = !['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) && path !== '/api/visibility'
+        const readPost = c.req.method === 'POST' && (path === '/api/visibility' || path === '/api/sessions/content-search')
+        const write = !['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) && !readPost
         const bearer = c.req.header('authorization')?.replace(/^Bearer /, '')
         const token = bearer ?? (path === '/api/events' ? c.req.query('token') : undefined)
         if (!token) return c.json({ error: 'Sign in required.' }, 401)
@@ -112,7 +113,8 @@ export function createProjectAuthMiddleware(store: EvolvedStore, secret: Uint8Ar
         if (headerProject && headerProject !== access.project.id) return c.json({ error: 'Project scope mismatch.' }, 403)
         if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) && c.req.header('origin') !== origin) return c.json({ error: 'Origin denied.' }, 403)
         // These upstream endpoints expose host-global credentials/files or unsupported agents.
-        if (/^\/api\/(auth|bind|storage|hub-settings|voice|codex|pi)(\/|$)/.test(path)) return c.json({ error: 'Endpoint unavailable in Evolved.' }, 403)
+        if (/^\/api\/(auth|bind|storage|hub-settings|voice|codex|claude|cursor|pi)(\/|$)/.test(path)
+            || /^\/api\/machines\/[^/]+\/(?:claude|cursor|codex|pi)-(?:sessions|import|discover)/.test(path)) return c.json({ error: 'Endpoint unavailable in Evolved.' }, 403)
         if (write && access.project.profile === 'restricted' && /\/codex\/plan\/implement$/.test(path)) return c.json({ error: 'Read-only projects cannot execute plans.' }, 403)
         if (write && /\/machines\/[^/]+\/(list-directory|paths\/exists)$/.test(path)) {
             const body = await c.req.json().catch(() => null) as Record<string, unknown> | null

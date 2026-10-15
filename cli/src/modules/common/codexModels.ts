@@ -1,6 +1,10 @@
 import { homedir } from 'node:os';
+import { createHash, randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import type { CodexModelsResponse, CodexModelSummary } from '@hapi/protocol/apiTypes';
 import { CodexAppServerClient } from '@/codex/codexAppServerClient';
+import { resolveCodexHome } from '@/codex/utils/codexHome';
 import { getErrorMessage } from './rpcResponses';
 
 export interface ListCodexModelsRequest {
@@ -83,44 +87,80 @@ export function normalizeCodexModel(entry: unknown): CodexModelSummary | null {
 
 interface CacheEntry {
     expiresAt: number;
+    fingerprint: string;
     models: CodexModelSummary[];
 }
 
-// The Codex catalog is account-scoped and changes rarely. Each uncached call
-// spawns a fresh `codex app-server` subprocess and validates the ChatGPT
-// session, which can take 2-30s when a token refresh or network round trip is
-// involved. Cache successful lists for 5 minutes (same shape as the opencode
-// model cache) and coalesce concurrent requests into a single spawn.
-const CACHE_TTL_MS = 5 * 60_000;
+// A model lookup starts a fresh app-server. Keep successful discovery for a
+// day, but discard it as soon as local auth, config, or the configured model
+// catalog changes. File checks happen only when discovery is requested.
+const CACHE_TTL_MS = 24 * 60 * 60_000;
 const cache = new Map<boolean, CacheEntry>();
-const inflight = new Map<boolean, Promise<CodexModelSummary[]>>();
+const inflight = new Map<boolean, { fingerprint: string; promise: Promise<CodexModelSummary[]> }>();
+
+async function readOptionalFile(path: string): Promise<Buffer | null> {
+    try {
+        return await readFile(path);
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+        throw error;
+    }
+}
+
+async function catalogFingerprint(): Promise<string> {
+    const home = resolveCodexHome();
+    const config = await readOptionalFile(join(home, 'config.toml'));
+    const auth = await readOptionalFile(join(home, 'auth.json'));
+    const rootConfig = config?.toString('utf8').split(/^\s*\[/m, 1)[0] ?? '';
+    const rawPath = rootConfig.match(/^\s*model_catalog_json\s*=\s*("(?:[^"\\]|\\.)*"|'[^']*')/m)?.[1];
+    let catalogPath: string | undefined;
+    if (rawPath) {
+        catalogPath = rawPath.startsWith('"') ? JSON.parse(rawPath) as string : rawPath.slice(1, -1);
+    }
+    const catalog = catalogPath ? await readOptionalFile(resolve(home, catalogPath)) : null;
+    const hash = createHash('sha256');
+    // Hash process auth/provider overrides without storing or logging secrets.
+    const environment = Object.entries(process.env).filter(([key]) => /(?:API_KEY|AUTH_TOKEN|ACCESS_TOKEN|CODEX_PROFILE|OPENAI_BASE_URL|CODEX_API_KEY)$/.test(key)).sort(([a], [b]) => a.localeCompare(b));
+    // Keyring changes have no observable file fingerprint. Bound that context
+    // to five minutes while file-backed accounts retain the longer cache.
+    const keyringEpoch = !auth || /cli_auth_credentials_store\s*=\s*["']keyring/.test(config?.toString('utf8') ?? '') ? Math.floor(Date.now() / 300_000) : '';
+    for (const value of [home, config, auth, catalogPath, catalog, JSON.stringify(environment), String(keyringEpoch)]) {
+        hash.update(value === null || value === undefined ? 'missing' : value);
+        hash.update('\0');
+    }
+    return hash.digest('hex');
+}
 
 export async function listCodexModels(includeHidden: boolean = false): Promise<CodexModelSummary[]> {
+    // Discovery can still work when optional local files are unreadable.
+    // A unique fingerprint bypasses stale cache rather than failing selection.
+    const fingerprint = await catalogFingerprint().catch(() => randomUUID());
     const cached = cache.get(includeHidden);
-    if (cached && cached.expiresAt > Date.now()) {
+    if (cached && cached.fingerprint === fingerprint && cached.expiresAt > Date.now()) {
         return cached.models;
     }
 
     const existing = inflight.get(includeHidden);
-    if (existing) {
-        return existing;
+    if (existing?.fingerprint === fingerprint) {
+        return existing.promise;
     }
 
     const promise = fetchCodexModelsFromAppServer(includeHidden)
         .then((models) => {
-            if (models.length > 0) {
+            if (models.length > 0 && inflight.get(includeHidden)?.promise === promise) {
                 cache.set(includeHidden, {
                     expiresAt: Date.now() + CACHE_TTL_MS,
+                    fingerprint,
                     models
                 });
             }
             return models;
         })
         .finally(() => {
-            inflight.delete(includeHidden);
+            if (inflight.get(includeHidden)?.promise === promise) inflight.delete(includeHidden);
         });
 
-    inflight.set(includeHidden, promise);
+    inflight.set(includeHidden, { fingerprint, promise });
     return promise;
 }
 

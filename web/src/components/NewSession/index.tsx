@@ -1822,7 +1822,7 @@ export function NewSession(props: {
                         {t('button.retry')}
                     </button>
                 </div>
-            ) : availableAgents.length === 0 ? (
+            ) : machineId && availableAgents.length === 0 ? (
                 <div className="px-3 py-2 text-xs text-red-600">
                     {t('newSession.noAvailableAgents')}
                 </div>
@@ -1967,6 +1967,7 @@ export function NewSession(props: {
             )}
             {showPiLaunchConfig ? (
                 <EffortField
+                    descriptor={selectedMachine?.runnerState?.capabilities?.agentConfigs?.find(config => config.flavor === agent)}
                     agent={agent}
                     effort={effort}
                     onEffortChange={setEffort}
@@ -1980,6 +1981,7 @@ export function NewSession(props: {
                 />
             ) : null}
             <PermissionField
+                descriptor={selectedMachine?.runnerState?.capabilities?.agentConfigs?.find(config => config.flavor === agent)}
                 agent={agent}
                 nativeValue={agent === 'grok' ? grokPermissionMode : nativePermissionMode}
                 yoloMode={yoloMode}

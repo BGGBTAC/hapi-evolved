@@ -2,10 +2,16 @@ import type { Database } from 'bun:sqlite'
 import { prepareCached } from './statementCache'
 import { bumpSessionDeletionEpoch } from './sessionInvalidation'
 import { randomUUID } from 'node:crypto'
+import { withoutExternalRefs } from '@hapi/protocol'
 
 import type { StoredSession, VersionedUpdateResult } from './types'
 import { safeJsonParse } from './json'
 import { updateVersionedField } from './versionedUpdates'
+import { removeMessageContentSearchForSession } from './messageContentSearch'
+
+function runInTransaction<T>(db: Database, operation: () => T): T {
+    return db.inTransaction ? operation() : db.transaction(operation)()
+}
 
 // Carry-forward fields that the hub preserves across any metadata
 // replacement when the incoming write omits them.
@@ -64,7 +70,8 @@ const SIMPLE_RESUME_TOKENS = [
     'cursorSessionId',
     'kimiSessionId',
     'copilotSessionId',
-    'piSessionId'
+    'piSessionId',
+    'dshSessionId'
 ] as const
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -199,7 +206,7 @@ export function getOrCreateSession(
     modelReasoningEffort?: string,
     requestedId?: string
 ): StoredSession {
-    const existing = prepareCached(db, 
+    const existing = prepareCached(db,
         'SELECT * FROM sessions WHERE tag = ? AND namespace = ? ORDER BY created_at DESC LIMIT 1'
     ).get(tag, namespace) as DbSessionRow | undefined
 
@@ -223,7 +230,7 @@ export function getOrCreateSession(
         }
     }
 
-    const metadataJson = JSON.stringify(metadata)
+    const metadataJson = JSON.stringify(withoutExternalRefs(metadata))
     const agentStateJson = agentState === null || agentState === undefined ? null : JSON.stringify(agentState)
 
     prepareCached(db, `
@@ -364,7 +371,9 @@ export function adoptPreallocatedSession(
         }
 
         const now = Date.now()
-        const metadataJson = JSON.stringify(metadata)
+        const adoptedMetadata = withoutExternalRefs(metadata)
+        const metadataJson = JSON.stringify(isPlainObject(adoptedMetadata) && isPlainObject(existing.metadata) && existing.metadata.externalRefs !== undefined
+            ? { ...adoptedMetadata, externalRefs: existing.metadata.externalRefs } : adoptedMetadata)
         const agentStateJson = agentState === null || agentState === undefined ? null : JSON.stringify(agentState)
         const stubTag = machineSpawnPreallocTag(id)
 
@@ -413,7 +422,7 @@ export function updateSessionMetadata(
     metadata: unknown,
     expectedVersion: number,
     namespace: string,
-    options?: { touchUpdatedAt?: boolean; allowUnarchive?: boolean }
+    options?: { touchUpdatedAt?: boolean; allowUnarchive?: boolean; allowExternalRefs?: boolean }
 ): VersionedUpdateResult<unknown | null> {
     const now = Date.now()
     const touchUpdatedAt = options?.touchUpdatedAt !== false
@@ -428,6 +437,17 @@ export function updateSessionMetadata(
 
             const prior = existing.metadata
             let merged = mergeSessionMetadata(prior, metadata)
+            if (!options?.allowExternalRefs && isPlainObject(prior) && prior.externalRefs !== undefined && !isPlainObject(merged)) {
+                return { result: 'error' }
+            }
+            // PR provenance is hub-authored via the explicit, feature-gated route.
+            // Generic agent metadata cannot impersonate a user or erase a linked PR.
+            if (!options?.allowExternalRefs && isPlainObject(merged)) {
+                const protectedMetadata: Record<string, unknown> = { ...merged }
+                if (isPlainObject(prior) && prior.externalRefs !== undefined) protectedMetadata.externalRefs = prior.externalRefs
+                else delete protectedMetadata.externalRefs
+                merged = protectedMetadata
+            }
 
             // #1911 M1: unauthorized un-archive of hub-archived rows.
             // Return success + merge-preserved archive fields — NOT version-mismatch
@@ -854,7 +874,7 @@ export function getSession(db: Database, id: string): StoredSession | null {
 }
 
 export function getSessionByNamespace(db: Database, id: string, namespace: string): StoredSession | null {
-    const row = prepareCached(db, 
+    const row = prepareCached(db,
         'SELECT * FROM sessions WHERE id = ? AND namespace = ?'
     ).get(id, namespace) as DbSessionRow | undefined
     return row ? toStoredSession(row) : null
@@ -866,21 +886,28 @@ export function getSessions(db: Database): StoredSession[] {
 }
 
 export function getSessionsByNamespace(db: Database, namespace: string): StoredSession[] {
-    const rows = prepareCached(db, 
+    const rows = prepareCached(db,
         'SELECT * FROM sessions WHERE namespace = ? ORDER BY updated_at DESC'
     ).all(namespace) as DbSessionRow[]
     return rows.map(toStoredSession)
 }
 
 export function deleteSession(db: Database, id: string, namespace: string): boolean {
-    const result = prepareCached(db,
-        'DELETE FROM sessions WHERE id = ? AND namespace = ?'
-    ).run(id, namespace)
-    if (result.changes > 0) {
-        // Per-socket access memos stamp the epoch they were filled under;
-        // bumping makes their next event re-resolve instead of serving a
-        // grant for a row that no longer exists.
-        bumpSessionDeletionEpoch()
-    }
-    return result.changes > 0
+    return runInTransaction(db, () => {
+        const existing = prepareCached(db,
+            'SELECT 1 FROM sessions WHERE id = ? AND namespace = ?'
+        ).get(id, namespace)
+        if (!existing) return false
+        removeMessageContentSearchForSession(db, id)
+        const result = prepareCached(db,
+            'DELETE FROM sessions WHERE id = ? AND namespace = ?'
+        ).run(id, namespace)
+        if (result.changes > 0) {
+            // Per-socket access memos stamp the epoch they were filled under;
+            // bumping makes their next event re-resolve instead of serving a
+            // grant for a row that no longer exists.
+            bumpSessionDeletionEpoch()
+        }
+        return result.changes > 0
+    })
 }

@@ -8,10 +8,12 @@ import {
 import { useTranslation } from '@/lib/use-translation'
 import { usesNativePermissionSelect } from '@/lib/codexFamilyPermissionAgents'
 import type { AgentType } from './types'
-import { SelectControl } from '@/components/ui/select-control'
+import { AgentConfigFieldControl } from '@/components/AgentConfigFieldControl'
+import type { AgentConfigDescriptor } from '@hapi/protocol'
 import { YoloToggle } from './YoloToggle'
 
 export type PermissionFieldProps = {
+    descriptor?: AgentConfigDescriptor
     agent: AgentType
     /** Native permission mode for flavors rendered as a native-mode select. */
     nativeValue: PermissionMode
@@ -36,7 +38,7 @@ export type PermissionFieldProps = {
  */
 export function PermissionField(props: PermissionFieldProps) {
     const { t } = useTranslation()
-    const descriptor = getAgentConfigDescriptor(props.agent)
+    const descriptor = props.descriptor ?? getAgentConfigDescriptor(props.agent)
     const field = descriptor.fields.find((candidate) => candidate.id === 'permission')
     if (!field) {
         return null
@@ -61,35 +63,11 @@ export function PermissionField(props: PermissionFieldProps) {
     }
 
     if (field.kind === 'select' && usesNativePermissionSelect(props.agent)) {
-        const options = getLaunchPermissionModesForFlavor(props.agent)
-        return (
-            <div className="flex flex-col gap-1.5 px-3 py-3">
-                <label className="text-xs font-medium text-[var(--app-hint)]">
-                    {t('misc.permissionMode')}
-                </label>
-                <SelectControl
-                    value={props.nativeValue}
-                    onChange={(event) => props.onNativeChange(event.target.value as PermissionMode)}
-                    disabled={props.isDisabled}
-                    className="py-2 pl-3 text-sm rounded-lg border border-[var(--app-divider)] bg-[var(--app-bg)] text-[var(--app-text)] focus:outline-none focus:ring-2 focus:ring-[var(--app-link)] disabled:opacity-50"
-                >
-                    {options.map((mode) => {
-                        const unavailable = mode === 'auto'
-                            && props.autoPermissionModeSupported === false
-                        return (
-                            <option key={mode} value={mode} disabled={unavailable}>
-                                {getPermissionModeLabel(mode)}{unavailable ? ` (${t('newSession.grokAutoUnavailable')})` : ''}
-                            </option>
-                        )
-                    })}
-                </SelectControl>
-                {props.autoPermissionModeSupported === false ? (
-                    <span className="text-xs text-[var(--app-hint)]">
-                        {t('newSession.grokAutoUnavailableDesc')}
-                    </span>
-                ) : null}
-            </div>
-        )
+        const options = (field.options ?? getLaunchPermissionModesForFlavor(props.agent).map(mode => ({ value: mode, label: getPermissionModeLabel(mode) })))
+            .map(option => option.value === 'auto' && props.autoPermissionModeSupported === false ? { ...option, disabled: true, label: `${option.label} (${t('newSession.grokAutoUnavailable')})` } : option)
+        return <><AgentConfigFieldControl field={props.autoPermissionModeSupported === false ? { ...field, unavailableReason: undefined } : field} label={t('misc.permissionMode')} value={props.nativeValue}
+            options={options} disabled={props.isDisabled} onChange={value => props.onNativeChange(value as PermissionMode)} />
+            {props.autoPermissionModeSupported === false ? <span className="px-3 text-xs text-[var(--app-hint)]">{t('newSession.grokAutoUnavailableDesc')}</span> : null}</>
     }
 
     // Remaining flavors still carry the persistent HAPI YOLO preference at

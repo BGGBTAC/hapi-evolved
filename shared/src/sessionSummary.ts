@@ -33,6 +33,8 @@ function classifyKind(tool: string): PendingRequestKind {
 }
 
 export type SessionSummaryMetadata = {
+    externalRefs?: Metadata['externalRefs']
+    lastModelError?: Metadata['lastModelError']
     name?: string
     path: string
     machineId?: string
@@ -46,6 +48,9 @@ export type SessionSummaryMetadata = {
 }
 
 export type SessionSummary = {
+    lastMessageAt?: number | null
+    lastAssistantMessageAt?: number | null
+    notifyStatus?: 'blocked' | null
     hasConversationContent?: boolean
     id: string
     active: boolean
@@ -159,7 +164,8 @@ const AGENT_SESSION_ID_FIELD_BY_FLAVOR: Partial<Record<AgentFlavor, keyof Metada
     cursor: 'cursorSessionId',
     kimi: 'kimiSessionId',
     copilot: 'copilotSessionId',
-    pi: 'piSessionId'
+    pi: 'piSessionId',
+    dsh: 'dshSessionId'
 }
 
 function getSummaryAgentSessionId(metadata: Metadata): string | undefined {
@@ -183,6 +189,7 @@ function getSummaryAgentSessionId(metadata: Metadata): string | undefined {
         ?? metadata.cursorSessionId
         ?? metadata.kimiSessionId
         ?? metadata.copilotSessionId
+        ?? metadata.dshSessionId
         ?? undefined
 }
 
@@ -192,6 +199,8 @@ export function toSessionSummaryMetadata(metadata: Metadata | null | undefined):
     }
     return {
         name: metadata.name,
+        externalRefs: metadata.externalRefs,
+        lastModelError: metadata.lastModelError,
         path: metadata.path,
         machineId: metadata.machineId ?? undefined,
         summary: metadata.summary ? { text: metadata.summary.text } : undefined,
@@ -211,6 +220,9 @@ export function toSessionSummary(session: Session): SessionSummary {
         thinking: session.thinking,
         activeAt: session.activeAt,
         updatedAt: session.updatedAt,
+        lastMessageAt: session.lastMessageAt,
+        lastAssistantMessageAt: session.lastAssistantMessageAt,
+        notifyStatus: session.thinking ? null : session.notifyStatus,
         pinned: session.pinned ?? false,
         globalPinned: session.globalPinned ?? false,
         metadata: toSessionSummaryMetadata(session.metadata),

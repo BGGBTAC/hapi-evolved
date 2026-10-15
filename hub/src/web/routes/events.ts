@@ -9,6 +9,7 @@ import type { VisibilityTracker } from '../../visibility/visibilityTracker'
 import type { WebAppEnv } from '../middleware/auth'
 import { compressSseResponse } from '../sseCompression'
 import { requireSession } from './guards'
+import { NotificationCursorError } from '../../store/notificationEvents'
 
 function parseOptionalId(value: string | undefined): string | null {
     if (!value) {
@@ -39,6 +40,21 @@ export function createEventsRoutes(
     getVisibilityTracker: () => VisibilityTracker | null
 ): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
+
+    app.get('/notifications/events', (c) => {
+        const engine = getSyncEngine()
+        if (!engine) return c.json({ error: 'Not connected' }, 503)
+        const { after, until, limit } = c.req.query()
+        if ((after?.length ?? 0) > 150 || (until?.length ?? 0) > 150) return c.json({ error: 'Invalid cursor' }, 400)
+        const parsedLimit = limit === undefined ? 100 : Number(limit)
+        if (!Number.isSafeInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 500) return c.json({ error: 'Invalid limit' }, 400)
+        c.header('Cache-Control', 'no-store')
+        try { return c.json(engine.getNotificationEvents(c.get('namespace'), { after, until, limit: parsedLimit })) }
+        catch (error) {
+            if (error instanceof NotificationCursorError) return c.json({ error: error.message }, 400)
+            throw error
+        }
+    })
 
     app.get('/events', (c) => {
         const manager = getSseManager()

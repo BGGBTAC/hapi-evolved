@@ -1,3 +1,4 @@
+import { revokeBrowserCloudConsent } from '@/hooks/browserCloudSpeech'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ApiClient } from '@/api/client'
@@ -166,6 +167,7 @@ function EvolvedSessionProvider({ baseUrl, authenticated, onboarding }: {
             authEpoch.current++
             queryClient.clear()
             clearAllMessageWindows()
+            revokeBrowserCloudConsent()
             principalRef.current = null
             projectRef.current = null
             setProjectId(null)
@@ -184,6 +186,7 @@ function EvolvedSessionProvider({ baseUrl, authenticated, onboarding }: {
             authEpoch.current++
             queryClient.clear()
             clearAllMessageWindows()
+            revokeBrowserCloudConsent()
             tokenRef.current = null
             setToken(null)
             setTokenProjectId(null)
@@ -201,6 +204,7 @@ function EvolvedSessionProvider({ baseUrl, authenticated, onboarding }: {
         if (!me?.accessibleProjects.some(project => project.id === id) || id === projectId) return
         queryClient.clear()
         clearAllMessageWindows()
+            revokeBrowserCloudConsent()
         tokenRef.current = null
         setToken(null)
         setBridgeError(null)
@@ -227,6 +231,7 @@ function EvolvedSessionProvider({ baseUrl, authenticated, onboarding }: {
                 authEpoch.current++
                 queryClient.clear()
                 clearAllMessageWindows()
+            revokeBrowserCloudConsent()
                 principalRef.current = null
                 projectRef.current = null
                 setProjectId(null)
@@ -241,21 +246,24 @@ function EvolvedSessionProvider({ baseUrl, authenticated, onboarding }: {
         const interval = setInterval(() => { void issueToken() }, 180_000)
         return () => clearInterval(interval)
     }, [me?.user.id, projectId, issueToken])
+    const authorityEpoch = authEpoch.current
     const hubApi = useMemo(() => new ApiClient('', {
         baseUrl,
         credentials: 'include',
         getProjectId: () => projectId,
         getToken: () => tokenRef.current,
         onUnauthorized: issueToken,
-    }), [baseUrl, projectId, issueToken])
+        isAuthorityCurrent: () => authEpoch.current === authorityEpoch && projectRef.current === projectId,
+    }), [baseUrl, projectId, issueToken, authorityEpoch])
     const reauthenticate = async () => {
         const challenge = await api.request<{ challengeId: string; options: AuthenticationOptionsJSON }>('/auth/login/options', { method: 'POST', body: { displayName: me!.user.displayName } })
         const response = await authenticatePasskey(challenge.options)
         const result = await api.request<{ principal: EvolvedMe }>('/auth/login/verify', { method: 'POST', body: { challengeId: challenge.challengeId, response } })
-        authEpoch.current++
         if (result.principal.user.id !== me!.user.id) {
+            authEpoch.current++
             queryClient.clear()
             clearAllMessageWindows()
+            revokeBrowserCloudConsent()
             tokenRef.current = null
             setToken(null)
             await refresh()
@@ -273,6 +281,7 @@ function EvolvedSessionProvider({ baseUrl, authenticated, onboarding }: {
         await api.request('/auth/logout', { method: 'POST', body: {} })
         queryClient.clear()
         clearAllMessageWindows()
+            revokeBrowserCloudConsent()
         principalRef.current = null
         projectRef.current = null
         setProjectId(null)

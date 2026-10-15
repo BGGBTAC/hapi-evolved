@@ -78,7 +78,7 @@ struct CatalogTests {
 
     @Test func codexFamilyFlavorsShareTheCodexModeSet() {
         let expected: [PermissionMode] = [.default, .readOnly, .safeYolo, .yolo]
-        #expect(permissionModes(forFlavor: "codex") == expected)
+        #expect(permissionModes(forFlavor: "codex") == [.default, .autoReview, .readOnly, .safeYolo, .yolo])
         #expect(permissionModes(forFlavor: "gemini") == expected)
         #expect(permissionModes(forFlavor: "kimi") == expected)
         #expect(permissionModes(forFlavor: "copilot") == expected)

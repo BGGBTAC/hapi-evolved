@@ -14,6 +14,7 @@ import { LOCAL_PERMISSION_TIMEOUT_SECONDS, PermissionRequestHookSchema, type Per
  * Data received from Claude's SessionStart hook.
  */
 export interface SessionHookData {
+    to_model?: string;
     session_id?: string;
     sessionId?: string;
     transcript_path?: string;

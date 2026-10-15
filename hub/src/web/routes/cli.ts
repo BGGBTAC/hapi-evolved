@@ -1,3 +1,5 @@
+import { attachmentResponseBody, readAttachmentForDownload } from '../attachmentDownload'
+import { attachmentContentDisposition } from '../attachmentHeaders'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import {
@@ -255,7 +257,7 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, evolved?
         if (!engine) return c.json({ error: 'Not ready' }, 503)
         const parsed = ClearOpencodeSessionCallbackRequestSchema.safeParse(await c.req.json().catch(() => null))
         if (!parsed.success) return c.json({ error: 'Invalid clear callback request' }, 400)
-        const result = engine.abortOpenCodeClearSession(c.req.param('id'), c.get('namespace'), parsed.data.replacementSessionId)
+        const result = await engine.abortOpenCodeClearSession(c.req.param('id'), c.get('namespace'), parsed.data.replacementSessionId)
         if (result.type === 'error') return c.json({ error: result.message, code: result.code }, clearErrorStatus(result.code))
         return c.json({ ok: true, sessionId: result.sessionId })
     })
@@ -315,6 +317,41 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, evolved?
             now: Date.now()
         })
         return c.json({ messages })
+    })
+
+    app.get('/sessions/:id/attachments/:attachmentId/original', async (c) => {
+        const engine = getSyncEngine()
+        if (!engine) {
+            return c.json({ error: 'Not ready' }, 503)
+        }
+        const namespace = c.get('namespace')
+        const resolved = resolveSessionForNamespace(engine, c.req.param('id'), namespace)
+        if (!resolved.ok) {
+            return c.json({ error: resolved.error }, resolved.status)
+        }
+        const attachment = await readAttachmentForDownload(
+            engine,
+            resolved.sessionId,
+            namespace,
+            c.req.param('attachmentId')
+        )
+        if (!attachment) {
+            return c.json({ error: 'Attachment not found' }, 404)
+        }
+        return new Response(attachmentResponseBody(attachment), {
+            headers: {
+                'Content-Type': attachment.mimeType,
+                'Content-Length': String(attachment.size),
+                'Content-Disposition': attachmentContentDisposition(attachment.attachment.filename),
+                'Content-Security-Policy': "sandbox; default-src 'none'",
+                'Cache-Control': 'private, no-store',
+                'Vary': 'Authorization',
+                'ETag': `"${attachment.sha256}"`,
+                'X-Hapi-Attachment-Sha256': attachment.sha256,
+                'X-Hapi-Attachment-Size': String(attachment.size),
+                'X-Content-Type-Options': 'nosniff'
+            }
+        })
     })
 
     app.post('/sessions/:id/migrate-to-acp', async (c) => {

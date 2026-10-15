@@ -1,3 +1,4 @@
+import { GithubPrSetting } from '@/components/SessionGithubPr'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation, type Locale } from '@/lib/use-translation'
 import { useAppContext } from '@/lib/app-context'
@@ -53,6 +54,7 @@ export default function SettingsGeneralPage() {
 
     return (
         <SettingsPageContent description={t('settings.general.description')}>
+            <GithubPrSetting api={api} />
             <SettingsSection title={t('settings.language.label')}>
                 <SettingsChoiceGroup hideLabel label={t('settings.language.label')} value={locale} options={locales} onChange={setLocale} />
             </SettingsSection>

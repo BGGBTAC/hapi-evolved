@@ -1,3 +1,4 @@
+import { startHappyServer } from '@/claude/utils/startHappyServer'
 import { hashObject } from '@/utils/deterministicJson'
 import { MessageQueue2 } from '@/utils/MessageQueue2'
 import { registerKillSessionHandler } from '@/claude/registerKillSessionHandler'
@@ -15,6 +16,7 @@ export async function runDsh(opts: {
     startedBy?: 'runner' | 'terminal'
     startingMode?: 'remote'
     existingSessionId?: string
+    resumeSessionId?: string
     /** Fresh machine-spawn stub (`--hapi-session-id`); adopt via bootstrapSession. */
     reservedSessionId?: string
     workingDirectory?: string
@@ -41,8 +43,10 @@ export async function runDsh(opts: {
             agentState: initialState,
             reservedSessionId: opts.reservedSessionId
         })
-    const { api, session } = bootstrap
+    const { api, session, sessionInfo } = bootstrap
     setControlledByUser(session, startingMode)
+    // DSH controls its own tools, but this local bridge enables HAPI shell media helpers.
+    let bridge: Awaited<ReturnType<typeof startHappyServer>> | undefined
 
     const queue = new MessageQueue2<DshMode>((mode) => hashObject(mode))
     const sessionRef: { current: DshSession | null } = { current: null }
@@ -61,7 +65,8 @@ export async function runDsh(opts: {
         session,
         logTag: 'dsh',
         stopKeepAlive: () => sessionRef.current?.stopKeepAlive(),
-        onBeforeClose: () => launcherRef.current?.kill()
+        onBeforeClose: () => launcherRef.current?.kill(),
+        onAfterClose: () => bridge?.stop()
     })
     lifecycle.registerProcessHandlers()
     registerKillSessionHandler(session.rpcHandlerManager, lifecycle, session)
@@ -71,6 +76,7 @@ export async function runDsh(opts: {
         client: session,
         path: workingDirectory,
         logPath: logger.getLogPath(),
+        sessionId: opts.resumeSessionId ?? sessionInfo.metadata?.dshSessionId,
         messageQueue: queue,
         onModeChange: () => {},
         startedBy
@@ -81,6 +87,7 @@ export async function runDsh(opts: {
 
     let crashed = false
     try {
+        bridge = await startHappyServer(session, { mediaOnly: true })
         await launcher.launch()
     } catch (error) {
         crashed = true

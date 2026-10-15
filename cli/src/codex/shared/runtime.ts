@@ -1,3 +1,4 @@
+import { assertEvolvedCodexFrontendMethod, assertEvolvedCodexNativePolicy } from '@/evolved/codexPolicy';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
 import { mkdir, mkdtemp, chmod, rm, realpath } from 'node:fs/promises';
@@ -12,8 +13,9 @@ import { logger } from '@/ui/logger';
 import { CodexAppServerClient, isIndeterminateError } from '../codexAppServerClient';
 import { codexHome, saveRuntime, runtimeDirectory, runtimeAuthHash, findColdBinding, withThreadOwnership, type CodexRuntimeRecord } from './registry';
 import { startCodexGateway, record, string, type Envelope } from './gateway';
-import { resolveSharedCodex, sharedLaunchConfig, initializeSharedClient, checkSharedCapabilities, takeReservedSessionId, type SharedLaunchOptions } from './launch';
+import { resolveSharedCodex, sharedLaunchConfig, initializeSharedClient, checkSharedCapabilities, takeReservedSessionId, newSharedThreadParams, type SharedLaunchOptions } from './launch';
 import { SharedCodexRoot } from './root';
+import { restoreControlSubscriptions } from './controlSubscriptions';
 
 export type RuntimeReady = { sessionId: string; runtime: CodexRuntimeRecord };
 type Reservation = { root: SharedCodexRoot; resumeId?: string };
@@ -104,7 +106,10 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
                 try {
                     await initializeSharedClient(control);
                     // Roots remain loaded by their independent side-clients.
-                    for (const threadId of roots.keys()) await control.request('thread/resume', { threadId, excludeTurns: true });
+                    await restoreControlSubscriptions(control, roots.keys(), (threadId, error) => {
+                        nativeSettings.delete(threadId);
+                        logger.debug('[Codex shared] control could not observe thread', { threadId, error });
+                    });
                     return;
                 } catch (error) {
                     logger.debug('[Codex shared] control reconnect', error);
@@ -167,11 +172,19 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
             }).catch(error => logger.debug('[Codex shared] root cleanup', error));
         }, 100);
     };
-    const prepare = async (cwd: string, existingSessionId?: string, parent?: SharedCodexRoot): Promise<SharedCodexRoot> => {
+    const prepare = async (
+        cwd: string,
+        existingSessionId?: string,
+        parent?: SharedCodexRoot,
+        forkedAtMessageLocalId?: string,
+        forkedThroughMessageLocalId?: string
+    ): Promise<SharedCodexRoot> => {
         assertRunning();
         const shared = { flavor: 'codex', startedBy: options.startedBy ?? 'terminal', workingDirectory: cwd,
             exportSessionEnv: false, reportStarted: false, metadataOverrides: { capabilities: { terminal: true, concurrentClients: true },
-                ...(parent ? { forkedFrom: parent.session.sessionId } : {}) } } as const;
+                ...(parent ? { forkedFrom: parent.session.sessionId } : {}),
+                ...(forkedAtMessageLocalId ? { forkedAtMessageLocalId } : {}),
+                ...(forkedThroughMessageLocalId !== undefined ? { forkedThroughMessageLocalId } : {}) } } as const;
         // reservedSessionId names one preallocated hub row — single-use. A second
         // create()/fork must mint a fresh row, not re-adopt (#1911 Opus Major).
         const reservedSessionId = takeReservedSessionId(options);
@@ -197,35 +210,63 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
         runtime.pendingCreations = runtime.pendingCreations?.filter(sid => sid !== root.session.sessionId); await persist();
     };
     const reserve = async (root: SharedCodexRoot, threadId: string) => withThreadOwnership(home, threadId, id, () => reserveRecord(root, threadId));
-    const bind = async (root: SharedCodexRoot, response: Record<string, unknown>, subscribe: boolean, initialOptions?: SharedLaunchOptions) => {
+    const bind = async (root: SharedCodexRoot, response: Record<string, unknown>, subscribe: boolean, initialOptions?: SharedLaunchOptions, knownNewEmptyThread = false) => {
         assertRunning();
         const threadId = string(record(response.thread).id);
         if (!threadId) throw new Error('Codex lifecycle response has no thread ID');
         const reserved = runtime.sessions[root.session.sessionId];
         if (reserved && reserved.threadId !== threadId) throw new Error('Codex retargeted a reserved thread');
         if (!reserved) await reserve(root, threadId);
-        // No fake user turn/name. Metadata write materializes an empty legacy rollout for native resume.
-        await control.request('thread/metadata/update', { threadId, gitInfo: gitInfo(string(record(response.thread).cwd) ?? root.bootstrap.workingDirectory) });
-        assertRunning();
-        roots.set(threadId, root);
-        await root.bind(threadId, response, subscribe);
-        assertRunning();
-        // Cold-resumed threads predate the control connection's automatic
-        // new-thread subscription. Subscribe once without changing settings.
-        await control.request('thread/resume', { threadId, excludeTurns: true });
-        await root.activate(initialOptions);
-        await root.session.flush();
-        await persist();
-        await notifyRunnerSessionStarted(root.session.sessionId, root.session.getMetadata() ?? root.bootstrap.metadata);
+        try {
+            // No fake user turn/name. Metadata materializes an empty legacy rollout.
+            await control.request('thread/metadata/update', { threadId, gitInfo: gitInfo(string(record(response.thread).cwd) ?? root.bootstrap.workingDirectory) });
+            if (knownNewEmptyThread && command.supportsHistoryMode) {
+                const thread = record(record(await control.request('thread/read', { threadId, includeTurns: false })).thread);
+                if (thread.historyMode !== 'legacy') throw new Error('Codex did not accept reconnectable legacy history mode');
+            }
+            assertRunning();
+            roots.set(threadId, root);
+            await root.bind(threadId, response, subscribe, knownNewEmptyThread);
+            assertRunning();
+            await control.request('thread/resume', { threadId, excludeTurns: true });
+            await root.activate(initialOptions);
+            await root.session.flush();
+            await persist();
+            await notifyRunnerSessionStarted(root.session.sessionId, root.session.getMetadata() ?? root.bootstrap.metadata);
+        } catch (error) {
+            // Binding failure must not leave an attachable, heartbeat-producing zombie.
+            // Keep the native thread: its creating frontend may still be using it.
+            roots.delete(threadId);
+            runtime.sessions[root.session.sessionId].active = false;
+            prepared.delete(root);
+            try { await persist(); } finally { await root.close(false); }
+            throw error;
+        }
     };
     const create = (method: 'thread/start' | 'thread/fork', params: Record<string, unknown>, parent?: SharedCodexRoot, initialOptions?: SharedLaunchOptions): Promise<SharedCodexRoot> => operation(async () => {
-        const root = await prepare(string(params.cwd) ?? launch.cwd, undefined, parent);
+        if (method === 'thread/start') params = newSharedThreadParams(params, command.supportsHistoryMode);
+        const { hapiForkMessageLocalId, hapiForkThroughMessageLocalId, ...nativeParams } = params;
+        const nativeHistoricalBoundary = method === 'thread/fork' && parent
+            ? parent.historicalForkBoundary(params)
+            : undefined;
+        const forkedAtMessageLocalId = string(hapiForkMessageLocalId)
+            ?? (nativeHistoricalBoundary?.kind === 'at' ? nativeHistoricalBoundary.localId : undefined);
+        const forkedThroughMessageLocalId = typeof hapiForkThroughMessageLocalId === 'string'
+            ? hapiForkThroughMessageLocalId
+            : nativeHistoricalBoundary?.kind === 'through' ? nativeHistoricalBoundary.localId : undefined;
+        const root = await prepare(
+            string(params.cwd) ?? launch.cwd,
+            undefined,
+            parent,
+            method === 'thread/fork' ? forkedAtMessageLocalId : undefined,
+            method === 'thread/fork' ? forkedThroughMessageLocalId : undefined
+        );
         let nativeSucceeded = false;
         try {
             runtime.pendingCreations = [...runtime.pendingCreations ?? [], root.session.sessionId]; await persist();
-            const response = record(await root.client.request(method, root.config({ ...params, ...(method === 'thread/fork' ? { deferGoalContinuation: true } : {}) })));
+            const response = record(await root.client.request(method, root.config({ ...nativeParams, ...(method === 'thread/fork' ? { deferGoalContinuation: true } : {}) })));
             nativeSucceeded = true;
-            await bind(root, response, true, initialOptions); return root;
+            await bind(root, response, method === 'thread/fork', initialOptions, method === 'thread/start'); return root;
         } catch (error) {
             // A timed-out native mutation may have succeeded. Never replay it or kill unrelated roots.
             if (!nativeSucceeded && !isIndeterminateError(error)) {
@@ -238,7 +279,10 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
     });
     const key = (connection: string, request: Envelope) => `${connection}:${typeof request.id}:${request.id}`;
     const before = (request: Envelope, connection: string): Promise<Envelope> => operation(async () => {
-        const params = record(request.params);
+        let params = record(request.params);
+        assertEvolvedCodexFrontendMethod(request.method);
+        assertEvolvedCodexNativePolicy(params);
+        if (request.method === 'thread/start' && params.ephemeral !== true) params = newSharedThreadParams(params, command.supportsHistoryMode);
         if (['thread/revert', 'thread/rollback'].includes(request.method ?? '')) {
             throw new Error('In-place rewind is unavailable with concurrent HAPI clients. Use /fork or Fork at message instead.');
         }
@@ -264,17 +308,41 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
         if (request.method === 'thread/resume' && existing) return { ...request, params: existing.config(params) };
         if (threadId) await withThreadOwnership(home, threadId, id, async () => {});
         const cwd = string(params.cwd) ?? existing?.bootstrap.workingDirectory ?? launch.cwd;
+        const { hapiForkMessageLocalId, hapiForkThroughMessageLocalId, ...nativeParams } = params;
+        const hasNativeHistoricalBoundary = request.method === 'thread/fork'
+            && (typeof params.beforeTurnId === 'string' || typeof params.lastTurnId === 'string');
+        const nativeHistoricalBoundary = hasNativeHistoricalBoundary && existing
+            ? existing.historicalForkBoundary(params)
+            : undefined;
+        if (hasNativeHistoricalBoundary && !string(hapiForkMessageLocalId) && !nativeHistoricalBoundary) {
+            throw new Error('Cannot persist native historical fork boundary');
+        }
+        const forkedAtMessageLocalId = string(hapiForkMessageLocalId)
+            ?? (nativeHistoricalBoundary?.kind === 'at' ? nativeHistoricalBoundary.localId : undefined);
+        const forkedThroughMessageLocalId = typeof hapiForkThroughMessageLocalId === 'string'
+            ? hapiForkThroughMessageLocalId
+            : nativeHistoricalBoundary?.kind === 'through'
+                ? nativeHistoricalBoundary.localId
+                : request.method === 'thread/fork' && !forkedAtMessageLocalId && !hasNativeHistoricalBoundary
+                    ? existing?.latestMessageLocalId() ?? ''
+                    : undefined;
         const root = request.method === 'thread/resume' && threadId
             ? await withThreadOwnership(home, threadId, id, async () => {
                 const root = await prepare(cwd, await findColdBinding(home, threadId));
                 await reserveRecord(root, threadId); return root;
-            }) : await prepare(cwd, undefined, request.method === 'thread/fork' ? existing : undefined);
+            }) : await prepare(
+                cwd,
+                undefined,
+                request.method === 'thread/fork' ? existing : undefined,
+                request.method === 'thread/fork' ? forkedAtMessageLocalId : undefined,
+                request.method === 'thread/fork' ? forkedThroughMessageLocalId : undefined
+            );
         try {
             if (request.method !== 'thread/resume') {
                 runtime.pendingCreations = [...runtime.pendingCreations ?? [], root.session.sessionId]; await persist();
             }
             reservations.set(key(connection, request), { root, resumeId: request.method === 'thread/resume' ? threadId : undefined });
-            return { ...request, params: root.config({ ...params, ...(request.method === 'thread/fork' ? { deferGoalContinuation: true } : {}) }) };
+            return { ...request, params: root.config({ ...nativeParams, ...(request.method === 'thread/fork' ? { deferGoalContinuation: true } : {}) }) };
         } catch (error) { prepared.delete(root); await root.close(true); throw error; }
     });
     const after = (request: Envelope, response: Envelope, connection: string): Promise<void | Envelope[]> => operation(async () => {
@@ -285,7 +353,7 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
                 runtime.pendingCreations = runtime.pendingCreations?.filter(sid => sid !== reservation.root.session.sessionId);
                 await persist(); prepared.delete(reservation.root); await reservation.root.close(true); return;
             }
-            await bind(reservation.root, record(response.result), true);
+            await bind(reservation.root, record(response.result), true, undefined, request.method === 'thread/start');
         } else if (request.method === 'thread/archive' && !response.error) {
             const root = roots.get(string(record(request.params).threadId) ?? ''); if (root) await end(root, false);
         } else if (request.method === 'thread/queue/delete' && !response.error && record(response.result).deleted === true) {
@@ -337,6 +405,16 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
             }, control: (method, params) => operation(async () => {
                 const sid = string(record(params).sessionId); const root = [...roots.values()].find(root => root.session.sessionId === sid);
                 if (!root) throw new Error('Shared session not found');
+                if (method === 'hapi/reconnectSession') {
+                    if (ending.has(root)) return { connected: false };
+                    const directory = string(record(params).directory);
+                    if (directory && await realpath(directory) !== await realpath(root.bootstrap.workingDirectory)) {
+                        throw new Error('Cannot reconnect an existing execution in a different directory');
+                    }
+                    const settings = record(record(params).settings);
+                    if (Object.keys(settings).length) await root.applySettings(settings);
+                    return { connected: await root.session.reconnectHub() };
+                }
                 if (method === 'hapi/stopSession') { await end(root); return { stopped: true }; }
                 if (method === 'hapi/attach') return { threadId: root.threadId };
                 throw new Error('Unknown runtime control');

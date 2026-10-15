@@ -72,6 +72,23 @@ function ProgrammaticEditHarness() {
     )
 }
 
+function ReplaceTextHarness() {
+    const [value, setValue] = useState('draft')
+    const ref = useRef<RichComposerInputHandle>(null)
+
+    return (
+        <>
+            <button type="button" onClick={() => ref.current?.replaceText('restored history')}>Restore history</button>
+            <RichComposerInput
+                ref={ref}
+                value={value}
+                onValueChange={(next) => flushSync(() => setValue(next))}
+                onMirrorChange={() => {}}
+            />
+        </>
+    )
+}
+
 function LineBreakDeletionHarness() {
     const [value, setValue] = useState('hello')
 
@@ -90,6 +107,15 @@ function LineBreakDeletionHarness() {
 }
 
 describe('RichComposerInput responsive placeholder', () => {
+    it('honors the parent long-paste choice before inserting any clipboard text', () => {
+        const changed = vi.fn(), choice = vi.fn((event: { preventDefault: () => void }) => event.preventDefault())
+        const { container } = render(<RichComposerInput value="existing" onValueChange={changed} onMirrorChange={() => {}} onPaste={choice} />)
+        const editor = container.querySelector('[contenteditable]')!
+        fireEvent.paste(editor, { clipboardData: { files: [], getData: () => 'long'.repeat(2000) } })
+        expect(choice).toHaveBeenCalledTimes(1)
+        expect(changed).not.toHaveBeenCalled()
+        expect(editor.textContent).toBe('existing')
+    })
     it('calculates a smaller font that fits overflowing text', () => {
         expect(fitSingleLineFontSize(160, 320)).toBeCloseTo(7.95)
         expect(fitSingleLineFontSize(320, 320)).toBe(16)
@@ -229,6 +255,16 @@ describe('RichComposerInput controlled synchronization', () => {
         expect(screen.getByText('Type a message')).toBeInTheDocument()
     })
 
+    it('replaces the complete composer value and moves the caret to the restored text end', () => {
+        render(<ReplaceTextHarness />)
+
+        const editor = screen.getByTestId('rich-composer-input')
+        fireEvent.click(screen.getByRole('button', { name: 'Restore history' }))
+
+        expect(serializeComposerSegments(segmentsFromEditor(editor))).toBe('restored history')
+        expect(selectionOffset(editor)).toBe('restored history'.length)
+    })
+
     it('deletes exactly one trailing line break per Backspace', () => {
         render(<LineBreakDeletionHarness />)
 
@@ -307,5 +343,38 @@ describe('RichComposerInput controlled synchronization', () => {
 
         expect(onKeyDown).not.toHaveBeenCalled()
         expect(serializeComposerSegments(segmentsFromEditor(editor))).toBe('hello')
+    })
+})
+
+describe('RichComposerInput session drops', () => {
+    it('forwards a HAPI session drag payload', () => {
+        const onSessionMentionDrop = vi.fn()
+        render(
+            <RichComposerInput
+                value=""
+                onValueChange={() => {}}
+                onMirrorChange={() => {}}
+                onSessionMentionDrop={onSessionMentionDrop}
+            />
+        )
+
+        const editor = screen.getByRole('textbox')
+        expect(fireEvent.dragOver(editor, {
+            dataTransfer: { types: ['application/x-hapi-session-mention'] },
+        })).toBe(false)
+
+        fireEvent.drop(editor, {
+            dataTransfer: {
+                types: ['application/x-hapi-session-mention'],
+                getData: (type: string) => type === 'application/x-hapi-session-mention'
+                    ? '{"id":"peer-1","title":"Peer session"}'
+                    : '',
+            },
+        })
+
+        expect(onSessionMentionDrop).toHaveBeenCalledWith({
+            id: 'peer-1',
+            title: 'Peer session',
+        })
     })
 })

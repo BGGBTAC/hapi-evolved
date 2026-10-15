@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
     AgentConfigDescriptorSchema,
+    getRuntimeAgentConfigDescriptor,
+    isAgentConfigFieldAvailable,
     getAgentConfigDescriptor,
     getBuiltinAgentConfigDescriptors,
     resolveHapiYoloPermissionMode
@@ -93,4 +95,13 @@ describe('agent config descriptors', () => {
 test('runner capabilities carry descriptors for every built-in agent', async () => {
     const { RUNNER_CAPABILITIES } = await import('./runnerCapabilities')
     expect(RUNNER_CAPABILITIES.agentConfigs.map((descriptor) => descriptor.flavor)).toContain('cursor')
+})
+
+
+test('runtime descriptors bind canonical keys, dependencies and next-turn timing', () => {
+    const codex = getRuntimeAgentConfigDescriptor('codex')
+    expect(codex.fields.find(field => field.id === 'effort')).toMatchObject({ nativeKey: 'modelReasoningEffort', dependsOn: ['model'], applyTiming: 'next-turn' })
+    expect(codex.policyAliases).toEqual({ yolo: 'yolo' })
+    expect(getRuntimeAgentConfigDescriptor('claude').fields.find(field => field.id === 'effort')?.nativeKey).toBe('effort')
+    expect(isAgentConfigFieldAvailable({ flavor: 'future', fields: [{ id: 'model', section: 'model', kind: 'select', availability: 'session', unavailableReason: 'Choose a directory first' }] }, 'model')).toBe(false)
 })

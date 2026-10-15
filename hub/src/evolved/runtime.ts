@@ -8,11 +8,18 @@ import { createSessionTokenRoutes } from './bridge'
 import { createCodegraphRoutes, startCodegraphSync, enqueueCodegraphDeletion } from './codegraph'
 import { createMemoryRoutes } from './memory'
 import { HttpMemoryBackend, MemoryService } from './memoryService'
-import { assertOrigin } from './security'
+import { createEvolvedRequestGuard } from './security'
 import { createPreviewRoutes } from './previews'
+import { createPeerRoutes } from './peers'
+import { createGithubPrRunnerRoutes } from './githubPr'
+import { createSidechannelRoutes, SidechannelService, sidechannelConfig } from './sidechannel'
+import { createScheduleRoutes, ScheduleService } from './schedules'
+import { PeerCompletionReporter } from './peerReports'
+import type { SyncEngine } from '../sync/syncEngine'
 
 export type EvolvedRuntime = ReturnType<typeof createEvolvedRuntime>
 export function createEvolvedRuntime(dataDir: string, secret: Uint8Array) {
+    let getSyncEngine: () => SyncEngine | null = () => null
     const originValue = process.env.EVOLVED_ORIGIN
     if (!originValue) throw new Error('EVOLVED_ORIGIN is required in Evolved mode')
     const url = new URL(originValue)
@@ -31,25 +38,29 @@ export function createEvolvedRuntime(dataDir: string, secret: Uint8Array) {
     const memory = new MemoryService(store, new HttpMemoryBackend(process.env.EVOLVED_MEMORY_URL, serviceToken))
     const graphOptions = { store, origin, adapterUrl: process.env.EVOLVED_CODEGRAPH_URL, serviceToken }
     const routes = new Hono()
-    routes.use('*', bodyLimit({ maxSize: 1024 * 1024 }))
-    routes.use('*', async (c, next) => {
-        c.header('Cache-Control', 'no-store')
-        c.header('X-Content-Type-Options', 'nosniff')
-        // Non-browser capability clients may omit Origin. A browser may never
-        // combine its ambient cookie with a bearer token to skip the CSRF gate.
-        if (c.req.path.includes('/auth/') || c.req.header('cookie') || !c.req.header('authorization') || c.req.header('origin')) assertOrigin(c.req.raw, origin)
-        await next()
-    })
+    routes.use('*', createEvolvedRequestGuard(origin))
+    routes.use('*', bodyLimit({ maxSize: 1024 * 1024, onError: c => c.json({ error: 'Request body exceeds 1 MiB.', code: 'body_too_large' }, 413) }))
     routes.onError((error, c) => error instanceof EvolvedError
         ? c.json({ error: error.message, code: error.code }, error.status as 400)
         : c.json({ error: 'Evolved request failed.' }, 500))
     routes.route('/', createSessionTokenRoutes(store, secret, origin))
     routes.route('/', createPreviewRoutes({ store, origin }))
+    routes.route('/', createPeerRoutes(store, () => getSyncEngine()))
+    routes.route('/', createGithubPrRunnerRoutes(store, () => getSyncEngine(), dataDir))
+    routes.route('/', createSidechannelRoutes(new SidechannelService(store, sidechannelConfig()), () => getSyncEngine(), origin))
+    const schedules = new ScheduleService(store, () => getSyncEngine())
+    routes.route('/', createScheduleRoutes(schedules, () => getSyncEngine()))
     routes.route('/', createEvolvedRoutes({ store, vault, origin, allowedWorkspaceRoots: roots as string[],
         onProjectDelete: projectId => { memory.forgetProject(projectId); enqueueCodegraphDeletion(store, projectId) } }))
     routes.route('/', createMemoryRoutes({ store, service: memory, origin }))
     routes.route('/', createCodegraphRoutes(graphOptions))
     const stopMemory = memory.start()
     const stopGraph = startCodegraphSync(graphOptions)
-    return { store, origin, routes, memory, close() { stopMemory(); stopGraph(); store.close() } }
+    const stopSchedules = schedules.start()
+    let stopReports: (() => void) | undefined
+    return { store, origin, routes, memory, setSyncEngineProvider(provider: () => SyncEngine | null) {
+        getSyncEngine = provider; stopReports?.()
+        const engine = provider()
+        stopReports = engine ? new PeerCompletionReporter(store, engine).start() : undefined
+    }, close() { stopReports?.(); stopSchedules(); stopMemory(); stopGraph(); store.close() } }
 }

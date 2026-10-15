@@ -18,6 +18,8 @@ import kotlin.test.assertTrue
  * `input.messages` array decode into `List<DecryptedMessage>` — newly added
  * fixtures are picked up automatically and must never break wire decoding.
  */
+private const val SUPPORTED_CHAT_FIXTURE_VERSION = 2
+
 class FixtureDecodingTest {
 
     private val fixturesDir: File by lazy {
@@ -46,8 +48,8 @@ class FixtureDecodingTest {
         // supports (shared/fixtures/README.md policy) — never silently skip.
         val version = File(fixturesDir, "VERSION").readText().trim().toInt()
         assertTrue(
-            version <= SUPPORTED_PROTOCOL_VERSION,
-            "fixtures are version $version but this client supports <= $SUPPORTED_PROTOCOL_VERSION — update the port"
+            version <= SUPPORTED_CHAT_FIXTURE_VERSION,
+            "fixtures are version $version but this client supports <= $SUPPORTED_CHAT_FIXTURE_VERSION — update the port"
         )
     }
 
@@ -55,7 +57,7 @@ class FixtureDecodingTest {
     fun `every chat fixture's input messages decode as DecryptedMessage`() {
         for (file in chatFixtures()) {
             val root = HapiJson.parseToJsonElement(file.readText()).jsonObject
-            assertEquals(1, root.getValue("fixtureVersion").intOrNull, "fixtureVersion in ${file.name}")
+            assertEquals(SUPPORTED_CHAT_FIXTURE_VERSION, root.getValue("fixtureVersion").intOrNull, "fixtureVersion in ${file.name}")
             val rawMessages = root.getValue("input").jsonObject.getValue("messages").jsonArray
             assertTrue(rawMessages.isNotEmpty(), "empty input.messages in ${file.name}")
 

@@ -142,5 +142,9 @@ export function traceMessages(messages: NormalizedMessage[]): TracedMessage[] {
         results.push({ ...message })
     }
 
-    return results
+    // Keep unresolved children visible when their parent is outside the loaded
+    // page. Their isSidechain flag still excludes usage from the root total.
+    for (const orphans of state.orphanMessages.values()) results.push(...orphans);
+    const order = new Map(messages.map((message, index) => [message.id, index]));
+    return results.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
 }

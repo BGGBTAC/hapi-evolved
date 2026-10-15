@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { MessagePrimitive, useAuiState, type TextMessagePart } from '@assistant-ui/react'
 import { useHappyChatContext } from '@/components/AssistantChat/context'
 import type { HappyChatMessageMetadata } from '@/lib/assistant-runtime'
@@ -12,9 +13,14 @@ import { useTranslation } from '@/lib/use-translation'
 export function HappyUserMessage() {
     const ctx = useHappyChatContext()
     const { t } = useTranslation()
+    const peer = useAuiState(s => (s.message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined)?.peer)
     const role = useAuiState((s) => s.message.role)
     const messageId = useAuiState((s) => s.message.id)
     const elementId = getConversationMessageAnchorId(messageId)
+    const sourceMessageIds = useAuiState((s) => {
+        const custom = s.message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
+        return custom?.sourceMessageIds
+    })
     const text = useAuiState((s) => {
         if (s.message.role !== 'user') return ''
         return s.message.content.find((part): part is TextMessagePart => part.type === 'text')?.text ?? ''
@@ -82,6 +88,7 @@ export function HappyUserMessage() {
             <MessagePrimitive.Root
                 id={elementId}
                 data-hapi-message-role="user"
+                data-hapi-source-message-ids={sourceMessageIds?.join(' ') || undefined}
                 className="happy-message scroll-mt-4 px-1 min-w-0 max-w-full overflow-x-hidden"
             >
                 <div className="ml-auto w-full max-w-[92%]">
@@ -99,13 +106,15 @@ export function HappyUserMessage() {
         <MessagePrimitive.Root
             id={elementId}
             data-hapi-message-role="user"
+            data-hapi-source-message-ids={sourceMessageIds?.join(' ') || undefined}
             className="happy-message flex flex-col items-end scroll-mt-4"
         >
+            {peer && <span className="mb-1 text-xs text-[var(--app-hint)]" title="Vom Hub bestätigter Projekt-Agent. Die Absendersession ist eine behauptete Antwortadresse.">Projekt-Agent · <Link to="/sessions/$sessionId" params={{ sessionId: peer.claimedSenderSessionId }}>Zur Antwortadresse</Link></span>}
             <div className={getUserBubbleClassName(status)}>
                 <div className="flex items-start gap-2">
                     <div className="min-w-0 flex-1">
                         {hasText ? <UserBubbleContent text={text} /> : null}
-                        {hasAttachments ? <MessageAttachments attachments={attachments} /> : null}
+                        {hasAttachments ? <MessageAttachments attachments={attachments} api={ctx.api} sessionId={ctx.sessionId} /> : null}
                     </div>
                     {showStatus && (
                         <div className="happy-message-actions-first-line flex shrink-0 items-center gap-1">

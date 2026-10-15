@@ -43,6 +43,12 @@ Behauptung, dass sämtliche Issues bereits implementiert oder behoben seien**.
 Die vereinbarte erste Version priorisiert Sicherheit, Teams, Memory, Codegraph
 und kritische Stabilität. Weitere Features bleiben im nachvollziehbaren Backlog.
 
+Die anschließende vollständige Backlog-Runde bewertet jedes Issue nach Funktionalität,
+Umsetzbarkeit und Projektnutzen. Maßgeblich sind
+[`backlog-decisions-2026-10-15.json`](backlog-decisions-2026-10-15.json), die gleichnamige
+CSV und der Abnahmebericht [`BACKLOG_REVIEW.md`](BACKLOG_REVIEW.md).
+Bedienung und Betriebsgrenzen stehen in [`BACKLOG_FEATURES.md`](BACKLOG_FEATURES.md).
+
 ## Vertrauensgrenzen
 
 Browser → Passkey-/Projekt-API → Hub-Quellenregister und ACL.

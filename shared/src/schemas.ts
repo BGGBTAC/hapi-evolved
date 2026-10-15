@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { ExternalRefsSchema } from './externalRefs'
 import { COPILOT_AGENT_MODES, type CopilotAgentMode } from './copilotModes'
 import { CODEX_COLLABORATION_MODES, PERMISSION_MODES } from './modes'
 import { AgentConfigDescriptorSchema } from './agentConfig'
@@ -35,6 +36,7 @@ export const OpencodeClearOperationSchema = z.object({
 export type OpencodeClearOperation = z.infer<typeof OpencodeClearOperationSchema>
 
 const SessionCapabilitiesSchema = z.object({
+    durableAttachments: z.boolean().optional(),
     concurrentClients: z.boolean().optional(),
     terminal: z.boolean().optional(),
     conversationHistory: ConversationHistoryCapabilitiesSchema.optional()
@@ -52,7 +54,15 @@ export const WorktreeMetadataSchema = z.object({
 
 export type WorktreeMetadata = z.infer<typeof WorktreeMetadataSchema>
 
+export const ModelErrorSchema = z.object({
+    kind: z.string().max(80), message: z.string().max(1000), at: z.number(), acknowledgedAt: z.number().optional()
+})
+export type ModelError = z.infer<typeof ModelErrorSchema>
+
 export const MetadataSchema = z.object({
+    externalRefs: ExternalRefsSchema.optional(),
+    lastModelError: ModelErrorSchema.optional(),
+    agentConfig: AgentConfigDescriptorSchema.optional(),
     path: z.string(),
     host: z.string(),
     version: z.string().optional(),
@@ -65,6 +75,13 @@ export const MetadataSchema = z.object({
     // (`claude --resume <id> --fork-session`). Lets the web list mark the new
     // session as a branch of `<id>` instead of an unrelated duplicate.
     forkedFrom: z.string().optional(),
+    // HAPI localId boundary for a historical shared Codex fork. Persisted so a
+    // Hub restart can hydrate only the native fork prefix, not later messages.
+    forkedAtMessageLocalId: z.string().optional(),
+    // Inclusive HAPI localId boundary for a current-tip shared Codex fork.
+    // Empty string represents a fork of an empty transcript. Persisted so
+    // later parent activity is excluded after a Hub restart.
+    forkedThroughMessageLocalId: z.string().optional(),
     codexSessionId: z.string().optional(),
     // 原始 Codex thread id。导入 Codex 历史后，HAPI 会 fork 出自己的续写 thread；
     // codexSessionId 保存 fork 后的 thread，codexSourceSessionId 保留来源 thread 便于同步/展示。
@@ -85,6 +102,9 @@ export const MetadataSchema = z.object({
     kimiSessionId: z.string().optional(),
     copilotSessionId: z.string().optional(),
     piSessionId: z.string().optional(),
+    // Native DeepSeek Harness ACP session id. Current DSH ACP profiles
+    // resume persisted sessions through the non-standard `session/resume`.
+    dshSessionId: z.string().optional(),
     piResumeAttempt: z.object({
         state: z.enum(['resuming', 'terminating', 'quarantined']),
         machineId: z.string(),
@@ -118,6 +138,7 @@ export const MetadataSchema = z.object({
     happyToolsDir: z.string().optional(),
     startedFromRunner: z.boolean().optional(),
     hostPid: z.number().optional(),
+    sharedRootGeneration: z.string().optional(),
     hapiMcpUrl: z.string().url().optional(),
     startedBy: z.enum(['runner', 'terminal']).optional(),
     // 'running' | 'idle' | 'archived' (see shared/src/sessionLifecycle.ts).
@@ -307,8 +328,13 @@ export const AttachmentMetadataSchema = z.object({
     filename: z.string(),
     mimeType: z.string(),
     size: z.number(),
-    path: z.string(),
+    // `path` is the legacy CLI-local upload reference. New messages carry an
+    // opaque hub attachment id and the CLI materializes it on demand.
+    path: z.string().min(1).optional(),
+    attachmentId: z.string().min(1).optional(),
     previewUrl: z.string().optional()
+}).refine((value) => Boolean(value.path || value.attachmentId), {
+    message: 'Attachment metadata must include either path or attachmentId'
 })
 
 export type AttachmentMetadata = z.infer<typeof AttachmentMetadataSchema>
@@ -331,6 +357,9 @@ export const DecryptedMessageSchema = z.object({
 export type DecryptedMessage = z.infer<typeof DecryptedMessageSchema>
 
 export const SessionSchema = z.object({
+    lastMessageAt: z.number().nullable().optional(),
+    lastAssistantMessageAt: z.number().nullable().optional(),
+    notifyStatus: z.literal('blocked').nullable().optional(),
     hasConversationContent: z.boolean().optional(),
     id: z.string(),
     namespace: z.string(),
@@ -399,6 +428,9 @@ const VersionedTeamStatePatchSchema = z.object({
 })
 
 export const SessionPatchSchema = z.object({
+    lastMessageAt: z.number().nullable().optional(),
+    lastAssistantMessageAt: z.number().nullable().optional(),
+    notifyStatus: z.literal('blocked').nullable().optional(),
     active: z.boolean().optional(),
     thinking: z.boolean().optional(),
     activeTurnStartedAt: z.number().nullable().optional(),
@@ -578,6 +610,7 @@ export const SyncEventSchema = z.discriminatedUnion('type', [
     }),
     SessionChangedSchema.extend({
         type: z.literal('message-received'),
+        notificationCursor: z.string().optional(),
         message: DecryptedMessageSchema
     }),
     SessionChangedSchema.extend({
@@ -590,6 +623,7 @@ export const SyncEventSchema = z.discriminatedUnion('type', [
     }),
     SessionChangedSchema.extend({
         type: z.literal('session-ended'),
+        notificationCursor: z.string().optional(),
         reason: SessionEndReasonSchema.optional()
     }),
     MachineChangedSchema.extend({

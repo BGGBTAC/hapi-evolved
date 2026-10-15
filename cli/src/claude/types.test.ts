@@ -2,6 +2,12 @@ import { describe, it, expect } from "vitest";
 import { RawJSONLinesSchema } from "./types";
 
 describe("RawJSONLinesSchema", () => {
+    it("preserves structured synthetic API failures with nullable service tier", () => {
+        const error = { type: 'assistant', uuid: 'error-1', isApiErrorMessage: true, error: 'invalid_request',
+            message: { model: '<synthetic>', content: [{ type: 'text', text: 'Prompt is too long' }],
+                usage: { input_tokens: 0, output_tokens: 0, service_tier: null } } }
+        expect(RawJSONLinesSchema.parse(error)).toEqual(error)
+    })
     it("accepts Claude Code native ai-title events", () => {
         expect(RawJSONLinesSchema.parse({
             type: "ai-title",

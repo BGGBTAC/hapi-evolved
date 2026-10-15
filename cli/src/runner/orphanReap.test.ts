@@ -1,8 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import spawn from 'cross-spawn'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+    listPosixProcessesWithStartMarker,
+    listWindowsProcessesWithCommandLine,
     commandMatchesHapiMcpBridgeForSession,
     commandMatchesRunnerSpawnedSession,
     findRunnerSpawnedOrphanTargets,
@@ -465,3 +468,16 @@ describe('Windows orphan startMarker format agreement', () => {
         expect(killedMismatch).toEqual([])
     })
 })
+
+
+describe('real process-list failure guards', () => {
+    afterEach(() => vi.restoreAllMocks());
+    it('rejects truncated ps output even if it contains a plausible owned PID', () => {
+        vi.spyOn(spawn, 'sync').mockReturnValue({ pid: 1, status: null, signal: 'SIGTERM', stdout: '42 Mon Oct 12 12:00:00 2026 hapi claude --started-by runner --existing-session-id target', stderr: '', output: [] });
+        expect(() => listPosixProcessesWithStartMarker()).toThrow('ps aborted');
+    });
+    it('rejects successful Windows CIM execution with an empty stdout', () => {
+        vi.spyOn(spawn, 'sync').mockReturnValue({ pid: 1, status: 0, signal: null, stdout: '  ', stderr: '', output: [] });
+        expect(() => listWindowsProcessesWithCommandLine()).toThrow('empty stdout');
+    });
+});

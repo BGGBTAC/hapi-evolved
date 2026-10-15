@@ -78,6 +78,19 @@ describe('reduceTimeline', () => {
         expect(card.tool.input).toMatchObject({ statusUnknown: false, statusText: 'Running' })
     })
 
+    it('enriches a completed child with late identity without restarting its status or clock', () => {
+        const { blocks } = reduceTimeline([
+            makeChildEvent('agent-run-update', 1000, { status: 'completed', completedAt: 950 }),
+            makeChildEvent('agent-run-metadata', 2000, { taskName: 'Inspect cache', nickname: 'Scout', agentRole: 'reviewer', agentPath: '/root/review' }),
+        ], makeContext())
+        const card = blocks[0]
+        if (card.kind !== 'tool-call') throw new Error('Missing child card')
+        expect(card.tool.state).toBe('completed')
+        expect(card.tool.completedAt).toBe(950)
+        expect(card.tool.input).toMatchObject({ taskName: 'Inspect cache', nickname: 'Scout', agentRole: 'reviewer', agentPath: '/root/review' })
+        expect(card.tool.input).not.toHaveProperty('model')
+    })
+
     it.each(['completed', 'error'])('keeps explicit %s state when further historical traces arrive', status => {
         const { blocks } = reduceTimeline([
             makeChildTrace(1000),
@@ -538,7 +551,8 @@ describe('reduceTimeline', () => {
         expect(textBlocks).toHaveLength(2)
         expect(textBlocks[0]).toMatchObject({
             id: 'text-stream-1',
-            text: 'first second'
+            text: 'first second',
+            sourceMessageIds: ['text-row-1', 'text-row-2']
         })
         expect(textBlocks[1]).toMatchObject({
             id: 'text-row-3:0',

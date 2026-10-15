@@ -1,5 +1,6 @@
 import { createConfiguration, type ConfigSource } from './configuration'
 import { Store } from './store'
+import { join } from 'node:path'
 import { SyncEngine, type SyncEvent } from './sync/syncEngine'
 import { NotificationHub } from './notifications/notificationHub'
 import type { NotificationChannel } from './notifications/notificationTypes'
@@ -182,7 +183,9 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubInstan
         console.log(`[Hub] Tunnel: disabled (${relayFlag.source})`)
     }
 
-    const store = new Store(config.dbPath)
+    const store = new Store(config.dbPath, { attachmentsRoot: evolvedEnabled ? join(config.dataDir, 'attachments') : process.env.HAPI_ATTACHMENTS_ROOT ?? join(config.dataDir, 'attachments') })
+    try { await store.cleanupOrphanedAttachments() }
+    catch { console.warn('[attachments] Cleanup incomplete; retrying on next Hub start') }
     const jwtSecret = await getOrCreateJwtSecret()
     const evolved = evolvedEnabled ? createEvolvedRuntime(config.dataDir, jwtSecret) : undefined
     const vapidKeys = await getOrCreateVapidKeys(config.dataDir)

@@ -37,22 +37,51 @@ export class SharedCodexProjection {
     private converter = new AppServerEventConverter();
     private readonly emitted = new Set<string>();
     private readonly turns = new Map<string, string>();
+    private readonly finalTurnText = new Map<string, string>();
     private readonly turnModels = new Map<string, string>();
     // Unlike transcript emission, title side effects survive reset/replay.
     private readonly pendingTitles = new Map<string, string>();
     private readonly completedTitles = new Set<string>();
+    private latestMessageLocalIdValue: string | undefined;
     private titleRevision = 0;
     constructor(private readonly session: ApiSessionClient, readonly threadId: string,
         private readonly committed: (id: string) => Promise<void>, private readonly parentThreadId?: string) {
         if (!parentThreadId) for (const [id, turn] of Object.entries(session.getMetadata()?.conversationHistoryTurns ?? {})) this.turns.set(id, turn);
     }
 
+    childIdentity(thread: unknown): void {
+        const value = record(thread);
+        if (!this.parentThreadId || value.id !== this.threadId) return;
+        // These are independently reported identity fields. A task label must
+        // never stand in for the assigned nickname, role or applied model.
+        const identity = Object.fromEntries([
+            ['taskName', string(value.taskName)], ['nickname', string(value.agentNickname)],
+            ['agentPath', string(value.agentPath)], ['agentRole', string(value.agentRole)]
+        ].filter(([, value]) => value));
+        if (!Object.keys(identity).length) return;
+        this.send({ type: 'agent-run-metadata', agentId: this.threadId, cardId: `codex-agent:${this.threadId}`, ...identity },
+            `identity:${createHash('sha256').update(JSON.stringify(identity)).digest('hex')}`);
+    }
+
     turnFor(id: string): string | undefined { return this.turns.get(id); }
+    latestMessageLocalId(): string | undefined { return this.latestMessageLocalIdValue; }
+    firstMessageLocalIdForTurn(turnId: string): string | undefined {
+        return [...this.turns].find(([, mappedTurnId]) => mappedTurnId === turnId)?.[0];
+    }
+    firstMessageLocalIdAfterTurn(turnId: string): string | undefined {
+        let foundTurn = false;
+        for (const [id, mappedTurnId] of this.turns) {
+            if (foundTurn && mappedTurnId !== turnId) return id;
+            if (mappedTurnId === turnId) foundTurn = true;
+        }
+        return undefined;
+    }
     reset(): void { this.converter = new AppServerEventConverter(); this.emitted.clear(); }
     private send(body: Record<string, unknown>, key: string): void {
         if (this.emitted.has(key)) return;
         this.emitted.add(key);
         const id = `codex:${this.threadId}:${key}`;
+        if (!this.parentThreadId) this.latestMessageLocalIdValue = id;
         this.session.sendAgentMessage(this.parentThreadId && !String(body.type).startsWith('agent-run-') ? {
             type: 'agent-run-trace', agentId: this.threadId, cardId: `codex-agent:${this.threadId}`, message: { ...body, id }, id,
             scope: { role: 'child', threadId: this.threadId, parentThreadId: this.parentThreadId }, scope_role: 'child'
@@ -87,6 +116,7 @@ export class SharedCodexProjection {
                 }
             }
         }
+        if (method === 'thread/started') this.childIdentity(record(params).thread);
         await this.project(method, params, modelAtReceipt);
     }
 
@@ -104,9 +134,21 @@ export class SharedCodexProjection {
             this.turnModels.set(turnId, string(p.toModel)!);
         }
         const itemId = string(item.id) ?? string(p.itemId);
+        if (!this.parentThreadId && turnId && method === 'item/completed' && item.type === 'agentMessage' && typeof item.text === 'string') {
+            this.finalTurnText.set(turnId, item.text);
+            if (this.finalTurnText.size > 128) this.finalTurnText.delete(this.finalTurnText.keys().next().value!);
+        }
+        if (!this.parentThreadId && turnId && method === 'turn/completed' && !fromHistory) {
+            const status = string(record(p.turn).status);
+            this.send({ type: 'hapi-turn-completed', turnId, status: status === 'completed' ? 'completed' : status === 'interrupted' ? 'interrupted' : 'failed',
+                ...(status === 'completed' && this.finalTurnText.has(turnId) ? { finalText: this.finalTurnText.get(turnId) } : {})
+            }, `${turnId}:hapi-turn-completed`);
+        }
+
         if (!this.parentThreadId && (method === 'item/started' || method === 'item/completed') && item.type === 'userMessage') {
             const id = string(item.clientId ?? item.clientUserMessageId) ?? (itemId ? `codex:${this.threadId}:user:${itemId}` : undefined);
             if (id) {
+                this.latestMessageLocalIdValue = id;
                 const firstInTurn = turnId ? [...this.turns].find(([, value]) => value === turnId)?.[0] : undefined;
                 if (turnId) this.turns.set(id, turnId);
                 await this.committed(id);
@@ -191,6 +233,7 @@ export class SharedCodexProjection {
     }
 
     async history(thread: unknown): Promise<void> {
+        this.childIdentity(thread);
         const turns = record(thread).turns;
         if (!Array.isArray(turns)) return;
         const titleRevision = this.titleRevision;

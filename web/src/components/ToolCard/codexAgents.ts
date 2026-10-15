@@ -182,6 +182,10 @@ export function getCodexAgentFieldRows(toolName: string, input: unknown): Array<
         ? asNonEmptyString(input.agentId) ?? asNonEmptyString(input.agent_id)
         : null
     if (agentId) rows.push({ label: 'Agent', value: agentId })
+    for (const [key, label] of [['taskName', 'Task'], ['nickname', 'Name'], ['agentPath', 'Agent path'], ['agentRole', 'Role']]) {
+        const value = getInputStringAny(input, [key])
+        if (value) rows.push({ label, value })
+    }
 
     const statusText = getCodexAgentActivity(input)
     if (statusText) rows.push({ label: 'Status', value: statusText })

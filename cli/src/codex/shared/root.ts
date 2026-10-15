@@ -1,3 +1,5 @@
+import { assertEvolvedCodexNativePolicy, assertEvolvedCodexPermission } from '@/evolved/codexPolicy';
+import { getRuntimeAgentConfigDescriptor } from '@hapi/protocol';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -25,6 +27,7 @@ import { inheritedSandbox, settingsMatch } from './settings';
 import { planImplementationMessageId, planProposalForItem, planProposalForTurn } from './plan';
 
 type RuntimeSettings = NonNullable<Parameters<ApiSessionClient['keepAlive']>[2]>;
+export type NativeForkBoundary = { kind: 'at' | 'through'; localId: string };
 export type RootHost = {
     directory: string; generation: string; endpoint: string; token?: string;
     settingsFor(threadId: string): Record<string, unknown> | undefined;
@@ -32,7 +35,7 @@ export type RootHost = {
     end(root: SharedCodexRoot, nativeArchive?: boolean): Promise<void>;
 };
 const SettingsSchema = z.object({
-    permissionMode: z.enum(['default', 'read-only', 'safe-yolo', 'yolo']).optional(),
+    permissionMode: z.enum(['default', 'autoReview', 'read-only', 'safe-yolo', 'yolo']).optional(),
     model: z.string().min(1).optional(), modelReasoningEffort: z.string().nullable().optional(),
     collaborationMode: z.enum(['default', 'plan']).optional(),
     serviceTier: z.enum(['fast', 'standard']).nullable().optional(),
@@ -60,6 +63,7 @@ export class SharedCodexRoot {
     private steeringActive: boolean | undefined;
     private turnRevision = 0;
     private settingsRevision = 0;
+    private knownNewEmptyThread = false;
     private refreshing?: Promise<void>;
     private interrupted = false;
     private closed = false;
@@ -71,6 +75,7 @@ export class SharedCodexRoot {
     private settingsNative: Record<string, unknown> = {};
     private settingsNotification?: Record<string, unknown>;
     private readonly settingsListeners = new Set<() => void>();
+    private settingsOperation: Promise<unknown> = Promise.resolve();
     private ready!: () => void;
     private readonly bound = new Promise<void>(resolve => { this.ready = resolve; });
 
@@ -84,6 +89,7 @@ export class SharedCodexRoot {
             if (method === 'thread/settings/updated' && record(params).threadId === this.threadId) this.acceptSettings(record(record(params).threadSettings));
             if (record(params).threadId === this.threadId) {
                 if (method === 'turn/started') {
+                    this.knownNewEmptyThread = false;
                     this.turnRevision++; this.currentTurn = string(record(record(params).turn).id); this.interrupted = false;
                     if (this.currentTurn) this.latestTurn = { id: this.currentTurn, status: 'inProgress' };
                     this.publishSteering();
@@ -176,13 +182,15 @@ export class SharedCodexRoot {
         return false;
     }
     config(params: Record<string, unknown>): Record<string, unknown> {
+        assertEvolvedCodexNativePolicy(params);
         return { ...params, cwd: params.cwd ?? this.bootstrap.workingDirectory,
             developerInstructions: params.developerInstructions ?? getCodexSystemPrompt(), config: {
             ...record(params.config), 'mcp_servers.hapi': this.bridge.mcpServers.hapi,
             'shell_environment_policy.set.HAPI_SESSION_ID': this.session.sessionId
         } };
     }
-    async bind(threadId: string, response: Record<string, unknown>, subscribe: boolean): Promise<void> {
+    async bind(threadId: string, response: Record<string, unknown>, subscribe: boolean, knownNewEmptyThread = false): Promise<void> {
+        this.knownNewEmptyThread = knownNewEmptyThread;
         if (this.threadId && this.threadId !== threadId) throw new Error('Cannot retarget a shared HAPI session');
         this.threadId = threadId;
         this.queue = new SharedCodexQueue(this.client, threadId, join(this.host.directory, `${this.session.sessionId}.queue.json`),
@@ -191,7 +199,7 @@ export class SharedCodexRoot {
             ids => this.session.setSteerDeliveryState(ids, 'queued'));
         await this.queue.load();
         this.projection = new SharedCodexProjection(this.session, threadId, id => this.queue.committed(id));
-        this.session.updateMetadata(metadata => ({ ...metadata, codexSessionId: threadId, capabilities: {
+        this.session.updateMetadata(metadata => ({ ...metadata, codexSessionId: threadId, sharedRootGeneration: `${this.host.generation}:${randomUUID()}`, agentConfig: getRuntimeAgentConfigDescriptor('codex'), capabilities: {
             ...metadata.capabilities, concurrentClients: true, terminal: true,
             // In-place rewind needs a native + hub commit barrier. Do not
             // advertise a destructive operation we cannot make atomic yet.
@@ -205,6 +213,22 @@ export class SharedCodexRoot {
         if (subscribe) response = record(await this.client.request('thread/resume', { threadId, excludeTurns: true }));
         this.acceptSettings(response); this.acceptSettings(this.host.settingsFor(threadId) ?? {});
         await this.projection.history(response.thread); await this.refresh(); await this.refreshChildren(true);
+    }
+    latestMessageLocalId(): string | undefined { return this.projection?.latestMessageLocalId(); }
+    historicalForkBoundary(params: Record<string, unknown>): NativeForkBoundary | undefined {
+        const beforeTurnId = string(params.beforeTurnId);
+        if (beforeTurnId) {
+            const localId = this.projection.firstMessageLocalIdForTurn(beforeTurnId);
+            return localId ? { kind: 'at', localId } : undefined;
+        }
+        const lastTurnId = string(params.lastTurnId);
+        if (lastTurnId) {
+            const after = this.projection.firstMessageLocalIdAfterTurn(lastTurnId);
+            if (after) return { kind: 'at', localId: after };
+            const latest = this.projection.latestMessageLocalId();
+            return latest ? { kind: 'through', localId: latest } : undefined;
+        }
+        return undefined;
     }
     async activate(options: SharedLaunchOptions = {}): Promise<void> {
         // Restored input cannot run before the cold-resume settings are applied.
@@ -241,11 +265,19 @@ export class SharedCodexRoot {
         if (typeof value.model !== 'string') return;
         this.settingsRevision++;
         if ('collaborationMode' in value && 'sandboxPolicy' in value) this.settingsNotification = value;
-        this.settingsNative = { ...this.settingsNative, ...value };
+        // thread/start and thread/resume use sandbox/reasoningEffort, while
+        // settings notifications use sandboxPolicy/effort. Keep one current
+        // representation so a fresh resume cannot leave an older policy behind.
+        this.settingsNative = { ...this.settingsNative, ...value,
+            ...('sandboxPolicy' in value || 'sandbox' in value
+                ? { sandboxPolicy: value.sandboxPolicy ?? value.sandbox } : {}),
+            ...('effort' in value || 'reasoningEffort' in value
+                ? { effort: 'effort' in value ? value.effort : value.reasoningEffort } : {})
+        };
         const sandbox = record(value.sandboxPolicy ?? value.sandbox).type;
         this.settings = { ...this.settings, model: value.model,
             modelReasoningEffort: string(value.effort ?? value.reasoningEffort) ?? null,
-            ...(sandbox ? { permissionMode: sandbox === 'dangerFullAccess' ? 'yolo' : sandbox === 'readOnly' ? 'read-only' : 'default' } : {}),
+            ...(sandbox ? { permissionMode: sandbox === 'dangerFullAccess' ? 'yolo' : sandbox === 'readOnly' ? 'read-only' : this.settingsNative.approvalsReviewer === 'auto_review' ? 'autoReview' : 'default' } : {}),
             ...('serviceTier' in value ? { serviceTier: value.serviceTier === 'priority' ? 'fast' : 'standard' } : {}),
             ...('collaborationMode' in value ? { collaborationMode: record(value.collaborationMode).mode === 'plan' ? 'plan' as const : 'default' as const } : {})
         };
@@ -282,7 +314,15 @@ export class SharedCodexRoot {
         if (thread.historyMode === 'paginated') {
             const turns: unknown[] = []; let cursor: string | undefined;
             do {
-                const page = record(await this.client.request('thread/turns/list', { threadId, cursor, sortDirection: 'asc', itemsView: 'full' }));
+                let page: Record<string, unknown>;
+                try { page = record(await this.client.request('thread/turns/list', { threadId, cursor, sortDirection: 'asc', itemsView: 'full' })); }
+                catch (error) {
+                    // Codex does not create a source rollout until a new root's
+                    // first turn. Never mask missing history on resume/fork.
+                    if (this.knownNewEmptyThread && threadId === this.threadId && !cursor && turns.length === 0
+                        && error instanceof Error && error.message.includes('missing source rollout')) break;
+                    throw error;
+                }
                 if (!Array.isArray(page.data)) throw new Error('Invalid Codex history');
                 turns.push(...page.data); cursor = string(page.nextCursor);
             } while (cursor);
@@ -317,6 +357,7 @@ export class SharedCodexRoot {
                 if (id && id !== this.threadId) this.ancestry.set(id, string(thread.parentThreadId) ?? null);
                 if (id && id !== this.threadId && await this.ownsThread(id) && !this.children.has(id)) {
                     this.children.set(id, new SharedCodexProjection(this.session, id, async () => {}, this.threadId));
+                    this.children.get(id)!.childIdentity(thread);
                 }
             }
             cursor = string(page.nextCursor);
@@ -366,8 +407,16 @@ export class SharedCodexRoot {
             }
         } finally { this.reconnecting = false; this.publishSteering(); this.publishPlan(); }
     }
-    async applySettings(raw: unknown): Promise<{ applied: RuntimeSettings }> {
+    applySettings(raw: unknown): Promise<{ applied: RuntimeSettings }> {
+        // Serialize whole mutations, including the matching-snapshot fast path.
+        // Otherwise a later "default" can return before an earlier YOLO update.
+        const operation = this.settingsOperation.then(() => this.applySettingsOnce(raw));
+        this.settingsOperation = operation.catch(() => {});
+        return operation;
+    }
+    private async applySettingsOnce(raw: unknown): Promise<{ applied: RuntimeSettings }> {
         const config = SettingsSchema.parse(raw);
+        assertEvolvedCodexPermission(config.permissionMode);
         if (config.permissionMode === 'safe-yolo') throw new Error('safe-yolo is not a native shared permission mode; choose default, read-only, or yolo');
         if (Object.keys(config).length === 0) return { applied: this.settings };
         if (typeof config.modelReasoningEffort === 'string') config.modelReasoningEffort = parseReasoningEffortValue(config.modelReasoningEffort);
@@ -390,12 +439,18 @@ export class SharedCodexRoot {
             ...(config.personality ? { personality: config.personality } : {}),
             ...(config.modelReasoningEffort !== undefined ? { effort: config.modelReasoningEffort } : {}),
             ...(config.serviceTier !== undefined ? { serviceTier: config.serviceTier === 'fast' ? 'priority' : null } : {}),
-            ...(permission ? { approvalPolicy: permission.approvalPolicy, sandboxPolicy: permission.sandboxPolicy } : {}),
+            ...(permission ? { approvalPolicy: permission.approvalPolicy, approvalsReviewer: permission.approvalsReviewer ?? 'user', sandboxPolicy: permission.sandboxPolicy } : {}),
             ...(config.collaborationMode ? { collaborationMode: { mode: config.collaborationMode, settings: {
                 model: config.model ?? this.settings.model, reasoning_effort: config.modelReasoningEffort ?? this.settings.modelReasoningEffort,
                 developer_instructions: null
             } } } : {})
         };
+        // Codex acknowledges unchanged settings without emitting an update
+        // notification. An already observed matching snapshot needs no mutation.
+        if (settingsMatch(this.settingsNative, params)) {
+            this.alive();
+            return { applied: this.settings };
+        }
         let changed!: () => void;
         let timer: ReturnType<typeof setTimeout> | undefined;
         const accepted = new Promise<void>((resolve, reject) => {
@@ -412,7 +467,12 @@ export class SharedCodexRoot {
         } finally { clearTimeout(timer); this.settingsListeners.delete(changed); }
     }
     async initialSettings(options: SharedLaunchOptions): Promise<void> {
-        if (options.collaborationMode) await this.applySettings({ collaborationMode: options.collaborationMode });
+        // Subscription-only resumes can restore native defaults. Reapply an
+        // explicit launch permission before controls or restored input are ready.
+        if (options.permissionMode || options.collaborationMode) await this.applySettings({
+            ...(options.permissionMode ? { permissionMode: options.permissionMode } : {}),
+            ...(options.collaborationMode ? { collaborationMode: options.collaborationMode } : {})
+        });
     }
     private async implementPlan(planId: string): Promise<ImplementCodexPlanResult> {
         const unavailable = (): ImplementCodexPlanResult => ({ ok: false, code: 'unavailable', error: 'Codex is disconnected or stopping. Reconnect before implementing the plan.' });
@@ -501,7 +561,10 @@ export class SharedCodexRoot {
             if (messageLocalId && !beforeTurnId) throw new Error('No native history point for this message');
             if (messageLocalId) await this.assertBoundary(messageLocalId, beforeTurnId!);
             const child = await this.host.create('thread/fork', { ...this.freshParams(), threadId: this.threadId,
-                ...(beforeTurnId ? { beforeTurnId } : {}) }, this);
+                ...(beforeTurnId ? { beforeTurnId } : {}),
+                ...(messageLocalId
+                    ? { hapiForkMessageLocalId: messageLocalId }
+                    : { hapiForkThroughMessageLocalId: this.projection.latestMessageLocalId() ?? '' }) }, this);
             await child.initialSettings({ collaborationMode: this.settings.collaborationMode });
             return { nativeSessionId: child.threadId, sessionId: child.session.sessionId };
         });
@@ -539,7 +602,7 @@ export class SharedCodexRoot {
         if (command === '/exit') { this.notice('/exit closes a native terminal, not this Web view. Use End session to archive this conversation.'); return null; }
         if (!command.startsWith('/')) return text;
         const slash = resolveCodexSlashCommand(text, { commands: await listSlashCommands('codex', this.bootstrap.workingDirectory),
-            permissionMode: this.settings.permissionMode === 'yolo' ? 'yolo' : this.settings.permissionMode === 'read-only' ? 'read-only' : 'default',
+            permissionMode: this.settings.permissionMode === 'yolo' ? 'yolo' : this.settings.permissionMode === 'read-only' ? 'read-only' : this.settings.permissionMode === 'autoReview' ? 'autoReview' : 'default',
             collaborationMode: this.settings.collaborationMode ?? 'default', model: this.settings.model ?? undefined,
             modelReasoningEffort: parseReasoningEffortValue(this.settings.modelReasoningEffort), serviceTier: this.settings.serviceTier });
         if (slash.kind === 'passthrough') return text;

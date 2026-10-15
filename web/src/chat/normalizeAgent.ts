@@ -1,7 +1,8 @@
 import type { AgentEvent, CodexReview, CodexReviewFinding, NormalizedAgentContent, NormalizedMessage, RoundModelUsage, RoundSummary, ToolResultPermission, UsageData } from '@/chat/types'
 import { inlineMediaSourceFromWire } from '@/chat/inlineMediaSource'
 import { AGENT_MESSAGE_PAYLOAD_TYPE, asNumber, asString, isObject } from '@hapi/protocol'
-import { isClaudeChatVisibleMessage } from '@hapi/protocol/messages'
+import { getAgyTaskLogId, isClaudeChatVisibleMessage, stripAgyEchoedTaskResult } from '@hapi/protocol/messages'
+export { stripAgyEchoedTaskResult } from '@hapi/protocol/messages'
 import { parseAgentTimestampMs } from '@/chat/agentTimestamp'
 
 function normalizeToolResultPermissions(value: unknown): ToolResultPermission | undefined {
@@ -342,7 +343,7 @@ function normalizeAssistantOutput(
         content: blocks,
         meta,
         agentTimestamp,
-        usage: inputTokens !== null && outputTokens !== null ? {
+        usage: model !== '<synthetic>' && inputTokens !== null && outputTokens !== null ? {
             input_tokens: inputTokens,
             output_tokens: outputTokens,
             cache_creation_input_tokens: asNumber(usage?.cache_creation_input_tokens) ?? undefined,
@@ -539,16 +540,6 @@ export function stripAgyReadArtifacts(content: string): string {
         .trimEnd()
 }
 
-// agy sometimes echoes an async task's raw result into its own PLANNER_RESPONSE
-// prose: "Inside the task-246 log…\n[Message] timestamp=… content=Task id … finished
-// with result: … Output: …". That echoed block duplicates the background-task card
-// rendered from the corresponding SYSTEM_MESSAGE (and leaks the raw `[Message]`
-// framing), so strip it from the "…log…" marker onward and keep only the agent's
-// narration. The narration itself is the agent's real words — left intact.
-export function stripAgyEchoedTaskResult(text: string): string {
-    return text.replace(/\n*\[Message\]\s+timestamp=[\s\S]*$/, '').trim()
-}
-
 // Canonical tool id for agy's transitional "Inside the task-NNN log…" narration,
 // rendered as a compact Send-Message-style chip instead of a full agent bubble.
 export const AGY_TASK_LOG_TOOL = 'AgyTaskLog'
@@ -733,6 +724,15 @@ export function normalizeAgentRecord(
         if (data.isCompactSummary) return null
         if (!isClaudeChatVisibleMessage({ type: data.type, subtype: data.subtype })) return null
 
+        if (data.type === 'assistant' && data.isApiErrorMessage === true) {
+            const raw = isObject(data.message) ? data.message : {}
+            const text = Array.isArray(raw.content)
+                ? raw.content.filter(isObject).filter(block => block.type === 'text').map(block => asString(block.text) ?? '').join('\n')
+                : asString(raw.content)
+            return { id: messageId, localId, createdAt, role: 'event', isSidechain: Boolean(data.isSidechain),
+                parentToolUseId: asString(data.parentToolUseId), meta,
+                content: { type: 'api-error', retryAttempt: 0, maxRetries: 0, error: text?.trim() || data.error } }
+        }
         if (data.type === 'assistant') {
             return normalizeAssistantOutput(messageId, localId, createdAt, data, meta)
         }
@@ -858,8 +858,8 @@ export function normalizeAgentRecord(
             // Send-Message-style chip, not a full agent bubble. The actual task
             // result renders in its own background-task card, so this stays a thin
             // marker of what the agent is doing.
-            const taskLog = text.match(/^Inside the task-(\d+) log\b/)
-            if (taskLog) {
+            const taskLogId = getAgyTaskLogId(text)
+            if (taskLogId) {
                 const toolCallId = `${messageId}:tasklog`
                 return {
                     id: messageId,
@@ -868,7 +868,7 @@ export function normalizeAgentRecord(
                     role: 'agent',
                     isSidechain: false,
                     content: [
-                        { type: 'tool-call', id: toolCallId, name: AGY_TASK_LOG_TOOL, input: { task: `task-${taskLog[1]}` }, description: null, uuid: messageId, parentUUID: null },
+                        { type: 'tool-call', id: toolCallId, name: AGY_TASK_LOG_TOOL, input: { task: `task-${taskLogId}` }, description: null, uuid: messageId, parentUUID: null },
                         { type: 'tool-result', tool_use_id: toolCallId, content: '', is_error: false, uuid: messageId, parentUUID: null }
                     ],
                     meta
@@ -1001,7 +1001,8 @@ export function normalizeAgentRecord(
         if (!data || typeof data.type !== 'string') return null
 
         if (
-            data.type === 'agent-run-start'
+            data.type === 'agent-run-metadata'
+            || data.type === 'agent-run-start'
             || data.type === 'agent-run-update'
             || data.type === 'agent-run-trace'
         ) {

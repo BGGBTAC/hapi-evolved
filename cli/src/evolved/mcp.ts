@@ -1,3 +1,4 @@
+import { githubPrEnabled, registerGithubPrTool } from '@/modules/githubPr'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod/v3'
@@ -35,5 +36,6 @@ export function registerEvolvedTools(server: McpServer, client: EvolvedClient): 
 export async function startEvolvedMcp(): Promise<void> {
     const server = new McpServer({ name: 'hapi-evolved', version: '0.1.0' })
     registerEvolvedTools(server, evolvedClientFromEnvironment())
+    if (await githubPrEnabled()) registerGithubPrTool(server)
     await server.connect(new StdioServerTransport())
 }

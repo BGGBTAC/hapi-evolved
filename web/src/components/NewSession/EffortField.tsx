@@ -2,11 +2,13 @@ import { getAgentConfigDescriptor, type PiThinkingLevelMap } from '@hapi/protoco
 import { getPiThinkingLevelOptions } from '@/components/AssistantChat/piThinkingLevelOptions'
 import { getCodexComposerReasoningEffortOptions } from '@/components/AssistantChat/codexReasoningEffortOptions'
 import { useTranslation } from '@/lib/use-translation'
-import { SelectControl } from '@/components/ui/select-control'
+import { AgentConfigFieldControl } from '@/components/AgentConfigFieldControl'
+import type { AgentConfigDescriptor } from '@hapi/protocol'
 import type { AgentType, CodexReasoningEffort, LaunchEffort } from './types'
 import { CLAUDE_EFFORT_OPTIONS, CODEX_REASONING_EFFORT_OPTIONS, GROK_EFFORT_OPTIONS } from './types'
 
 export type EffortFieldProps = {
+    descriptor?: AgentConfigDescriptor
     agent: AgentType
     /** Launch-effort state (Claude / Grok / Pi). */
     effort: LaunchEffort
@@ -38,7 +40,7 @@ export type EffortFieldProps = {
  */
 export function EffortField(props: EffortFieldProps) {
     const { t } = useTranslation()
-    const descriptor = getAgentConfigDescriptor(props.agent)
+    const descriptor = props.descriptor ?? getAgentConfigDescriptor(props.agent)
     const field = descriptor.fields.find((candidate) => candidate.id === 'effort')
     if (!field) {
         return null
@@ -90,24 +92,7 @@ export function EffortField(props: EffortFieldProps) {
     const value = isReasoningEffort ? props.reasoningEffort : props.effort
     const onChange = isReasoningEffort ? props.onReasoningEffortChange : props.onEffortChange
 
-    return (
-        <div className="flex flex-col gap-1.5 px-3 py-3">
-            <label className="text-xs font-medium text-[var(--app-hint)]">
-                {isReasoningEffort ? t('newSession.reasoningEffort') : t('newSession.effort')}{' '}
-                <span className="font-normal">({t('newSession.model.optional')})</span>
-            </label>
-            <SelectControl
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                disabled={props.isDisabled}
-                className="py-2 pl-3 text-sm rounded-lg border border-[var(--app-divider)] bg-[var(--app-bg)] text-[var(--app-text)] focus:outline-none focus:ring-2 focus:ring-[var(--app-link)] disabled:opacity-50"
-            >
-                {options.map((option) => (
-                    <option key={option.value} value={option.value}>
-                        {option.label}
-                    </option>
-                ))}
-            </SelectControl>
-        </div>
-    )
+    return <AgentConfigFieldControl field={field}
+        label={isReasoningEffort ? t('newSession.reasoningEffort') : t('newSession.effort')}
+        value={value} options={options} disabled={props.isDisabled} onChange={value => onChange(value ?? 'default')} />
 }

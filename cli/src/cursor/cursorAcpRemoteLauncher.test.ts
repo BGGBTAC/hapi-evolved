@@ -668,6 +668,18 @@ describe('cursorAcpRemoteLauncher', () => {
         await runPromise;
     });
 
+    it('persists structural prompt failure and never emits a successful ready event', async () => {
+        harness.promptErrors = [new Error('Model capacity exhausted')];
+        const session = makeSession(null, false);
+        session.queue.push('finish task', { permissionMode: 'default' });
+        session.queue.close();
+        await cursorAcpRemoteLauncher(session);
+        const updates = vi.mocked(session.client.updateMetadata).mock.calls.map(([fn]) => fn({ path: '/tmp/project', host: 'test' }));
+        expect(updates).toContainEqual(expect.objectContaining({ lastModelError: expect.objectContaining({ kind: 'prompt_failed', message: 'Model capacity exhausted' }) }));
+        expect(session.client.sendSessionEvent).not.toHaveBeenCalledWith({ type: 'ready' });
+        expect(harness.promptCalls).toBe(1);
+    });
+
     it('retries a transient Cursor connection failure three times using api_error events', async () => {
         harness.promptErrors = [
             new Error('Error: RetriableError: [canceled] http/2 stream closed with error code CANCEL'),
@@ -1701,7 +1713,7 @@ describe('cursorAcpRemoteLauncher', () => {
         harness.setConfigOptionCalls.length = 0;
 
         await expect(session.applyModelConfig('auto')).rejects.toThrow(
-            'Cursor Auto requires restarting with --model auto'
+            'Cursor Auto requires a restart. Stop this session, select Auto, then resume the same session'
         );
 
         expect(session.model).toBe('composer-2.5[fast=false]');
@@ -1865,14 +1877,14 @@ describe('cursorAcpRemoteLauncher', () => {
             await concreteRequest;
         }
         if (autoRequest) {
-            expect((await autoRequest).error?.message).toContain('Cursor Auto requires restarting with --model auto');
+            expect((await autoRequest).error?.message).toContain('Cursor Auto requires a restart. Stop this session, select Auto, then resume the same session');
         }
         const concreteModel = partial ? 'composer-2.5' : 'composer-2.5[fast=false]';
         expect(session.model).toBe(concreteModel);
         harness.setConfigOptionCalls.length = 0;
 
         await expect(session.applyModelConfig('auto')).rejects.toThrow(
-            'Cursor Auto requires restarting with --model auto'
+            'Cursor Auto requires a restart. Stop this session, select Auto, then resume the same session'
         );
         expect(session.model).toBe(concreteModel);
         expect(harness.setConfigOptionCalls.filter((call) => call.configId === 'model-opt')).toEqual([]);

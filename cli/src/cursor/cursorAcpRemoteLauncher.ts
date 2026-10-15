@@ -86,6 +86,7 @@ class CursorAcpRemoteLauncher extends RemoteLauncherBase {
     private pendingInlineRetryableError = false;
     private attemptProducedToolActivity = false;
     private userAbortRequested = false;
+    private turnFailed = false;
 
     constructor(session: CursorSession) {
         super(process.env.DEBUG ? session.logPath : undefined);
@@ -636,6 +637,7 @@ class CursorAcpRemoteLauncher extends RemoteLauncherBase {
             try {
                 this.promptInFlight = true;
                 this.userAbortRequested = false;
+                this.turnFailed = false;
                 for (let retryAttempt = 0; retryAttempt <= CURSOR_AUTO_RETRY_LIMIT; retryAttempt += 1) {
                     this.pendingRetryableError = null;
                     this.pendingRetryableFromStderr = false;
@@ -709,7 +711,7 @@ class CursorAcpRemoteLauncher extends RemoteLauncherBase {
                 session.onThinkingChange(false);
                 await this.permissionAdapter?.cancelAll('Prompt finished');
                 await this.extensionAdapter?.cancelAll('Prompt finished');
-                if (session.queue.size() === 0 && !this.shouldExit) {
+                if (session.queue.size() === 0 && !this.shouldExit && !this.turnFailed) {
                     sendReady();
                 }
             }
@@ -770,6 +772,9 @@ class CursorAcpRemoteLauncher extends RemoteLauncherBase {
     ): void {
         const session = this.session;
         const messageBuffer = this.messageBuffer;
+        backend.onTransportClosed?.((error) => {
+            if (this.promptInFlight && !this.userAbortRequested) this.recordModelError('transport_closed', error.message);
+        });
         backend.onStderrError((error: AcpStderrError) => {
             logger.debug('[cursor-acp] stderr error', error);
             const hint = error.raw || error.message;
@@ -784,6 +789,7 @@ class CursorAcpRemoteLauncher extends RemoteLauncherBase {
             if (error.type === 'model_not_found' && extractCannotUseThisModelMessage(hint)) {
                 return;
             }
+            if (this.promptInFlight && !this.userAbortRequested) this.recordModelError(error.type, error.message);
             const converted = convertAgentMessage({ type: 'error', message: error.message });
             if (converted) {
                 session.sendAgentMessage(converted);
@@ -882,6 +888,7 @@ class CursorAcpRemoteLauncher extends RemoteLauncherBase {
                 this.messageBuffer.addMessage('Plan updated', 'status');
                 break;
             case 'error':
+                if (this.promptInFlight && !this.userAbortRequested) this.recordModelError('agent_error', message.message);
                 this.messageBuffer.addMessage(message.message, 'status');
                 break;
             case 'generated_image':
@@ -905,7 +912,16 @@ class CursorAcpRemoteLauncher extends RemoteLauncherBase {
         });
     }
 
+    private recordModelError(kind: string, message: string): void {
+        this.turnFailed = true;
+        const at = Date.now();
+        this.session.client.updateMetadata(metadata => ({ ...metadata,
+            lastModelError: { kind, message: message.slice(0, 1000), at }
+        }));
+    }
+
     private surfacePromptFailure(message: string): void {
+        this.recordModelError('prompt_failed', message);
         const converted = convertAgentMessage({ type: 'error', message });
         if (converted) this.session.sendAgentMessage(converted);
         this.messageBuffer.addMessage(message, 'status');
@@ -987,7 +1003,7 @@ class CursorAcpRemoteLauncher extends RemoteLauncherBase {
             // `auto` option. In-session Auto without either requires a restart.
             if (!appliedLive && !this.spawnedWithCliAuto) {
                 if (options.throwOnFailure) {
-                    throw new Error('Cursor Auto requires restarting with --model auto');
+                    throw new Error('Cursor Auto requires a restart. Stop this session, select Auto, then resume the same session');
                 }
                 return previousModel;
             }

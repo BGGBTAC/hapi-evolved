@@ -74,7 +74,8 @@ public struct AttachmentMetadata: Codable, Equatable, Sendable {
     public var mimeType: String
     /// Size in bytes.
     public var size: Int
-    public var path: String
+    public var path: String?
+    public var attachmentId: String?
     /// Web-serving detail; present on wire payloads, absent from fixtures.
     public var previewUrl: String?
 
@@ -83,14 +84,16 @@ public struct AttachmentMetadata: Codable, Equatable, Sendable {
         filename: String,
         mimeType: String,
         size: Int,
-        path: String,
-        previewUrl: String? = nil
+        path: String? = nil,
+        previewUrl: String? = nil,
+        attachmentId: String? = nil
     ) {
         self.id = id
         self.filename = filename
         self.mimeType = mimeType
         self.size = size
         self.path = path
+        self.attachmentId = attachmentId
         self.previewUrl = previewUrl
     }
 }

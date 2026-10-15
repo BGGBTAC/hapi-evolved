@@ -73,6 +73,11 @@ function createApp(session: Session, opts?: {
     rewindConversation?: SyncEngine['rewindConversation']
     suggestSessionTitle?: SyncEngine['suggestSessionTitle']
     updateSessionSummary?: SyncEngine['updateSessionSummary']
+    createAttachment?: SyncEngine['createAttachment']
+    deleteAttachment?: SyncEngine['deleteAttachment']
+    deleteUploadFile?: SyncEngine['deleteUploadFile']
+    readAttachment?: SyncEngine['readAttachment']
+    readAttachmentStream?: SyncEngine['readAttachmentStream']
     setSessionPinned?: (sessionId: string, pinned: boolean) => void
     setSessionPinMode?: (sessionId: string, mode: 'none' | 'project' | 'global') => void
 }) {
@@ -182,7 +187,12 @@ function createApp(session: Session, opts?: {
         implementCodexPlan: opts?.implementCodexPlan,
         rewindConversation: opts?.rewindConversation ?? (async () => ({ type: 'success' })),
         suggestSessionTitle: opts?.suggestSessionTitle ?? (async () => 'Generated title'),
-        updateSessionSummary: opts?.updateSessionSummary ?? (async () => {})
+        updateSessionSummary: opts?.updateSessionSummary ?? (async () => {}),
+        createAttachment: opts?.createAttachment ?? (async () => ({ success: false, error: 'not configured' })),
+        deleteAttachment: opts?.deleteAttachment ?? (async () => ({ success: false, error: 'not configured' })),
+        deleteUploadFile: opts?.deleteUploadFile ?? (async () => ({ success: false, error: 'not configured' })),
+        readAttachment: opts?.readAttachment ?? (async () => null),
+        readAttachmentStream: opts?.readAttachmentStream
     } as Partial<SyncEngine>
 
     const app = new Hono<WebAppEnv>()
@@ -850,6 +860,31 @@ describe('sessions routes', () => {
         expect(applySessionConfigCalls).toEqual([
             ['session-1', { model: 'sonnet' }]
         ])
+    })
+
+    it('uses canonical descriptor fields and rejects profile escalation on the generic configuration route', async () => {
+        const session = createSession({ metadata: { path: '/tmp/project', host: 'test', flavor: 'codex', capabilities: { concurrentClients: true } } })
+        const { app, applySessionConfigCalls } = createApp(session, { profile: 'workspace' })
+        const response = await app.request('/api/sessions/session-1/agent-config', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ field: 'effort', value: 'high' }) })
+        expect(response.status).toBe(200)
+        expect(applySessionConfigCalls).toEqual([['session-1', { modelReasoningEffort: 'high' }]])
+        const denied = await app.request('/api/sessions/session-1/agent-config', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ field: 'permission', value: 'autoReview' }) })
+        expect(denied.status).toBe(403)
+        const unknown = await app.request('/api/sessions/session-1/agent-config', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ field: 'arbitraryRpc', value: 'x' }) })
+        expect(unknown.status).toBe(400)
+        expect(applySessionConfigCalls).toHaveLength(1)
+        const descriptor = await (await app.request('/api/sessions/session-1/agent-config')).json() as { descriptor: { fields: Array<{id: string; options?:Array<{value:string}>}> } }
+        expect(descriptor.descriptor.fields.find(field => field.id === 'permission')?.options?.map(option => option.value)).not.toContain('autoReview')
+    })
+
+    it('persists Auto on the same inactive Cursor session before resume', async () => {
+        const session = createSession({ active: false, metadata: { path: '/tmp/project', host: 'localhost', flavor: 'cursor', cursorSessionId: 'native-cursor' }, agentState: { controlledByUser: true, requests: {}, completedRequests: {} } })
+        const { app, applySessionConfigCalls } = createApp(session)
+        const response = await app.request('/api/sessions/session-1/model', {
+            method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: 'auto' })
+        })
+        expect(response.status).toBe(200)
+        expect(applySessionConfigCalls).toEqual([['session-1', { model: 'auto' }]])
     })
 
     it('rejects model changes for local Cursor sessions', async () => {
@@ -1736,6 +1771,238 @@ describe('sessions routes', () => {
         expect(unlimitedBody.sessions).toHaveLength(3)
     })
 
+    it('searches message content only through the explicit content endpoint', async () => {
+        const session = createSession({ id: 'content-session' })
+        const engine = {
+            getSessionsByNamespace: () => [session],
+            getFutureScheduledMessageCounts: (ids: string[]) => new Map(ids.map((id) => [id, 0])),
+            getNextScheduledAtBySessionIds: (ids: string[]) => new Map(ids.map((id) => [id, null])),
+            hasPotentiallyIncompleteSessionContent: (namespace: string, query: string, sessionIds?: readonly string[]) => {
+                expect(namespace).toBe('default')
+                expect(query).toBe('needle')
+                expect(sessionIds).toEqual([session.id])
+                return true
+            },
+            searchSessionContent: (query: string, namespace: string, limit: number, sessionIds?: readonly string[]) => {
+                expect(query).toBe('needle')
+                expect(namespace).toBe('default')
+                expect(limit).toBe(7)
+                expect(sessionIds).toEqual([session.id])
+                return [{
+                    sessionId: session.id,
+                    messageId: 'message-1',
+                    role: 'assistant' as const,
+                    seq: 3,
+                    createdAt: 123,
+                    snippet: 'context needle',
+                    truncated: true
+                }]
+            }
+        } as unknown as Partial<SyncEngine>
+        const app = new Hono<WebAppEnv>()
+        app.use('*', async (c, next) => {
+            c.set('namespace', 'default')
+            await next()
+        })
+        app.route('/api', createSessionsRoutes(() => engine as SyncEngine))
+
+        const response = await app.request('/api/sessions/content-search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                query: 'needle',
+                limit: 7,
+                sessionIds: [session.id, 'unknown-session', session.id]
+            })
+        })
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({
+            hasPotentiallyIncompleteResults: true,
+            results: [{
+                session: expect.objectContaining({ id: session.id }),
+                match: {
+                    messageId: 'message-1',
+                    role: 'assistant',
+                    seq: 3,
+                    createdAt: 123,
+                    snippet: 'context needle',
+                    truncated: true
+                }
+            }]
+        })
+    })
+
+    it('allows scoped content-search requests with more than 500 session IDs', async () => {
+        const sessions = Array.from({ length: 501 }, (_, index) => createSession({ id: `session-${index}` }))
+        let receivedSessionIds: readonly string[] | undefined
+        const engine = {
+            getSessionsByNamespace: () => sessions,
+            getFutureScheduledMessageCounts: (ids: string[]) => new Map(ids.map((id) => [id, 0])),
+            getNextScheduledAtBySessionIds: (ids: string[]) => new Map(ids.map((id) => [id, null])),
+            hasPotentiallyIncompleteSessionContent: () => false,
+            searchSessionContent: (_query: string, _namespace: string, _limit: number, sessionIds?: readonly string[]) => {
+                receivedSessionIds = sessionIds
+                return []
+            }
+        } as unknown as Partial<SyncEngine>
+        const app = new Hono<WebAppEnv>()
+        app.use('*', async (c, next) => {
+            c.set('namespace', 'default')
+            await next()
+        })
+        app.route('/api', createSessionsRoutes(() => engine as SyncEngine))
+
+        const response = await app.request('/api/sessions/content-search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                query: 'needle',
+                sessionIds: Array.from({ length: 501 }, (_, index) => `session-${index}`)
+            })
+        })
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({ results: [], hasPotentiallyIncompleteResults: false })
+        expect(receivedSessionIds).toEqual(sessions.map((session) => session.id))
+    })
+
+    it('rejects an oversized content-search body before JSON parsing', async () => {
+        const engine = {
+            getSessionsByNamespace: () => [],
+            getFutureScheduledMessageCounts: () => new Map(),
+            getNextScheduledAtBySessionIds: () => new Map(),
+            searchSessionContent: () => []
+        } as unknown as Partial<SyncEngine>
+        const app = new Hono<WebAppEnv>()
+        app.use('*', async (c, next) => {
+            c.set('namespace', 'default')
+            await next()
+        })
+        app.route('/api', createSessionsRoutes(() => engine as SyncEngine))
+
+        const response = await app.request('/api/sessions/content-search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: 'x'.repeat(300 * 1024)
+        })
+
+        expect(response.status).toBe(413)
+        expect(await response.json()).toEqual({ error: 'Content search request too large' })
+    })
+
+    it('rejects overlong content-search queries consistently across endpoints', async () => {
+        const session = createSession({ id: 'overlong-content-query-session' })
+        const engine = {
+            getSessionsByNamespace: () => [session],
+            resolveSessionAccess: () => ({ ok: true as const, sessionId: session.id, session }),
+            searchSessionContent: () => {
+                throw new Error('must reject before searching')
+            },
+            searchSessionContentMatches: () => {
+                throw new Error('must reject before searching')
+            },
+            getFutureScheduledMessageCounts: () => new Map(),
+            getNextScheduledAtBySessionIds: () => new Map()
+        } as unknown as Partial<SyncEngine>
+        const app = new Hono<WebAppEnv>()
+        app.use('*', async (c, next) => {
+            c.set('namespace', 'default')
+            await next()
+        })
+        app.route('/api', createSessionsRoutes(() => engine as SyncEngine))
+
+        const query = 'x'.repeat(201)
+        const expected = { error: 'Content search query too long' }
+        const postResponse = await app.request('/api/sessions/content-search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query })
+        })
+        const getResponse = await app.request(`/api/sessions/content-search?query=${query}`)
+        const sessionResponse = await app.request(
+            `/api/sessions/${session.id}/content-search?query=${query}`
+        )
+
+        expect(postResponse.status).toBe(400)
+        expect(await postResponse.json()).toEqual(expected)
+        expect(getResponse.status).toBe(400)
+        expect(await getResponse.json()).toEqual(expected)
+        expect(sessionResponse.status).toBe(400)
+        expect(await sessionResponse.json()).toEqual(expected)
+    })
+
+    it('lists all content matches for an opened session without exposing its session id', async () => {
+        const session = createSession({ id: 'content-session-matches' })
+        const engine = {
+            resolveSessionAccess: (sessionId: string, namespace: string) => {
+                expect(sessionId).toBe(session.id)
+                expect(namespace).toBe('default')
+                return { ok: true as const, sessionId, session }
+            },
+            searchSessionContentMatches: (query: string, namespace: string, sessionId: string, limit: number) => {
+                expect(query).toBe('needle')
+                expect(namespace).toBe('default')
+                expect(sessionId).toBe(session.id)
+                expect(limit).toBe(12)
+                return {
+                    total: 2,
+                    matches: [
+                        {
+                            sessionId,
+                            messageId: 'message-new',
+                            role: 'assistant' as const,
+                            seq: 8,
+                            createdAt: 456,
+                            snippet: 'new needle',
+                            truncated: false
+                        },
+                        {
+                            sessionId,
+                            messageId: 'message-old',
+                            role: 'user' as const,
+                            seq: 3,
+                            createdAt: 123,
+                            snippet: 'old needle',
+                            truncated: false
+                        }
+                    ],
+                    hasPotentiallyIncompleteResults: false
+                }
+            }
+        } as unknown as Partial<SyncEngine>
+        const app = new Hono<WebAppEnv>()
+        app.use('*', async (c, next) => {
+            c.set('namespace', 'default')
+            await next()
+        })
+        app.route('/api', createSessionsRoutes(() => engine as SyncEngine))
+
+        const response = await app.request(`/api/sessions/${session.id}/content-search?query=needle&limit=12`)
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({
+            matches: [
+                {
+                    messageId: 'message-new',
+                    role: 'assistant',
+                    seq: 8,
+                    createdAt: 456,
+                    snippet: 'new needle',
+                    truncated: false
+                },
+                {
+                    messageId: 'message-old',
+                    role: 'user',
+                    seq: 3,
+                    createdAt: 123,
+                    snippet: 'old needle',
+                    truncated: false
+                }
+            ],
+            total: 2,
+            hasPotentiallyIncompleteResults: false
+        })
+    })
+
     it('order=updatedAt truncates newest-first including inactive peers', async () => {
         const sessions = [
             createSession({ id: 'old-active', active: true, updatedAt: 10 }),
@@ -1762,4 +2029,390 @@ describe('sessions routes', () => {
         expect(body.sessions.map((s) => s.id)).toEqual(['new-inactive'])
     })
 
+    it('GET /sessions/search matches name/path/agentSessionId beyond recency order', async () => {
+        const sessions = [
+            createSession({
+                id: 'hot-unrelated',
+                active: true,
+                updatedAt: 1000,
+                metadata: { name: 'busy peer', path: '/tmp/a', host: 'localhost', flavor: 'codex', codexSessionId: 'cx-hot' }
+            }),
+            createSession({
+                id: 'quiet-hetzner',
+                active: false,
+                updatedAt: 10,
+                metadata: {
+                    name: 'Arthur Scout deploy (hetzner)',
+                    path: '/tmp/old',
+                    host: 'localhost',
+                    flavor: 'cursor',
+                    cursorSessionId: 'cur-quiet'
+                }
+            }),
+            createSession({
+                id: 'path-hit',
+                active: false,
+                updatedAt: 20,
+                metadata: {
+                    name: 'other',
+                    path: '/work/coding/hetzner-box',
+                    host: 'localhost',
+                    flavor: 'cursor',
+                    cursorSessionId: 'cur-path'
+                }
+            })
+        ]
+        const engine = {
+            getSessionsByNamespace: () => sessions,
+            getFutureScheduledMessageCounts: (ids: string[]) => new Map(ids.map((id) => [id, 0])),
+            getNextScheduledAtBySessionIds: (_ids: string[]) => new Map<string, number>(),
+            resolveSessionAccess: () => ({ ok: false, reason: 'not-found' as const })
+        } as unknown as Partial<SyncEngine>
+
+        const app = new Hono<WebAppEnv>()
+        app.use('*', async (c, next) => {
+            c.set('namespace', 'default')
+            await next()
+        })
+        app.route('/api', createSessionsRoutes(() => engine as SyncEngine))
+
+        const missing = await app.request('/api/sessions/search')
+        expect(missing.status).toBe(400)
+
+        const response = await app.request('/api/sessions/search?q=hetzner&limit=10')
+        expect(response.status).toBe(200)
+        const body = await response.json() as { sessions: Array<{ id: string }>; q: string }
+        expect(body.q).toBe('hetzner')
+        // Name match ranks above path; quiet session still found despite low updatedAt.
+        expect(body.sessions.map((s) => s.id)).toEqual(['quiet-hetzner', 'path-hit'])
+        expect(body.sessions.map((s) => s.id)).not.toContain('hot-unrelated')
+    })
+
+    it('GET /sessions/search matches summary.text when name is unset', async () => {
+        const sessions = [
+            createSession({
+                id: 'summary-title-only',
+                active: false,
+                updatedAt: 5,
+                metadata: {
+                    path: '/tmp/quiet-project',
+                    host: 'localhost',
+                    flavor: 'claude',
+                    claudeSessionId: 'claude-quiet',
+                    summary: { text: 'Arthur Scout deploy (hetzner)', updatedAt: 5 }
+                }
+            })
+        ]
+        const engine = {
+            getSessionsByNamespace: () => sessions,
+            getFutureScheduledMessageCounts: (ids: string[]) => new Map(ids.map((id) => [id, 0])),
+            getNextScheduledAtBySessionIds: (_ids: string[]) => new Map<string, number>(),
+            resolveSessionAccess: () => ({ ok: false, reason: 'not-found' as const })
+        } as unknown as Partial<SyncEngine>
+
+        const app = new Hono<WebAppEnv>()
+        app.use('*', async (c, next) => {
+            c.set('namespace', 'default')
+            await next()
+        })
+        app.route('/api', createSessionsRoutes(() => engine as SyncEngine))
+
+        const response = await app.request('/api/sessions/search?q=hetzner')
+        expect(response.status).toBe(200)
+        const body = await response.json() as { sessions: Array<{ id: string }> }
+        expect(body.sessions.map((s) => s.id)).toEqual(['summary-title-only'])
+    })
+
+    it('GET /sessions/search honors peerListFetchLimit padding above MCP page size 100', async () => {
+        const sessions = Array.from({ length: 105 }, (_, i) => createSession({
+            id: `match-${String(i).padStart(3, '0')}`,
+            active: false,
+            updatedAt: 1000 - i,
+            metadata: {
+                name: `hetzner peer ${i}`,
+                path: `/tmp/p${i}`,
+                host: 'localhost',
+                flavor: 'codex',
+                codexSessionId: `cx-${i}`
+            }
+        }))
+        const engine = {
+            getSessionsByNamespace: () => sessions,
+            getFutureScheduledMessageCounts: (ids: string[]) => new Map(ids.map((id) => [id, 0])),
+            getNextScheduledAtBySessionIds: (_ids: string[]) => new Map<string, number>(),
+            resolveSessionAccess: () => ({ ok: false, reason: 'not-found' as const })
+        } as unknown as Partial<SyncEngine>
+
+        const app = new Hono<WebAppEnv>()
+        app.use('*', async (c, next) => {
+            c.set('namespace', 'default')
+            await next()
+        })
+        app.route('/api', createSessionsRoutes(() => engine as SyncEngine))
+
+        // peerListFetchLimit(100, { excludeCaller: true }) === 102
+        const response = await app.request('/api/sessions/search?q=hetzner&limit=102')
+        expect(response.status).toBe(200)
+        const body = await response.json() as { sessions: Array<{ id: string }> }
+        expect(body.sessions).toHaveLength(102)
+        // Still clamps to hub max 500 (not the old MCP page cap of 100).
+        const capped = await app.request('/api/sessions/search?q=hetzner&limit=1000')
+        const cappedBody = await capped.json() as { sessions: Array<{ id: string }> }
+        expect(cappedBody.sessions).toHaveLength(105)
+    })
+
+    it('GET /sessions/search is not captured by /sessions/:id', async () => {
+        const engine = {
+            getSessionsByNamespace: () => [],
+            getFutureScheduledMessageCounts: () => new Map(),
+            getNextScheduledAtBySessionIds: () => new Map(),
+            resolveSessionAccess: () => ({ ok: false, reason: 'not-found' as const })
+        } as unknown as Partial<SyncEngine>
+
+        const app = new Hono<WebAppEnv>()
+        app.use('*', async (c, next) => {
+            c.set('namespace', 'default')
+            await next()
+        })
+        app.route('/api', createSessionsRoutes(() => engine as SyncEngine))
+
+        const response = await app.request('/api/sessions/search?q=anything')
+        expect(response.status).toBe(200)
+        const body = await response.json() as { sessions: unknown[] }
+        expect(body.sessions).toEqual([])
+    })
+
+})
+
+describe('durable attachment routes', () => {
+    it('passes the original to the hub attachment store', async () => {
+        const calls: unknown[][] = []
+        const { app } = createApp(createSession(), {
+            createAttachment: async (...args) => {
+                calls.push(args)
+                return {
+                    success: true,
+                    attachmentId: 'attachment-1',
+                    filename: 'photo.png',
+                    mimeType: 'image/png',
+                    size: 3
+                }
+            }
+        })
+
+        const response = await app.request('/api/sessions/session-1/upload', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                filename: 'photo.png',
+                content: 'AQID',
+                mimeType: 'image/png'
+            })
+        })
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({
+            success: true,
+            attachmentId: 'attachment-1',
+            filename: 'photo.png',
+            mimeType: 'image/png',
+            size: 3
+        })
+        expect(calls).toEqual([[
+            'session-1',
+            'default',
+            'photo.png',
+            'AQID',
+            'image/png'
+        ]])
+    })
+
+    it('returns durable attachment bytes with integrity headers', async () => {
+        const { app } = createApp(createSession(), {
+            readAttachment: async () => ({
+                attachment: { filename: 'photo.png' } as never,
+                data: Buffer.from([7, 8, 9]),
+                mimeType: 'image/png',
+                size: 3,
+                sha256: 'hash-1'
+            })
+        })
+
+        const response = await app.request('/api/sessions/session-1/attachments/attachment-1/original')
+
+        expect(response.status).toBe(200)
+        expect(response.headers.get('content-type')).toBe('image/png')
+        expect(response.headers.get('content-length')).toBe('3')
+        expect(response.headers.get('content-disposition')).toBe('attachment; filename="photo.png"')
+        expect(response.headers.get('content-security-policy')).toBe("sandbox; default-src 'none'")
+        expect(response.headers.get('cache-control')).toBe('private, no-store')
+        expect(response.headers.get('vary')).toBe('Authorization')
+        expect(response.headers.get('etag')).toBe('"hash-1"')
+        expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+        expect([...new Uint8Array(await response.arrayBuffer())]).toEqual([7, 8, 9])
+    })
+
+    it('streams durable attachment originals without buffering them in the route', async () => {
+        const readAttachmentStream = async () => ({
+            attachment: { filename: 'photo.png' } as never,
+            file: new Blob([new Uint8Array([7, 8, 9])]) as never,
+            mimeType: 'image/png',
+            size: 3,
+            sha256: 'stream-hash'
+        })
+        const { app } = createApp(createSession(), { readAttachmentStream })
+
+        const response = await app.request('/api/sessions/session-1/attachments/attachment-1/original')
+
+        expect(response.status).toBe(200)
+        expect(response.headers.get('content-length')).toBe('3')
+        expect(response.headers.get('etag')).toBe('"stream-hash"')
+        expect([...new Uint8Array(await response.arrayBuffer())]).toEqual([7, 8, 9])
+    })
+
+    it('rejects MIME control bytes before creating a durable attachment', async () => {
+        let createCalls = 0
+        const { app } = createApp(createSession(), {
+            createAttachment: async () => {
+                createCalls += 1
+                return { success: true, attachmentId: 'should-not-be-created' }
+            }
+        })
+
+        const response = await app.request('/api/sessions/session-1/upload', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                filename: 'photo.png',
+                content: 'AQID',
+                mimeType: 'image/png\r\nX-Injected: true'
+            })
+        })
+
+        expect(response.status).toBe(400)
+        expect(createCalls).toBe(0)
+    })
+
+    it('rejects non-ASCII MIME values before creating a durable attachment', async () => {
+        let createCalls = 0
+        const { app } = createApp(createSession(), {
+            createAttachment: async () => {
+                createCalls += 1
+                return { success: true, attachmentId: 'should-not-be-created' }
+            }
+        })
+
+        const response = await app.request('/api/sessions/session-1/upload', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                filename: 'photo.png',
+                content: 'AQID',
+                mimeType: 'image/png😀'
+            })
+        })
+
+        expect(response.status).toBe(400)
+        expect(createCalls).toBe(0)
+    })
+
+    it('sandboxes active MIME types and sanitizes attachment filenames', async () => {
+        const { app } = createApp(createSession(), {
+            readAttachment: async () => ({
+                attachment: { filename: 'evil"\r\n.html' } as never,
+                variant: 'original' as const,
+                data: Buffer.from('<script>alert(1)</script>'),
+                mimeType: 'text/html',
+                size: 25,
+                sha256: 'html-hash'
+            })
+        })
+
+        const response = await app.request('/api/sessions/session-1/attachments/attachment-1/original')
+
+        expect(response.status).toBe(200)
+        expect(response.headers.get('content-type')).toBe('text/html')
+        expect(response.headers.get('content-disposition')).toBe('attachment; filename="evil___.html"')
+        expect(response.headers.get('content-security-policy')).toBe("sandbox; default-src 'none'")
+        expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+    })
+
+    it('encodes Unicode attachment filenames for API download headers', async () => {
+        const { app } = createApp(createSession(), {
+            readAttachment: async () => ({
+                attachment: { filename: '截图😀.png' } as never,
+                variant: 'original' as const,
+                data: Buffer.from([1]),
+                mimeType: 'image/png',
+                size: 1,
+                sha256: 'unicode-hash'
+            })
+        })
+
+        const response = await app.request('/api/sessions/session-1/attachments/attachment-1/original')
+
+        expect(response.status).toBe(200)
+        expect(response.headers.get('content-disposition')).toBe(
+            "attachment; filename=\"____.png\"; filename*=UTF-8''%E6%88%AA%E5%9B%BE%F0%9F%98%80.png"
+        )
+    })
+
+    it('deletes a durable attachment by opaque id without invoking the legacy path RPC', async () => {
+        const durableCalls: string[][] = []
+        const legacyCalls: string[][] = []
+        const { app } = createApp(createSession(), {
+            deleteAttachment: async (...args) => {
+                durableCalls.push(args)
+                return { success: true }
+            },
+            deleteUploadFile: async (...args) => {
+                legacyCalls.push(args)
+                return { success: true }
+            }
+        })
+
+        const response = await app.request('/api/sessions/session-1/upload/delete', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ attachmentId: 'attachment-1' })
+        })
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({ success: true })
+        expect(durableCalls).toEqual([['session-1', 'default', 'attachment-1']])
+        expect(legacyCalls).toEqual([])
+    })
+
+    it('allows durable attachment cleanup for inactive sessions but keeps legacy deletion active-only', async () => {
+        const durableCalls: string[][] = []
+        const legacyCalls: string[][] = []
+        const { app } = createApp(createSession({ active: false }), {
+            deleteAttachment: async (...args) => {
+                durableCalls.push(args)
+                return { success: true }
+            },
+            deleteUploadFile: async (...args) => {
+                legacyCalls.push(args)
+                return { success: true }
+            }
+        })
+
+        const durableResponse = await app.request('/api/sessions/session-1/upload/delete', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ attachmentId: 'attachment-1' })
+        })
+        expect(durableResponse.status).toBe(200)
+        expect(await durableResponse.json()).toEqual({ success: true })
+
+        const legacyResponse = await app.request('/api/sessions/session-1/upload/delete', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ path: '/tmp/legacy-upload' })
+        })
+        expect(legacyResponse.status).toBe(409)
+        expect(await legacyResponse.json()).toEqual({ error: 'Session is inactive' })
+        expect(durableCalls).toEqual([['session-1', 'default', 'attachment-1']])
+        expect(legacyCalls).toEqual([])
+    })
 })

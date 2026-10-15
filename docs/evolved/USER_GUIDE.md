@@ -168,3 +168,113 @@ anlegen. Empfänger benötigen dafür keine HAPI-Anmeldung, müssen aber die pri
 Hubadresse erreichen können. Der Link ist selbst die Zugangsberechtigung; gib ihn
 gezielt weiter. „Freigabe widerrufen“ deaktiviert ihn sofort. „Vorschau entfernen“
 entfernt die Registrierung und ihre Freigaben; die gebauten Dateien bleiben bestehen.
+
+## Sitzungsübersicht und Entwürfe
+
+Die angezeigte Zeit folgt der letzten sichtbaren Gesprächsnachricht. Heartbeats,
+Titeländerungen und sonstige Metadaten schieben ältere Gespräche nicht nach oben.
+Unter „Filter“ wählst du alle, aktive, arbeitende oder blockierte Sessions,
+kombiniert mit „Nur ungelesene“. Diese Filter sind vorübergehend. Die Sortierung
+„Letzte Agentenantwort“ bleibt als Browserpräferenz erhalten; Anheftungen und
+Projektgruppen bleiben bestehen. Exakte lokale Zeitpunkte erscheinen beim
+Überfahren der relativen Zeit. Die Metadatensuche kann Treffer einschließen oder
+ausschließen, auch mit `*` und `?`; eine leere Suche zeigt weiterhin alle Sessions.
+
+„Blockiert“ stammt ausschließlich aus einem ausdrücklichen
+`AGENT_NOTIFY_SUMMARY` mit Status `blocked`. Berechtigungsfragen und ungelesene
+Nachrichten bleiben getrennte Signale. Eine neue Nutzernachricht beziehungsweise
+ein neuer arbeitender Turn beendet die Blockiert-Anzeige. Gelbe Zeilen und
+Hinweise am oberen/unteren Listenrand führen auch zu eingeklappten oder weiter
+entfernten Blockierern. Das bloße Öffnen bestätigt keinen gelösten Blocker.
+
+Eine ausgewählte Session wird in der Seitenleiste sichtbar gemacht, ohne bereits
+sichtbare Zeilen unnötig zu verschieben. Auf Desktop kannst du eine Session mit
+Gesprächsinhalt in das Eingabefeld ziehen, um einen Verweis einzufügen. Das sendet
+keine Nachricht. `#` am Eingabebeginn beziehungsweise Pfeil-hoch im leeren Entwurf
+öffnet die Historie bereits geladener eigener Nachrichten. Persönliche Prompts
+lassen sich über „Prompts“ speichern, ordnen, bearbeiten und am Cursor einfügen.
+Anhänge werden bei der Textwiederverwendung nicht automatisch erneut gesendet.
+
+## Anhänge und Dateivorschau
+
+Neue Chat-Anhänge werden als Originaldateien im privaten Hub-Speicher abgelegt.
+Sie bleiben nach Ende des Agentenprozesses abrufbar. Projektzugriff wird bei
+jedem Abruf erneut geprüft; der Browser speichert Originalantworten nicht im
+HTTP-Cache. Hub und CLI müssen gemeinsam auf diese Version aktualisiert werden.
+Die nativen Protokollmodelle übernehmen Anhangs-IDs und Fixtureformat 2; das
+ist keine Freigabe der nativen Apps für Evolved-Anmeldung oder Anhangsverwaltung.
+Alte, ausschließlich temporär gespeicherte CLI-Dateien lassen sich nicht
+nachträglich wiederherstellen. Die Standardquoten betragen 50 MiB je Datei,
+512 MiB und 1000 Dateien je Namespace sowie 2 GiB insgesamt. Nicht gesendete
+Uploads zählen mit; Sessionlöschung bereinigt ihre Originale. Die Gesamtgrenze schützt
+auch den gemeinsamen Datenträger; sie reserviert keinen garantierten Anteil für
+jedes Projekt. Der Betreiber kann beide Bytequoten konfigurieren.
+
+Die Quelle eines Shared-Forks lässt sich erst löschen, wenn dessen Anhänge sicher
+im Kind vorhanden sind. Bei voller Quota zuerst unbenutzte Uploads entfernen oder
+den Betreiber um mehr Quota bitten. Wird das Kind nicht benötigt, kann es zuerst
+gelöscht werden. Fehlt die belegbare Forkgrenze, bleibt die Quelle ebenfalls
+erhalten; es wird keine Grenze geraten und kein Original stillschweigend gelöscht.
+Alte laufende CLI-Prozesse ohne Anhangsfähigkeit erhalten beim Sendeversuch einen
+Upgradefehler; der Text wird dabei ebenfalls nicht gesendet.
+
+Geeignete undurchsichtige Bilder über 4 MiB werden automatisch auf maximal
+2048 Pixel Kantenlänge verkleinert und als JPEG mit Qualitätswert 85 hochgeladen,
+sofern das kleiner ist. GIF, SVG, transparente Bilder und nicht unterstützte
+Formate bleiben unverändert. Dekodierung erfolgt einzeln; außergewöhnlich große
+Raster über 40 Millionen Pixel bleiben ebenfalls unverändert. Unter
+Einstellungen → Chat → Bild-Uploads kannst du Originale als Standard wählen.
+Der Anhang zeigt eine erfolgte Verkleinerung und bietet in aktiven Sessions
+„Original senden“. Während eines Versionswechsels ist Senden gesperrt. Die
+unveränderte Originaldatei bleibt für diesen Wechsel im geöffneten Entwurf
+verfügbar; nach einem vollständigen Neuladen muss ein nicht mehr vorhandenes
+Original gegebenenfalls erneut ausgewählt werden.
+
+Lange eingefügte Texte bieten ausdrücklich „Als Text einfügen“ oder „Als Datei
+anhängen“. Bei fehlgeschlagenem Upload bleibt die Auswahl erhalten. Lange eigene
+Nachrichten werden eingeklappt angezeigt; Kopieren verwendet weiterhin den
+vollständigen Text. Terminalauswahlen können ebenfalls in den Chatentwurf
+übernommen werden.
+
+Markdown-Dateivorschauen öffnen relative Links aus dem Verzeichnis der gerade
+angezeigten Datei. Lokale Bilder werden mit Projektberechtigung geladen
+(maximal 5 MiB je Vorschaubild). Externe HTTPS-Bilder laden erst nach „Externe
+HTTPS-Bilder laden“ direkt im Browser, ohne Hub-Proxy und ohne Referer. Der
+externe Anbieter sieht dabei die IP-Adresse. Pfade außerhalb des Workspace und
+unsichere URL-Schemata bleiben gesperrt. Ist der zuständige Runner offline,
+zeigt die Dateiansicht dies mit einer Wiederöffnen-/Erneut-laden-Möglichkeit an.
+
+## Textnebenkanal und Browser-Diktat
+
+Wenn der Betreiber Anbieter, Modell und Tokenbudget konfiguriert hat, öffnet
+`/btw` eine separate Textfrage. Anbieter und Budget sind vor dem Senden sichtbar.
+Nur die ausdrücklich eingegebene Frage verlässt den Host; es gibt weder
+Werkzeuge noch automatisches Weiterleiten an den Agenten. Die Antwort wird als
+Text angezeigt. Bei unklarem Netzwerkausgang erfolgt keine automatische erneute
+Anfrage. Ein nicht verfügbarer Nebenkanal leitet `/btw` nicht an den Agenten um.
+Der Frageentwurf bleibt beim Schließen erhalten und lässt sich über `/btw`
+wieder öffnen; ein Sitzungs- oder Projektwechsel verwirft ihn.
+
+Browser-Cloud-Spracherkennung ist standardmäßig aus. Der Betreiber muss
+`EVOLVED_BROWSER_CLOUD_STT_ENABLED=1` setzen; anschließend bestätigst du unter
+Einstellungen → Sprache die Audioübertragung und wählst „Browser Cloud“ als
+Diktatanbieter. Der Browseranbieter verarbeitet das Audio; HAPI erhält Text.
+Das ist keine lokale Spracherkennung. Anmeldung, Abmeldung und Projektwechsel
+entziehen diese Zustimmung. Der vorhandene lokale Spracherkennungsmodus behält
+seine strengeren Plattformprüfungen und fällt nicht automatisch auf Cloud zurück.
+
+## Automatisierung und Projekt-Agenten
+
+Projektadministratoren können unter „Automatisierung“ nach frischer
+Passkey-Bestätigung Zeitpläne für vorhandene Sessions anlegen. Cron-Ausdrücke
+verwenden fünf numerische Felder und UTC. Ein Lauf wird bei beschäftigter Session,
+fehlender Berechtigung oder ungültigem Runner-Zugang übersprungen. Verpasste
+Läufe werden nicht nachgeholt. „Dauerhaft eingereiht“ bestätigt nur die Annahme
+der Nachricht, keinen erfolgreichen Agentenlauf; der Verlauf weist Fehler,
+übersprungene und unklare Läufe gesondert aus.
+
+Die Zusammenarbeit zwischen Projekt-Agenten ist zunächst ausgeschaltet. Nach
+Freigabe benötigen Runner zusätzlich die passenden Rechte `peers:read`,
+`peers:send` beziehungsweise `peers:manage`. Das Badge „Projekt-Agent“ bestätigt
+die vom Hub geprüfte Projektherkunft. Die verlinkte Absendersession ist eine
+behauptete Antwortadresse und keine sicher attestierte Einzelidentität.
