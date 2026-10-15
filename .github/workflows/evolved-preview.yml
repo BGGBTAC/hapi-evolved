@@ -18,7 +18,7 @@ jobs:
         runs-on: ubuntu-latest
         timeout-minutes: 30
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v7
               with:
                   persist-credentials: false
             - uses: oven-sh/setup-bun@v2
@@ -36,7 +36,7 @@ jobs:
                   SOURCE_BUNDLE_DIR: ${{ runner.temp }}/evolved-preview
               run: bun scripts/publication/bundle-source.ts
             - name: Upload reviewable preview source
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v7
               with:
                   name: hapi-evolved-0.1.0-preview-source-${{ github.sha }}
                   path: ${{ runner.temp }}/evolved-preview/
