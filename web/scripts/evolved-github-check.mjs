@@ -1,8 +1,9 @@
+import { workspaceArea } from './evolved-navigation.mjs';
 const syntheticToken = 'github_pat_synthetic_browser_credential_only';
 const repository = 'synthetic-owner/browser-repo';
 
 export async function checkGithub(page) {
-    const githubTab = () => page.getByRole('button', { name: 'GitHub', exact: true }).click();
+    const githubTab = () => workspaceArea(page, 'GitHub');
     const mutation = (method, suffix = '') => page.waitForResponse(response =>
         new URL(response.url()).pathname.endsWith(`/github${suffix}`)
         && response.request().method() === method && response.status() === 200);
@@ -38,7 +39,7 @@ export async function checkGithub(page) {
     await githubTab();
     await page.getByText(repository, { exact: true }).waitFor();
 
-    await page.getByRole('button', { name: 'Projekte', exact: true }).click();
+    await workspaceArea(page, 'Projekte');
     await page.getByRole('button', { name: /^Arbeitsbereich Projektbezogene/ }).click();
     await page.getByText('Profil gespeichert.', { exact: true }).waitFor();
     await githubTab();
@@ -66,7 +67,7 @@ export async function checkGithub(page) {
     await disconnected;
     await page.getByText('Noch kein GitHub-Konto verbunden.', { exact: true }).waitFor();
 
-    await page.getByRole('button', { name: 'Projekte', exact: true }).click();
+    await workspaceArea(page, 'Projekte');
     await page.getByRole('button', { name: /^Eingeschränkt Schreib/ }).click();
     await page.getByText('Profil gespeichert.', { exact: true }).waitFor();
     console.log('PASS real project-scoped GitHub Hub/Vault broker: synthetic provider connect, persistence, read/write grant, profile restriction, rotation, revoke/disconnect; no browser token persistence');

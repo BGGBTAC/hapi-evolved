@@ -2754,7 +2754,7 @@ export function HappyComposer(props: {
                     ) : null}
 
                     <div
-                        className={`flex overflow-hidden rounded-[20px] bg-[var(--app-secondary-bg)] ${
+                        className={`app-composer-card flex overflow-hidden rounded-[20px] bg-[var(--app-secondary-bg)] ${
                             isExpanded ? 'min-h-0 flex-1' : ''
                         } ${
                             sendError ? 'ring-1 ring-red-500' : ''
@@ -2882,23 +2882,23 @@ export function HappyComposer(props: {
                                     }
                                     setLongPaste(null)
                                 }} /> : null}
-                            {sidechannel.panel}
-                            <SavedPromptsButton disabled={controlsDisabled} onOpen={() => { promptSelectionRef.current = inputState.selection }} onInsert={text => {
-                                handleUserEdit()
-                                const selection = promptSelectionRef.current
-                                if (richMentionsEnabled && richInputRef.current) {
-                                    richInputRef.current.insertPlainTextAtSelection(text, selection)
-                                    setTimeout(() => richInputRef.current?.focus(), 0)
-                                } else {
-                                    const current = api.composer().getState().text
-                                    const start = Math.min(selection.start, current.length), end = Math.min(selection.end, current.length)
-                                    const next = current.slice(0, start) + text + current.slice(end), caret = start + text.length
-                                    api.composer().setText(next)
-                                    setInputState({ text: next, selection: { start: caret, end: caret } })
-                                    setTimeout(() => { textareaRef.current?.focus(); textareaRef.current?.setSelectionRange(caret, caret) }, 0)
-                                }
-                            }} />
                             <ComposerButtons
+                                extraActions={<>{sidechannel.panel}
+                                <SavedPromptsButton disabled={controlsDisabled} onOpen={() => { promptSelectionRef.current = inputState.selection }} onInsert={text => {
+                                    handleUserEdit()
+                                    const selection = promptSelectionRef.current
+                                    if (richMentionsEnabled && richInputRef.current) {
+                                        richInputRef.current.insertPlainTextAtSelection(text, selection)
+                                        setTimeout(() => richInputRef.current?.focus(), 0)
+                                    } else {
+                                        const current = api.composer().getState().text
+                                        const start = Math.min(selection.start, current.length), end = Math.min(selection.end, current.length)
+                                        const next = current.slice(0, start) + text + current.slice(end), caret = start + text.length
+                                        api.composer().setText(next)
+                                        setInputState({ text: next, selection: { start: caret, end: caret } })
+                                        setTimeout(() => { textareaRef.current?.focus(); textareaRef.current?.setSelectionRange(caret, caret) }, 0)
+                                    }
+                                }} /></>}
                                 canSend={canSend}
                                 controlsDisabled={controlsDisabled}
                                 showSettingsButton={showSettingsButton}

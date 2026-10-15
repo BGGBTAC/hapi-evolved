@@ -14,6 +14,7 @@ import { createPreviewRoutes } from './previews'
 import { createPeerRoutes } from './peers'
 import { createGithubPrRunnerRoutes } from './githubPr'
 import { createGithubGitTransport, createGithubRoutes } from './github'
+import { createCapacityRoutes } from './capacity'
 import { createSidechannelRoutes, SidechannelService, sidechannelConfig } from './sidechannel'
 import { createScheduleRoutes, ScheduleService } from './schedules'
 import { PeerCompletionReporter } from './peerReports'
@@ -63,6 +64,7 @@ export function createEvolvedRuntime(dataDir: string, secret: Uint8Array) {
     routes.route('/', createPeerRoutes(store, () => getSyncEngine()))
     routes.route('/', createGithubPrRunnerRoutes(store, () => getSyncEngine(), dataDir))
     routes.route('/', createGithubRoutes({ store, vault, origin }))
+    routes.route('/', createCapacityRoutes(store, () => getSyncEngine(), origin))
     routes.route('/', createSidechannelRoutes(new SidechannelService(store, sidechannelConfig()), () => getSyncEngine(), origin))
     const schedules = new ScheduleService(store, () => getSyncEngine())
     routes.route('/', createScheduleRoutes(schedules, () => getSyncEngine()))

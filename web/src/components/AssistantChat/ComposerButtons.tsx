@@ -775,6 +775,8 @@ export function ComposerButtons(props: {
      * full-height column beside the input + toolbar.
      */
     omitPrimaryButton?: boolean
+    /** Project tools share the scrolling toolbar instead of consuming editor rows. */
+    extraActions?: ReactNode
 }) {
     const { t } = useTranslation()
     const { layout } = useComposerToolbarLayout()
@@ -1009,6 +1011,7 @@ export function ComposerButtons(props: {
                 ) : null}
                 </ToolbarItemSlot>
                 </OrderedToolbarItems>
+                {props.extraActions}
             </div>
 
             {/*

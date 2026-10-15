@@ -3,6 +3,7 @@ import { ExternalRefsSchema } from './externalRefs'
 import { COPILOT_AGENT_MODES, type CopilotAgentMode } from './copilotModes'
 import { CODEX_COLLABORATION_MODES, PERMISSION_MODES } from './modes'
 import { AgentConfigDescriptorSchema } from './agentConfig'
+import { ProviderCapacitySchema } from './capacity'
 
 export const PermissionModeSchema = z.enum(PERMISSION_MODES)
 export const CodexCollaborationModeSchema = z.enum(CODEX_COLLABORATION_MODES)
@@ -233,6 +234,7 @@ export const AgentStateCompletedRequestSchema = z.object({
 export type AgentStateCompletedRequest = z.infer<typeof AgentStateCompletedRequestSchema>
 
 export const AgentStateSchema = z.object({
+    providerCapacity: ProviderCapacitySchema.nullish(),
     controlledByUser: z.boolean().nullish(),
     // Current actionable shared Codex proposal; content remains in the transcript.
     codexPlanProposalId: z.string().nullish(),

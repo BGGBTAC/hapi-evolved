@@ -3,6 +3,8 @@ import { existsSync } from 'node:fs';
 import WebSocket from 'ws';
 import { logger } from '@/ui/logger';
 import { JsonLineParser } from '@/utils/jsonLineParser';
+import { CodexCapacityReporter } from '@/agent/providerCapacity';
+import type { ProviderCapacity } from '@hapi/protocol';
 import { killProcessByChildProcess } from '@/utils/process';
 import type {
     CollaborationModeListResponse,
@@ -179,6 +181,16 @@ export function resolveCodexAppServerCommand(): string {
 }
 
 export class CodexAppServerClient extends JsonLineParser {
+    private capacityReporter?: CodexCapacityReporter;
+    setCapacityHandler(handler: ((value: ProviderCapacity) => void) | null): void {
+        this.capacityReporter?.stop();
+        this.capacityReporter = handler ? new CodexCapacityReporter((method, params) => {
+            // Never let telemetry auto-spawn/reconnect an agent process.
+            if (!this.connected || !this.initialized) return Promise.reject(new Error('Native client unavailable'));
+            return this.sendRequest(method, params, { timeoutMs: 5_000 });
+        }, handler) : undefined;
+        if (this.initialized) this.capacityReporter?.start();
+    }
     private connecting: Promise<void> | null = null;
     private socket: WebSocket | null = null;
     private serverRequestHandler: ((request: { id: string | number; method: string; params: unknown }) => void) | null = null;
@@ -347,6 +359,7 @@ export class CodexAppServerClient extends JsonLineParser {
         const response = await this.sendRequest('initialize', params, { timeoutMs: 30_000 });
         this.sendNotification('initialized');
         this.initialized = true;
+        this.capacityReporter?.start();
         return response as InitializeResponse;
     }
 
@@ -519,6 +532,7 @@ export class CodexAppServerClient extends JsonLineParser {
     }
 
     async disconnect(): Promise<void> {
+        this.capacityReporter?.stop();
         if (this.socket) {
             const socket = this.socket;
             this.socket = null;
@@ -785,6 +799,7 @@ export class CodexAppServerClient extends JsonLineParser {
                 return;
             }
 
+            this.capacityReporter?.notification(method, params ?? null);
             this.notificationHandler?.(method, params ?? null);
             return;
         }
@@ -901,6 +916,7 @@ export class CodexAppServerClient extends JsonLineParser {
     }
 
     private rejectAllPending(error: Error): void {
+        this.capacityReporter?.stop();
         error = this.markIndeterminate(error);
         for (const { reject, rejectDispatched, cleanup } of this.pending.values()) {
             cleanup();

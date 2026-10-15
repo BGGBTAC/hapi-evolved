@@ -21,6 +21,8 @@ import {
 import { App } from '@/App'
 import EvolvedPage from '@/routes/evolved'
 import { useOptionalEvolved } from '@/evolved/auth'
+import { EvolvedBrand, EvolvedMark } from '@/evolved/Brand'
+import { parseWorkspaceSearch } from '@/evolved/workspaceNavigation'
 import { SessionChat } from '@/components/SessionChat'
 import { SessionList } from '@/components/SessionList'
 import { NewSession } from '@/components/NewSession'
@@ -230,12 +232,13 @@ function SessionsPage() {
 
     return (
         <>
-            <div className="flex h-full min-h-0">
+            <div className="app-sessions flex h-full min-h-0">
             <div
-                className={`${isSessionsIndex ? 'flex' : 'hidden split:flex'} w-full shrink-0 flex-col bg-[var(--app-bg)]`}
+                className={`app-session-sidebar ${isSessionsIndex ? 'flex' : 'hidden split:flex'} w-full shrink-0 flex-col`}
                 style={{ '--sidebar-w': `${sidebar.width}px` } as React.CSSProperties}
             >
                 <div className="flex min-h-0 flex-1 flex-col pt-[env(safe-area-inset-top)]">
+                    {evolved && <button type="button" className="app-workspace-return" onClick={() => navigate({ to: '/evolved' })} aria-label="Zum Arbeitsplatz"><EvolvedBrand compact /><small>{evolved.project?.name ?? 'Arbeitsplatz'} · Sessions</small></button>}
                     {error ? (
                         <div className="mx-auto w-full max-w-content px-3 py-2">
                             <div className="text-sm text-red-600">{error}</div>
@@ -269,8 +272,7 @@ function SessionsPage() {
                         isLoading={isLoading}
                         renderHeader={false}
                         headerActions={(
-                            <div className="flex items-center gap-2">
-                                {evolved && <button type="button" onClick={() => navigate({ to: '/evolved' })} className="rounded-lg px-2 py-2 text-sm font-semibold text-[var(--app-link)]" title="Projekte, Team, Tresor, Gedächtnis und Codegraph">Evolved</button>}
+                            <div className="app-session-toolbar">
                                 {canBrowse && (
                                     <button
                                         type="button"
@@ -328,7 +330,16 @@ function SessionsPage() {
 }
 
 function SessionsIndexPage() {
-    return null
+    const evolved = useOptionalEvolved()
+    const navigate = useNavigate()
+    const { t } = useTranslation()
+    return <main className="app-session-idle">
+        <EvolvedMark />
+        <h1>{evolved ? 'Raum für deinen nächsten Schritt.' : 'HAPI-eVolved'}</h1>
+        <p>{evolved ? 'Öffne eine Session aus der Seitenleiste oder starte mit einem Agenten an deinem Projekt.' : t('sessions.empty.hint')}</p>
+        <button type="button" onClick={() => navigate({ to: '/sessions/new' })}>{t('sessions.new')}</button>
+        {evolved && <button type="button" onClick={() => navigate({ to: '/evolved', search: { tab: 'capacity' } })}>Abo-Kapazität ansehen →</button>}
+    </main>
 }
 
 /**
@@ -1052,7 +1063,8 @@ function NewSessionPage() {
                     <button
                         type="button"
                         onClick={goBack}
-                        className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]"
+                        aria-label={t('common.back')}
+                        className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]"
                     >
                         <BackIcon />
                     </button>
@@ -1289,6 +1301,7 @@ const browseRoute = createRoute({
 const evolvedRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/evolved',
+    validateSearch: parseWorkspaceSearch,
     component: EvolvedPage,
 })
 

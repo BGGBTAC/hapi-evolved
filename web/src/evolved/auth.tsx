@@ -7,6 +7,7 @@ import { clearAllMessageWindows } from '@/lib/message-window-store'
 import { EvolvedApi, EvolvedApiError, hubUrl, type EvolvedMe, type EvolvedProject } from './api'
 import { authenticatePasskey, createPasskey, type AuthenticationOptionsJSON, type RegistrationOptionsJSON } from './webauthn'
 import { ActionStatus, ErrorNotice, Field, Loading, Panel, submit, useAction } from './ui'
+import { EvolvedBrand } from './Brand'
 import './evolved.css'
 
 export type EvolvedSession = {
@@ -89,7 +90,9 @@ function EvolvedLogin({ api, initialized, enrollment, onAuthenticated }: { api: 
             throw failure
         }
     })
-    return <main className="evolved ev-login"><div className="ev-brand"><span className="ev-mark" aria-hidden="true">H</span><div><strong>HAPI evolved</strong><p>Dein Arbeitsplatz für sichere Agenten.</p></div></div>
+    return <main lang="de" className="evolved ev-login"><div className="ev-login-layout">
+        <section className="ev-login-story"><EvolvedBrand /><h1>Deine Ideen.<br />Deine Agenten.<br /><em>Ein Arbeitsplatz.</em></h1><p>Vom ersten Gedanken bis zum fertigen Projekt. Code, Wissen und Agenten – verbunden in HAPI-eVolved.</p><ul className="ev-login-features"><li>Passkey-Anmeldung</li><li>Projektgebundene Zugänge</li><li>Dein eigener Hub</li></ul></section>
+        <div className="ev-login-card">
         {codes ? <RecoveryCodes codes={codes} onDone={() => { setCodes(null); void action.run(onAuthenticated) }} /> : <Panel title={mode === 'enroll' ? initialized ? 'Einladung annehmen' : 'Arbeitsplatz einrichten' : mode === 'recovery' ? 'Zugang wiederherstellen' : 'Willkommen zurück'}>
             <p className="ev-muted">{mode === 'enroll' ? 'Erstelle deinen Passkey mit dem Einrichtungs- oder Einladungscode.' : mode === 'recovery' ? 'Verwende einen deiner einmaligen Wiederherstellungscodes. Anschließend kannst du einen neuen Passkey hinzufügen.' : 'Melde dich mit deinem Passkey an.'}</p>
             <form className="ev-stack" onSubmit={submit(mode === 'login' ? login : mode === 'enroll' ? register : () => void action.run(async () => {
@@ -105,7 +108,8 @@ function EvolvedLogin({ api, initialized, enrollment, onAuthenticated }: { api: 
             <ActionStatus action={action} />
             {initialized && <div className="ev-actions ev-login-alternatives">{mode !== 'login' && <button onClick={() => { setMode('login'); action.clear() }}>Zur Anmeldung</button>}{mode !== 'recovery' && <button onClick={() => { setMode('recovery'); action.clear() }}>Passkey verloren</button>}{mode !== 'enroll' && <button onClick={() => { setMode('enroll'); action.clear() }}>Einladung annehmen</button>}</div>}
         </Panel>}
-    </main>
+        <p className="ev-login-note">Dein Passkey bleibt auf deinem Gerät oder in deinem Passwortmanager.</p>
+        </div></div></main>
 }
 
 export function EvolvedBoundary({ legacy, authenticated, onboarding }: {
@@ -130,8 +134,8 @@ export function EvolvedBoundary({ legacy, authenticated, onboarding }: {
             .catch(failure => { if (!controller.signal.aborted) setError(failure) })
         return () => controller.abort()
     }, [baseUrl, attempt])
-    if (error) return <main className="evolved ev-login"><ErrorNotice error={error} /><button onClick={() => setAttempt(value => value + 1)}>Erneut verbinden</button></main>
-    if (mode === 'loading') return <main className="evolved ev-login"><Loading /></main>
+    if (error) return <main lang="de" className="evolved ev-login"><ErrorNotice error={error} /><button onClick={() => setAttempt(value => value + 1)}>Erneut verbinden</button></main>
+    if (mode === 'loading') return <main lang="de" className="evolved ev-login"><Loading /></main>
     if (mode === 'legacy') return legacy
     return <EvolvedSessionProvider key={baseUrl} baseUrl={baseUrl} authenticated={authenticated} onboarding={onboarding} />
 }
@@ -277,8 +281,10 @@ function EvolvedSessionProvider({ baseUrl, authenticated, onboarding }: {
     })
     const reloadContext = async () => { await refresh(); if (projectId) await issueToken() }
     const logout = async () => {
-        authEpoch.current++
         await api.request('/auth/logout', { method: 'POST', body: {} })
+        // A failed logout leaves the current session usable so the user can
+        // retry. Advance authority only after the server confirms revocation.
+        authEpoch.current++
         queryClient.clear()
         clearAllMessageWindows()
             revokeBrowserCloudConsent()
@@ -289,11 +295,11 @@ function EvolvedSessionProvider({ baseUrl, authenticated, onboarding }: {
         setToken(null)
         setMe(null)
     }
-    if (error) return <main className="evolved ev-login"><ErrorNotice error={error} /><button onClick={() => void refresh().catch(setError)}>Erneut versuchen</button></main>
-    if (!ready) return <main className="evolved ev-login"><Loading /></main>
+    if (error) return <main lang="de" className="evolved ev-login"><ErrorNotice error={error} /><button onClick={() => void refresh().catch(setError)}>Erneut versuchen</button></main>
+    if (!ready) return <main lang="de" className="evolved ev-login"><Loading /></main>
     if (!me) return <EvolvedLogin api={api} initialized={initialized} enrollment={enrollment} onAuthenticated={refresh} />
     const project = me.accessibleProjects.find(item => item.id === projectId) ?? null
     return <EvolvedContext.Provider value={{ api, me, project, selectProject, refresh: reloadContext, logout, reauthenticate }}>
-        {!project ? onboarding : bridgeError ? <main className="evolved ev-login"><ErrorNotice error={bridgeError} /><button onClick={() => void issueToken()}>Projekt erneut öffnen</button><button onClick={() => void logout()}>Abmelden</button></main> : !token || tokenProjectId !== projectId ? <main className="evolved ev-login"><Loading /></main> : authenticated({ api: hubApi, token, projectId: project.id })}
+        {!project ? onboarding : bridgeError ? <main lang="de" className="evolved ev-login"><ErrorNotice error={bridgeError} /><button onClick={() => void issueToken()}>Projekt erneut öffnen</button><button onClick={() => void logout()}>Abmelden</button></main> : !token || tokenProjectId !== projectId ? <main lang="de" className="evolved ev-login"><Loading /></main> : authenticated({ api: hubApi, token, projectId: project.id })}
     </EvolvedContext.Provider>
 }

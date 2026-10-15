@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import type { AgentType } from './types'
 import { MODEL_OPTIONS } from './types'
 import { useTranslation } from '@/lib/use-translation'
@@ -14,6 +15,7 @@ export function ModelSelector(props: {
     onModelChange: (value: string) => void
 }) {
     const { t } = useTranslation()
+    const selectId = useId()
     const options: Array<{ value: string; label: string; group?: string }> = props.options ?? MODEL_OPTIONS[props.agent]
     if (options.length === 0) {
         return null
@@ -29,10 +31,11 @@ export function ModelSelector(props: {
 
     return (
         <div className="flex flex-col gap-1.5 px-3 py-3">
-            <label className="text-xs font-medium text-[var(--app-hint)]">
+            <label htmlFor={selectId} className="text-xs font-medium text-[var(--app-hint)]">
                 {props.label ?? t('newSession.model')}
             </label>
             <SelectControl
+                id={selectId}
                 value={props.model}
                 onChange={(e) => props.onModelChange(e.target.value)}
                 disabled={props.isDisabled || props.isLoading}

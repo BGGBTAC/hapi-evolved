@@ -3,6 +3,7 @@ import { Session } from "./session";
 import { RemoteModeDisplay } from "@/ui/ink/RemoteModeDisplay";
 import { claudeRemote } from "./claudeRemote";
 import { resolveClaudeRemoteResumeTarget } from './utils/claudeResumeGuard';
+import { claudeCapacity, mergeCapacity, unknownCapacity } from '@/agent/providerCapacity';
 import { PermissionHandler } from "./utils/permissionHandler";
 import { Future } from "@/utils/future";
 import { SDKAssistantMessage, SDKMessage, SDKUserMessage } from "./sdk";
@@ -162,6 +163,11 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
         let ongoingToolCalls = new Map<string, { parentToolCallId: string | null }>();
 
         function onMessage(message: SDKMessage) {
+            const providerCapacity = claudeCapacity(message);
+            if (providerCapacity) {
+                try { session.client.updateAgentState(state => ({ ...state, providerCapacity: mergeCapacity(state.providerCapacity, providerCapacity) })); }
+                catch { logger.debug('[Capacity] Could not publish Claude capacity.'); }
+            }
             formatClaudeMessageForInk(message, messageBuffer);
             permissionHandler.onMessage(message);
 
@@ -384,6 +390,10 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
                 try {
                     const resumeSessionId = session.getClaudeResumeSessionId();
                     session.armResumeGuard(resolveClaudeRemoteResumeTarget(resumeSessionId, session.claudeArgs));
+                    // A relaunched native process may use another account. Do not
+                    // present the previous process's limits as a fresh reading.
+                    try { session.client.updateAgentState(state => ({ ...state, providerCapacity: unknownCapacity('claude', 'not_reported') })); }
+                    catch { logger.debug('[Capacity] Could not reset Claude capacity.'); }
                     await claudeRemote({
                         sessionId: resumeSessionId,
                         path: session.path,

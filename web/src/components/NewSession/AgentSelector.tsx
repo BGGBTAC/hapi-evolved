@@ -20,7 +20,7 @@ export function AgentSelector(props: {
                 {props.agents.map((agentType) => (
                     <label
                         key={agentType}
-                        className="flex items-center gap-1.5 cursor-pointer"
+                        className="flex min-h-[44px] items-center gap-1.5 cursor-pointer"
                     >
                         <input
                             type="radio"
@@ -31,7 +31,7 @@ export function AgentSelector(props: {
                             disabled={props.isDisabled}
                             className="accent-[var(--app-link)]"
                         />
-                        <AgentFlavorIcon flavor={agentType} className="h-4 w-4 shrink-0" />
+                        <span aria-hidden="true"><AgentFlavorIcon flavor={agentType} className="h-4 w-4 shrink-0" /></span>
                         <span className="text-sm">{getFlavorLabel(agentType)}</span>
                     </label>
                 ))}

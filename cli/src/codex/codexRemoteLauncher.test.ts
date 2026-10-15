@@ -101,6 +101,7 @@ const harness = vi.hoisted(() => ({
 vi.mock('./codexAppServerClient', () => {
     const INDETERMINATE_SYMBOL = Symbol('codex-app-server-indeterminate');
     class MockCodexAppServerClient {
+        setCapacityHandler() {}
         private notificationHandler: ((method: string, params: unknown) => void) | null = null;
         private stderrHandler: ((text: string) => void) | null = null;
 

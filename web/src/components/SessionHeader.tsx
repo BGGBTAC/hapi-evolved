@@ -376,12 +376,13 @@ export function SessionHeader(props: {
 
     return (
         <>
-            <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
+            <div className="app-session-header pt-[env(safe-area-inset-top)]">
                 <div className="mx-auto w-full max-w-content flex items-center gap-2 p-3">
                     {/* Back button */}
                     <button
                         type="button"
                         onClick={props.onBack}
+                        aria-label={t('common.back')}
                         className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]"
                     >
                         <svg
@@ -400,7 +401,7 @@ export function SessionHeader(props: {
                     </button>
 
                     {/* Session info - two lines: title and path */}
-                    <div className="min-w-0 flex-1">
+                    <div className="app-session-identity min-w-0 flex-1">
                         <div className="truncate font-semibold">
                             {title}
                         </div>
@@ -470,6 +471,7 @@ export function SessionHeader(props: {
                         </div>
                     </div>
 
+                    <div className="app-session-tools">
                     {props.onToggleFiles ? (
                         <button
                             type="button"
@@ -531,6 +533,7 @@ export function SessionHeader(props: {
                     >
                         <MoreVerticalIcon />
                     </button>
+                    </div>
                 </div>
             </div>
 

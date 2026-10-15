@@ -18,6 +18,7 @@ vi.mock('../codexAppServerClient', () => ({
         notify?: (method: string, params: unknown) => void;
         abandoned?: () => void;
         setNotificationHandler(handler: typeof this.notify) { this.notify = handler; }
+        setCapacityHandler() {}
         setTransportAbandonedHandler(handler: (() => void) | null) { this.abandoned = handler ?? undefined; }
         setServerRequestHandler() {}
         async connect() {}

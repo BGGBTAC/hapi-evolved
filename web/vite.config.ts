@@ -116,9 +116,9 @@ export default defineConfig({
             srcDir: 'src',
             filename: 'sw.ts',
             manifest: {
-                name: 'HAPI',
-                short_name: 'HAPI',
-                description: 'AI-powered development assistant',
+                name: 'HAPI-eVolved',
+                short_name: 'HAPI-eVolved',
+                description: 'Dein Arbeitsplatz für Projekte, Code und Agenten.',
                 // An installed Android WebAPK stores theme_color once at install time and uses it
                 // as a fixed toolbar color, so any value here pins the status bar to one appearance.
                 // With none, Chrome falls back to white in light mode and black in dark mode. That
@@ -129,9 +129,9 @@ export default defineConfig({
                 // optional for installability.
                 theme_color: undefined,
                 // Splash background stays light; only the status bar needed to become adaptive.
-                background_color: '#ffffff',
+                background_color: '#f6f8f7',
                 display: 'standalone',
-                orientation: 'portrait',
+                orientation: 'any',
                 scope: base,
                 start_url: base,
                 icons: [

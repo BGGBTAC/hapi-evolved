@@ -1,4 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { useState } from 'react'
+import type { ApiClient } from '@/api/client'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EvolvedBoundary, useEvolved } from './auth'
@@ -74,6 +76,37 @@ function renderAuthenticated() {
     return client
 }
 describe('Evolved scope changes', () => {
+    it('keeps current API authority usable after a failed logout and permits a retry', async () => {
+        let logoutFails = true
+        const fetcher = vi.fn(async (url: string) => {
+            if (url.endsWith('/health')) return Response.json({ evolved: { enabled: true } })
+            if (url.endsWith('/auth/status')) return Response.json({ initialized: true, authenticated: true })
+            if (url.endsWith('/me')) return Response.json({ user, accessibleProjects: projects })
+            if (url.includes('/session-token?')) return Response.json({ token: 'test-token' })
+            if (url.endsWith('/auth/logout')) {
+                if (logoutFails) throw new Error('Network unavailable')
+                return Response.json({ ok: true })
+            }
+            if (url.endsWith('/api/sessions')) return Response.json({ sessions: [] })
+            throw new Error(`Unexpected endpoint ${url}`)
+        })
+        vi.stubGlobal('fetch', fetcher)
+        function Probe({ api }: { api: ApiClient }) {
+            const { logout } = useEvolved()
+            const [status, setStatus] = useState('Ready')
+            return <><p role="status">{status}</p><button onClick={() => void logout().catch(error => setStatus(error.message))}>Logout retry</button><button onClick={() => void api.getSessions().then(() => setStatus('Sessions loaded')).catch(error => setStatus(error.message))}>Read sessions</button></>
+        }
+        const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        render(<QueryClientProvider client={client}><EvolvedBoundary legacy={null} onboarding={null} authenticated={bridge => <Probe api={bridge.api} />} /></QueryClientProvider>)
+        fireEvent.click(await screen.findByRole('button', { name: 'Logout retry' }))
+        await screen.findByText('Network unavailable')
+        fireEvent.click(screen.getByRole('button', { name: 'Read sessions' }))
+        await screen.findByText('Sessions loaded')
+        expect(fetcher.mock.calls.some(([url]) => url.endsWith('/api/sessions'))).toBe(true)
+        logoutFails = false
+        fireEvent.click(screen.getByRole('button', { name: 'Logout retry' }))
+        await screen.findByRole('button', { name: 'Mit Passkey anmelden' })
+    })
     it('clears the previous project cache when refreshed membership changes the active project', async () => {
         let accessibleProjects = projects
         vi.stubGlobal('fetch', vi.fn(async (url: string) => {

@@ -3,6 +3,7 @@ import {
     constants, closeSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync,
     readFileSync, readdirSync, realpathSync, renameSync, writeFileSync,
 } from 'node:fs';
+import { workspaceArea } from './evolved-navigation.mjs';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { join, posix, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -115,7 +116,7 @@ async function loginAgain(page, origin, displayName) {
     await page.goto(origin);
     await page.getByLabel('Benutzername (optional)', { exact: true }).fill(displayName);
     await page.getByRole('button', { name: 'Mit Passkey anmelden', exact: true }).click();
-    await page.getByRole('button', { name: 'Team & Konto', exact: true }).waitFor();
+    await page.locator('.ew-shell').waitFor();
 }
 
 async function verifyPreview(page, context, browser, origin, preview) {
@@ -224,7 +225,7 @@ export async function runLiveCheck(config) {
                 savePrivate(directory, 'recovery-codes.json', recoveryCodes);
                 await page.getByLabel('Ich habe die Codes sicher gespeichert.').check();
                 await page.getByRole('button', { name: 'Weiter', exact: true }).click();
-                await page.getByRole('button', { name: 'Team & Konto', exact: true }).waitFor();
+                await page.locator('.ew-shell').waitFor();
                 const me = await browserApi(page, '/api/evolved/me');
                 requireCheck(me.user?.isAdmin === true, 'synthetic_admin_missing');
                 handoff = { kind: 'hapi-evolved-synthetic-acceptance', origin: config.origin, displayName, userId: me.user.id, workspace: config.workspace, profile: 'restricted', createdAt: new Date().toISOString(), graphSymbol: config.graphSymbol };
@@ -275,7 +276,7 @@ export async function runLiveCheck(config) {
                 // an unmatched /api path before Hono reaches its 404 handler.
                 await browserApi(page, `${projectPath}/secrets/${handoff.secretId}`, { expected: [401, 403, 404, 405] });
                 requireCheck(await anonymousStatus(browser, config.origin, projectPath + '/secrets') === 401, 'vault_anonymous_access');
-                await page.getByRole('button', { name: 'Tresor', exact: true }).click();
+                await workspaceArea(page, 'Tresor');
                 await page.getByText('ACCEPTANCE_SYNTHETIC_VALUE', { exact: true }).waitFor();
                 if (syntheticValue) requireCheck(!(await page.locator('body').innerText()).includes(syntheticValue), 'vault_ui_exposed_plaintext');
             });
@@ -301,7 +302,7 @@ export async function runLiveCheck(config) {
                 requireCheck(memory.items.some(item => item.id === handoff.memoryId && item.status === 'verified') && memory.settings.cloudAllowed === false && memory.settings.enabled === false && memory.budget.spentMicros === 0, 'persisted_local_memory');
                 const search = await browserApi(page, `/api/evolved/memory/search?projectId=${handoff.projectId}&q=persistent`);
                 requireCheck(search.mode === 'ledger' && search.results.some(item => item.id === handoff.memoryId), 'persisted_memory_search');
-                await page.getByRole('button', { name: 'Gedächtnis', exact: true }).click();
+                await workspaceArea(page, 'Gedächtnis');
                 await page.getByText('Acceptance persistent note', { exact: true }).waitFor();
             });
             await run('real_codegraph_source_edges_impact', () => verifyCodegraph(page, projectPath, handoff.graphSymbol));

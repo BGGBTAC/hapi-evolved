@@ -460,7 +460,7 @@ function CopyPathButton({ path, className }: { path: string; className?: string 
     return (
         <button
             type="button"
-            className={`shrink-0 p-0.5 rounded transition-colors ${copied ? 'text-[var(--app-badge-success-text)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)]'} ${className ?? ''}`}
+            className={`inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded transition-colors focus-visible:opacity-100 ${copied ? 'text-[var(--app-badge-success-text)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)]'} ${className ?? ''}`}
             title={copied ? 'Copied!' : `Copy: ${path}`}
             onClick={handleClick}
         >

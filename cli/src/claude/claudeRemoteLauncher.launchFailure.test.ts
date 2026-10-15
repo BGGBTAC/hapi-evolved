@@ -29,6 +29,7 @@ function makeClient() {
     const handlers = new Map<string, RpcHandler>();
     let agentState: Record<string, unknown> = {};
     return {
+        getAgentState: () => agentState,
         handlers,
         rpcHandlerManager: {
             registerHandler: vi.fn((method: string, handler: RpcHandler) => {
@@ -100,6 +101,25 @@ describe('claudeRemoteLauncher launch-failure recovery', () => {
 
     afterEach(() => {
         delete process.env.CLAUDE_REMOTE_RESPAWN_BACKOFF_MS;
+    });
+
+    it('publishes an allowed SDK capacity report before chat filtering and does not expose raw fields', async () => {
+        const queue = new MessageQueue2<EnhancedMode>((mode) => JSON.stringify(mode));
+        queue.push('hello', { permissionMode: 'default' });
+        const client = makeClient(), session = makeSession(queue, client);
+        claudeRemoteMock.mockImplementation(async (opts: any) => {
+            await opts.nextMessage();
+            opts.onMessage({ type: 'rate_limit_event', rate_limit_info: {
+                status: 'allowed', utilization: 0.42, rateLimitType: 'five_hour', resetsAt: 2_000_000_000,
+                accountId: 'private-account', token: 'private-token'
+            } });
+            await opts.onReady(); triggerSwitch(client);
+        });
+        const { claudeRemoteLauncher } = await import('./claudeRemoteLauncher');
+        await claudeRemoteLauncher(session);
+        expect(client.getAgentState().providerCapacity).toMatchObject({ provider: 'claude', status: 'available', windows: [{ usedPercent: 42, remainingPercent: 58 }] });
+        expect(JSON.stringify(client.getAgentState())).not.toContain('private-');
+        expect(client.sendClaudeSessionMessage).not.toHaveBeenCalled();
     });
 
     it('restores the dequeued message into the queue when claudeRemote throws before onReady', async () => {
