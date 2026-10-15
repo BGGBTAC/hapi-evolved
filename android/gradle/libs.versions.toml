@@ -3,7 +3,7 @@
 # Keep conservative: bump deliberately, one PR at a time.
 
 [versions]
-agp = "8.11.1"
+agp = "9.4.1"
 kotlin = "2.1.21"
 composeBom = "2025.05.00"
 activityCompose = "1.10.1"
