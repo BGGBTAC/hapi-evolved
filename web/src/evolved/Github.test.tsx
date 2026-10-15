@@ -86,7 +86,8 @@ describe('project GitHub connection', () => {
         expect(await screen.findByText('Lesen und Push freigegeben')).toBeInTheDocument()
         fireEvent.change(screen.getByLabelText('Git-Berechtigung für example/demo'), { target: { value: 'read' } })
         await waitFor(() => expect(context.api.request).toHaveBeenCalledWith(`${path}/repositories`, expect.objectContaining({ method: 'PUT', body: { repository: 'example/demo', permission: 'read' } })))
-        expect(await screen.findByText('git clone https://github.com/example/demo.git')).toBeInTheDocument()
+        expect(await screen.findByText('example/demo')).toBeInTheDocument()
+        expect(screen.getByLabelText('Git-Berechtigung für example/demo')).toHaveValue('read')
         expect(context.api.request.mock.calls.some(([requestPath]) => requestPath.endsWith('/profile'))).toBe(false)
     })
     it('allows restricted projects to change existing grants while explaining effective push restrictions', async () => {

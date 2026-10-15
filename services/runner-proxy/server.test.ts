@@ -265,6 +265,83 @@ test('proxy routes cannot expose account, vault, bootstrap or lease operations',
     for (const path of ['/api/auth', '/api/evolved/auth/bootstrap', '/api/evolved/runner/token', '/api/evolved/projects/a/secrets', '/api/evolved/projects/a/capabilities']) expect(allowedProxyPath(path)).toBe(false)
     expect(allowedProxyPath('/api/evolved/projects/a/codegraph/impact')).toBe(true)
 })
+test('repository proxy routes admit only exact methods, IDs and query shapes', () => {
+    const base = '/api/evolved/projects/a', job = '768237a3-3378-4384-aaaf-eed31ae931e9'
+    for (const query of ['', '?workspace=0', '?workspace=1']) expect(allowedProxyPath(`${base}/repositories`, 'GET', query)).toBe(true)
+    expect(allowedProxyPath(`${base}/repositories/42/sync`, 'POST')).toBe(true)
+    expect(allowedProxyPath(`${base}/repository-jobs/${job}`, 'GET')).toBe(true)
+    expect(allowedProxyPath(`${base}/repositories/42/authorization`, 'GET', `?jobId=${job}`)).toBe(true)
+    for (const [path, method, query] of [
+        [`${base}/repositories`, 'POST', ''], [`${base}/repositories`, 'HEAD', ''],
+        [`${base}/repositories`, 'GET', '?workspace=0&workspace=1'], [`${base}/repositories`, 'GET', '?workspace=2'],
+        [`${base}/repositories`, 'GET', '?token=value'], [`${base}/repositories`, 'GET', '?%77orkspace=0'],
+        [`${base}/repositories/42/sync`, 'GET', ''], [`${base}/repositories/42/sync`, 'POST', '?force=1'],
+        [`${base}/repositories/042/sync`, 'POST', ''], [`${base}/repositories/owner%2Frepo/sync`, 'POST', ''],
+        [`${base}/repositories/42/sync/extra`, 'POST', ''], [`${base}/repository-jobs/${job}`, 'POST', ''],
+        [`${base}/repository-jobs/${job}`, 'GET', '?extra=1'], [`${base}/repository-jobs/not-a-uuid`, 'GET', ''],
+        [`${base}/repositories/42/authorization`, 'GET', ''], [`${base}/repositories/42/authorization`, 'POST', `?jobId=${job}`],
+        [`${base}/repositories/42/authorization`, 'GET', `?jobId=${job}&jobId=${job}`], [`${base}/repositories/42/authorization`, 'GET', `?jobId=${job}&project=b`],
+        ['/api/evolved/projects/a%2fb/repositories', 'GET', ''], [`${base}/github`, 'GET', ''],
+    ]) expect(allowedProxyPath(path, method, query)).toBe(false)
+})
+test('repository sync renews a short-lived cached capability before forwarding the job', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'evolved-repository-renew-')), leaseFile = join(directory, 'lease')
+    cleanup.push(() => rmSync(directory, { recursive: true, force: true }))
+    writeFileSync(leaseFile, 'synthetic-lease', { mode: 0o600 })
+    let exchanges = 0
+    const forwarded: string[] = []
+    const hub = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch(request) {
+        if (new URL(request.url).pathname === '/api/evolved/runner/token') {
+            exchanges++
+            return Response.json({ token: (exchanges === 1 ? 'x' : 'y').repeat(43), projectId: 'a', expiresAt: Date.now() + (exchanges === 1 ? 120_000 : 900_000) })
+        }
+        forwarded.push(request.headers.get('authorization') ?? '')
+        return Response.json({ ok: true })
+    } })
+    cleanup.push(() => hub.stop(true))
+    const proxy = createRunnerProxy({ hubUrl: hub.url.toString(), leaseFile, projectId: 'a', port: 0 })
+    cleanup.push(proxy.close)
+    expect((await fetch(new URL('/api/evolved/projects/a/repositories?workspace=0', proxy.server.url))).status).toBe(200)
+    expect(exchanges).toBe(1)
+    expect((await fetch(new URL('/api/evolved/projects/a/repositories/42/sync', proxy.server.url), { method: 'POST', body: '{}' })).status).toBe(200)
+    expect(exchanges).toBe(2)
+    expect(forwarded).toEqual([`Bearer ${'x'.repeat(43)}`, `Bearer ${'y'.repeat(43)}`])
+})
+test('repository requests retain project isolation, broker credentials and exact query forwarding', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'evolved-repository-proxy-')), leaseFile = join(directory, 'lease')
+    cleanup.push(() => rmSync(directory, { recursive: true, force: true }))
+    writeFileSync(leaseFile, 'synthetic-lease', { mode: 0o600 })
+    const forwarded: Array<{ path: string; method: string; authorization: string | null; cookie: string | null; body: string }> = []
+    let revoked = false
+    const hub = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(request) {
+        const url = new URL(request.url)
+        if (url.pathname === '/api/evolved/runner/token') return Response.json({ token: 'x'.repeat(43), projectId: 'a', expiresAt: Date.now() + 900_000 })
+        forwarded.push({ path: url.pathname + url.search, method: request.method, authorization: request.headers.get('authorization'), cookie: request.headers.get('cookie'), body: await request.text() })
+        return revoked ? Response.json({ code: 'revoked' }, { status: 403 }) : Response.json({ repositories: [{ id: '42', fullName: 'owner/repo' }] })
+    } })
+    cleanup.push(() => hub.stop(true))
+    const proxy = createRunnerProxy({ hubUrl: hub.url.toString(), leaseFile, projectId: 'a', port: 0 })
+    cleanup.push(proxy.close)
+    const base = '/api/evolved/projects/a', job = '768237a3-3378-4384-aaaf-eed31ae931e9'
+    const response = await fetch(new URL(`${base}/repositories?workspace=0`, proxy.server.url), { headers: { authorization: 'Bearer attacker', cookie: 'session=bad' } })
+    expect(response.status).toBe(200)
+    expect(await response.text()).not.toContain('x'.repeat(43))
+    expect(forwarded[0]).toEqual({ path: `${base}/repositories?workspace=0`, method: 'GET', authorization: `Bearer ${'x'.repeat(43)}`, cookie: null, body: '' })
+    const body = JSON.stringify({ action: 'clone', requestId: job })
+    expect((await fetch(new URL(`${base}/repositories/42/sync`, proxy.server.url), { method: 'POST', headers: { 'content-type': 'application/json' }, body })).status).toBe(200)
+    expect(forwarded[1].body).toBe(body)
+    expect((await fetch(new URL(`${base}/repositories/42/authorization?jobId=${job}`, proxy.server.url))).status).toBe(200)
+    expect((await fetch(new URL(`${base}/repository-jobs/${job}`, proxy.server.url))).status).toBe(200)
+    for (const [path, options] of [
+        ['/api/evolved/projects/b/repositories?workspace=0', {}],
+        [`${base}/repositories?workspace=0&workspace=1`, {}],
+        [`${base}/repositories/42/sync?force=1`, { method: 'POST' }],
+        [`${base}/repositories`, { headers: { origin: 'https://browser.test' } }],
+    ] as const) expect((await fetch(new URL(path, proxy.server.url), options)).status).toBe(403)
+    expect(forwarded).toHaveLength(4)
+    revoked = true
+    expect((await fetch(new URL(`${base}/repositories?workspace=0`, proxy.server.url))).status).toBe(403)
+})
 test('queued socket budget counts binary and UTF-8 bytes and bounds nested objects', () => {
     expect(queuedPacketBytes([Buffer.alloc(1024), 'ä'])).toBeGreaterThanOrEqual(1026)
     expect(queuedPacketBytes({ bytes: new Uint8Array(9 * 1024 * 1024) })).toBeGreaterThan(8 * 1024 * 1024)

@@ -612,6 +612,10 @@ export class RpcGateway {
         return await this.machineRpc(machineId, RPC_METHODS.ListPiModelsForMachine, {}, MODEL_LIST_RPC_TIMEOUT_MS) as RpcListPiModelsResponse
     }
 
+    async evolvedRepositories(machineId: string, params: unknown, timeoutMs = 15_000): Promise<unknown> {
+        return this.machineRpc(machineId, RPC_METHODS.EvolvedRepositories, params, timeoutMs)
+    }
+
     private async sessionRpc(
         sessionId: string,
         method: string,

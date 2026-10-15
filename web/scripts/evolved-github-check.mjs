@@ -2,6 +2,71 @@ import { workspaceArea } from './evolved-navigation.mjs';
 const syntheticToken = 'github_pat_synthetic_browser_credential_only';
 const repository = 'synthetic-owner/browser-repo';
 
+/** Only the runner-dependent UI phase is mocked; account/grant checks below use the real Hub/Vault fixture. */
+async function checkRepositorySyncUi(page, project) {
+    const prefix = `/api/evolved/projects/${project.id}`;
+    const routePattern = new RegExp(`/api/evolved/projects/${project.id}/(?:repositories(?:/123/sync)?|repository-jobs/[^/?]+)(?:\\?.*)?$`);
+    const [owner, name] = repository.split('/');
+    const checkoutPath = `${project.rootPath}/repositories/${owner}/${name}`;
+    const submissions = [];
+    let state = 'missing', activeJob = null, polls = 0;
+    const handler = async route => {
+        const request = route.request(), path = new URL(request.url()).pathname;
+        const respond = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+        if (path === `${prefix}/repositories` && request.method() === 'GET') {
+            return respond({ connected: true, rootPath: project.rootPath, canSync: true, canPush: true, runner: { status: 'ready' }, repositories: [{
+                id: '123', owner, name, fullName: repository, permission: 'write', cloneUrl: `https://github.com/${repository}.git`, path: checkoutPath,
+                local: { state, branch: state === 'ready' ? 'main' : null, dirty: state === 'ready' ? false : null }, ...(activeJob ? { job: activeJob } : {}),
+            }] });
+        }
+        if (path === `${prefix}/repositories/123/sync` && request.method() === 'POST') {
+            const body = request.postDataJSON();
+            submissions.push(body);
+            if (Object.keys(body).sort().join(',') !== 'action,requestId' || !/^[a-f0-9-]{36}$/.test(body.requestId)
+                || body.action !== (state === 'missing' ? 'clone' : 'pull')) return respond({ error: 'Invalid synthetic sync request.' }, 400);
+            polls = 0;
+            activeJob = { id: body.action === 'clone' ? '00000000-0000-4000-8000-000000000001' : '00000000-0000-4000-8000-000000000002', repositoryId: '123', action: body.action, state: 'running' };
+            return respond({ job: activeJob }, 202);
+        }
+        if (activeJob && path === `${prefix}/repository-jobs/${activeJob.id}` && request.method() === 'GET') {
+            if (++polls >= 2) { state = 'ready'; activeJob = { ...activeJob, state: 'succeeded' }; }
+            return respond({ job: activeJob });
+        }
+        return respond({ error: 'Unknown synthetic repository request.' }, 404);
+    };
+    const viewport = page.viewportSize();
+    await page.route(routePattern, handler);
+    try {
+        await page.getByRole('button', { name: 'Repository-Status prüfen', exact: true }).click();
+        const clone = page.getByRole('button', { name: `Ins Projekt klonen: ${repository}`, exact: true });
+        await clone.waitFor();
+        await clone.click();
+        await page.getByText('Repository wird geklont …', { exact: true }).waitFor();
+        if (!await clone.isDisabled()) throw Error('Repository UI accepted another action while cloning');
+        await page.getByText('Repository geklont.', { exact: true }).waitFor();
+        await page.getByText(checkoutPath, { exact: true }).waitFor();
+        await page.getByText('Im Projektordner · Branch: main', { exact: true }).waitFor();
+        const pull = page.getByRole('button', { name: `Aktualisieren: ${repository}`, exact: true });
+        for (const width of [390, 320]) {
+            await page.setViewportSize({ width, height: 844 });
+            await pull.scrollIntoViewIfNeeded();
+            await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+            const overflow = await page.evaluate(() => ({ width: innerWidth, document: document.documentElement.scrollWidth, content: document.querySelector('.ew-content')?.scrollWidth, available: document.querySelector('.ew-content')?.clientWidth }));
+            if (overflow.document > overflow.width + 1 || overflow.content > overflow.available + 1) throw Error(`Repository UI overflows at ${width}px`);
+            const box = await pull.boundingBox();
+            if (!box || box.height < 44 || box.width < 44) throw Error(`Repository action is too small at ${width}px`);
+        }
+        await pull.click();
+        await page.getByText('Repository wird aktualisiert …', { exact: true }).waitFor();
+        await page.getByText('Repository aktualisiert.', { exact: true }).waitFor();
+        if (submissions.length !== 2 || submissions[0].action !== 'clone' || submissions[1].action !== 'pull' || submissions[0].requestId === submissions[1].requestId) throw Error('Repository UI did not submit exactly one distinct request per explicit operation');
+        console.log('PASS repository UI with explicitly mocked runner status/jobs: clone → poll → ready → pull, exact project/repository requests, no token/URL input, 390/320px without overflow and 44px actions; native Git execution is verified separately');
+    } finally {
+        await page.unroute(routePattern, handler);
+        if (viewport) await page.setViewportSize(viewport);
+    }
+}
+
 export async function checkGithub(page) {
     const githubTab = () => workspaceArea(page, 'GitHub');
     const profileChanges = [];
@@ -125,6 +190,7 @@ export async function checkGithub(page) {
     await githubTab();
     await page.getByText(repository, { exact: true }).waitFor();
     if (await permission.inputValue() !== 'write') throw Error('Runner setup navigation lost the repository write grant');
+    await checkRepositorySyncUi(page, project);
 
     await tokenInput.fill(syntheticToken);
     if (!await page.getByRole('button', { name: 'Verbindung ersetzen', exact: true }).isDisabled()) throw Error('Connection replacement lacks grant-removal acknowledgment');

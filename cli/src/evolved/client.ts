@@ -1,4 +1,19 @@
 import { closeSync, constants, fstatSync, openSync, readFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { z } from 'zod/v3'
+
+const repositoryIdSchema = z.string().regex(/^[1-9][0-9]{0,19}$/)
+const uuidSchema = z.string().uuid()
+const REPOSITORY_REQUEST_TIMEOUT_MS = 45_000
+
+export class EvolvedRequestError extends Error {
+    constructor(message: string, readonly status: number, readonly code?: string) { super(message) }
+}
+export class EvolvedRepositorySyncError extends Error {
+    constructor(readonly requestId: string, readonly reason: unknown) {
+        super(`${reason instanceof Error ? reason.message : 'Repository sync request failed'}. Request ID: ${requestId}. Reuse this request ID after checking repository status; do not automatically start a new request.`)
+    }
+}
 
 export class EvolvedClient {
     readonly base: URL
@@ -26,11 +41,33 @@ export class EvolvedClient {
             method, headers: { ...headers, authorization: `Bearer ${this.token()}`, 'content-type': 'application/json' },
             body: body === undefined ? undefined : JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(options?.timeoutMs ?? 70_000)
         })
-        const payload = await response.json() as { error?: string }
-        if (!response.ok) throw new Error(payload.error ?? `Evolved request failed (${response.status})`)
+        const payload: unknown = await response.json().catch(() => null)
+        if (!response.ok) {
+            const detail = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {}
+            throw new EvolvedRequestError(typeof detail.error === 'string' ? detail.error : `Evolved request failed (${response.status})`, response.status,
+                typeof detail.code === 'string' ? detail.code : undefined)
+        }
+        if (payload === null) throw new Error('Invalid Evolved API response')
         return payload
     }
     projectPath(path: string): string { return `/projects/${encodeURIComponent(this.projectId)}${path}` }
+    repositories(workspace = false): Promise<unknown> {
+        return this.request(this.projectPath(`/repositories?workspace=${workspace ? '1' : '0'}`), 'GET', undefined, {}, { timeoutMs: REPOSITORY_REQUEST_TIMEOUT_MS })
+    }
+    async syncRepository(repositoryId: string, action: 'clone' | 'pull', requestId: string = randomUUID()): Promise<unknown> {
+        if (!repositoryIdSchema.safeParse(repositoryId).success || !['clone', 'pull'].includes(action) || !uuidSchema.safeParse(requestId).success) {
+            throw new Error('Repository sync requires a granted numeric repository ID, clone or pull, and a stable UUID requestId')
+        }
+        try {
+            const payload = await this.request(this.projectPath(`/repositories/${repositoryId}/sync`), 'POST', { action, requestId }, {}, { timeoutMs: REPOSITORY_REQUEST_TIMEOUT_MS })
+            if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Invalid repository sync response')
+            return { ...payload, requestId }
+        } catch (error) { throw new EvolvedRepositorySyncError(requestId, error) }
+    }
+    repositoryJob(jobId: string): Promise<unknown> {
+        if (!uuidSchema.safeParse(jobId).success) throw new Error('Repository jobId must be a UUID')
+        return this.request(this.projectPath(`/repository-jobs/${jobId}`), 'GET', undefined, {}, { timeoutMs: REPOSITORY_REQUEST_TIMEOUT_MS })
+    }
 }
 export function evolvedClientFromEnvironment(): EvolvedClient {
     return new EvolvedClient(process.env.EVOLVED_PROJECT_ID ?? '', process.env.HAPI_EVOLVED_URL ?? process.env.HAPI_API_URL ?? 'http://127.0.0.1:3006', process.env.HAPI_EVOLVED_CAPABILITY_FILE ?? '')

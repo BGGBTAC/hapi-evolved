@@ -14,6 +14,7 @@ import { createPreviewRoutes } from './previews'
 import { createPeerRoutes } from './peers'
 import { createGithubPrRunnerRoutes } from './githubPr'
 import { createGithubGitTransport, createGithubRoutes } from './github'
+import { createRepositoryRoutes } from './repositories'
 import { createCapacityRoutes } from './capacity'
 import { createProviderRoutes, UnixProviderControl } from './providers'
 import { PluginService, createPluginRoutes } from './plugins'
@@ -67,6 +68,8 @@ export function createEvolvedRuntime(dataDir: string, secret: Uint8Array) {
     routes.route('/', createPeerRoutes(store, () => getSyncEngine()))
     routes.route('/', createGithubPrRunnerRoutes(store, () => getSyncEngine(), dataDir))
     routes.route('/', createGithubRoutes({ store, vault, origin }))
+    const repositories = createRepositoryRoutes({ store, vault, origin, getEngine: () => getSyncEngine() })
+    routes.route('/', repositories.routes)
     routes.route('/', createCapacityRoutes(store, () => getSyncEngine(), origin))
     const controlSocket = process.env.EVOLVED_RUNNER_CONTROL_SOCKET
     const controlKeyFile = process.env.EVOLVED_RUNNER_CONTROL_KEY_FILE
@@ -79,7 +82,7 @@ export function createEvolvedRuntime(dataDir: string, secret: Uint8Array) {
     routes.route('/', createSidechannelRoutes(new SidechannelService(store, sidechannelConfig()), () => getSyncEngine(), origin))
     const schedules = new ScheduleService(store, () => getSyncEngine())
     routes.route('/', createScheduleRoutes(schedules, () => getSyncEngine()))
-    routes.route('/', createEvolvedRoutes({ store, vault, origin, allowedWorkspaceRoots: roots as string[],
+    routes.route('/', createEvolvedRoutes({ store, vault, origin, allowedWorkspaceRoots: roots as string[], repositoryDiscovery: repositories.discovery,
         onProjectDelete: projectId => { memory.forgetProject(projectId); enqueueCodegraphDeletion(store, projectId) } }))
     routes.route('/', createMemoryRoutes({ store, service: memory, origin }))
     routes.route('/', createCodegraphRoutes(graphOptions))
@@ -91,5 +94,5 @@ export function createEvolvedRuntime(dataDir: string, secret: Uint8Array) {
         getSyncEngine = provider; stopReports?.()
         const engine = provider()
         stopReports = engine ? new PeerCompletionReporter(store, engine).start() : undefined
-    }, close() { gitTransport.close(); stopReports?.(); stopSchedules(); stopMemory(); stopGraph(); store.close() } }
+    }, close() { repositories.close(); gitTransport.close(); stopReports?.(); stopSchedules(); stopMemory(); stopGraph(); store.close() } }
 }

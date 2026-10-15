@@ -7,6 +7,7 @@ COPY --from=bun-runtime /usr/local/bin/bun /usr/local/bin/bun
 COPY --from=source /app /app
 COPY services/runner-proxy /app/services/runner-proxy
 COPY services/runner-auth /app/services/runner-auth
+COPY --chmod=0755 deploy/evolved/hapi-runner.sh /usr/local/bin/hapi
 RUN mkdir -p /runner /workspaces /managed-workspaces && chown node:node /runner /workspaces /managed-workspaces
 # Native Git transports use the project-scoped credential broker. No GitHub
 # credential, helper or direct GitHub egress is installed inside this image.

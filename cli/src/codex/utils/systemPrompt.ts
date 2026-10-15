@@ -10,6 +10,7 @@ import { buildSessionCitationSteerInstruction } from '@hapi/protocol/sessionCita
 import { DISPLAY_IMAGE_PROMPT_CODEX, DISPLAY_MEDIA_PROMPT_CODEX, DISPLAY_VIDEO_PROMPT_CODEX } from '@/modules/common/displayImagePrompt';
 import { withSessionSummaryInstruction } from '@/modules/common/sessionSummaryInstruction';
 import { peerScopeAllowed } from '@/modules/pingPeer/evolvedPeer';
+import { withRepositoryInstruction } from '@/evolved/repositoryPrompt';
 
 /**
  * Title instruction for Codex to call the hapi MCP tool.
@@ -34,7 +35,7 @@ export const TITLE_INSTRUCTION = trimIdent(`
  */
 export function getCodexSystemPrompt(env: NodeJS.ProcessEnv = process.env): string {
     const base = peerScopeAllowed('peers:send', env) ? TITLE_INSTRUCTION + '\n' + buildSessionCitationSteerInstruction({ inspectTool: 'functions.hapi__inspect_peer', pingTool: 'functions.hapi__ping_peer', listPeersTool: 'functions.hapi__list_peers', searchPeersTool: 'functions.hapi__search_peers' }) : TITLE_INSTRUCTION
-    return withSessionSummaryInstruction(base, env)
+    return withSessionSummaryInstruction(withRepositoryInstruction(base, env), env)
 }
 
 /** Alias kept for existing call sites / tests that expect a string constant name. */

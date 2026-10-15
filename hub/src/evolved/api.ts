@@ -13,7 +13,7 @@ const profile = z.enum(['restricted', 'workspace', 'extended'])
 const name = z.string().trim().min(1).max(120)
 const identifier = z.string().min(1).max(128)
 const capabilityScope = z.enum(['memory:read', 'memory:write', 'codegraph:read', 'resource:execute', 'peers:read', 'peers:send', 'peers:manage', 'runner:connect'])
-export type EvolvedRoutesConfig = { store: EvolvedStore; vault: VaultClient; origin: string; rpName?: string; allowedWorkspaceRoots?: string[]; onProjectDelete?: (projectId: string) => void }
+export type EvolvedRoutesConfig = { store: EvolvedStore; vault: VaultClient; origin: string; rpName?: string; allowedWorkspaceRoots?: string[]; onProjectDelete?: (projectId: string) => void; repositoryDiscovery?: (request: Request, projectId: string) => Promise<unknown> }
 
 export function createEvolvedRoutes(config: EvolvedRoutesConfig): Hono<EvolvedEnv> {
     const { store, vault } = config, app = new Hono<EvolvedEnv>()
@@ -195,11 +195,28 @@ export function createEvolvedRoutes(config: EvolvedRoutesConfig): Hono<EvolvedEn
         return c.json(await vault.request({ userId: principal.user.id, projectId: c.req.param('id'), operation: 'delete', payload: { id: c.req.param('secretId') } }))
     })
     app.get('/projects/:id/resources', async c => {
-        const principal = c.get('principal'); requireScope(principal, 'resource:execute', c.req.param('id'))
+        const principal = c.get('principal')
         store.requireProject(principal.user.id, c.req.param('id'))
-        const listed = await vault.request({ userId: principal.user.id, projectId: c.req.param('id'), operation: 'resources', payload: {} }) as { resources: Array<{ id: string }> }
+        const canDiscoverGit = !!config.repositoryDiscovery && (!principal.capability || !!principal.capability.leaseId && principal.capability.scopes.includes('runner:connect') && principal.capability.scopes.includes('git:read'))
+        const canListActions = !principal.capability || principal.capability.scopes.includes('resource:execute')
+        if (!canDiscoverGit) requireScope(principal, 'resource:execute', c.req.param('id'))
+        if (canDiscoverGit) { requireScope(principal, 'runner:connect', c.req.param('id')); requireScope(principal, 'git:read', c.req.param('id')) }
+        if (canListActions) requireScope(principal, 'resource:execute', c.req.param('id'))
+        const listed = canListActions ? await vault.request({ userId: principal.user.id, projectId: c.req.param('id'), operation: 'resources', payload: {} }) as { resources: Array<{ id: string }> } : { resources: [] }
         if (principal.capability) listed.resources = listed.resources.filter(r => principal.capability!.actionIds.includes(r.id))
-        return c.json(listed)
+        let discovery: unknown = {}
+        if (canDiscoverGit) {
+            try { discovery = await config.repositoryDiscovery!(c.req.raw, c.req.param('id')) }
+            catch (error) {
+                if (!canListActions || error instanceof EvolvedError && [401, 403].includes(error.status)) throw error
+                discovery = { git: { error: 'Repository-Metadaten sind vorübergehend nicht verfügbar. Bitte evolved_repositories erneut abfragen.' } }
+            }
+        }
+        const live = await authenticateEvolvedRequest(c.req.raw, store)
+        if (!live) throw new EvolvedError('unauthorized', 'Sign in required.', 401)
+        store.requireProject(live.user.id, c.req.param('id'))
+        if (canListActions) requireScope(live, 'resource:execute', c.req.param('id'))
+        return c.json({ ...listed, ...(discovery as object) })
     })
     app.post('/projects/:id/resources/:resourceId/invoke', async c => {
         await parseBody(c, z.object({ action: z.literal('execute'), input: z.object({}).strict().default({}) }).strict())

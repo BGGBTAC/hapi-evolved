@@ -4723,6 +4723,10 @@ export class SyncEngine {
         return await this.rpcGateway.listMachineDirectory(machineId, path, includeHidden)
     }
 
+    async evolvedRepositories(machineId: string, params: unknown, timeoutMs?: number): Promise<unknown> {
+        return this.rpcGateway.evolvedRepositories(machineId, params, timeoutMs)
+    }
+
     async getGitStatus(sessionId: string, cwd?: string): Promise<RpcCommandResponse> {
         return await this.rpcGateway.getGitStatus(sessionId, cwd)
     }

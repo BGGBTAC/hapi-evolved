@@ -16,7 +16,7 @@ Agents:
 ${agents}
 
 Commands:
-  hapi evolved              Project memory, Codegraph, resources and MCP
+  hapi evolved              Project repositories, memory, Codegraph, resources and MCP
   hapi auth                  Manage authentication
   hapi resume [id]           Choose or resume an existing HAPI session
   hapi hub [--relay]         Start the API + web hub

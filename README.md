@@ -32,7 +32,7 @@ Claude Code & Codex · AGPL-3.0-only
 | Connect your coding subscriptions | Native Claude/Codex browser sign-in, persistent private credentials and automatically managed project runners |
 | Choose models as providers evolve | Native model catalogs, refresh, provider defaults and a custom model ID |
 | Start a project without setup chores | An automatic folder for every project; new sessions use it automatically, with optional manual folder selection when creating the project |
-| Work with GitHub directly | Project repository connections, read/write grants and brokered Git access |
+| Work with GitHub directly | Clone and update project repositories in the browser; every project agent discovers the same grants and uses brokered Git access |
 | Reuse your best agents | Global specialist templates that run within each project's permissions and profile |
 | Add your own extensions | Public GitHub plugins for agent templates, skills and color profiles, with preview and pinned revisions |
 | Keep useful context | Persistent local knowledge and search, plus an optional Graphiti/Neo4j knowledge graph |

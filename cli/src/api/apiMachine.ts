@@ -65,6 +65,7 @@ import { homedir } from 'node:os'
 import type { CursorChatStoreStatus } from '@hapi/protocol/apiTypes'
 import { MachinePathPolicy } from './machinePathPolicy'
 import { getAgentAvailabilityResponse } from '@/agent/agentAvailability'
+import { repositoryRpc } from '@/evolved/repositoryRpc'
 
 export { normalizeWindowsDriveRoot } from './machinePathPolicy'
 
@@ -129,6 +130,7 @@ export class ApiMachineClient {
         })
 
         registerCommonHandlers(this.rpcHandlerManager, getInvokedCwd())
+        this.rpcHandlerManager.registerHandler(RPC_METHODS.EvolvedRepositories, params => repositoryRpc(params, this.machine.id))
 
         // Only the machine daemon answers `<machineId>:listAgyModels`, so it is
         // the one process that can tell the hub its catalog moved.

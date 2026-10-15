@@ -236,7 +236,7 @@ durch den neuen Lock nicht nachträglich ausgeschlossen. Ein Runner-Home nie par
 alten und neuen Containern teilen. Der neue Start folgt keinen Symlinks und verweigert unklare
 Metadaten, statt private Dateien pauschal zu löschen.
 
-MCP-Werkzeuge für Codegraph, Memory und Ressourcen werden in Claude/Codex automatisch ergänzt.
+MCP-Werkzeuge für Repositorys, Codegraph, Memory und Ressourcen werden in Claude/Codex automatisch ergänzt.
 Im Runner ist auch `bun /app/cli/src/index.ts evolved --help` verfügbar.
 
 Für automatisch verwaltete Projekte in `runner.env` zusätzlich
@@ -253,6 +253,15 @@ standardmäßig `git:read`, schreibfähige Profile zusätzlich `git:write`; die 
 Repositoryfreigabe erfolgt separat durch einen Projektadministrator. Bereits ausgegebene
 Leases erhalten keine zusätzlichen Rechte: bei Bedarf widerrufen und neu erstellen.
 Profil- und Rollenänderungen widerrufen die alten Leases dauerhaft.
+
+Browser-Klonen und -Aktualisieren verwenden den unprivilegierten Projekt-Runner
+über die Machine-RPC-Fähigkeit `evolved-repositories`. Hub, Runnerproxy und CLI
+müssen gemeinsam aktualisiert werden. Die Oberfläche meldet ältere Runner als
+updatebedürftig; sie startet keine privilegierten Host-Git-Prozesse als Ersatz.
+Die Jobmetadaten liegen in `evolved_repository_jobs` in der Hub-Datenbank;
+GitHub-Token bleiben ausschließlich im Vault. Laufende Agentenarbeit vor einem
+Runner-Neustart geordnet abschließen. Nur den Hub neu zu starten aktualisiert
+keinen laufenden Runnerprozess.
 
 Beim Upgrade einer älteren Installation auf automatische Workspaces den Initialisierer
 nur solange die äußere Zustandsbasis noch dem ursprünglichen Betreiberbenutzer gehört

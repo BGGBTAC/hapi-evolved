@@ -34,6 +34,34 @@ During setup, the submitted token passes transiently through the authenticated
 browser request and Hub to the Vault. Its persistent storage is confined to the
 Vault; connection responses and agent requests never return it.
 
+## Clone and update in the browser
+
+In **GitHub → Freigegebene Repositorys**, select **Ins Projekt klonen**. HAPI
+uses the saved repository identity and creates
+`<project folder>/repositories/<owner>/<repository>` automatically. Each
+repository has its own directory; the project folder shown when starting a
+session stays the same. The repository card shows its exact checkout path.
+
+After cloning, **Aktualisieren** fetches and fast-forwards the current branch.
+It does not reset, clean, force-push, rebase or discard local commits. Dirty
+checkouts, detached HEADs, divergent history, conflicting directories and
+unsupported local Git configuration stop with an explanation. Resolve these
+in the project session before updating again. Submodules and LFS are not
+downloaded automatically. An empty repository can be cloned but has no branch
+to update until its first commit.
+
+Members may clone/update a **read** grant in a writable project profile. A
+read-only project or viewer cannot write the checkout. Connection/grant changes
+remain administrator actions. The connected project service needs the repository
+capability from this version; an old/offline or ambiguous service is reported
+explicitly, without pretending the checkout is missing. **Status prüfen** reads
+local state; it does not fetch from GitHub.
+
+Operations run as background jobs. Reloading the page resumes their status
+display. A connection loss is not proof of failure: inspect the local status
+before starting another operation. A Hub restart marks unfinished jobs as
+unconfirmed; it never automatically repeats a clone or pull.
+
 ## Repository permission and actual push access
 
 The repository dropdown records **this project's grant**, even when the project
@@ -70,17 +98,38 @@ are not silently expanded: recreate them to add Git access. A `restricted`
 profile cannot push. Repository grants and GitHub's own token permissions still
 apply even when a runner has the scope.
 
-Inside an authorized, writable runner workspace:
+Claude and Codex receive `evolved_repositories` to discover the exact grants and
+`evolved_repository_sync` to clone/update them or check an operation. The listing
+includes canonical `fullName`, `cloneUrl`, checkout `path` and effective rights;
+agents must not guess an owner. For sessions whose MCP server predates this
+update, `evolved_resources` also includes granted Git metadata, independently of
+permission to execute vault resource actions.
+
+The same operations are available through the CLI:
 
 ```sh
-git clone https://github.com/OWNER/REPOSITORY.git
-cd REPOSITORY
+hapi evolved repositories
+hapi evolved repositories --workspace
+hapi evolved sync clone REPOSITORY_ID
+hapi evolved sync status JOB_ID
+hapi evolved sync pull REPOSITORY_ID
+```
+
+The repository ID comes from the listing. A sync returns a job and request ID;
+`--request-id` can reconcile a deliberately repeated request without executing
+the same operation twice. No `gh`, SSH key or copied token is needed.
+Completed job records and their request IDs are retained for seven days.
+
+Inside a granted checkout, ordinary Git remains available:
+
+```sh
+cd /PROJECT_FOLDER/repositories/OWNER/REPOSITORY
 git switch -c feat/my-change
 # Edit, review, test and commit your changes.
 git push -u origin feat/my-change
 ```
 
-Replace `OWNER/REPOSITORY` with a granted repository. The runner's system Git
+Use the exact checkout path from the listing. The runner's system Git
 configuration routes supported GitHub HTTPS URLs through its private proxy.
 Provider CLIs and agent subprocesses inherit this Git configuration. A local
 clone writes files, so a read-only `restricted` workspace cannot accept a clone
@@ -100,6 +149,14 @@ broker → GitHub**. The proxy holds the runner lease outside the agent containe
 The hub checks project membership, lease/capability scopes and profile; the vault
 checks repository grants and identity, and adds the credential only on its final
 GitHub request. The runner has no general outbound GitHub credential channel.
+
+Browser Git actions run as the same unprivileged project user as the agents,
+through a fixed Machine RPC. They check the initiating user's current access,
+project root/profile, runner and repository grant throughout the operation.
+Local configuration is restricted and hooks/external filters are disabled for
+these automatic actions. This does not isolate two processes already authorized
+as the same project user: avoid editing the same checkout while it is being
+updated. The container/profile and repository broker remain the access boundary.
 
 Only HTTPS smart Git discovery, upload-pack and receive-pack are supported.
 Arbitrary URLs, redirects, unrelated API requests and compressed HTTP bodies are
