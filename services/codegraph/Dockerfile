@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim
+FROM node:25-bookworm-slim
 WORKDIR /app
 COPY services/codegraph/package*.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
