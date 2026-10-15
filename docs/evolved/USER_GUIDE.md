@@ -140,7 +140,18 @@ lokale Einträge und die lokale Suche nutzbar.
 
 Ein eingerichtetes Repository und ein erreichbarer Codegraphdienst sind nötig.
 Die Statusanzeige nennt Indexzustand, Dateiüberwachung und ausstehende Dateien.
-„Neu indizieren“ fordert eine Aktualisierung an.
+Der Index wird automatisch aufgebaut; du musst keinen Graphen von Hand anlegen.
+**Index wird aufgebaut** aktualisiert sich automatisch. **Noch kein Code im Index**
+ist bei einem neuen Projekt normal: Klone ein Repository in dessen Projektordner
+oder füge unterstützte Codedateien hinzu. Eine GitHub-Freigabe allein klont noch
+kein Repository. Die Dateiüberwachung erkennt neue und geänderte Quellen.
+
+**Nicht eingerichtet** bedeutet, dass ein Projektordner oder die Anbindung des
+Codegraph-Dienstes fehlt; der Hinweis nennt den nächsten Schritt. Ein nicht
+erreichbarer Dienst und eine fehlgeschlagene Indizierung werden dagegen als echte
+Fehler angezeigt. **Status aktualisieren** prüft die Verbindung erneut;
+**Neu indizieren** fordert für schreibberechtigte Mitglieder einen neuen Indexlauf
+an. Ein Fehler beim Laden eines Ausschnitts wird nicht als leerer Index ausgegeben.
 
 Suche nach Symbol oder Dateiname und wähle einen Treffer. Im Graphen kannst du
 Knoten anklicken oder per Tastatur auswählen, die Ansicht ziehen und mit Mausrad
@@ -151,6 +162,19 @@ dieses Symbol fokussieren“ beschränkt den Ausschnitt.
 „Auswirkungen“ zeigt abhängige Symbole. Unter „Betroffene Dateien und Tests“
 trägst du geänderte, repository-relative Pfade ein, einen pro Zeile. Ergebnisse
 stammen aus dem Codeindex und ersetzen keinen tatsächlichen Testlauf.
+
+## Codex- und Claude-Abos verbinden
+
+Öffne **Abos verbinden** in der Navigation oder auf der Projektübersicht. Dort
+steht der native Anmeldeweg für beide Anbieter. Die Anmeldung erfolgt derzeit im
+privaten Runner-Terminal und wird beim Anbieter im Browser bestätigt. Ein eigener
+Anmelde- oder Statusdialog für Anbieterabos im HAPI-Backend ist noch nicht
+implementiert. Der Hub zeigt deshalb keinen behaupteten Verbindungsstatus an.
+
+Ein Runner-Zugang verbindet den Runner mit HAPI; er meldet weder Codex noch Claude
+bei deren Anbieter an. Die Anleitung mit Befehlen, privatem Runner-Home und
+Statusprüfung steht unter [Abos verbinden](PROVIDER_LOGIN.md). Abo-Zugangsdaten
+gehören nicht als GitHub-Token oder allgemeiner Tresorschlüssel in ein Formular.
 
 ## Runner anbinden
 

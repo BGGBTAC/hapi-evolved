@@ -34,6 +34,34 @@ During setup, the submitted token passes transiently through the authenticated
 browser request and Hub to the Vault. Its persistent storage is confined to the
 Vault; connection responses and agent requests never return it.
 
+## Repository permission and actual push access
+
+The repository dropdown records **this project's grant**, even when the project
+still uses the default **Eingeschränkt** profile. Saving **Lesen und Push** does
+not silently raise the project profile or prove that GitHub will accept a push.
+The controls explain the remaining requirements at the point of use:
+
+1. The exact repository has a **Lesen und Push** grant.
+2. The project uses **Arbeitsbereich** or **Erweitert**. In the GitHub panel,
+   **Arbeitsbereich für Push aktivieren** offers an explicit, separate change.
+   Confirming expands workspace execution rights and revokes all existing runner
+   leases and capabilities for this project. It does not connect a new runner.
+3. Follow **Runner für Push einrichten**, issue a new runner access with
+   **In GitHub-Repositorys pushen**, and configure/restart its runner with the
+   matching profile and a writable workspace. Existing leases are not upgraded.
+4. The GitHub token itself must permit **Contents: read and write** for this
+   repository, and GitHub account permissions and branch rules must permit the
+   operation. Reading repository metadata cannot verify these push permissions.
+
+The UI distinguishes a saved repository grant from an allowed project profile.
+It does not label these as a connected runner or a successful push. After an
+uncertain connection error it rereads the saved grant. If a profile change may
+already have taken effect, use **Projektstatus aktualisieren** before retrying.
+The server treats setting the already current profile as an authorized no-op:
+it does not revoke runner access or add another profile-change audit entry.
+Only an actual transition to a different profile revokes existing leases and
+capabilities. The active profile is disabled in the project settings.
+
 ## Agent access
 
 New runner leases include `git:read`. Profiles that permit writing additionally

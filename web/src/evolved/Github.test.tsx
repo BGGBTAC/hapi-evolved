@@ -8,8 +8,10 @@ const context = vi.hoisted(() => ({
     api: { request: vi.fn(), baseUrl: '' },
     me: { user: { id: 'user-1' } },
     project: { id: 'project-1', role: 'admin' as ProjectRole, profile: 'restricted' as ExecutionProfile },
+    refresh: vi.fn(),
 }))
 vi.mock('./auth', () => ({ useEvolved: () => context }))
+vi.mock('@tanstack/react-router', () => ({ Link: ({ to, search, children, ...props }: { to: string; search: Record<string, string>; children: React.ReactNode }) => <a href={`${to}?${new URLSearchParams(search)}`} {...props}>{children}</a> }))
 const path = '/projects/project-1/github'
 const token = 'github_pat_synthetic_test_credential_not_real'
 const repo = { id: '123', owner: 'example', name: 'demo', fullName: 'example/demo', permission: 'read' as const }
@@ -19,6 +21,7 @@ const connected = { connected: true, account: { id: 42, login: 'synthetic-accoun
 beforeEach(() => {
     context.project.id = 'project-1'; context.project.role = 'admin'; context.project.profile = 'restricted'
     context.me.user.id = 'user-1'; context.api.request.mockReset()
+    context.refresh.mockReset().mockResolvedValue(undefined)
 })
 function mount() {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -71,8 +74,8 @@ describe('project GitHub connection', () => {
         expect(await screen.findByText('Noch kein Repository freigegeben.')).toBeInTheDocument()
         expect(screen.queryByText('example/demo')).not.toBeInTheDocument()
     })
-    it('grants an exact repository and supports changing its permission', async () => {
-        context.project.profile = 'workspace'
+    it.each(['restricted', 'workspace', 'extended'] as const)('grants an exact repository and supports changing its permission in %s', async (profile) => {
+        context.project.profile = profile
         context.api.request.mockImplementation(async (_path: string, options: { method?: string; body?: { permission: string } }) => options.method === 'PUT'
             ? { ...connected, repositories: [{ ...repo, permission: options.body!.permission }] } : { ...connected, repositories: [] })
         mount()
@@ -84,14 +87,113 @@ describe('project GitHub connection', () => {
         fireEvent.change(screen.getByLabelText('Git-Berechtigung für example/demo'), { target: { value: 'read' } })
         await waitFor(() => expect(context.api.request).toHaveBeenCalledWith(`${path}/repositories`, expect.objectContaining({ method: 'PUT', body: { repository: 'example/demo', permission: 'read' } })))
         expect(await screen.findByText('git clone https://github.com/example/demo.git')).toBeInTheDocument()
+        expect(context.api.request.mock.calls.some(([requestPath]) => requestPath.endsWith('/profile'))).toBe(false)
     })
-    it('disables write grants for restricted projects', async () => {
-        context.api.request.mockResolvedValue(connected)
+    it('allows restricted projects to change existing grants while explaining effective push restrictions', async () => {
+        context.api.request.mockImplementation(async (_path: string, options: { method?: string; body?: { permission: string } }) => options.method === 'PUT'
+            ? { ...connected, repositories: [{ ...repo, permission: options.body!.permission }] } : connected)
         mount()
         await screen.findByLabelText('Git-Berechtigung für example/demo')
-        for (const option of screen.getAllByRole('option', { name: 'Lesen und Push' })) expect(option).toBeDisabled()
+        for (const option of screen.getAllByRole('option', { name: 'Lesen und Push' })) expect(option).not.toBeDisabled()
         fireEvent.change(screen.getByLabelText('Git-Berechtigung für example/demo'), { target: { value: 'write' } })
-        expect(context.api.request.mock.calls.some(([, options]) => options.method === 'PUT')).toBe(false)
+        expect(await screen.findByText('Lesen und Push freigegeben')).toBeInTheDocument()
+        expect(screen.getByText('Push durch Projektprofil gesperrt')).toBeInTheDocument()
+        expect(screen.getByRole('heading', { name: 'Was für Push erforderlich ist' })).toBeInTheDocument()
+        expect(screen.getByText(/Die gespeicherte Freigabe bestätigt keine GitHub-Schreibrechte/)).toBeInTheDocument()
+        expect(context.project.profile).toBe('restricted')
+        expect(context.api.request.mock.calls.some(([requestPath]) => requestPath.endsWith('/profile'))).toBe(false)
+        expect(context.refresh).not.toHaveBeenCalled()
+    })
+    it('keeps a rejected grant unchanged and shows the failure without claiming success', async () => {
+        context.api.request.mockImplementation(async (_path: string, options: { method?: string }) => {
+            if (options.method === 'PUT') throw new EvolvedApiError('Repository-Freigabe nicht gespeichert.', 502)
+            return connected
+        })
+        mount()
+        fireEvent.change(await screen.findByLabelText('Git-Berechtigung für example/demo'), { target: { value: 'write' } })
+        expect(await screen.findByRole('alert')).toHaveTextContent('Repository-Freigabe nicht gespeichert.')
+        expect(screen.getByLabelText('Git-Berechtigung für example/demo')).toHaveValue('read')
+        expect(screen.queryByText('Lesen und Push freigegeben')).not.toBeInTheDocument()
+        expect(screen.queryByText('Repository-Freigabe aktualisiert.')).not.toBeInTheDocument()
+    })
+    it('reconciles a write grant after its response was lost instead of presenting stale permission', async () => {
+        let granted = false
+        context.api.request.mockImplementation(async (_path: string, options: { method?: string }) => {
+            if (options.method === 'PUT') { granted = true; throw new Error('Verbindung während der Antwort unterbrochen.') }
+            return { ...connected, repositories: [{ ...repo, permission: granted ? 'write' : 'read' }] }
+        })
+        mount()
+        fireEvent.change(await screen.findByLabelText('Git-Berechtigung für example/demo'), { target: { value: 'write' } })
+        expect(await screen.findByRole('alert')).toHaveTextContent('Verbindung während der Antwort unterbrochen.')
+        expect(await screen.findByText('Lesen und Push freigegeben')).toBeInTheDocument()
+        expect(screen.getByLabelText('Git-Berechtigung für example/demo')).toHaveValue('write')
+        expect(screen.queryByText('Repository-Freigabe aktualisiert.')).not.toBeInTheDocument()
+        expect(context.api.request.mock.calls.filter(([, options]) => options.method === 'PUT')).toHaveLength(1)
+    })
+    it('requires explicit confirmation before enabling workspace and keeps runner navigation scoped to the project', async () => {
+        context.api.request.mockResolvedValue(connected)
+        mount()
+        const activate = await screen.findByRole('button', { name: 'Arbeitsbereich für Push aktivieren' })
+        fireEvent.click(activate)
+        expect(screen.getByText(/Alle bisherigen Runner-Zugänge dieses Projekts werden ungültig/)).toBeInTheDocument()
+        expect(screen.getByText(/lokale Schreib- und Ausführungsrechte/)).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }))
+        expect(context.api.request.mock.calls.some(([requestPath]) => requestPath.endsWith('/profile'))).toBe(false)
+        fireEvent.click(screen.getByRole('button', { name: 'Arbeitsbereich für Push aktivieren' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Bestätigen' }))
+        await waitFor(() => expect(context.refresh).toHaveBeenCalledTimes(1))
+        expect(context.api.request).toHaveBeenCalledWith('/projects/project-1/profile', expect.objectContaining({ method: 'PUT', body: { profile: 'workspace' }, signal: expect.any(AbortSignal) }))
+        expect(context.api.request.mock.calls.filter(([requestPath]) => requestPath.endsWith('/profile'))).toHaveLength(1)
+        expect(screen.getByRole('link', { name: 'Runner für Push einrichten' })).toHaveAttribute('href', '/evolved?tab=runner&project=project-1')
+    })
+    it('refreshes uncertain profile state before allowing another attempt after a lost response', async () => {
+        context.api.request.mockImplementation(async (requestPath: string) => {
+            if (requestPath.endsWith('/profile')) throw new Error('Antwort der Profiländerung fehlt.')
+            return connected
+        })
+        mount()
+        fireEvent.click(await screen.findByRole('button', { name: 'Arbeitsbereich für Push aktivieren' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Bestätigen' }))
+        expect(await screen.findByRole('alert')).toHaveTextContent('Antwort der Profiländerung fehlt.')
+        expect(screen.queryByRole('button', { name: 'Arbeitsbereich für Push aktivieren' })).not.toBeInTheDocument()
+        expect(screen.queryByText('Projektprofil aktualisiert. Richte jetzt einen neuen Runner-Zugang ein.')).not.toBeInTheDocument()
+        expect(context.refresh).not.toHaveBeenCalled()
+        context.refresh.mockRejectedValueOnce(new Error('Aktualisierung fehlgeschlagen.'))
+        fireEvent.click(screen.getByRole('button', { name: 'Projektstatus aktualisieren' }))
+        expect(await screen.findByRole('alert')).toHaveTextContent('Aktualisierung fehlgeschlagen.')
+        expect(screen.queryByRole('button', { name: 'Arbeitsbereich für Push aktivieren' })).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Projektstatus aktualisieren' }))
+        await screen.findByRole('button', { name: 'Arbeitsbereich für Push aktivieren' })
+        expect(context.api.request.mock.calls.filter(([requestPath]) => requestPath.endsWith('/profile'))).toHaveLength(1)
+    })
+    it('does not repeat a successful profile mutation when refreshing its result fails', async () => {
+        context.api.request.mockResolvedValue(connected)
+        context.refresh.mockRejectedValueOnce(new Error('Projektstatus nicht erreichbar.'))
+        mount()
+        fireEvent.click(await screen.findByRole('button', { name: 'Arbeitsbereich für Push aktivieren' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Bestätigen' }))
+        expect(await screen.findByRole('alert')).toHaveTextContent('Projektstatus nicht erreichbar.')
+        expect(screen.queryByRole('button', { name: 'Arbeitsbereich für Push aktivieren' })).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Projektstatus aktualisieren' }))
+        await waitFor(() => expect(context.refresh).toHaveBeenCalledTimes(2))
+        expect(context.api.request.mock.calls.filter(([requestPath]) => requestPath.endsWith('/profile'))).toHaveLength(1)
+    })
+    it('aborts a pending profile mutation when switching projects and does not refresh the new project with its result', async () => {
+        let finish!: () => void
+        let signal: AbortSignal | undefined
+        context.api.request.mockImplementation(async (requestPath: string, options: { signal?: AbortSignal }) => {
+            if (requestPath.endsWith('/profile')) { signal = options.signal; return new Promise<void>(resolve => { finish = resolve }) }
+            return connected
+        })
+        const { rerenderPanel } = mount()
+        fireEvent.click(await screen.findByRole('button', { name: 'Arbeitsbereich für Push aktivieren' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Bestätigen' }))
+        context.project.id = 'project-2'
+        rerenderPanel()
+        expect(signal?.aborted).toBe(true)
+        await act(async () => finish())
+        expect(context.refresh).not.toHaveBeenCalled()
+        expect(await screen.findByRole('link', { name: 'Runner für Push einrichten' })).toHaveAttribute('href', '/evolved?tab=runner&project=project-2')
     })
     it('revokes a repository and disconnects the project with confirmation', async () => {
         context.api.request.mockImplementation(async (requestPath: string, options: { method?: string }) => {
@@ -117,6 +219,8 @@ describe('project GitHub connection', () => {
         expect(screen.queryByLabelText('Fine-grained Personal Access Token')).not.toBeInTheDocument()
         expect(screen.queryByRole('button', { name: 'Repository freigeben' })).not.toBeInTheDocument()
         expect(screen.queryByRole('button', { name: 'GitHub-Verbindung trennen' })).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Arbeitsbereich für Push aktivieren' })).not.toBeInTheDocument()
+        expect(screen.queryByRole('link', { name: 'Runner für Push einrichten' })).not.toBeInTheDocument()
     })
     it('does not present an unauthorized status response as a disconnected account', async () => {
         context.api.request.mockRejectedValue(new EvolvedApiError('Anmeldung abgelaufen', 401))

@@ -140,7 +140,9 @@ describe('Memory and codegraph authorization', () => {
         expect((await request(`/projects/${other.id}/codegraph/status`)).status).toBe(403)
         const result = await (await request('/memory/search?q=Hidden')).json() as { results: unknown[] }
         expect(result.results).toHaveLength(0)
-        expect((await request(`/projects/${project.id}/codegraph/status`)).status).toBe(503)
+        const unconfigured = await request(`/projects/${project.id}/codegraph/status`)
+        expect(unconfigured.status).toBe(503)
+        expect(await unconfigured.json()).toMatchObject({ available: false, state: 'unconfigured', code: 'codegraph_unconfigured' })
     })
     test('capability cannot escape its project, self-verify facts, or enable cloud spending', async () => {
         const { store, project, request } = setup()

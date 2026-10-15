@@ -11,6 +11,7 @@ export const workspacePages = [
     { id: 'previews', label: 'Vorschauen', group: 'Projektwerkzeuge', description: 'Anwendungen aus deinem Projekt ansehen.' },
     { id: 'automation', label: 'Automatisierung', group: 'Verwaltung', description: 'Wiederkehrende Aufgaben und Agenten koordinieren.' },
     { id: 'runner', label: 'Runner', group: 'Verwaltung', description: 'Projektgebundene Zugänge für deine Agenten.' },
+    { id: 'providers', label: 'Abos verbinden', group: 'Verwaltung', description: 'Codex und Claude mit deinem bestehenden Abo anmelden.' },
     { id: 'vault', label: 'Tresor', group: 'Verwaltung', description: 'Zugangsdaten geschützt und gezielt bereitstellen.' },
     { id: 'team', label: 'Team & Konto', group: 'Verwaltung', description: 'Zusammenarbeit, Rollen und deinen Zugang verwalten.' },
 ] as const
@@ -26,7 +27,7 @@ export function parseWorkspaceSearch(search: Record<string, unknown>): Workspace
         ...(typeof search.project === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(search.project) ? { project: search.project } : {}),
     }
 }
-export function requiresProject(tab: WorkspaceTab) { return !['overview', 'projects', 'team'].includes(tab) }
+export function requiresProject(tab: WorkspaceTab) { return !['overview', 'projects', 'team', 'providers'].includes(tab) }
 export const workspaceStorageKey = (baseUrl: string, userId: string) => `hapi.evolved.workspace:${baseUrl}:${userId}`
 export function readWorkspaceTab(baseUrl: string, userId: string): WorkspaceTab {
     try {
@@ -45,6 +46,7 @@ const icons: Record<WorkspaceTab | 'sessions' | 'more' | 'close' | 'arrow', Reac
     previews: <><rect x="3" y="4" width="18" height="14" rx="2" /><path d="M8 21h8m-4-3v3M3 8h18" /></>,
     automation: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l4 2" /></>,
     runner: <><path d="m6 5 14 7-14 7Z" /></>,
+    providers: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 10h18m-13 5h4" /></>,
     vault: <><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2" /></>,
     team: <><circle cx="9" cy="8" r="3" /><path d="M3 21v-2a6 6 0 0 1 12 0v2m1-16a3 3 0 0 1 0 6m2 4a5 5 0 0 1 3 4v2" /></>,
     sessions: <path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6 4V6a2 2 0 0 1 2-2Z" />,

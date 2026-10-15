@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useEvolved } from './auth'
 import { isProjectAdmin, projectPath } from './api'
+import { ProviderLoginPanel } from './ProviderLogin'
 import { ActionStatus, ConfirmButton, Empty, ErrorNotice, Field, Loading, Panel, formatDate, submit, useAction } from './ui'
 
 type RunnerLease = { id: string; name: string; scopes: string[]; actionIds: string[]; profile: string; createdAt: number; expiresAt: number; revokedAt: number | null }
@@ -35,8 +36,8 @@ function RunnerForProject() {
     const [created, setCreated] = useState<NewLease | null>(null)
     const [saved, setSaved] = useState(false)
     const action = useAction()
-    if (!admin) return <Panel title="Runner-Zugänge"><Empty>Runner-Zugänge werden von Projektadministratoren verwaltet.</Empty></Panel>
-    return <div className="ev-stack"><Panel title="Runner-Zugänge" description="Ein zeitlich begrenzter Zugang verbindet einen isolierten Runner mit genau diesem Projekt und dem aktuellen Ausführungsprofil.">
+    if (!admin) return <div className="ev-stack"><ProviderLoginPanel /><Panel title="Runner-Zugänge"><Empty>Runner-Zugänge werden von Projektadministratoren verwaltet.</Empty></Panel></div>
+    return <div className="ev-stack"><ProviderLoginPanel /><Panel title="Runner-Zugänge" description="Ein zeitlich begrenzter Zugang verbindet einen isolierten Runner mit genau diesem Projekt und dem aktuellen Ausführungsprofil.">
         <ErrorNotice error={leases.error} />{leases.isPending ? <Loading /> : !leases.data?.leases.length ? <Empty>Noch kein Runner-Zugang vorhanden.</Empty> : <div className="ev-list">{leases.data.leases.map(lease => <div className="ev-row" key={lease.id}><div><strong>{lease.name}</strong><small>{lease.profile} · {lease.scopes.join(', ')}</small>{lease.actionIds.length > 0 && <small>Ressourcen: {lease.actionIds.join(', ')}</small>}<small>{lease.revokedAt ? `Widerrufen am ${formatDate(lease.revokedAt)}` : `${lease.expiresAt <= Date.now() ? 'Abgelaufen' : 'Gültig'} bis ${formatDate(lease.expiresAt)}`}</small></div>{!lease.revokedAt && lease.expiresAt > Date.now() && <ConfirmButton label="Widerrufen" detail={`${lease.name} sofort den Zugang entziehen?`} disabled={action.busy} onConfirm={() => void action.run(async () => { await api.request(`${path}/${encodeURIComponent(lease.id)}`, { method: 'DELETE' }); if (created?.id === lease.id) setCreated(null); await leases.refetch() }, 'Runner-Zugang widerrufen.')} />}</div>)}</div>}
     </Panel>
     {created && <Panel title="Runner-Zugang einmalig sichern" description="Diese Datei gehört ausschließlich in den geschützten Operatorbereich des Runner-Proxys. Sie darf weder im Projektverzeichnis noch in Agentenprompts oder Logs landen.">

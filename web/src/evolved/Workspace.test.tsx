@@ -55,7 +55,7 @@ describe('workspace navigation', () => {
     it('supports browser back and forward between links and keeps every tool reachable', async () => {
         const { history } = await mount('/evolved?tab=overview&project=project-1')
         const nav = screen.getByRole('navigation', { name: 'Arbeitsbereich' })
-        for (const label of ['Projekte', 'Kapazität', 'GitHub', 'Gedächtnis', 'Codegraph', 'Vorschauen', 'Automatisierung', 'Runner', 'Tresor', 'Team & Konto', 'Sessions']) expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument()
+        for (const label of ['Projekte', 'Kapazität', 'GitHub', 'Gedächtnis', 'Codegraph', 'Vorschauen', 'Automatisierung', 'Runner', 'Abos verbinden', 'Tresor', 'Team & Konto', 'Sessions']) expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument()
         fireEvent.click(within(nav).getByRole('link', { name: 'Gedächtnis' }))
         await screen.findByText('Memory content')
         fireEvent.click(within(nav).getByRole('link', { name: 'Kapazität' }))
@@ -123,5 +123,13 @@ describe('workspace navigation', () => {
         const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied') })
         const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('denied') })
         try { await mount(); expect(await screen.findByText('Dashboard project-1')).toBeInTheDocument() } finally { get.mockRestore(); set.mockRestore() }
+    })
+    it('shows subscription setup before a first project exists', async () => {
+        state.value.project = null
+        state.value.me.accessibleProjects = []
+        const { router } = await mount('/evolved?tab=providers')
+        expect(await screen.findByRole('heading', { name: 'Abos verbinden', level: 1 })).toBeInTheDocument()
+        expect(screen.getByText(/Anmeldestatus hier nicht geprüft/)).toBeInTheDocument()
+        expect(router.state.location.search.tab).toBe('providers')
     })
 })

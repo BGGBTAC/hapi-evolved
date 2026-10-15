@@ -71,6 +71,32 @@ describe('GitHub browser management', () => {
         expect((await s.management('', { method: 'DELETE' })).status).toBe(403)
         expect(s.requests).toHaveLength(4)
     })
+    test('a restricted administrator can save write grants without enabling runner push', async () => {
+        const s = setup(), existing = s.capability()
+        expect(s.store.requireProject('admin', s.project.id).profile).toBe('restricted')
+        const response = await s.management('/repositories', { method: 'PUT', body: { repository: 'owner/repository', permission: 'write' } })
+        expect(response.status).toBe(200)
+        expect(s.requests).toEqual([expect.objectContaining({
+            userId: 'admin', projectId: s.project.id, operation: 'github',
+            payload: { action: 'grant', repository: 'owner/repository', permission: 'write' },
+        })])
+        expect(s.store.requireProject('admin', s.project.id).profile).toBe('restricted')
+        expect(s.store.capability(existing.token)?.capability?.scopes).toEqual(['runner:connect', 'git:read'])
+        const advertisement = 'owner/repository.git/info/refs?service=git-receive-pack'
+        const missingScope = await s.git(existing.token, advertisement)
+        expect(missingScope.status).toBe(403)
+        expect(await missingScope.json()).toEqual({ code: 'scope_denied' })
+        // Even an independently constructed write-scoped lease cannot bypass the project profile.
+        const write = s.capability(['runner:connect', 'git:read', 'git:write'])
+        for (const denied of [
+            await s.git(write.token, advertisement),
+            await s.git(write.token, 'owner/repository.git/git-receive-pack', { method: 'POST', headers: { 'content-type': 'application/x-git-receive-pack-request' }, body: '0000' }),
+        ]) {
+            expect(denied.status).toBe(403)
+            expect(await denied.json()).toEqual({ code: 'profile_denied' })
+        }
+        expect(s.gitRequests).toHaveLength(0)
+    })
     test('capabilities and hostile origins cannot manage a connection', async () => {
         const s = setup(), cap = s.capability()
         expect((await s.management('', { headers: { authorization: `Bearer ${cap.token}` } })).status).toBe(403)

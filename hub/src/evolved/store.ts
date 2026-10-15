@@ -198,14 +198,17 @@ export class EvolvedStore {
         finally { if (managed) closeSync(managed.fd) }
     }
     setProfile(userId: string, projectId: string, profile: AgentProfile): EvolvedProject {
-        this.requireProject(userId, projectId, 'admin')
-        this.db.transaction(() => {
+        return this.db.transaction(() => {
+            const current = this.requireProject(userId, projectId, 'admin')
+            // Repeated PUTs can follow a lost response or a browser remount. Only
+            // a real profile transition revokes runners; authorization still applies.
+            if (current.profile === profile) return current
             this.db.prepare('UPDATE evolved_projects SET profile=? WHERE id=?').run(profile, projectId)
             this.db.prepare('UPDATE evolved_capabilities SET revoked_at=? WHERE project_id=?').run(this.now(), projectId)
             this.db.prepare('UPDATE evolved_runner_leases SET revoked_at=COALESCE(revoked_at,?) WHERE project_id=?').run(this.now(), projectId)
             this.audit(userId, projectId, 'profile.changed', projectId)
-        })()
-        return this.requireProject(userId, projectId)
+            return this.requireProject(userId, projectId)
+        }).immediate()
     }
     issueInvitation(actor: string, teamId: string, name: string, role: ProjectRole): { token: string; expiresAt: number } {
         this.requireTeam(actor, teamId, 'admin')

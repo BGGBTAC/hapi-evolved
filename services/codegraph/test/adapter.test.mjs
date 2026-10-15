@@ -67,3 +67,46 @@ test('real Codegraph indexes calls, excludes secret source, and updates incremen
         assert.equal((await call('search', { q: 'square' })).nodes.length, 0);
     } finally { if (worker) await worker.terminate(); await rm(root, { recursive: true, force: true }); await rm(indexRoot, { recursive: true, force: true }); }
 });
+
+test('empty workspaces return a usable empty graph and acquire a default seed after code is added', { timeout: 45_000 }, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'evolved-codegraph-empty-'));
+    const indexRoot = await mkdtemp(join(tmpdir(), 'evolved-codegraph-empty-index-'));
+    const worker = new Worker(new URL('../worker.mjs', import.meta.url), { workerData: { root, indexRoot }, env: {
+        ...process.env, DO_NOT_TRACK: '1', CODEGRAPH_TELEMETRY: '0', CODEGRAPH_NO_UPDATE_CHECK: '1', CODEGRAPH_NO_DOWNLOAD: '1', CODEGRAPH_DIR: '.codegraph-evolved-test'
+    } });
+    let serial = 0;
+    const pending = new Map();
+    worker.on('message', message => {
+        const job = pending.get(message.id); if (!job) return;
+        pending.delete(message.id);
+        message.error ? job.reject(new Error(message.error)) : job.resolve(message.result);
+    });
+    worker.on('error', error => { for (const job of pending.values()) job.reject(error); });
+    const call = (operation, params = {}) => new Promise((resolve, reject) => {
+        const id = ++serial; pending.set(id, { resolve, reject }); worker.postMessage({ id, operation, params });
+    });
+    async function waitFor(predicate) {
+        for (let attempt = 0; attempt < 150; attempt++) {
+            const status = await call('status');
+            if (status.state === 'error') throw new Error(status.error);
+            if (status.state === 'ready' && predicate(status)) return status;
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        throw new Error('Expected index state was not reached');
+    }
+    try {
+        const empty = await waitFor(() => true);
+        assert.deepEqual(empty.stats, { nodeCount: 0, edgeCount: 0, fileCount: 0 });
+        assert.equal(empty.watching, true);
+        assert.deepEqual(await call('graph'), { nodes: [], edges: [], truncated: false });
+        await assert.rejects(call('node', { nodeId: 'missing' }), /Node not found/);
+        await writeFile(join(root, 'names.ts'), 'export const orbitalMarker = 42;\nexport class Satellite {}\n');
+        const indexed = await waitFor(status => status.stats.nodeCount > 0);
+        assert.ok(indexed.lastIndexedAt > 0);
+        assert.ok(Object.values(indexed.stats).every(value => typeof value === 'number'));
+        const graph = await call('graph');
+        assert.ok(graph.nodes.length > 0, 'default graph must not depend on a symbol named function');
+        await assert.rejects(call('graph', { nodeId: 'missing' }), /Node not found/);
+        assert.deepEqual(await call('graph', { q: 'nonexistentSymbolXYZ' }), { nodes: [], edges: [], truncated: false });
+    } finally { await worker.terminate(); await rm(root, { recursive: true, force: true }); await rm(indexRoot, { recursive: true, force: true }); }
+});

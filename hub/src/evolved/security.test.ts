@@ -194,6 +194,49 @@ describe('Evolved authentication and authorization', () => {
         expect((await s.call('/runner/authority', undefined, { bearer: third.token })).status).toBe(401)
         expect(() => exchangeRunnerLease(s.store, third.token)).toThrow('revoked')
     })
+    test('repeating the current profile preserves live runner authority but still requires an administrator', async () => {
+        const s = setup(), { userId } = await enroll(s), team = s.store.createTeam(userId, 'Idempotent profile'), project = s.store.createProject(userId, team.id, 'Project')
+        const profilePath = `/projects/${project.id}/profile`
+        expect((await s.call(profilePath, { profile: 'workspace' }, { method: 'PUT' })).status).toBe(200)
+        const issued = await s.call(`/projects/${project.id}/runner-leases`, { name: 'Created after profile change', expiresInSeconds: 3600 })
+        expect(issued.status).toBe(201)
+        const lease = await issued.json() as { id: string; token: string }
+        const exchanged = await s.call('/runner/token', {}, { bearer: lease.token })
+        expect(exchanged.status).toBe(200)
+        const cap = await exchanged.json() as { id: string; token: string }
+        const auditCount = () => (s.store.db.prepare("SELECT COUNT(*) AS count FROM evolved_audit WHERE project_id=? AND action='profile.changed'").get(project.id) as { count: number }).count
+        const assertLive = async () => {
+            expect((await s.call('/runner/authority', undefined, { bearer: lease.token })).status).toBe(200)
+            expect(s.store.capability(cap.token)?.capability?.scopes).toContain('git:write')
+            expect(s.store.db.prepare('SELECT revoked_at FROM evolved_runner_leases WHERE id=?').get(lease.id)).toEqual({ revoked_at: null })
+            expect(s.store.db.prepare('SELECT revoked_at FROM evolved_capabilities WHERE id=?').get(cap.id)).toEqual({ revoked_at: null })
+        }
+        await assertLive()
+        expect(auditCount()).toBe(1)
+        for (let attempt = 0; attempt < 2; attempt++) {
+            const repeated = await s.call(profilePath, { profile: 'workspace' }, { method: 'PUT' })
+            expect(repeated.status).toBe(200)
+            expect(await repeated.json()).toMatchObject({ project: { id: project.id, profile: 'workspace' } })
+            await assertLive()
+            expect(auditCount()).toBe(1)
+        }
+        const other = randomUUID(), adminSession = s.jar.get(SESSION_COOKIE)!
+        s.store.db.prepare('INSERT INTO evolved_users VALUES(?,?,0,?)').run(other, 'Other account', Date.now())
+        for (const role of [null, 'viewer', 'member'] as const) {
+            if (role) s.store.setMember(userId, team.id, other, role)
+            s.jar.set(SESSION_COOKIE, s.store.createSession(other))
+            const denied = await s.call(profilePath, { profile: 'workspace' }, { method: 'PUT' })
+            expect(denied.status).toBe(403)
+            expect(await denied.json()).toMatchObject({ code: 'forbidden' })
+            await assertLive()
+            expect(auditCount()).toBe(1)
+        }
+        s.jar.set(SESSION_COOKIE, adminSession)
+        expect((await s.call(profilePath, { profile: 'restricted' }, { method: 'PUT' })).status).toBe(200)
+        expect(auditCount()).toBe(2)
+        expect((await s.call('/runner/authority', undefined, { bearer: lease.token })).status).toBe(401)
+        expect(s.store.capability(cap.token)).toBeNull()
+    })
     test('restoring the same profile or membership never resurrects an old runner lease', async () => {
         const s = setup(), { userId } = await enroll(s), team = s.store.createTeam(userId, 'Permanent revocation'), project = s.store.createProject(userId, team.id, 'Project')
         const other = randomUUID(); s.store.db.prepare('INSERT INTO evolved_users VALUES(?,?,0,?)').run(other, 'Replacement admin', Date.now())

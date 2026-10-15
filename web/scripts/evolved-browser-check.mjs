@@ -5,6 +5,7 @@ import { checkPrAndAttachments } from './evolved-pr-attachment-check.mjs';
 import { chromium } from 'playwright';
 import { seedLongHistory, checkLongHistory } from './evolved-long-history-check.mjs';
 import { seedSearchSession, checkSearch } from './evolved-search-check.mjs';
+import { checkCodegraph } from './evolved-codegraph-check.mjs';
 import { checkGithub } from './evolved-github-check.mjs';
 import { readFileSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
@@ -14,8 +15,8 @@ import { execFileSync, spawn } from 'node:child_process';
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const state = mkdtempSync('/tmp/hapi-evolved-ui-');
 async function freePort() { const server=createServer();await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const port=server.address().port;await new Promise(resolve=>server.close(resolve));return port; }
-const hubPort=await freePort(), vaultPort=await freePort(), origin=`http://localhost:${hubPort}`;
-const child=spawn('bun',[join(repo,'web/scripts/evolved-browser-hub.ts')],{cwd:repo,env:{...process.env,EVOLVED_TEST_STATE:state,EVOLVED_TEST_HUB_PORT:String(hubPort),EVOLVED_TEST_VAULT_PORT:String(vaultPort)},stdio:['ignore','ignore','pipe']});
+const hubPort=await freePort(), vaultPort=await freePort(), codegraphPort=await freePort(), origin=`http://localhost:${hubPort}`;
+const child=spawn('bun',[join(repo,'web/scripts/evolved-browser-hub.ts')],{cwd:repo,env:{...process.env,EVOLVED_TEST_STATE:state,EVOLVED_TEST_HUB_PORT:String(hubPort),EVOLVED_TEST_VAULT_PORT:String(vaultPort),EVOLVED_TEST_CODEGRAPH_PORT:String(codegraphPort)},stdio:['ignore','ignore','pipe']});
 let fixtureErrors='';child.stderr.on('data',data=>{fixtureErrors+=data.toString()});
 let browser;
 try {
@@ -72,6 +73,7 @@ try {
  await page.waitForFunction(()=>document.querySelector('select[aria-label="Aktives Projekt"]')?.selectedOptions[0]?.textContent==='Browsercheck');
  console.log('PASS automatic per-project directory and explicit server-side manual directory selection');
  await checkGithub(page);
+ if (process.env.EVOLVED_TEST_CODEGRAPH_NODE) await checkCodegraph(page, join(state, 'workspace'));
  execFileSync('bun',['-e',`import {Database} from 'bun:sqlite';const db=new Database(process.argv[1]);db.prepare('UPDATE evolved_sessions SET created_at=?').run(Date.now()-6*60_000);db.close()`,join(state,'evolved.db')]);
  await workspaceArea(page,'Tresor');
  await page.getByLabel('Name',{exact:true}).fill('SYNTHETIC_UI_KEY');
@@ -107,7 +109,7 @@ try {
  await page.getByRole('button',{name:'Schlüssel schließen',exact:true}).click();
  await page.getByRole('button',{name:'Widerrufen',exact:true}).click();
  await page.getByRole('button',{name:'Bestätigen',exact:true}).click();
- await page.getByText(/Widerrufen am/).waitFor();
+ await page.locator('.ev-row').filter({has:page.getByText('Synthetic runner',{exact:true})}).getByText(/Widerrufen am/).waitFor();
  await workspaceArea(page,'Vorschauen');
  await page.getByLabel('Vorschauname',{exact:true}).fill('Sandbox probe');
  await page.getByLabel('Absolutes Buildverzeichnis',{exact:true}).fill(join(state,'workspace/dist'));

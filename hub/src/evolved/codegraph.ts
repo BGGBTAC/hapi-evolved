@@ -14,7 +14,7 @@ export function enqueueCodegraphDeletion(store: EvolvedStore, projectId: string)
     if (project?.root_path) store.db.query('INSERT OR REPLACE INTO evolved_codegraph_cleanup VALUES(?,?,?)').run(projectId, project.root_path, Date.now())
 }
 export async function queryCodegraph(options: CodegraphOptions, project: { id: string; rootPath: string }, operation: string, params: Record<string, unknown> = {}) {
-    if (!options.adapterUrl || !options.serviceToken || !project.rootPath) return { status: 503, result: { available: false, state: 'unconfigured', error: 'Codegraph service or project workspace is not configured' } }
+    if (!options.adapterUrl || !options.serviceToken || !project.rootPath) return { status: 503, result: { available: false, state: 'unconfigured', code: 'codegraph_unconfigured', error: 'Codegraph service or project workspace is not configured' } }
     try {
         const response = await fetch(`${options.adapterUrl}/query`, {
             method: 'POST', headers: { authorization: `Bearer ${options.serviceToken}`, 'content-type': 'application/json' },
@@ -22,7 +22,7 @@ export async function queryCodegraph(options: CodegraphOptions, project: { id: s
         })
         const result = await response.json() as Record<string, unknown>
         return { status: response.status, result }
-    } catch { return { status: 503, result: { available: false, state: 'error', error: 'Codegraph service unavailable' } } }
+    } catch { return { status: 503, result: { available: false, state: 'error', code: 'codegraph_unavailable', error: 'Codegraph service unavailable' } } }
 }
 export function createCodegraphRoutes(options: CodegraphOptions) {
     const app = new Hono<CodegraphEnv>()

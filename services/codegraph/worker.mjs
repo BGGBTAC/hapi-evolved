@@ -67,10 +67,16 @@ async function initialize() {
 indexPromise = initialize().catch(() => { state = 'error'; error = 'Code index initialization failed'; });
 
 async function execute(operation, params) {
-    if (operation === 'status') return {
-        available: state === 'ready', state, version: '1.6.0', error,
-        watching, pendingFiles, lastIndexedAt, indexState: state, stats: graph?.getStats(), watcherDegraded: state === 'error'
-    };
+    if (operation === 'status') {
+        const stats = graph?.getStats();
+        return {
+            available: state === 'ready', state, version: '1.6.0', error,
+            watching, pendingFiles, lastIndexedAt, indexState: state,
+            // SDK stats also contain nested kind/language maps. Expose only the UI contract.
+            stats: stats && { nodeCount: stats.nodeCount, edgeCount: stats.edgeCount, fileCount: stats.fileCount },
+            watcherDegraded: state === 'error'
+        };
+    }
     if (operation === 'reindex') {
         if (state !== 'indexing') {
             state = 'indexing'; error = undefined;
@@ -102,7 +108,11 @@ async function execute(operation, params) {
         return { ...normalizeGraph({ nodes, edges }, limit), files };
     }
     let nodeId = String(params.nodeId ?? '');
-    if (!nodeId && operation === 'graph') nodeId = graph.searchNodes(String(params.q ?? 'function'), { limit: 1 })[0]?.node.id ?? '';
+    if (!nodeId && operation === 'graph') {
+        nodeId = graph.searchNodes(String(params.q ?? ''), { limit: 1 })[0]?.node.id ?? '';
+        // A fresh or empty workspace is a valid graph, not a missing-symbol error.
+        if (!nodeId) return normalizeGraph({ nodes: [], edges: [] }, limit);
+    }
     if (!nodeId || nodeId.length > 1024) throw new AdapterError('A node is required', 404);
     const node = graph.getNode(nodeId);
     if (!node || isSensitivePath(node.filePath)) throw new AdapterError('Node not found', 404);
