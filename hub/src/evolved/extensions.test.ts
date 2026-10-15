@@ -87,7 +87,7 @@ describe('declarative plugin manifests', () => {
         if (kind === 'empty plugin') { value.agents = []; value.skills = []; value.themes = [] }
         expect(() => parsePluginManifest(JSON.stringify(value))).toThrow('invalid')
     })
-    test.each(['\u061c', '\u200b', '\u200c', '\u200d', '\u200e', '\u200f', '\ufeff'])('rejects invisible controls inside displayed names', marker => {
+    test.each(['\u061c', '\u200b', '\u200c', '\u200d', '\u200e', '\u200f', '\ufeff', '\u{E0041}', '\u2060', '\u00ad', '\ufe0f', '\u115f'])('rejects invisible controls inside displayed names', marker => {
         expect(() => parsePluginManifest(JSON.stringify({ ...fixture(), name: `Safe${marker}name` }))).toThrow('invalid')
     })
     test('rejects combined static instructions before a plugin can become impossible to launch', () => {
@@ -172,6 +172,27 @@ describe('GitHub plugin lifecycle', () => {
         expect((await t.call(`/plugins/${id}/update`, t.confirmation(first))).status).toBe(200)
         expect((await t.call(`/plugins/${id}/update`, t.confirmation(second))).status).toBe(409)
     })
+    test('blocks a skill update that exceeds an existing custom template assignment budget', async () => {
+        const t = setup(), id = await t.install()
+        expect((await t.call('/agent-catalog', { name: 'Large', description: 'Test', instructions: '界'.repeat(16_000), skills: [`plugin:${id}:quality`] })).status).toBe(201)
+        const changed = fixture(); changed.agents = []; changed.skills[0]!.instructions = '界'.repeat(8_000)
+        t.change({ manifest: changed, sha: nextCommit })
+        const response = await t.call(`/plugins/${id}/preview-update`, {})
+        expect(response.status).toBe(409)
+        expect(await response.json()).toMatchObject({ code: 'plugin_dependency' })
+        expect(t.plugins.get(id)).toMatchObject({ commitSha: commit, revision: 1 })
+    })
+    test('rechecks the instruction budget at update confirmation after a custom template changes', async () => {
+        const t = setup(), id = await t.install()
+        const changed = fixture(); changed.agents = []; changed.skills[0]!.instructions = '界'.repeat(8_000)
+        t.change({ manifest: changed, sha: nextCommit })
+        const preview = (await (await t.call(`/plugins/${id}/preview-update`, {})).json() as { preview: PluginPreview }).preview
+        expect((await t.call('/agent-catalog', { name: 'Large', description: 'Test', instructions: '界'.repeat(16_000), skills: [`plugin:${id}:quality`] })).status).toBe(201)
+        const response = await t.call(`/plugins/${id}/update`, t.confirmation(preview))
+        expect(response.status).toBe(409)
+        expect(await response.json()).toMatchObject({ code: 'plugin_dependency' })
+        expect(t.plugins.get(id)).toMatchObject({ commitSha: commit, revision: 1 })
+    })
     test('a reviewed update remains stale after the installed source goes back to its original bytes', async () => {
         const t = setup(), id = await t.install()
         t.change({ manifest: { ...fixture(), version: '1.1.0' }, sha: nextCommit })
@@ -218,6 +239,7 @@ describe('global specialists retain project authorization', () => {
         expect((await t.call('/agent-catalog/builtin:review', value, { method: 'PUT' })).status).toBe(409)
         expect((await t.call('/agent-catalog/builtin:review', undefined, { method: 'DELETE' })).status).toBe(409)
         expect((await t.call('/agent-catalog', { ...value, skills: ['absent'] })).status).toBe(409)
+        expect((await t.call('/agent-catalog', { ...value, providerPreference: 'claude', model: 'opus[1m]' })).status).toBe(201)
     })
     test('a malformed custom definition remains visible, unavailable and repairable', async () => {
         const t = setup(), definition = { name: 'Custom', description: 'Test', instructions: 'Review.' }
@@ -257,6 +279,8 @@ describe('global specialists retain project authorization', () => {
         expect(t.started[0]![2]).toBe('codex'); expect(t.started[0]![3]).toBeUndefined()
         expect((await t.call(`/projects/${t.project.id}/agent-catalog/${id}/start`, { ...t.startBody(), provider: 'codex', model: 'gpt-6' })).status).toBe(201)
         expect(t.started[1]![3]).toBe('gpt-6')
+        expect((await t.call(`/projects/${t.project.id}/agent-catalog/${id}/start`, t.startBody())).status).toBe(201)
+        expect(t.started[2]![2]).toBe('claude'); expect(t.started[2]![3]).toBeUndefined()
     })
     test.each(['claude', 'codex'] as const)('restricted %s uses project permission and persistent idempotent assignment', async provider => {
         const t = setup(), body = { ...t.startBody(), provider }

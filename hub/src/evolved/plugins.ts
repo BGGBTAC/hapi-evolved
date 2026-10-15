@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { EvolvedError, type EvolvedStore } from './store'
 import { createEvolvedRequestGuard, parseBody } from './security'
 import { extensionAdministrationNow, extensionHuman, extensionSessionHash } from './extensionAccess'
-import { parsePluginManifest, PLUGIN_MANIFEST_FILE, PLUGIN_MAX_BYTES, type PluginManifest } from './pluginManifest'
+import { agentDefinitionSchema, agentInstructionsFit, parsePluginManifest, PLUGIN_MANIFEST_FILE, PLUGIN_MAX_BYTES, type PluginManifest } from './pluginManifest'
 
 const repositorySchema = z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/)
     .refine(value => !['.', '..'].includes(value.split('/')[1]!)).transform(value => value.toLowerCase())
@@ -106,11 +106,21 @@ export class PluginService {
     private assertDependencies(pluginId: string, next: PluginManifest) {
         if (!this.store.db.query("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='evolved_agent_catalog'").get()) return
         const available = new Set(next.skills.map(skill => `plugin:${pluginId}:${skill.id}`))
+        // Include disabled definitions too: a later re-enable must not turn a
+        // previously saved template into an assignment that can never fit.
+        const resolvedSkills = new Map<string, PluginManifest['skills'][number]>(this.list().filter(plugin => plugin.id !== pluginId && !plugin.invalid)
+            .flatMap(plugin => plugin.manifest.skills.map(skill => [`plugin:${plugin.id}:${skill.id}`, skill] as const)))
+        for (const skill of next.skills) resolvedSkills.set(`plugin:${pluginId}:${skill.id}`, skill)
         const custom = this.store.db.query('SELECT definition FROM evolved_agent_catalog').all() as Array<{ definition: string }>
         for (const row of custom) {
             let value: unknown; try { value = JSON.parse(row.definition) } catch { continue }
             const refs = value && typeof value === 'object' && 'skills' in value ? value.skills : []
             if (Array.isArray(refs) && refs.some(id => typeof id === 'string' && id.startsWith(`plugin:${pluginId}:`) && !available.has(id))) throw new EvolvedError('plugin_dependency', 'A global agent still uses a removed skill. Edit that agent before updating.', 409)
+            const definition = agentDefinitionSchema.safeParse(value)
+            if (definition.success && definition.data.skills.some(id => id.startsWith(`plugin:${pluginId}:`))) {
+                const skills = definition.data.skills.flatMap(id => { const skill = resolvedSkills.get(id); return skill ? [skill] : [] })
+                if (!agentInstructionsFit(definition.data, skills)) throw new EvolvedError('plugin_dependency', 'Updated skills leave too little room for a global agent assignment. Edit that agent before updating.', 409)
+            }
         }
     }
     install(userId: string, sessionHash: string, confirmation: z.infer<typeof confirmationSchema>, pluginId?: string): InstalledPlugin {

@@ -4,8 +4,14 @@ import { z } from 'zod'
 import { EvolvedError, EvolvedStore, hashToken, randomToken, type EvolvedProject } from './store'
 import { authenticateEvolvedRequest, cookieToken, parseBody, requireFreshPasskey, requireHuman, type EvolvedEnv } from './security'
 import { signControl, verifyControl, type ControlRequest } from './runnerControlProtocol'
+import { providerModelCatalogSchema, unavailableModelCatalog, type ProviderModelCatalog } from './providerModels'
 
 const provider = z.enum(['codex', 'claude'])
+function parseProvider(value:string):'codex'|'claude' {
+    const parsed=provider.safeParse(value)
+    if(!parsed.success)throw new EvolvedError('invalid_provider','Unbekannter Anbieter.',400)
+    return parsed.data
+}
 const summary = z.object({ provider, status: z.enum(['connected','disconnected','unavailable']), method: z.enum(['subscription','api-key']).nullable(), checkedAt: z.number().nullable() }).strict()
 const operation = z.object({ id:z.string().max(128), provider, state:z.enum(['starting','waiting','connected','failed','cancelled','expired']), flow:z.enum(['device','code']).nullable(), verificationUrl:z.string().max(4096).optional(), userCode:z.string().max(128).optional(), expiresAt:z.number().optional(), message:z.string().max(300).optional() }).strict()
 const operationReply = z.object({ operation }).strict()
@@ -23,6 +29,7 @@ export class UnixProviderControl implements ProviderControl {
             if (body?.code==='login_busy') throw new EvolvedError('login_busy','Für diesen Anbieter läuft bereits eine Anmeldung. Bitte zuerst abschließen oder abbrechen.',409)
             if (body?.code==='operation_not_found') throw new EvolvedError('operation_not_found','Diese Anmeldung ist nicht mehr verfügbar. Bitte erneut verbinden.',404)
             if (body?.code==='runner_config_missing') throw new EvolvedError('runner_config_missing','Die gespeicherte Projektdienst-Konfiguration fehlt. Bitte erneut verbinden; HAPI richtet sie neu ein.',409)
+            if (body?.code==='workspace_identity_changed') throw new EvolvedError('workspace_identity_changed','Der Projektordner wurde außerhalb von HAPI ersetzt oder verschoben. Der Projektdienst bleibt gesperrt; bitte den Installationsadministrator den Ordner und Workspace-Anker prüfen lassen.',409)
             if (body?.code==='logout_failed') throw new EvolvedError('logout_failed','Die native Abmeldung konnte nicht bestätigt werden. Bitte den Status aktualisieren und erneut versuchen.',409)
             if (body?.code && ['invalid_code','code_state_mismatch','invalid_state'].includes(body.code)) throw new EvolvedError('invalid_code','Dieser Bestätigungscode passt nicht zur laufenden Anmeldung. Bitte den vollständigen Code aus dem gerade geöffneten Anbieterfenster einfügen.',400)
             throw new EvolvedError('runner_unavailable','Der Projektdienst konnte die Aktion nicht abschließen. Bitte erneut versuchen.',503)
@@ -35,6 +42,14 @@ export class UnixProviderControl implements ProviderControl {
 export function createProviderRoutes(store:EvolvedStore, options:{control?:ProviderControl;key?:Uint8Array} = {}):Hono<EvolvedEnv> {
     store.db.exec('CREATE TABLE IF NOT EXISTS evolved_managed_runners(project_id TEXT PRIMARY KEY REFERENCES evolved_projects(id) ON DELETE CASCADE,lease_id TEXT NOT NULL REFERENCES evolved_runner_leases(id) ON DELETE CASCADE,ready INTEGER NOT NULL DEFAULT 0)')
     const app = new Hono<EvolvedEnv>(), seen = new Map<string,number>(), preparing = new Set<string>()
+    type ModelSnapshot = { catalog?:ProviderModelCatalog; leaseId?:string; profile?:string; rootPath?:string; generation:number; refreshedAt:number; pending?:Promise<ProviderModelCatalog> }
+    const modelSnapshots = new Map<string,ModelSnapshot>()
+    let modelRefreshes=0
+    const modelKey=(projectId:string,chosen:string)=>`${projectId}:${chosen}`
+    const invalidateModels=(projectId:string,chosen:string)=>{
+        const entry=modelSnapshots.get(modelKey(projectId,chosen))
+        if(entry){entry.catalog=undefined;entry.generation++;entry.refreshedAt=0}
+    }
     const mapping = (id:string) => store.db.prepare('SELECT lease_id,ready FROM evolved_managed_runners WHERE project_id=?').get(id) as Managed|null
     const validLease = (project:EvolvedProject, leaseId:string):boolean => {
         const row=store.db.prepare('SELECT user_id,profile FROM evolved_runner_leases WHERE id=? AND project_id=? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>?)').get(leaseId,project.id,store.now()) as {user_id:string;profile:string}|null
@@ -55,6 +70,17 @@ export function createProviderRoutes(store:EvolvedStore, options:{control?:Provi
         try { request=verifyControl(options.key,await c.req.json(),'hub',seen,store.now()) } catch { return c.json({authorized:false},403) }
         return c.json({authorized:request.action==='authority' && authorized(request)})
     })
+    // This read-only member route is deliberately registered before the existing
+    // administrator middleware. It never starts a native process or provisions.
+    app.get('/projects/:id/providers/:provider/models',async c=>{
+        const principal=await authenticateEvolvedRequest(c.req.raw,store)
+        if(!principal)throw new EvolvedError('unauthorized','Sign in required.',401)
+        requireHuman(principal)
+        const project=store.requireProject(principal.user.id,c.req.param('id'),'member'),chosen=parseProvider(c.req.param('provider'))
+        const entry=modelSnapshots.get(modelKey(project.id,chosen)),managed=mapping(project.id)
+        if(!entry?.catalog||!managed?.ready||entry.leaseId!==managed.lease_id||entry.profile!==project.profile||entry.rootPath!==project.rootPath||!validLease(project,managed.lease_id))return c.json(unavailableModelCatalog(chosen))
+        return c.json({...entry.catalog,stale:entry.catalog.expiresAt===null||entry.catalog.expiresAt<=store.now()})
+    })
     app.use('/projects/:id/providers/*', async(c,next)=>{
         if(!['GET','HEAD'].includes(c.req.method)) await c.req.text()
         const principal=await authenticateEvolvedRequest(c.req.raw,store)
@@ -70,6 +96,35 @@ export function createProviderRoutes(store:EvolvedStore, options:{control?:Provi
         return result
     }
     const requestFor = (req:Request, project:EvolvedProject, userId:string, action:ControlRequest['action']):ControlRequest => ({action,projectId:project.id,userId,sessionHash:hashToken(cookieToken(req)??''),profile:project.profile,rootPath:project.rootPath,leaseId:mapping(project.id)?.lease_id??''})
+    app.post('/projects/:id/providers/:provider/models/refresh',async c=>{
+        const principal=c.get('principal'),project=store.requireProject(principal.user.id,c.req.param('id'),'admin'),chosen=parseProvider(c.req.param('provider'))
+        await parseBody(c,z.object({}).strict())
+        const managed=mapping(project.id)
+        if(!managed?.ready||!validLease(project,managed.lease_id))throw new EvolvedError('runner_unavailable','Für eine Modellabfrage muss bereits ein Projektdienst verbunden sein.',503)
+        const key=modelKey(project.id,chosen),request={...requestFor(c.req.raw,project,principal.user.id,'models'),provider:chosen,refresh:true}
+        let entry=modelSnapshots.get(key)
+        if(!entry){
+            if(modelSnapshots.size>=256){const removable=[...modelSnapshots].find(([,value])=>!value.pending);if(removable)modelSnapshots.delete(removable[0]);else throw new EvolvedError('model_catalog_busy','Modellkatalog ist ausgelastet.',429)}
+            entry={generation:0,refreshedAt:0};modelSnapshots.set(key,entry)
+        }
+        if(!entry.pending){
+            if(modelRefreshes>=4||entry.refreshedAt&&store.now()-entry.refreshedAt<30_000)throw new EvolvedError('model_catalog_rate_limited','Bitte nach einer Modellabfrage 30 Sekunden bis zur nächsten Abfrage warten.',429)
+            entry.refreshedAt=store.now();modelRefreshes++
+            const target=entry,generation=entry.generation
+            entry.pending=(async()=>{
+                const parsed=providerModelCatalogSchema.safeParse(await control(request))
+                if(!parsed.success||parsed.data.provider!==chosen||parsed.data.checkedAt!==null&&parsed.data.checkedAt>store.now()+60_000)throw new EvolvedError('invalid_runner_reply','Ungültige Modellkatalog-Antwort des Projektdienstes.',502)
+                if(target.generation!==generation)throw new EvolvedError('model_catalog_changed','Die Anmeldung wurde während der Modellabfrage geändert. Bitte erneut abfragen.',409)
+                target.catalog=parsed.data;target.leaseId=request.leaseId;target.profile=project.profile;target.rootPath=project.rootPath
+                return parsed.data
+            })().finally(()=>{target.pending=undefined;modelRefreshes--})
+        }
+        const result=await entry.pending
+        // A concurrent administrator may join the same native refresh. Their
+        // own session and current role still govern disclosure of its result.
+        if(!authorized(request))throw new EvolvedError('forbidden','Die Berechtigung für diesen Projektdienst wurde geändert.',403)
+        return c.json({...result,stale:result.expiresAt===null||result.expiresAt<=store.now()})
+    })
     app.get('/projects/:id/providers', async c=>{
         const principal=c.get('principal'),project=store.requireProject(principal.user.id,c.req.param('id'),'admin'), managed=mapping(project.id)
         const unavailable=()=>({providers:['codex','claude'].map(provider=>({provider,status:'unavailable',method:null,checkedAt:null}))})
@@ -80,10 +135,11 @@ export function createProviderRoutes(store:EvolvedStore, options:{control?:Provi
     })
     app.post('/projects/:id/providers/:provider/login',async c=>{
         const principal=c.get('principal');requireFreshPasskey(c,store,principal)
-        await parseBody(c,z.object({}).strict());const chosen=provider.parse(c.req.param('provider'))
+        await parseBody(c,z.object({}).strict());const chosen=parseProvider(c.req.param('provider'))
         const project=store.requireProject(principal.user.id,c.req.param('id'),'admin')
         if(!options.control) throw new EvolvedError('runner_unavailable','Die Browser-Anmeldung ist auf diesem Server noch nicht eingerichtet.',503)
         if(preparing.has(project.id)) throw new EvolvedError('login_busy','Der Projektdienst wird gerade vorbereitet. Bitte kurz warten.',409)
+        invalidateModels(project.id,chosen)
         preparing.add(project.id)
         try {
             let managed=mapping(project.id), token:string|undefined
@@ -113,11 +169,13 @@ export function createProviderRoutes(store:EvolvedStore, options:{control?:Provi
             const result=operationReply.parse(await control({...r,leaseToken:undefined,action:'start',provider:chosen}))
             store.audit(principal.user.id,project.id,'provider.login_started',chosen)
             return c.json(result)
-        } finally { preparing.delete(project.id) }
+        } finally { invalidateModels(project.id,chosen);preparing.delete(project.id) }
     })
     app.get('/projects/:id/providers/:provider/login/:operationId', async c=>{
         const principal=c.get('principal'), project=store.requireProject(principal.user.id,c.req.param('id'),'admin')
-        return c.json(operationReply.parse(await control({...requestFor(c.req.raw,project,principal.user.id,'get'),provider:provider.parse(c.req.param('provider')),operationId:c.req.param('operationId')})))
+        const chosen=parseProvider(c.req.param('provider')),result=operationReply.parse(await control({...requestFor(c.req.raw,project,principal.user.id,'get'),provider:chosen,operationId:c.req.param('operationId')}))
+        if(result.operation.state==='connected')invalidateModels(project.id,chosen)
+        return c.json(result)
     })
     app.post('/projects/:id/providers/:provider/login/:operationId/code',async c=>{
         // Starting this operation required a fresh passkey. Completing its bounded
@@ -126,18 +184,25 @@ export function createProviderRoutes(store:EvolvedStore, options:{control?:Provi
         const principal=c.get('principal')
         const body=await parseBody(c,z.object({code:z.string().trim().min(1).max(4096).regex(/^[A-Za-z0-9_.~+#/-]+$/)}).strict())
         const project=store.requireProject(principal.user.id,c.req.param('id'),'admin')
-        return c.json(operationReply.parse(await control({...requestFor(c.req.raw,project,principal.user.id,'code'),provider:provider.parse(c.req.param('provider')),operationId:c.req.param('operationId'),code:body.code})))
+        const chosen=parseProvider(c.req.param('provider'))
+        invalidateModels(project.id,chosen)
+        try {
+            return c.json(operationReply.parse(await control({...requestFor(c.req.raw,project,principal.user.id,'code'),provider:chosen,operationId:c.req.param('operationId'),code:body.code})))
+        } finally { invalidateModels(project.id,chosen) }
     })
     app.delete('/projects/:id/providers/:provider/login/:operationId',async c=>{
         const principal=c.get('principal'),project=store.requireProject(principal.user.id,c.req.param('id'),'admin')
-        return c.json(operationReply.parse(await control({...requestFor(c.req.raw,project,principal.user.id,'cancel'),provider:provider.parse(c.req.param('provider')),operationId:c.req.param('operationId')})))
+        return c.json(operationReply.parse(await control({...requestFor(c.req.raw,project,principal.user.id,'cancel'),provider:parseProvider(c.req.param('provider')),operationId:c.req.param('operationId')})))
     })
     app.delete('/projects/:id/providers/:provider',async c=>{
         const principal=c.get('principal');requireFreshPasskey(c,store,principal)
-        const project=store.requireProject(principal.user.id,c.req.param('id'),'admin'), chosen=provider.parse(c.req.param('provider'))
-        const result=summaryReply.parse(await control({...requestFor(c.req.raw,project,principal.user.id,'logout'),provider:chosen}))
-        store.audit(principal.user.id,project.id,'provider.logged_out',chosen)
-        return c.json(result)
+        const project=store.requireProject(principal.user.id,c.req.param('id'),'admin'), chosen=parseProvider(c.req.param('provider'))
+        invalidateModels(project.id,chosen)
+        try {
+            const result=summaryReply.parse(await control({...requestFor(c.req.raw,project,principal.user.id,'logout'),provider:chosen}))
+            store.audit(principal.user.id,project.id,'provider.logged_out',chosen)
+            return c.json(result)
+        } finally { invalidateModels(project.id,chosen) }
     })
     return app
 }

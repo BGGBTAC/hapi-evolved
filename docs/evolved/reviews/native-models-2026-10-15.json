@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-15",
+  "scope": "Native Modellkataloge, Agentenauswahl und isolierte Browserabnahme",
+  "author": "Codex implementation and verification; actual Claude Opus review is recorded separately",
+  "baseCommit": "69f29d107d302cbab9f4b0323cd167ab63fc033d",
+  "sourceState": "Working tree at verification time; hashes below identify the exact reviewed files.",
+  "provenanceAndSystemBoundaries": [
+    {
+      "id": "native-reported",
+      "description": "Die Liste stammt aus dem nativen CLI-Protokoll. catalogOrigin=native-reported, entitlementVerified=false und upstreamRefresh=unknown: kein Nachweis einer ungepufferten Anbieterantwort oder einer Kontofreigabe."
+    },
+    {
+      "id": "freshness",
+      "description": "HAPI-Kataloge gelten fünf Minuten als frisch; Hub-Snapshots können danach als veraltet lesbar bleiben. Explizite Aktualisierung umgeht HAPI-Caches, verändert aber keine nativen CLI-Cachedateien und aktiviert keine experimentellen Discovery-Flags."
+    },
+    {
+      "id": "authentication-boundary",
+      "description": "Abo und API-Schlüssel werden getrennt gekennzeichnet. Native Anmeldedaten bleiben beim CLI im privaten Runner. Cachebindung verwendet ausschließlich Dateimetadaten; ein Wechsel während der Abfrage verwirft die Antwort. Ohne Anmeldung und während laufender Anmeldung wird kein Modellprozess gestartet."
+    },
+    {
+      "id": "availability-and-scope",
+      "description": "Die gepinnte CLI-Version beeinflusst Modellaliase und Kataloginhalt. Der Katalog gehört zum verwalteten Projektrunner; manuelle Runner können abweichen. Standard und ausdrücklich eingegebene Modell-IDs bleiben möglich. Discovery sendet keine Prompts und startet keine Inferenz."
+    }
+  ],
+  "limits": {
+    "maxModels": 100,
+    "maxLabelCharacters": 80,
+    "maxReasoningEfforts": 8,
+    "maxModelIdCharacters": 100,
+    "maxSerializedDtoBytes": 30000,
+    "nativeCombinedOutputBytes": 262144,
+    "nativeDiscoveryDeadlineMs": 8000,
+    "boundedProcessGroupCleanup": true,
+    "anyProviderLoginExclusion": true,
+    "modelStatusDeadlineMs": 3000
+  },
+  "realNativeProtocolSmoke": {
+    "environment": "Bun 1.3.14; fresh private temporary HOME; no inherited provider credentials; no human native auth files read",
+    "codex": {
+      "version": "0.157.0",
+      "protocol": "app-server initialize, initialized, paginated model/list",
+      "reportedModels": 7
+    },
+    "claude": {
+      "version": "2.1.285",
+      "protocol": "stream-json control_request initialize; safe-mode, no tools/hooks/MCP/persistent session",
+      "reportedModels": 5
+    },
+    "authenticated": false,
+    "inferencePerformed": false,
+    "result": "PASS",
+    "log": "/tmp/evolved-native-model-smoke.log"
+  },
+  "verification": [
+    {
+      "command": "bun test services/runner-auth/controller.test.ts services/runner-auth/modelCatalog.test.ts",
+      "result": "PASS",
+      "tests": 34,
+      "assertions": 162,
+      "log": "/tmp/evolved-native-model-tests.log",
+      "coverage": [
+        "fixed CLI protocol and sanitized DTO",
+        "pagination and cursor cycles",
+        "chunked JSON lines and separated stderr",
+        "auth context cache and external account rotation",
+        "no discovery during login",
+        "deadline/output/DTO bounds",
+        "EOF and authorization heartbeat cleanup",
+        "logout and explicit refresh",
+        "server-initiated RPC requests with colliding IDs",
+        "default-ignorable Unicode labels",
+        "three-second model status budget",
+        "cross-provider login blocks model discovery before and inside the queue"
+      ]
+    },
+    {
+      "command": "bun run --cwd services/runner-auth typecheck",
+      "result": "PASS",
+      "log": "/tmp/evolved-native-model-typecheck.log"
+    },
+    {
+      "command": "bun run --cwd web test -- src/evolved/AgentsPlugins.test.tsx src/evolved/Workspace.test.tsx",
+      "result": "PASS",
+      "tests": 24,
+      "log": "/tmp/evolved-agent-plugin-web-tests.log"
+    },
+    {
+      "command": "bun run typecheck:web",
+      "result": "PASS",
+      "log": "/tmp/evolved-agent-plugin-web-typecheck.log"
+    },
+    {
+      "command": "PLAYWRIGHT_CHROME_PATH=/home/benedict/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome node web/scripts/evolved-extensions-browser-check.mjs",
+      "result": "PASS",
+      "log": "/tmp/evolved-extensions-browser-check.log",
+      "scope": "Real isolated Hub/vault and virtual WebAuthn. Synthetic GitHub metadata/manifests and controlled model-provider HTTP fixture only. Global agent CRUD across two projects; dynamic model selection and offline manual ID persisted by real Hub; pinned plugin install/update/disable/reenable/delete; dependent-skill repair; applied plugin theme and fallback; canceled uninstall; inert instructions; mobile overflow check."
+    }
+  ],
+  "notClaimed": [
+    "No real subscription-authenticated model entitlement was tested.",
+    "No model inference or provider billing request was performed.",
+    "Native catalog responses may contain bundled or cached metadata.",
+    "This record is local verification, not the separate actual Claude Opus review."
+  ],
+  "sourceSha256": {
+    "services/runner-auth/controller.ts": "58311ac5da04a11f9182807619b07e8db70faa05eea53ea43a6ce9bfe0342368",
+    "services/runner-auth/worker.ts": "f2005b5bfc797764d8d7205d7c373bb422eba30c7b00c88d052a1d8ac647fc06",
+    "services/runner-auth/modelCatalog.ts": "0288bbd565b3ae230b309bb64cf1c1b9205049990d099d6f0f0903822216048d",
+    "services/runner-auth/controller.test.ts": "2b0807a601833320fcda28178606fc4e1019d885024d53a18874415d9852ea78",
+    "services/runner-auth/modelCatalog.test.ts": "2d41ed09998ffb1642e0198cc66efa45295fc3d9bc7d10b1df87149abf89d11b",
+    "web/src/evolved/AgentsPlugins.tsx": "6866d8056823738e0c3919785a4cb0d09b86c1587513f1a560f92dab0cf13ba9",
+    "web/src/evolved/AgentsPlugins.test.tsx": "c13aca13a6bdac3a10504b3bf5355b6d5c431ed43159672ec4e2eebea0190502",
+    "web/src/evolved/ModelCatalogInput.tsx": "ada620d95fed6756d8ffbd69e6ca2440717b7699be3b2f856e611f7dc0ac5094",
+    "web/src/evolved/useProviderModels.ts": "4768064decaa08f2548d3c84d55dcc97bc712db686d1d8a796ed49fb7adac1c5",
+    "web/scripts/evolved-extensions-browser-check.mjs": "fcca65c3c96e71380545a9b73ec6f66eb5f3d30935086d0c0528d3571854cc58",
+    "web/scripts/evolved-browser-hub.ts": "f76d72e18fc5ab25a33b489eb3266c0cadde49b4428324308f72ae0ddd3c9032"
+  },
+  "opusFindingsAddressed": [
+    "Reject Default_Ignorable_Code_Point labels consistently with the Hub.",
+    "Ignore server-initiated JSON-RPC messages even with colliding request IDs.",
+    "Compare credential file metadata before and after discovery.",
+    "Bound model status to 3s and discovery to 8s; block both providers while any native login is pending."
+  ]
+}

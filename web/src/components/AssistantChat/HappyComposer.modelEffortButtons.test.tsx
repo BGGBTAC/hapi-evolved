@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode, TextareaHTMLAttributes } from 'react'
 import { useRef, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -34,10 +34,15 @@ const runtime = vi.hoisted(() => ({
     setSnapshot: null as null | ((updater: (current: FakeRuntimeState) => FakeRuntimeState) => void),
     pendingSendIntentRef: { current: 'default' },
     sentIntents: [] as ComposerSendIntent[],
+    evolved: false,
     narrowViewport: false,
     toolbarLayout: null as ComposerToolbarLayout | null,
 }))
 
+vi.mock('@/evolved/SavedPrompts', () => ({ SavedPromptsButton: () => null }))
+vi.mock('@/evolved/Sidechannel', () => ({ useSidechannel: () => ({ intercept: () => false, panel: null }) }))
+vi.mock('@/evolved/auth', () => ({ useOptionalEvolved: () => runtime.evolved ? { project: { id: 'project-1' } } : null }))
+vi.mock('@/evolved/useProviderModels', () => ({ useProviderModels: () => ({ enabled: runtime.evolved, canRefresh: true, data: { provider: 'claude', status: 'ready', models: [{ id: 'new-native-model', label: 'Fresh native model' }] }, isLoading: false, error: null, refresh: vi.fn() }) }))
 vi.mock('@assistant-ui/react', async () => {
     const React = await import('react')
     return {
@@ -140,10 +145,43 @@ describe('HappyComposer generic model/effort value buttons', () => {
     afterEach(() => {
         cleanup()
         runtime.setSnapshot = null
+        runtime.evolved = false
         runtime.narrowViewport = false
         runtime.toolbarLayout = null
         runtime.snapshot.thread.isDisabled = false
         runtime.sentIntents = []
+    })
+
+    it('uses only native catalog/current/default in the Evolved picker and keyboard cycling', () => {
+        runtime.evolved = true
+        const change = vi.fn()
+        renderComposer('claude', { model: null, onModelChange: change })
+        fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+        expect(screen.getByRole('option', { name: 'Fresh native model' })).toBeInTheDocument()
+        expect(screen.queryByRole('option', { name: 'Sonnet' })).not.toBeInTheDocument()
+        fireEvent.change(screen.getByRole('combobox', { name: 'Modell' }), { target: { value: 'new-native-model' } })
+        expect(change).toHaveBeenCalledWith('new-native-model')
+        fireEvent.keyDown(window, { key: 'm', ctrlKey: true })
+        expect(change).toHaveBeenLastCalledWith('new-native-model')
+    })
+
+    it('uses the native descriptor mutation and normalizes auto to provider default', async () => {
+        runtime.evolved = true
+        const descriptorChange = vi.fn().mockResolvedValue(undefined), legacyChange = vi.fn()
+        renderComposer('claude', {
+            model: 'auto', onModelChange: legacyChange, onAgentConfigChange: descriptorChange,
+            agentConfig: { flavor: 'claude', fields: [{ id: 'model', section: 'model', kind: 'select', availability: 'both', optionSource: 'session', options: [{ value: 'old-static-model', label: 'Old static model' }] }] },
+        })
+        fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+        const picker = screen.getByRole('combobox', { name: 'Modell' })
+        expect(picker).toHaveValue('')
+        expect(screen.queryByRole('option', { name: 'Old static model' })).not.toBeInTheDocument()
+        fireEvent.change(picker, { target: { value: 'new-native-model' } })
+        await waitFor(() => expect(descriptorChange).toHaveBeenCalledWith('model', 'new-native-model'))
+        expect(legacyChange).not.toHaveBeenCalled()
+        await waitFor(() => expect(picker).toBeEnabled())
+        fireEvent.change(picker, { target: { value: '' } })
+        await waitFor(() => expect(descriptorChange).toHaveBeenLastCalledWith('model', null))
     })
 
     it('shows model and effort value buttons for Claude on wide viewports', () => {

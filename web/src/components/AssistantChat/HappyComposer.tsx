@@ -1,3 +1,6 @@
+import { useOptionalEvolved } from '@/evolved/auth'
+import { useProviderModels } from '@/evolved/useProviderModels'
+import { ModelCatalogInput } from '@/evolved/ModelCatalogInput'
 import { useImageVersionSwitching, isImageVersionSwitching, reconcileImageVersions } from '@/lib/imageUpload'
 import { LongPasteChoice } from './LongPasteChoice'
 import { isLongMessage, addLongTextAttachment } from '@/lib/longMessage'
@@ -1310,10 +1313,17 @@ export function HappyComposer(props: {
         () => agentFlavor === 'copilot' ? getCopilotAgentModeOptions() : [],
         [agentFlavor]
     )
-    const modelOptions = useMemo(
-        () => getModelOptionsForFlavor(agentFlavor, model, availableModelOptions),
-        [agentFlavor, model, availableModelOptions]
-    )
+    const evolved = useOptionalEvolved()
+    const nativeProvider = agentFlavor === 'codex' || agentFlavor === 'claude' ? agentFlavor : null
+    const providerModels = useProviderModels({ provider: nativeProvider })
+    const useProviderCatalog = Boolean(evolved?.project && nativeProvider)
+    const modelOptions = useMemo(() => {
+        if (!useProviderCatalog) return getModelOptionsForFlavor(agentFlavor, model, availableModelOptions)
+        const options: Array<{ value: string | null; label: string }> = [{ value: null, label: 'Standard des Anbieters' }]
+        if (providerModels.data?.status === 'ready') options.push(...providerModels.data.models.map(entry => ({ value: entry.id, label: entry.label })))
+        if (model && model !== 'auto' && !options.some(option => option.value === model)) options.splice(1, 0, { value: model, label: `${model} (bisherige Auswahl)` })
+        return options
+    }, [agentFlavor, model, availableModelOptions, useProviderCatalog, providerModels.data])
 
     // Cursor dual picker: after choosing a multi-variant base, drill into variant
     // rows in-place (picker stays open). Variant pick dismisses; back returns to
@@ -1812,14 +1822,16 @@ export function HappyComposer(props: {
             if (agentFlavor === 'pi') return
             if (e.key === 'm' && (e.metaKey || e.ctrlKey) && onModelChange && supportsModelChange(agentFlavor)) {
                 e.preventDefault()
-                onModelChange(getNextModelForFlavor(agentFlavor, model, availableModelOptions))
+                onModelChange(useProviderCatalog
+                    ? modelOptions[(modelOptions.findIndex(option => option.value === (model ?? null)) + 1) % modelOptions.length]?.value ?? null
+                    : getNextModelForFlavor(agentFlavor, model, availableModelOptions))
                 haptic('light')
             }
         }
 
         window.addEventListener('keydown', handleGlobalKeyDown)
         return () => window.removeEventListener('keydown', handleGlobalKeyDown)
-    }, [model, onModelChange, haptic, agentFlavor, availableModelOptions])
+    }, [model, onModelChange, haptic, agentFlavor, availableModelOptions, useProviderCatalog, modelOptions])
 
     const handleChange = useCallback((e: ReactChangeEvent<HTMLTextAreaElement>) => {
         const selection = {
@@ -2209,6 +2221,9 @@ export function HappyComposer(props: {
                 {props.agentConfig.fields.filter(field => field.availability !== 'create').map(field => {
                     const control = controls[field.id]
                     if (!control?.visible) return null
+                    if (field.id === 'model' && useProviderCatalog && nativeProvider) return <ModelCatalogInput key={`${evolved?.project?.id}:${nativeProvider}`} provider={nativeProvider} value={model === 'auto' || model === 'default' ? '' : model ?? ''} defaultValue="" catalog={providerModels}
+                        disabled={controlsDisabled || modelEffortControlsDisabled || (!props.onAgentConfigChange && !control.change) || field.kind === 'status' || Boolean(field.unavailableReason)}
+                        onChange={value => props.onAgentConfigChange ? props.onAgentConfigChange('model', value || null) : handleModelChange(value || null)} />
                     return <AgentConfigFieldControl key={field.id} field={field} label={control.label} value={control.value}
                         options={field.id === 'permission' ? control.options : field.options ?? control.options} disabled={controlsDisabled} onChange={control.change && props.onAgentConfigChange ? value => props.onAgentConfigChange!(field.id, value) : control.change} />
                 })}
@@ -2223,7 +2238,10 @@ export function HappyComposer(props: {
                                 <div className="px-3 pb-1 text-xs font-semibold text-[var(--app-hint)]">
                                     {t('misc.model')}
                                 </div>
-                                {agentFlavor === 'pi'
+                                {useProviderCatalog && nativeProvider
+                                    ? <ModelCatalogInput key={`${evolved?.project?.id}:${nativeProvider}`} provider={nativeProvider} value={model === 'auto' || model === 'default' ? '' : model ?? ''} defaultValue="" catalog={providerModels}
+                                        disabled={modelEffortControlsDisabled || !onModelChange} onChange={value => handleModelChange(value || null)} />
+                                    : agentFlavor === 'pi'
                                     ? piModelGroups?.map((group) => (
                                         <div key={group.provider}>
                                             <div className="px-3 pt-2 pb-0.5 text-xs font-medium text-[var(--app-hint)]">
@@ -2639,6 +2657,10 @@ export function HappyComposer(props: {
         showFastModeSettings,
         agentFlavor,
         modelOptions,
+        providerModels,
+        useProviderCatalog,
+        nativeProvider,
+        evolved?.project?.id,
         codexReasoningEffortOptions,
         claudeEffortOptions,
         fastModeOptions,

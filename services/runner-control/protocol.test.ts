@@ -30,4 +30,9 @@ describe('narrow signed runner control protocol',()=>{
         expect(validControlRequest({...r,action:'code',provider:'claude',operationId:randomUUID(),code:'abc\ndef'})).toBe(false)
         expect(validControlRequest({...r,action:'status',leaseToken:'a'.repeat(43)})).toBe(false)
     })
+    test('model refresh is a provider-bound metadata action without challenge or command fields',()=>{
+        const r=request()
+        expect(validControlRequest({...r,action:'models',provider:'codex',refresh:true})).toBe(true)
+        for(const value of [{...r,action:'models'},{...r,action:'models',provider:'codex',refresh:'yes'},{...r,action:'status',refresh:true},{...r,action:'models',provider:'codex',operationId:randomUUID()},{...r,action:'models',provider:'codex',code:'private'},{...r,action:'models',provider:'codex',leaseToken:'a'.repeat(43)}])expect(validControlRequest(value)).toBe(false)
+    })
 })

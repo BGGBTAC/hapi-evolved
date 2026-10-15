@@ -3,10 +3,12 @@ import { EvolvedError } from './store'
 
 export const PLUGIN_MANIFEST_FILE = 'hapi-evolved.plugin.json'
 export const PLUGIN_MAX_BYTES = 512 * 1024
-const hiddenControls = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/
+// Hidden Unicode tag/format characters must not make reviewed text differ
+// invisibly from the instructions delivered to a model.
+const hiddenControls = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u2028\u2029]|\p{Default_Ignorable_Code_Point}/u
 const text = (maximum: number) => z.string().trim().min(1).max(maximum).refine(value => !hiddenControls.test(value), 'Unsupported control characters')
 const identifier = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/)
-export const modelPreferenceSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$/)
+export const modelPreferenceSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/\[\]-]{0,99}$/)
 export const agentDefinitionSchema = z.object({
     name: text(100), description: text(500), instructions: text(16_384),
     providerPreference: z.enum(['either', 'claude', 'codex']).default('either'),

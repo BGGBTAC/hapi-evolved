@@ -1,7 +1,8 @@
 import { afterEach, expect, test } from 'bun:test'
-import { ProjectOperations, RunnerOperator, nativeWorkerError, type WorkerHandle, type WorkerJob } from './operator'
+import { AuthWorker, ControlError, ProjectOperations, RunnerOperator, nativeWorkerError, type WorkerHandle, type WorkerJob } from './operator'
 import type { ControlRequest } from '../../hub/src/evolved/runnerControlProtocol'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { spawn } from 'node:child_process'
 
 const request:ControlRequest={action:'start',projectId:'11111111-1111-4111-8111-111111111111',userId:'22222222-2222-4222-8222-222222222222',sessionHash:'a'.repeat(64),leaseId:'33333333-3333-4333-8333-333333333333',profile:'restricted',rootPath:'/managed-workspaces/11111111-1111-4111-8111-111111111111',provider:'codex'}
 const operationId='44444444-4444-4444-8444-444444444444'
@@ -141,4 +142,84 @@ test('native errors retain actionable status without reflecting arbitrary messag
     expect(nativeWorkerError('not_found')).toMatchObject({code:'operation_not_found',status:404})
     expect(nativeWorkerError('login_busy')).toMatchObject({code:'login_busy',status:409})
     expect(nativeWorkerError('private native diagnostic')).toMatchObject({code:'native_auth_failed',status:400})
+})
+
+test('a foreign administrator model query preserves the current login owner and process',async()=>{
+    const h=harness()
+    await h.operator.request(request)
+    const worker=h.created[0]!
+    expect(worker.busy()).toBe(true)
+    await h.operator.request({...request,action:'models',provider:'codex',refresh:true,userId:'55555555-5555-4555-8555-555555555555',sessionHash:'b'.repeat(64)})
+    expect(h.created).toHaveLength(1);expect(worker.closed).toBe(false)
+    expect(worker.owner.userId).toBe(request.userId)
+    expect(worker.jobs.get(operationId)?.state).toBe('waiting')
+    expect(worker.calls).toEqual(['start','models'])
+})
+
+test('revoking a foreign metadata reader cannot terminate the original owner login',async()=>{
+    for(const action of ['status','models'] as const){
+        const h=harness();await h.operator.request(request)
+        const worker=h.created[0]!,foreign={...request,action,userId:'55555555-5555-4555-8555-555555555555',sessionHash:'b'.repeat(64)}
+        let checks=0
+        h.mutable.authority=async(r:ControlRequest)=>r.userId===request.userId||++checks===1
+        await expect(h.operator.request(foreign)).rejects.toMatchObject({code:'authority_lost',status:403})
+        expect(worker.closed).toBe(false)
+        expect(h.workers.get(request.projectId)).toBe(worker)
+        expect(worker.jobs.get(operationId)?.state).toBe('waiting')
+        expect(await h.operator.request({...request,action:'get',operationId})).toMatchObject({operation:{state:'connected'}})
+    }
+})
+
+test('late metadata replies keep bounded IPC slots and do not kill a login or its heartbeat',async()=>{
+    class DelayedWorker extends AuthWorker {
+        protected override launch(){
+            return spawn(process.execPath,['-e',`
+                const readline=require('node:readline');
+                readline.createInterface({input:process.stdin}).on('line',line=>{
+                    const r=JSON.parse(line);
+                    const result=r.action==='start'?{operation:{id:'${operationId}',provider:'codex',state:'waiting',expiresAt:Date.now()+900000}}:{ok:true};
+                    setTimeout(()=>process.stdout.write(JSON.stringify({requestId:r.requestId,result})+'\\n'),['status','models'].includes(r.action)?180:0);
+                });
+            `],{stdio:['pipe','pipe','pipe']})
+        }
+    }
+    const worker=new DelayedWorker(request,'unused',1001,1001)
+    try {
+        await worker.request('start')
+        const pending=Array.from({length:15},(_,index)=>worker.request(index%2?'status':'models',{},true,5).catch(error=>error))
+        expect((await Promise.all(pending)).every(error=>error instanceof ControlError&&error.code==='native_auth_timeout')).toBe(true)
+        expect(worker.pendingCount()).toBe(15)
+        expect(worker.closed).toBe(false);expect(worker.busy()).toBe(true)
+        await expect(worker.request('models')).rejects.toMatchObject({code:'runner_busy'})
+        expect(await worker.request('heartbeat',{},false)).toEqual({ok:true})
+        expect(worker.pendingCount()).toBe(15)
+        const h=harness();h.workers.set(request.projectId,worker)
+        await h.heartbeat()
+        expect(worker.closed).toBe(false)
+        expect(h.workers.get(request.projectId)).toBe(worker)
+        const deadline=Date.now()+2000
+        while(worker.pendingCount()&&Date.now()<deadline)await tick()
+        expect(worker.pendingCount()).toBe(0)
+        expect(worker.closed).toBe(false);expect(worker.busy()).toBe(true)
+        expect(await worker.request('status')).toEqual({ok:true})
+    } finally { worker.close() }
+})
+
+test('restore cycles eventually consider projects after the first thirty-two',async()=>{
+    const h=harness(),root=mkdtempSync('/tmp/evolved-control-rotation-');temporary.push(root)
+    mkdirSync(`${root}/runners`)
+    for(let n=1;n<=40;n++)mkdirSync(`${root}/runners/${String(n).padStart(8,'0')}-1111-4111-8111-111111111111`)
+    const seen:string[]=[]
+    h.mutable.config={state:root};h.mutable.restoreCursor=0
+    h.mutable.metadata=(request:ControlRequest)=>{seen.push(request.projectId);return null}
+    const restore=()=> (h.operator as unknown as {restoreManagedRunners():Promise<void>}).restoreManagedRunners()
+    await restore();expect(new Set(seen).size).toBe(32)
+    await restore();expect(new Set(seen).size).toBe(40)
+})
+
+test('a changed project root fails with an actionable identity error before touching the runner',async()=>{
+    const h=harness()
+    await expect(h.operator.request({...request,action:'prepare',rootPath:'/workspaces/replaced',provider:undefined})).rejects.toMatchObject({code:'workspace_identity_changed',status:409})
+    expect(h.dockerCalls).toHaveLength(0)
+    expect(h.created).toHaveLength(0)
 })

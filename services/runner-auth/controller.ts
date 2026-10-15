@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptionsWithoutStd
 import { randomUUID } from 'node:crypto'
 import { mkdir, lstat } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
+import { discoverModels, type ModelCatalog } from './modelCatalog'
 
 export type Provider = 'codex' | 'claude'
 export type ProviderSummary = {
@@ -36,6 +37,7 @@ type Options = {
     /** A shorter duration is useful in tests; production cannot exceed fifteen minutes. */
     loginTimeoutMs?: number
     commandTimeoutMs?: number
+    catalogTimeoutMs?: number
     /** Server-owned container egress endpoint, never supplied through IPC. */
     proxyUrl?: 'http://egress:3128'
 }
@@ -85,6 +87,7 @@ export class NativeAuthController {
     private readonly queues = new Map<Provider, Promise<unknown>>()
     private readonly commands = new Set<Running>()
     private readonly summaries = new Map<Provider, ProviderSummary>()
+    private readonly catalogs = new Map<Provider, { fingerprint: string; value: ModelCatalog }>()
     private readonly spawnChild: Spawn
     private readonly environment: NodeJS.ProcessEnv
     private readonly loginTimeout: number
@@ -127,7 +130,7 @@ export class NativeAuthController {
         return result
     }
 
-    private run(provider: Provider, args: string[], timeout: number, onOutput?: (text: string) => void): Running {
+    private run(provider: Provider, args: string[], timeout: number, onOutput?: (text: string) => void, onStdout?: (text: string) => void, outputLimit = 65_536): Running {
         const executable = provider === 'codex' ? this.options.codexPath : this.options.claudePath
         const child = this.spawnChild(executable, args, { cwd: this.options.home, env: this.environment, detached: true, stdio: 'pipe' })
         let output = ''
@@ -177,12 +180,14 @@ export class NativeAuthController {
         }
         const append = (chunk: Buffer | string, stream: 'stdout' | 'stderr') => {
             total += Buffer.byteLength(chunk)
-            if (total > 65_536) { limited = true; void stop(); return }
+            if (total > outputLimit) { limited = true; void stop(); return }
             output += chunk.toString()
             if (stream === 'stdout') stdout += chunk.toString(); else stderr += chunk.toString()
             if (!limited) onOutput?.(output)
+            if (!limited && stream === 'stdout') onStdout?.(stdout)
         }
         const running: Running = { done, stop, write: text => { if (!finished && !stopping) child.stdin.write(text) } }
+        child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8')
         child.stdout.on('data', chunk => append(chunk, 'stdout'))
         child.stderr.on('data', chunk => append(chunk, 'stderr'))
         child.stdin.on('error', () => { /* Native process may close its input before its exit event. */ })
@@ -192,16 +197,16 @@ export class NativeAuthController {
         return running
     }
 
-    private async inspect(provider: Provider): Promise<ProviderSummary> {
-        const summary = await this.inspectNative(provider)
+    private async inspect(provider: Provider, timeout = this.commandTimeout): Promise<ProviderSummary> {
+        const summary = await this.inspectNative(provider, timeout)
         this.summaries.set(provider, summary)
         return summary
     }
 
-    private async inspectNative(provider: Provider): Promise<ProviderSummary> {
+    private async inspectNative(provider: Provider, timeout: number): Promise<ProviderSummary> {
         const args = provider === 'codex' ? ['-c', 'cli_auth_credentials_store="file"', 'login', 'status'] : ['auth', 'status', '--json']
         let result: Awaited<Running['done']>
-        try { result = await this.run(provider, args, this.commandTimeout).done } catch {
+        try { result = await this.run(provider, args, timeout).done } catch {
             return { provider, status: 'unavailable', method: null, checkedAt: Date.now() }
         }
         const summary: ProviderSummary = { provider, status: 'unavailable', method: null, checkedAt: Date.now() }
@@ -228,6 +233,57 @@ export class NativeAuthController {
         return { providers: await Promise.all(PROVIDERS.map(provider => this.serial(provider, () => this.inspect(provider)))) }
     }
 
+    private async catalogFingerprint(provider: Provider, method: ProviderSummary['method']): Promise<string> {
+        // Stat only: native credentials never leave their CLI and are never parsed here.
+        const path = join(this.options.home, provider, provider === 'codex' ? 'auth.json' : '.credentials.json')
+        const info = await lstat(path).catch(() => null)
+        return JSON.stringify([method, info?.ino, info?.size, info?.mtimeMs, info?.ctimeMs])
+    }
+
+    private catalogBlockedByLogin(provider: Provider): ModelCatalog | null {
+        if (![...this.jobs.values()].some(job => !TERMINAL.has(job.operation.state))) return null
+        return {
+            provider, status: 'unavailable', method: null, source: 'native-cli', catalogOrigin: 'native-reported', entitlementVerified: false, upstreamRefresh: 'unknown', checkedAt: null, expiresAt: null, models: [],
+            message: 'Anmeldung läuft. Modellkatalog nach Abschluss erneut abfragen.',
+        }
+    }
+
+    async models(provider: Provider, refresh = false): Promise<ModelCatalog> {
+        // Avoid waiting behind other work while a provider login needs its code/cancel
+        // controls. The operator serializes actions for the complete project.
+        const blocked = this.catalogBlockedByLogin(provider)
+        if (blocked) return blocked
+        return this.serial(provider, async () => {
+            const blocked = this.catalogBlockedByLogin(provider)
+            if (blocked) return blocked
+            const summary = await this.inspect(provider, Math.min(this.commandTimeout, 3_000))
+            const empty: ModelCatalog = { provider, status: summary.status === 'disconnected' ? 'disconnected' : 'unavailable', method: summary.method, source: 'native-cli', catalogOrigin: 'native-reported', entitlementVerified: false, upstreamRefresh: 'unknown', checkedAt: summary.checkedAt, expiresAt: null, models: [] }
+            if (summary.status !== 'connected') {
+                this.catalogs.delete(provider)
+                return { ...empty, message: summary.status === 'disconnected' ? 'Anbieter auf diesem Runner anmelden, um den nativen Modellkatalog abzufragen.' : 'Anmeldestatus und Modellkatalog konnten nicht sicher geprüft werden. Standard oder eigene Modell-ID bleiben möglich.' }
+            }
+            const fingerprint = await this.catalogFingerprint(provider, summary.method)
+            const cached = this.catalogs.get(provider)
+            if (!refresh && cached?.fingerprint === fingerprint && cached.value.expiresAt! > Date.now()) return structuredClone(cached.value)
+            this.catalogs.delete(provider)
+            try {
+                const models = await discoverModels(provider, (selected, args, onStdout) => this.run(selected, args, Math.max(1, Math.min(this.options.catalogTimeoutMs ?? 8_000, 8_000)), undefined, onStdout, 262_144))
+                if (this.closed) throw new Error('Closed')
+                // External native CLIs may rotate credentials outside this controller's
+                // queue. Never associate an earlier response with a changed account file.
+                if (await this.catalogFingerprint(provider, summary.method) !== fingerprint) throw new Error('Native authentication changed during discovery')
+                const checkedAt = Date.now()
+                const value: ModelCatalog = { ...empty, status: 'ready', checkedAt, expiresAt: checkedAt + 300_000, models,
+                    message: 'Vom angemeldeten CLI gemeldeter Katalog; er kann zwischengespeicherte oder mitgelieferte Modelle enthalten. Anbieteraktualität und Freigabe werden dadurch nicht garantiert. Standard oder eigene Modell-ID sind weiterhin möglich.' }
+                if (Buffer.byteLength(JSON.stringify(value)) > 30_000) throw new Error('Catalog exceeds metadata budget')
+                this.catalogs.set(provider, { fingerprint, value })
+                return structuredClone(value)
+            } catch {
+                return { ...empty, checkedAt: Date.now(), message: 'Modellkatalog konnte nicht abgerufen werden. Es wird keine Ersatzliste verwendet. Standard oder eigene Modell-ID bleiben möglich.' }
+            }
+        })
+    }
+
     private snapshot(job: Job): AuthOperation {
         return { ...job.operation }
     }
@@ -240,6 +296,7 @@ export class NativeAuthController {
 
     async start(provider: Provider): Promise<{ operation: AuthOperation }> {
         return this.serial(provider, async () => {
+            this.catalogs.delete(provider)
             const existing = this.jobs.get(provider)
             if (existing && !TERMINAL.has(existing.operation.state)) return { operation: this.snapshot(existing) }
             if (existing?.child) await existing.child.stop()
@@ -284,6 +341,7 @@ export class NativeAuthController {
             return
         }
         const summary = await this.inspect(job.operation.provider)
+        this.catalogs.delete(job.operation.provider)
         if (TERMINAL.has(job.operation.state) || this.closed) return
         this.terminal(job, summary.status === 'connected' && summary.method === 'subscription' ? 'connected' : 'failed',
             summary.status === 'connected' && summary.method === 'subscription' ? 'Abo-Anmeldung wurde bestätigt.' : 'Abo-Anmeldung konnte nicht bestätigt werden.')
@@ -328,6 +386,7 @@ export class NativeAuthController {
 
     async logout(provider: Provider): Promise<{ providers: ProviderSummary[] }> {
         await this.serial(provider, async () => {
+            this.catalogs.delete(provider)
             const job = this.jobs.get(provider)
             if (job) await this.finishCancelled(job, 'cancelled')
             const result = await this.run(provider, provider === 'codex' ? ['-c', 'cli_auth_credentials_store="file"', 'logout'] : ['auth', 'logout'], this.commandTimeout).done
@@ -341,6 +400,7 @@ export class NativeAuthController {
     async close(): Promise<void> {
         if (this.closed) return
         this.closed = true
+        this.catalogs.clear()
         for (const job of this.jobs.values()) this.terminal(job, 'cancelled', 'Anmeldedienst wurde beendet.')
         await Promise.all([...this.commands].map(child => child.stop()))
     }

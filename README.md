@@ -19,6 +19,7 @@ remaining limits; [release preparation](RELEASING.md) tracks publication gates.
 | Area | Capability |
 | --- | --- |
 | Agents | Browser subscription login, automatically managed project runners and reusable specialist definitions |
+| Models | Native Claude/Codex catalogs with refresh, explicit source limits and manual model IDs; no built-in replacement list |
 | Workspace | Responsive desktop sidebar/mobile navigation, project dashboard and accessible light/dark/OLED design |
 | Capacity | Native Claude/Codex subscription reports with remaining quota, reset times and explicit unknown/stale states |
 | Teams | Passkeys, recovery codes, team/project roles, revocable runner access |

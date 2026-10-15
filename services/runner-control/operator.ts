@@ -1,10 +1,10 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { chmodSync, chownSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
+import { chmodSync, chownSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { signControl, type ControlRequest } from '../../hub/src/evolved/runnerControlProtocol'
 import { checkRunnerConfig, parseRunnerEnv } from '../../deploy/evolved/check-runner'
-import { ensureWorkspaceAnchor, validWorkspaceIdentity, type WorkspaceIdentity } from './workspaceAnchor'
+import { assertRootOwnedPath, ensureWorkspaceAnchor, validWorkspaceIdentity, WorkspaceAnchorError, type WorkspaceIdentity } from './workspaceAnchor'
 
 export class ControlError extends Error {
     constructor(readonly code:string, readonly status=503) { super(code) }
@@ -14,6 +14,11 @@ type Metadata = Pick<ControlRequest,'leaseId'|'rootPath'|'profile'> & {workspace
 const sameRunner = (a:Metadata,b:Metadata) => a.leaseId===b.leaseId && a.rootPath===b.rootPath && a.profile===b.profile
 const sameOwner = (a:ControlRequest,b:ControlRequest) => a.userId===b.userId && a.sessionHash===b.sessionHash && sameRunner(a,b)
 const terminal = (state:unknown) => ['connected','failed','cancelled','expired'].includes(String(state))
+function writePrivateAtomic(path:string,contents:string):void {
+    const temporary=`${path}.${randomUUID()}.tmp`
+    try{writeFileSync(temporary,contents,{flag:'wx',mode:0o600});renameSync(temporary,path)}
+    finally{rmSync(temporary,{force:true})}
+}
 
 /** Small per-project queues serialize owner changes and native start acknowledgement. */
 export class ProjectOperations {
@@ -57,7 +62,7 @@ export function runDocker(args:string[],timeout=60_000):Promise<string> {
         child.on('close',code=>{clearTimeout(timer);if(stopped)return;stopped=true;code===0?resolve(output.trim()):reject(new ControlError('runner_command_failed'))})
     })
 }
-class AuthWorker implements WorkerHandle {
+export class AuthWorker implements WorkerHandle {
     private child:ChildProcessWithoutNullStreams
     private pending=new Map<string,{resolve:(value:unknown)=>void;reject:(error:Error)=>void;timer:ReturnType<typeof setTimeout>}>()
     private input=''
@@ -66,10 +71,7 @@ class AuthWorker implements WorkerHandle {
     private pendingStarts=0
     readonly jobs=new Map<string,WorkerJob>()
     constructor(readonly owner:ControlRequest,container:string,uid:number,gid:number) {
-        this.child=spawn('/usr/bin/docker',['exec','-i','--user','0:0','-e','HOME=/runner','-e','USER=runner',container,
-            '/usr/bin/setpriv','--reuid',String(uid),'--regid',String(gid),'--clear-groups','--bounding-set=-all','--inh-caps=-all','--ambient-caps=-all','--no-new-privs','--',
-            '/usr/bin/tini','-s','--','/usr/local/bin/bun','/app/services/runner-auth/worker.ts'],
-            {env:{PATH:'/usr/bin:/bin',HOME:'/root'},stdio:['pipe','pipe','pipe']})
+        this.child=this.launch(container,uid,gid)
         this.child.stdout.setEncoding('utf8')
         this.child.stdout.on('data',(chunk:string)=>{
             this.input+=chunk
@@ -96,13 +98,28 @@ class AuthWorker implements WorkerHandle {
         this.child.stderr.resume()
         this.child.on('error',()=>this.close());this.child.on('close',()=>this.close());this.child.stdin.on('error',()=>this.close())
     }
+    protected launch(container:string,uid:number,gid:number):ChildProcessWithoutNullStreams {
+        return spawn('/usr/bin/docker',['exec','-i','--user','0:0','-e','HOME=/runner','-e','USER=runner',container,
+            '/usr/bin/setpriv','--reuid',String(uid),'--regid',String(gid),'--clear-groups','--bounding-set=-all','--inh-caps=-all','--ambient-caps=-all','--no-new-privs','--',
+            '/usr/bin/tini','-s','--','/usr/local/bin/bun','/app/services/runner-auth/worker.ts'],
+            {env:{PATH:'/usr/bin:/bin',HOME:'/root'},stdio:['pipe','pipe','pipe']})
+    }
     request(action:string,fields:Record<string,unknown>={},touch=true,timeout=action==='heartbeat'?2000:18_000):Promise<unknown> {
         if(this.closed)return Promise.reject(new ControlError('runner_unavailable'))
-        if(this.pending.size>=16)return Promise.reject(new ControlError('runner_busy',429))
+        // Leave one IPC slot for authority heartbeats even while read-only replies
+        // arrive late. The native worker also caps all in-flight commands at 16.
+        const maintenance=action==='heartbeat'||(!touch&&action==='get')
+        if(this.pending.size>=(maintenance?16:15))return Promise.reject(new ControlError('runner_busy',429))
         if(touch&&action!=='heartbeat')this.lastActivity=Date.now()
         if(action==='start')this.pendingStarts++
         const result=new Promise((resolve,reject)=>{
-            const id=randomUUID(),timer=setTimeout(()=>{this.pending.delete(id);reject(new ControlError('native_auth_timeout'));this.close()},Math.min(timeout,18_000))
+            const id=randomUUID(),timer=setTimeout(()=>{
+                reject(new ControlError('native_auth_timeout'))
+                // A metadata read must not terminate somebody else's login. Keep
+                // its slot occupied until the real reply or worker EOF; otherwise
+                // repeated timeouts could overflow the native worker's bound.
+                if(!['status','models'].includes(action)){this.pending.delete(id);this.close()}
+            },Math.min(timeout,18_000))
             this.pending.set(id,{resolve,reject,timer})
             this.child.stdin.write(`${JSON.stringify({requestId:id,action,...fields})}\n`)
         })
@@ -129,9 +146,11 @@ export class RunnerOperator {
     private restoring=false
     private checking=false
     private closed=false
+    private restoreCursor=0
     constructor(private config:OperatorConfig) {
         if(realpathSync(config.state)!==config.state || realpathSync(config.source)!==config.source || ![config.uid,config.gid].every(n=>Number.isSafeInteger(n)&&n>0)) throw new Error('Invalid operator configuration')
         if(config.backendNetwork && !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,80}$/.test(config.backendNetwork))throw new Error('Invalid operator network configuration')
+        assertRootOwnedPath(config.state);assertRootOwnedPath(config.source)
         const hub=new URL(config.hubUrl)
         if(hub.protocol!=='http:'||hub.hostname!=='127.0.0.1'||hub.username||hub.password||hub.pathname!=='/'||hub.search||hub.hash)throw new Error('Operator authority must use the local hub')
         const source=lstatSync(config.source),compose=lstatSync(join(config.source,'deploy/evolved/runner.compose.yml'))
@@ -165,7 +184,10 @@ export class RunnerOperator {
     protected docker(args:string[],timeout?:number){return runDocker(args,timeout)}
     protected createWorker(owner:ControlRequest,container:string):WorkerHandle{return new AuthWorker(owner,container,this.config.uid,this.config.gid)}
     protected pause(duration:number){return new Promise<void>(resolve=>setTimeout(resolve,duration))}
-    protected anchor(r:ControlRequest,expected?:WorkspaceIdentity){return ensureWorkspaceAnchor(this.config.state,r.projectId,r.rootPath,expected)}
+    protected async anchor(r:ControlRequest,expected?:WorkspaceIdentity){
+        try{return await ensureWorkspaceAnchor(this.config.state,r.projectId,r.rootPath,expected)}
+        catch(error){if(error instanceof WorkspaceAnchorError)throw new ControlError(error.code,409);throw error}
+    }
     private paths(r:ControlRequest){
         const directory=join(this.config.state,'runners',r.projectId)
         const workspace=join(directory,'workspace')
@@ -179,19 +201,35 @@ export class RunnerOperator {
             return JSON.parse(readFileSync(paths.metadata,'utf8')) as Metadata
         }catch{return null}
     }
+    private configurationMatches(r:ControlRequest,metadata:Metadata):boolean {
+        try{
+            const p=this.paths(r),info=lstatSync(p.env)
+            if(!info.isFile()||info.uid!==0||(info.mode&0o077)!==0||info.nlink!==1||info.size>8192)return false
+            const env=parseRunnerEnv(readFileSync(p.env,'utf8'));checkRunnerConfig(env)
+            return env.EVOLVED_PROJECT_ID===r.projectId&&env.EVOLVED_RUNNER_PROFILE===metadata.profile
+                &&env.EVOLVED_RUNNER_WORKSPACE===p.workspace&&env.EVOLVED_RUNNER_HOME===p.home&&env.EVOLVED_RUNNER_LEASE_FILE===p.lease
+                &&env.EVOLVED_RUNNER_RESTART_POLICY==='no'&&env.EVOLVED_RUNNER_WORKSPACE_DEVICE===metadata.workspaceIdentity?.device
+                &&env.EVOLVED_RUNNER_WORKSPACE_INODE===metadata.workspaceIdentity?.inode
+        }catch{return false}
+    }
     /** Docker auto-restart is disabled for managed runners. After a reboot only
      * this lease-checked path restores the pinned mount before starting them. */
     private async restoreManagedRunners(){
         if(this.closed||this.restoring)return
         this.restoring=true
         try{
-            for(const projectId of readdirSync(join(this.config.state,'runners')).filter(id=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id)).slice(0,32)){
+            const ids=readdirSync(join(this.config.state,'runners')).filter(id=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id)).sort()
+            const start=this.restoreCursor%Math.max(ids.length,1),count=Math.min(32,ids.length)
+            const batch=Array.from({length:count},(_,index)=>ids[(start+index)%ids.length]!)
+            this.restoreCursor=(start+count)%Math.max(ids.length,1)
+            for(const projectId of batch){
                 if(this.closed)break
                 try{await this.operations.run(projectId,async()=>{
                     const metadata=this.metadata({projectId} as ControlRequest)
                     if(!metadata||!validWorkspaceIdentity(metadata.workspaceIdentity)||!['restricted','workspace','extended'].includes(metadata.profile)
                         ||!/^\/(?:managed-workspaces|workspaces)\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(metadata.rootPath))return
                     const r={...metadata,projectId} as ControlRequest,p=this.paths(r),leaseInfo=lstatSync(p.lease)
+                    if(!this.configurationMatches(r,metadata))return
                     if(!leaseInfo.isFile()||leaseInfo.nlink!==1||leaseInfo.uid!==this.config.uid||(leaseInfo.mode&0o077)!==0||leaseInfo.size>128)return
                     const token=readFileSync(p.lease,'utf8').trim()
                     if(!/^[A-Za-z0-9_-]{43}$/.test(token))return
@@ -218,6 +256,9 @@ export class RunnerOperator {
         const remaining=()=>{const time=deadline-Date.now();if(time<=0||this.closed)throw new ControlError('runner_start_failed');return time}
         try {
             const p=this.paths(r),previous=this.metadata(r)
+            // Root changes are not a public project operation. Do not silently
+            // replace an existing trusted inode during external maintenance.
+            if(previous&&previous.rootPath!==r.rootPath)throw new ControlError('workspace_identity_changed',409)
             if(!r.leaseToken && (!previous||!sameRunner(previous,r))) throw new ControlError('runner_config_missing')
             let restored=false
             if(r.leaseToken){
@@ -235,8 +276,8 @@ export class RunnerOperator {
                 const values={EVOLVED_UID:this.config.uid,EVOLVED_GID:this.config.gid,EVOLVED_PROJECT_ID:r.projectId,EVOLVED_PROJECT_DIRECTORY:r.rootPath.slice(prefix.length+1),EVOLVED_RUNNER_PROFILE:r.profile,EVOLVED_WORKSPACE_MODE:r.profile==='restricted'?'ro':'rw',EVOLVED_RUNNER_WORKSPACE:anchor.path,EVOLVED_RUNNER_HOME:p.home,EVOLVED_RUNNER_LEASE_FILE:p.lease,EVOLVED_WORKSPACE_PREFIX:prefix,EVOLVED_BACKEND_NETWORK:this.config.backendNetwork??'hapi-evolved_backend',EVOLVED_RUNNER_RESTART_POLICY:'no',EVOLVED_RUNNER_WORKSPACE_DEVICE:anchor.identity.device,EVOLVED_RUNNER_WORKSPACE_INODE:anchor.identity.inode}
                 const content=Object.entries(values).map(([key,value])=>`${key}=${value}`).join('\n')+'\n'
                 checkRunnerConfig(parseRunnerEnv(content))
-                writeFileSync(p.env,content,{mode:0o600})
-                writeFileSync(p.metadata,JSON.stringify({leaseId:r.leaseId,rootPath:r.rootPath,profile:r.profile,workspaceIdentity:anchor.identity}),{mode:0o600})
+                writePrivateAtomic(p.env,content)
+                writePrivateAtomic(p.metadata,JSON.stringify({leaseId:r.leaseId,rootPath:r.rootPath,profile:r.profile,workspaceIdentity:anchor.identity}))
             }else{
                 if(!existsSync(p.env)||!validWorkspaceIdentity(previous?.workspaceIdentity))throw new ControlError('runner_config_missing')
                 restored=(await this.anchor(r,previous.workspaceIdentity)).restored
@@ -272,7 +313,7 @@ export class RunnerOperator {
         if(worker?.closed){this.workers.delete(r.projectId);worker=undefined}
         if(['get','code','cancel'].includes(r.action)){
             if(!worker||!sameOwner(worker.owner,r)||worker.jobs.get(r.operationId!)?.provider!==r.provider)throw new ControlError('operation_not_found',404)
-        }else if(worker&&!sameOwner(worker.owner,r)&&r.action!=='status'){
+        }else if(worker&&!sameOwner(worker.owner,r)&&!['status','models'].includes(r.action)){
             if(worker.busy())throw new ControlError('login_busy',409)
             worker.close();this.workers.delete(r.projectId);worker=undefined
         }
@@ -297,8 +338,12 @@ export class RunnerOperator {
         if(r.provider)fields.provider=r.provider
         if(r.operationId)fields.operationId=r.operationId
         if(r.code)fields.code=r.code
+        if(r.action==='models'&&r.refresh!==undefined)fields.refresh=r.refresh
         const result=await worker.request(r.action,fields)
-        if(!await this.authority(r)){this.dropWorker(r.projectId,worker);throw new ControlError('authority_lost',403)}
+        if(!await this.authority(r)){
+            if(sameOwner(worker.owner,r))this.dropWorker(r.projectId,worker)
+            throw new ControlError('authority_lost',403)
+        }
         return result
     }
     close(){this.closed=true;this.operations.close();clearInterval(this.timer);clearInterval(this.restoreTimer);for(const worker of this.workers.values())worker.close();this.workers.clear()}

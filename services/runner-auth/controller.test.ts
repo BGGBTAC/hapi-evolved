@@ -137,6 +137,17 @@ test('same-provider concurrent starts share one flow while providers remain isol
     expect(f.calls().filter(call => call.provider === 'codex' && call.args.includes('--device-auth'))).toHaveLength(1)
 })
 
+test('model discovery for either provider never probes or disrupts a pending native login', async () => {
+    const f = await fixture(), { operation } = await f.controller.start('claude')
+    await waitFor(f.controller, 'claude', operation.id, 'waiting')
+    const calls = f.calls().length
+    expect(await f.controller.models('claude', true)).toMatchObject({ status: 'unavailable', models: [], checkedAt: null })
+    expect(await f.controller.models('codex', true)).toMatchObject({ status: 'unavailable', models: [], checkedAt: null })
+    expect(f.calls()).toHaveLength(calls)
+    expect(f.controller.get('claude', operation.id).operation.state).toBe('waiting')
+    expect(() => process.kill(Number(readFileSync(join(f.home, 'claude.pid'), 'utf8')), 0)).not.toThrow()
+})
+
 test('explicit cancellation terminates the child process group, including descendants and a SIGTERM-resistant parent', async () => {
     const f = await fixture('descendant')
     const { operation } = await f.controller.start('codex')
@@ -314,4 +325,16 @@ test('IPC rejects oversized input and generic errors never echo malformed payloa
     source.write('x'.repeat(8_193))
     await service.closed
     await expect(f.controller.start('codex')).rejects.toMatchObject({ code: 'closed' })
+})
+
+test('IPC correlates rejected request fields so invalid code input cannot strand the caller until timeout', async () => {
+    const f = await fixture(), source = new PassThrough(), sink = new PassThrough(), replies: any[] = []
+    sink.on('data', chunk => { for (const line of chunk.toString().trim().split('\n')) replies.push(JSON.parse(line)) })
+    const service = serveRequests(f.controller, source, sink)
+    source.write(`${JSON.stringify({ requestId: 'bad-code', action: 'code', provider: 'claude', operationId: '11111111-1111-4111-8111-111111111111', code: 'x'.repeat(2101) })}\n`)
+    source.write(`${JSON.stringify({ requestId: 'still-alive', action: 'heartbeat' })}\n`)
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(replies).toContainEqual({ requestId: 'bad-code', error: { code: 'invalid_request', message: 'Ungültiger Anmeldecode.' } })
+    expect(replies).toContainEqual({ requestId: 'still-alive', result: { ok: true } })
+    await service.close()
 })

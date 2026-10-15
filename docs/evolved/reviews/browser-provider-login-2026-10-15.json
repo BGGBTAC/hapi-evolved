@@ -1,0 +1,341 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-10-15T16:18:13.945414+00:00",
+  "scope": "Browser native Codex/Claude subscription login, constrained root operator, managed runner provisioning, workspace bind anchors and lease-authorized restart lifecycle. Subsequent model-catalog additions are reviewed separately.",
+  "verdict": "No blocking source findings remain after actual Claude Opus 5.5 anchor closure; the required final isolated VM anchor/login integration passed. This does not claim human provider login or model inference.",
+  "actualCalls": [
+    {
+      "stage": "design",
+      "at": "2026-10-15T15:09:48.244280+00:00",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "sourceBaseCommit": "71d5bb50b8429f5b8a02161d3605eb67ad2284e6",
+      "inputSha256": "9e2ec9147a2979f46ba699a16fa738c54b0aaf4c95bed20dc9fc0026062243a9",
+      "outputSha256": "2865270f5ac515bf06b7de2e8b16ab38d7efd56e67b524f4874cfc41a42c571d"
+    },
+    {
+      "stage": "final",
+      "at": "2026-10-15T15:32:19.307106+00:00",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "sourceBaseCommit": "71d5bb50b8429f5b8a02161d3605eb67ad2284e6",
+      "inputSha256": "3a39152c35ba308a61c4e280207e7468ab39abeb8c431a5098108414c0fa536c",
+      "outputSha256": "af28d7992e3d50b26ee1acf9d8baff3a3509619d092d612ffd027ee8da761f1e"
+    },
+    {
+      "stage": "mount-design",
+      "at": "2026-10-15T15:41:33.808320+00:00",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "sourceBaseCommit": "71d5bb50b8429f5b8a02161d3605eb67ad2284e6",
+      "inputSha256": "bc76129116c5d3d874c52e881ee80004fdf53db847c27dab05d9d28d37edd6c0",
+      "outputSha256": "6832b9f1f5f2abfb2782f242c73393373643ec3c36817c795c839ebe7aeb463e"
+    },
+    {
+      "stage": "closeout",
+      "at": "2026-10-15T15:50:58.040037+00:00",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "sourceBaseCommit": "71d5bb50b8429f5b8a02161d3605eb67ad2284e6",
+      "inputSha256": "f9656e2e5d1a05eb2b6ce82f8c8bec662368df20c8c9a56620d04f398ba70aee",
+      "outputSha256": "42289a4b83683e67cada3b8267e9d025e2ae0d15df68d3a0e6ab9e36f4ec3205"
+    },
+    {
+      "stage": "anchor-closure",
+      "at": "2026-10-15T16:06:01.185209+00:00",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "sourceBaseCommit": "69f29d107d302cbab9f4b0323cd167ab63fc033d",
+      "inputSha256": "96ec5bd78650a868a78bb285e4b64d816b460ed1a29951f89895c9407c456bce",
+      "outputSha256": "a831087dc2241130f4d6201c39df00a2cf9c82f83fbf2edf65072aee047d5a38"
+    }
+  ],
+  "acceptedFindings": [
+    {
+      "id": "worker-lifecycle",
+      "source": "services/runner-control/operator.ts",
+      "problem": "Visited-project workers could retain global capacity and cached pending jobs indefinitely.",
+      "resolution": "Idle workers expire; job deadlines and heartbeat terminal-state refresh bound ownership. Project operations serialize worker creation and bound queued requests.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "native-shutdown-budget",
+      "source": "services/runner-auth/controller.ts",
+      "problem": "Native command chains and inherited pipes could exceed control deadlines or pin shutdown.",
+      "resolution": "Status/command budgets are bounded; cleanup destroys held streams after a hard deadline; same-process-group descendants are killed. Logout checks its target and keeps other status cached.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "stdout-status-parser",
+      "source": "services/runner-auth/controller.ts",
+      "problem": "Warnings on stderr could corrupt Claude JSON status.",
+      "resolution": "Parse stdout separately while maintaining a shared output byte budget.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "actionable-recovery",
+      "source": "hub/src/evolved/providers.ts",
+      "problem": "Missing operator configuration and missing operations were mapped to generic failures.",
+      "resolution": "Preserve sanitized error codes and clear stale provider challenges; missing configuration can be reconstructed through a new explicit connection.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "provisioning-readiness",
+      "source": "services/runner-control/operator.ts",
+      "problem": "Provisioning could exceed the outer deadline or treat a single running observation as readiness.",
+      "resolution": "One overall preparation budget and repeated stable boot observations precede success; isolated VM test uses stable readiness after restore.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "host-workspace-toctou",
+      "source": "services/runner-control/workspaceAnchor.ts",
+      "problem": "A Hub-writable source path could be replaced between validation and Docker bind resolution.",
+      "resolution": "A fixed root helper enters the host mount namespace, opens parent/child with NOFOLLOW, and duplicates the held source FD into mount as FD3. Docker uses only a protected stable anchor; inode identity is checked before starting agents.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "helper-deadline-and-partial-mount",
+      "source": "services/runner-control/workspaceAnchor.ts",
+      "problem": "Helper timeout could leave an unowned mount child or a partially configured mount.",
+      "resolution": "One outer process group includes helper and mount children, inner deadlines leave rollback time, source is /proc/self/fd/3, new failed mounts get rollback, and existing anchors also receive make-private.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "restart-anchor-integrity",
+      "source": "services/runner-control/operator.ts",
+      "problem": "Docker automatic restart could use an un-restored anchor after reboot.",
+      "resolution": "Managed restart policy is no. Root-owned saved metadata plus live lease authority restore the anchor before starting; Supervisor validates device/inode. Atomic per-file configuration writes are cross-checked for consistency.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "restore-starvation",
+      "source": "services/runner-control/operator.ts",
+      "problem": "A fixed first-32 batch never restored later projects.",
+      "resolution": "Rotate the sorted project batch cursor; a 40-project regression proves eventual coverage.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "workspace-identity-diagnosis",
+      "source": "hub/src/evolved/providers.ts",
+      "problem": "External workspace replacement failed with a generic unavailable error.",
+      "resolution": "Keep identity changes fail-closed, report workspace_identity_changed HTTP409, and document explicit administrator maintenance without deleting private homes or project data.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "state-ancestor-ownership",
+      "source": "services/runner-control/workspaceAnchor.ts",
+      "problem": "A writable ancestor could rename a root-owned anchor directory.",
+      "resolution": "Require root-owned non-writable ancestors for state, release source, helper and runtime. Service-owned subdirectories retain their UID and are individually mounted.",
+      "closeout": "resolved"
+    }
+  ],
+  "rejectedOrQualifiedAdvice": [
+    {
+      "advice": "Bind a private operator namespace FD through /proc/operatorPID/fd after switching only the mount child to the host namespace.",
+      "disposition": "Rejected. Linux bind mount namespace ownership checks require source opening in the host namespace. The fixed helper switches namespace/root before opening."
+    },
+    {
+      "advice": "Use /proc/operatorPID/fd directly as a persistent Docker bind source.",
+      "disposition": "Rejected. Saved Docker config would depend on a process/FD lifetime. Stable root-protected anchors survive operator restarts."
+    },
+    {
+      "advice": "Automatically unmount and trust a new workspace inode during ordinary reconnect.",
+      "disposition": "Qualified and not implemented. Public project APIs only set rootPath at creation; replacement is explicit administrator maintenance and stays fail-closed."
+    },
+    {
+      "advice": "Require a fresh passkey again when completing an already-started native challenge after five minutes.",
+      "disposition": "Not adopted. Start is fresh-passkey protected; bounded continuation is bound to the original live human session, operation owner and current administrator authority. A second reauthentication rotates the session and would strand the challenge."
+    },
+    {
+      "advice": "The UI presents API key authentication as a subscription.",
+      "disposition": "Rejected by source and regression: ProviderLogin renders API-Schlüssel eingerichtet separately; the subsequent actual closeout recognized the correction."
+    }
+  ],
+  "preservedRequirements": [
+    "No Docker socket in the Hub; only a fixed authenticated narrow Unix operator protocol reaches host-root actions.",
+    "Provider credentials remain in the private native Runner home. Browser receives structured challenges/status, never raw native stdout or persistent provider tokens.",
+    "Commands, paths, images and privilege drop are fixed; requesters cannot supply shell commands or arbitrary filesystem destinations.",
+    "Login ownership and live original-session/project/profile/lease checks remain enforced.",
+    "Existing provider homes and project files survive reconnect, recovery and normal updates."
+  ],
+  "primarySources": [
+    {
+      "url": "https://man7.org/linux/man-pages/man8/mount.8.html",
+      "claim": "--no-canonicalize disables userspace path canonicalization for descriptor-based bind sources."
+    },
+    {
+      "url": "https://raw.githubusercontent.com/torvalds/linux/v6.12/fs/namespace.c",
+      "claim": "__do_loopback checks source mount namespace ownership; source FDs must be opened in the host namespace used for the bind."
+    },
+    {
+      "url": "https://docs.docker.com/engine/containers/start-containers-automatically/",
+      "claim": "Managed restart:no lets the operator restore and authorize anchors before containers restart."
+    }
+  ],
+  "verificationEvidence": [
+    {
+      "check": "Anchor/control/provider regressions",
+      "result": {
+        "passed": 27,
+        "failed": 0,
+        "assertions": 133
+      },
+      "logFile": "evolved-anchor-fixes-tests.log",
+      "logSha256": "c16fbc3f4b64e27c932a908475399bc2cfa70055df9e839e69e12d439a6b8b73",
+      "verification": "Actual execution by implementation/coordinator agents; log inspected by Codex reviewer. Claude reviewed source and did not execute tests."
+    },
+    {
+      "check": "Native controller lifecycle",
+      "result": {
+        "passed": 20,
+        "failed": 0,
+        "assertions": 89
+      },
+      "logFile": "evolved-native-auth-controller-tests.log",
+      "logSha256": "8c268287a1ce7f4f187c74d21a8280413efd52627f2cae9f25aff89904b73c68",
+      "verification": "Actual execution by implementation/coordinator agents; log inspected by Codex reviewer. Claude reviewed source and did not execute tests."
+    },
+    {
+      "check": "Runner control typecheck",
+      "result": {
+        "status": "passed"
+      },
+      "logFile": "evolved-anchor-control-typecheck.log",
+      "logSha256": "3065ace610a0105b4c257582e55ef899c8f4ceadc8c850eb746823d5cab622d3",
+      "verification": "Actual execution by implementation/coordinator agents; log inspected by Codex reviewer. Claude reviewed source and did not execute tests."
+    },
+    {
+      "check": "Real isolated VM anonymous login/anchor integration",
+      "result": {
+        "passed": true,
+        "exitCode": 0,
+        "runtimeSeconds": 35.214
+      },
+      "logFile": "evolved-browser-login-vm-anonymous-final.log",
+      "logSha256": "ddbcf7c06900ef2459b963e7070b0731e60d95cafcec10abc8d6f9d3df0337a0",
+      "verification": "Actual execution by implementation/coordinator agents; log inspected by Codex reviewer. Claude reviewed source and did not execute tests."
+    }
+  ],
+  "reviewedSourceSha256": [
+    {
+      "path": "services/runner-auth/controller.ts",
+      "sha256": "3864e641a8d7245d3769442d11f05804f9cff978568a867e21721e0247587ebf"
+    },
+    {
+      "path": "services/runner-auth/worker.ts",
+      "sha256": "cc3d4b81d69d4b8e235d10e5a44b16c91550e4d5b95d892e1085baac5ab21548"
+    },
+    {
+      "path": "services/runner-auth/controller.test.ts",
+      "sha256": "039180c8b111339e63d1b0a5d13a4ca3de143d2783b9dc736be87b76efa09f7a"
+    },
+    {
+      "path": "services/runner-control/operator.ts",
+      "sha256": "1bce8ded11f26cae80daf8dbe9aa13b63842c32dffff528c9630e21dd8a8ec87"
+    },
+    {
+      "path": "services/runner-control/server.ts",
+      "sha256": "f03caae5b07ed6cd44885b07e018390353b5f8196bbd24e86c005fa7c9d68ddb"
+    },
+    {
+      "path": "services/runner-control/workspaceAnchor.ts",
+      "sha256": "54da4b94c12fa2657a73eabc4990973c0f2a2ab49f8c9676651cbf724b34f021"
+    },
+    {
+      "path": "services/runner-control/anchor-helper.ts",
+      "sha256": "9753e0fa517d00165d15a0e260163696ac96f0c942035758874946f369d891af"
+    },
+    {
+      "path": "deploy/evolved/hapi-evolved-control.service",
+      "sha256": "4faa5c00abf58760f9d7e98141e0ffdbf4720fe8607d27c4e611bb984576f569"
+    },
+    {
+      "path": "deploy/evolved/check-browser-login.ts",
+      "sha256": "5aabe61287e3d567446ef6ee389e429b43f5ade891a7bb722a9f37db47347f95"
+    },
+    {
+      "path": "services/runner-control/protocol.test.ts",
+      "sha256": "1461a7e65103db3f0d02feb2b5f3be5d68fd2c3d821c45bb98dc719155a47f4e"
+    },
+    {
+      "path": "hub/src/evolved/providers.ts",
+      "sha256": "caec0e8e587a8de92f05919c4363d2ed36942e9404bc834375abf567e0716ccc"
+    },
+    {
+      "path": "hub/src/evolved/providers.test.ts",
+      "sha256": "b468b98bafc02741b15489470b47c7228127240edc73c298a776f8ea3d48f726"
+    },
+    {
+      "path": "hub/src/evolved/runnerControlProtocol.ts",
+      "sha256": "a25ba7e26d48c5ceada9405deab38705c99d03406bc3a0226f448d8be69befaf"
+    },
+    {
+      "path": "deploy/evolved/runner.compose.yml",
+      "sha256": "2c2ef8173008188564001efa84101ddded7d351ace43359c4b2d6657bc453195"
+    },
+    {
+      "path": "deploy/evolved/Runner.Dockerfile",
+      "sha256": "79744343001a9d19989a52dc63d83342cd35540b821c0b05e469e17601ba135a"
+    },
+    {
+      "path": "services/runner-proxy/supervisor.ts",
+      "sha256": "7eeee41862c8df0f6d30305dfa178a212320a5ba447376b8ac33f09b96bcb0a5"
+    },
+    {
+      "path": "web/src/evolved/ProviderLogin.tsx",
+      "sha256": "33a0625f40dd882f783b713457119f83b2ba118e5685e34ad18e0191912aba35"
+    },
+    {
+      "path": "web/src/evolved/ProviderLogin.test.tsx",
+      "sha256": "1747c77e68c6626cfc9f4d769b70ad5b05d3467b279c7706f8d18c5f56beda24"
+    },
+    {
+      "path": "web/src/evolved/AgentsPlugins.tsx",
+      "sha256": "ceab0056fad0fd8651908316c42333d71a6dc3c0625cb0d943ff48774d2db894"
+    },
+    {
+      "path": "web/src/evolved/AgentsPlugins.test.tsx",
+      "sha256": "f131d06f1a49828fa964adb3be530a001ef5f6780f0090dbe8488aa9cec2997e"
+    },
+    {
+      "path": "services/runner-control/workspaceAnchor.test.ts",
+      "sha256": "a118905159a6b1a8b77559dbc42ed969a3ed15eb83eb9518ef0a68ff08182a25"
+    },
+    {
+      "path": "services/runner-control/operator.test.ts",
+      "sha256": "89362ee411d408a2ef4337b22425a9e4220f91eccbd34aeb3813259c6dbdaafc"
+    },
+    {
+      "path": "docs/evolved/DEPLOYMENT.md",
+      "sha256": "d7559af3508887618a9ed2e6da535fe1d99b2d6c9d48d5ea31cad578319b2be1"
+    }
+  ],
+  "postReviewChanges": [
+    {
+      "path": "docs/evolved/DEPLOYMENT.md",
+      "change": "Clarify initial service-UID setup before root ownership, immutable state updates, file-based backup anchor exclusions, new-inode restore recovery and private metadata preservation."
+    },
+    {
+      "scope": "Native model discovery and picker integration",
+      "change": "Subsequent source changes are evaluated by the separate native model catalog review record; they are not claimed as part of this earlier login/anchor snapshot."
+    }
+  ],
+  "postReviewSourceSha256": [
+    {
+      "path": "docs/evolved/DEPLOYMENT.md",
+      "sha256": "83fdc429322e0a460045a58211331f8b9ee97d9c917a80152cc5079c4a3489a1"
+    }
+  ],
+  "limits": [
+    "Anonymous native challenge flows were tested; no real human provider consent, subscription use or model inference was performed.",
+    "The VM test used isolated accounts, homes, containers and networks; no human credentials were inspected.",
+    "Same-group process cleanup and bounded escaped-pipe handling are verified; no promise to terminate arbitrary unrelated process groups is made.",
+    "Root release trees must be installed fully root-owned. Per-file atomicity does not imply a two-file transaction; inconsistency blocks automatic restoration.",
+    "Raw prompts/replies stay outside the repository. This sanitized record includes metadata, source hashes and dispositions only."
+  ]
+}

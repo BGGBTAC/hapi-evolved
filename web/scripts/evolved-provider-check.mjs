@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const state = mkdtempSync('/tmp/hapi-evolved-ui-provider-');
 const output = mkdtempSync('/tmp/hapi-provider-browser-');
-const report = { fixture: 'real Hub/Vault/WebAuthn and built UI; provider API responses are synthetic; no live provider login', checks: [], views: [], failures: [] };
+const report = { fixture: 'real Hub/Vault/WebAuthn and built UI; provider/model API responses and the agent-start machine are synthetic; no live provider login or model inference', checks: [], views: [], failures: [] };
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function port() { const server = createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); const value = server.address().port; await new Promise(resolve => server.close(resolve)); return value; }
 const hub = await port(), vault = await port(), graph = await port(), origin = `http://localhost:${hub}`;
@@ -51,13 +51,19 @@ try {
     const { team } = await request('/teams', { name: 'Browser design team' });
     const { project } = await request('/projects', { teamId: team.id, name: 'Dein Projekt' });
     const connected = { codex: false, claude: false }, operations = new Map();
-    let rejectedCodes = 0, cancellations = 0, logouts = 0;
+    let rejectedCodes = 0, cancellations = 0, logouts = 0, modelRefreshes = 0;
+    const catalogReady = new Set();
     await page.route('**/api/evolved/projects/*/providers**', async route => {
         const url = new URL(route.request().url()), method = route.request().method();
         const suffix = url.pathname.split('/providers')[1].split('/').filter(Boolean), provider = suffix[0];
         const summary = () => ({ runner: { status: 'ready', managed: true }, providers: ['codex', 'claude'].map(provider => ({ provider, status: connected[provider] ? 'connected' : 'disconnected', method: connected[provider] ? 'subscription' : null, checkedAt: Date.now() })) });
         let result, status = 200;
-        if (!provider) result = summary();
+        if (suffix[1] === 'models') {
+            if (method === 'POST' && suffix[2] === 'refresh') { catalogReady.add(provider); modelRefreshes++; }
+            const ready = catalogReady.has(provider);
+            result = { provider, status: ready ? 'ready' : 'unavailable', method: ready ? 'subscription' : null, source: 'native-cli', catalogOrigin: 'native-reported', entitlementVerified: false, upstreamRefresh: 'unknown', stale: !ready, checkedAt: ready ? Date.now() : null, expiresAt: ready ? Date.now() + 300_000 : null, models: ready ? [{ id: provider === 'claude' ? 'opus' : 'codex-native-example', label: provider === 'claude' ? 'Opus · CLI-Katalog' : 'Codex · CLI-Katalog', ...(provider === 'claude' ? { resolvedModel: 'claude-opus-5-5' } : {}), reasoningEfforts: ['low', 'high'] }] : [] };
+        }
+        else if (!provider) result = summary();
         else if (suffix.length === 1 && method === 'DELETE') { connected[provider] = false; logouts++; result = summary(); }
         else if (suffix[1] === 'login' && suffix.length === 2 && method === 'POST') {
             const operation = { id: `fixture-${provider}`, provider, state: 'waiting', flow: provider === 'codex' ? 'device' : 'code', expiresAt: Date.now() + 600_000, verificationUrl: provider === 'codex' ? 'https://auth.openai.com/codex/device' : 'https://claude.com/cai/oauth/authorize?state=synthetic', ...(provider === 'codex' ? { userCode: 'AAAA-BBBBB' } : {}) };
@@ -124,11 +130,30 @@ try {
     await page.reload();
     if (!await page.getByRole('radio', { name: 'Iris', exact: true }).isChecked()) throw Error('Palette not persisted');
     await capture('appearance-iris', 390, 'dark');
+    // The real built-in catalog remains authoritative; only a synthetic online
+    // machine enables the launch form. This harness never submits a paid task.
+    await page.route('**/api/evolved/projects/*/agent-catalog', async route => {
+        const response = await route.fetch();
+        const body = await response.json();
+        await route.fulfill({ response, json: { ...body, machines: [{ id: 'synthetic-runner', name: 'Projektdienst · Browser-Test' }] } });
+    });
     await navigate('agents');
     await page.getByText('Architektur', { exact: true }).waitFor();
     await capture('agents', 1440);
     await capture('agents', 320);
     report.checks.push('Real built-in agent catalog reachable through the new navigation');
+    await page.locator('.ev-agent-card').filter({ has: page.getByText('Architektur', { exact: true }) }).getByRole('button', { name: 'Aufgabe starten', exact: true }).click();
+    const modelPicker = page.getByRole('combobox', { name: 'Modell für diesen Start (optional)' });
+    await page.getByRole('option', { name: /Opus · CLI-Katalog/ }).waitFor({ state: 'attached' });
+    await modelPicker.selectOption('opus');
+    if (modelRefreshes !== 1) throw Error('Cold admin catalog did not use exactly one explicit discovery POST');
+    await modelPicker.scrollIntoViewIfNeeded();
+    await capture('agent-model-catalog', 390, 'dark');
+    await capture('agent-model-catalog', 320, 'light');
+    await page.getByRole('button', { name: 'Liste aktualisieren', exact: true }).click();
+    await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent === 'Liste aktualisieren' && !button.disabled));
+    if (await modelPicker.inputValue() !== 'opus' || modelRefreshes !== 2) throw Error('Explicit catalog refresh lost selected model');
+    report.checks.push('Synthetic native catalog: automatic cold-admin POST, resolved model selection, explicit refresh preserves selected ID; no task submitted');
     report.checks.push('18px native radio controls with >=44px labels; no viewport overflow; profiles persist after reload');
     if (consoleErrors.length) throw Error(`Browser exceptions: ${consoleErrors.join('; ')}`);
     report.checks.push('No browser runtime exceptions');

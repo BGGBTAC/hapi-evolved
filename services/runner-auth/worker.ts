@@ -4,24 +4,25 @@ import { NativeAuthController, AuthError, type Provider } from './controller'
 
 const MAX_LINE = 8_192
 const HEARTBEAT_TIMEOUT = 10_000
-type Request = { requestId: string; action: string; provider?: Provider; operationId?: string; code?: string }
+type Request = { requestId: string; action: string; provider?: Provider; operationId?: string; code?: string; refresh?: boolean }
 
 export function parseRequest(value: unknown): Request {
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new AuthError('invalid_request', 'Ungültige Anfrage.')
     const request = value as Record<string, unknown>
     if (typeof request.requestId !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(request.requestId)
-        || typeof request.action !== 'string' || !['status', 'start', 'get', 'code', 'cancel', 'logout', 'heartbeat'].includes(request.action)) {
+        || typeof request.action !== 'string' || !['status', 'start', 'get', 'code', 'cancel', 'logout', 'heartbeat', 'models'].includes(request.action)) {
         throw new AuthError('invalid_request', 'Ungültige Anfrage.')
     }
     const required: Record<string, string[]> = {
-        status: [], heartbeat: [], start: ['provider'], logout: ['provider'],
+        status: [], heartbeat: [], start: ['provider'], logout: ['provider'], models: ['provider'],
         get: ['provider', 'operationId'], cancel: ['provider', 'operationId'], code: ['provider', 'operationId', 'code'],
     }
-    const allowed = ['requestId', 'action', ...required[request.action]!]
+    const allowed = ['requestId', 'action', ...required[request.action]!, ...(request.action === 'models' ? ['refresh'] : [])]
     if (Object.keys(request).some(key => !allowed.includes(key)) || required[request.action]!.some(key => !(key in request))) throw new AuthError('invalid_request', 'Ungültige Anfrage.')
     if ('provider' in request && request.provider !== 'codex' && request.provider !== 'claude') throw new AuthError('invalid_request', 'Unbekannter Anbieter.')
     if ('operationId' in request && (typeof request.operationId !== 'string' || !/^[a-f0-9-]{36}$/.test(request.operationId))) throw new AuthError('invalid_request', 'Ungültiger Anmeldevorgang.')
     if ('code' in request && (typeof request.code !== 'string' || request.code.length > 2_100)) throw new AuthError('invalid_request', 'Ungültiger Anmeldecode.')
+    if ('refresh' in request && typeof request.refresh !== 'boolean') throw new AuthError('invalid_request', 'Ungültige Aktualisierungsanfrage.')
     return request as Request
 }
 
@@ -62,12 +63,16 @@ export function serveRequests(controller: NativeAuthController, source: Readable
     const dispatch = async (raw: string) => {
         let requestId: string | null = null
         try {
-            const request = parseRequest(JSON.parse(raw))
+            const value: unknown = JSON.parse(raw)
+            if (value && typeof value === 'object' && 'requestId' in value
+                && typeof value.requestId === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(value.requestId)) requestId = value.requestId
+            const request = parseRequest(value)
             requestId = request.requestId
             let result: unknown
             switch (request.action) {
                 case 'heartbeat': lastHeartbeat = Date.now(); result = { ok: true }; break
                 case 'status': result = await controller.status(); break
+                case 'models': result = await controller.models(request.provider!, request.refresh); break
                 case 'start': result = await controller.start(request.provider!); break
                 case 'get': result = controller.get(request.provider!, request.operationId!); break
                 case 'code': result = await controller.code(request.provider!, request.operationId!, request.code!); break

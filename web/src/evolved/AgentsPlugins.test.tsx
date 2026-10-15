@@ -7,6 +7,7 @@ import { AgentsPluginsPanel } from './AgentsPlugins'
 
 const context = vi.hoisted(() => ({ api: { baseUrl: '', request: vi.fn() }, me: { user: { id: 'human', isAdmin: true } }, project: null as EvolvedProject | null }))
 vi.mock('./auth', () => ({ useEvolved: () => context }))
+vi.mock('./useProviderModels', () => ({ useProviderModels: ({ provider }: { provider: string }) => ({ enabled: true, canRefresh: false, data: { provider, status: 'ready', source: 'native-cli', models: [{ id: 'future-dynamic-model', label: 'Future dynamic model' }] }, isLoading: false, error: null, refresh: vi.fn() }) }))
 vi.mock('@tanstack/react-router', () => ({ Link: ({ to, params, search, children, ...props }: { to: string; params?: { sessionId?: string }; search?: Record<string, string>; children: ReactNode }) => <a href={to.replace('$sessionId', params?.sessionId ?? '') + (search ? `?${new URLSearchParams(search)}` : '')} {...props}>{children}</a> }))
 const agent = { id: 'specialist', name: 'Prüfer', description: 'Prüft das Projekt.', instructions: 'Prüfe sorgfältig.', providerPreference: 'either', skills: [] as string[], origin: 'builtin', available: true }
 const manifest = { schemaVersion: 1, id: 'example', name: 'Example Plugin', version: '1.0.0', description: 'Beispiel-Erweiterung', agents: [{ ...agent, id: 'reviewer' }], skills: [{ id: 'inspect', name: 'Inspektion', description: 'Quellen prüfen', instructions: '<img src="https://tracking.invalid/pixel">' }], themes: [] }
@@ -72,6 +73,25 @@ it('a disabled plugin skill blocks launch and can be explicitly removed from a c
     await waitFor(() => expect(context.api.request).toHaveBeenCalledWith('/agent-catalog/specialist', expect.objectContaining({ method: 'PUT', body: expect.objectContaining({ skills: [] }) })))
 })
 
+it('agent starts submit the selected dynamic model and provider changes clear the previous model', async () => {
+    context.api.request.mockImplementation(async (path: string, options: { body?: Record<string, unknown> }) => {
+        if (path.endsWith('/start')) return { sessionId: 'model-session', operationId: options.body!.operationId, acknowledged: 'persisted' }
+        return path === '/plugins' ? { plugins } : catalog()
+    })
+    mount()
+    fireEvent.click(await screen.findByRole('button', { name: 'Aufgabe starten' }))
+    const picker = screen.getByLabelText('Modell für diesen Start (optional)')
+    expect(screen.getByRole('option', { name: 'Future dynamic model' })).toBeInTheDocument()
+    fireEvent.change(picker, { target: { value: 'future-dynamic-model' } })
+    fireEvent.change(screen.getByLabelText('Anbieter'), { target: { value: 'codex' } })
+    expect(screen.getByLabelText('Modell für diesen Start (optional)')).toHaveValue('')
+    fireEvent.change(screen.getByLabelText('Modell für diesen Start (optional)'), { target: { value: 'future-dynamic-model' } })
+    fireEvent.change(screen.getByLabelText('Aufgabe'), { target: { value: 'Prüfe das neue Modell.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Jetzt starten' }))
+    await screen.findByRole('link', { name: 'Sitzung öffnen' })
+    expect(context.api.request).toHaveBeenCalledWith('/projects/project-1/agent-catalog/specialist/start', expect.objectContaining({ body: expect.objectContaining({ provider: 'codex', model: 'future-dynamic-model' }) }))
+})
+
 it('uncertain start retains exact operation ID and payload; confirmed replay opens the persisted session', async () => {
     const starts: Record<string, unknown>[] = []
     context.api.request.mockImplementation(async (path: string, options: { method?: string; body?: Record<string, unknown> }) => {
@@ -109,6 +129,29 @@ it('preflight rejection allows correcting a task without trapping the user in un
     expect(screen.getByLabelText('Aufgabe')).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Abbrechen' })).toBeEnabled()
     expect(screen.queryByText(/Die Startbestätigung fehlt/)).not.toBeInTheDocument()
+})
+
+it('a later preflight error cannot unlock an already uncertain operation or replace its payload', async () => {
+    const starts: Record<string, unknown>[] = []
+    context.api.request.mockImplementation(async (path: string, options: { body?: Record<string, unknown> }) => {
+        if (path.endsWith('/start')) {
+            starts.push(options.body!)
+            if (starts.length === 1) throw new Error('Antwort verloren')
+            throw new EvolvedApiError('Runner nicht erreichbar', 409, 'runner_unavailable')
+        }
+        return path === '/plugins' ? { plugins } : catalog()
+    })
+    mount()
+    fireEvent.click(await screen.findByRole('button', { name: 'Aufgabe starten' }))
+    fireEvent.change(screen.getByLabelText('Aufgabe'), { target: { value: 'Prüfe das Projekt.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Jetzt starten' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Startbestätigung erneut prüfen' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Runner nicht erreichbar')
+    expect(starts).toHaveLength(2)
+    expect(starts[1]).toEqual(starts[0])
+    expect(screen.getByLabelText('Aufgabe')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Aufgabe starten' })).toBeDisabled()
+    expect(screen.getByText(/Die Startbestätigung fehlt/)).toBeInTheDocument()
 })
 
 it('an uncertain start gets a new operation ID only after explicit recovery confirmation, never on cancel', async () => {

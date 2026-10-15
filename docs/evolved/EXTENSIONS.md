@@ -10,6 +10,8 @@ Dateien, Gedächtnis und Berechtigungen werden dadurch nicht projektübergreifen
 Wähle einen Spezialisten, ein Projekt, dessen laufenden Runner und einen konkreten
 Auftrag. Claude oder Codex kann ausdrücklich ausgewählt werden. Die bevorzugte
 Anbieterwahl und ein optionales Modell sind Voreinstellungen der Definition.
+Ein Modell wird nur bei einer konkreten Anbieterpräferenz übernommen. Bei „Claude
+oder Codex“ bleibt das Startmodell zunächst leer und kann für den Auftrag gewählt werden.
 
 Der Start übernimmt immer das aktuelle Projektprofil. Ein eingeschränktes Projekt
 bleibt für Claude im Planmodus bzw. für Codex schreibgeschützt. Vorlagen können weder
@@ -25,6 +27,9 @@ die Definition bis zur Anpassung ihrer Skill-Auswahl nicht startbar.
 Bei einer unterbrochenen Startantwort zuerst die Projektsitzungen prüfen. Die Oberfläche
 verwendet für denselben Start dieselbe Vorgangs-ID: Ein bestätigter Start liefert dieselbe
 Sitzung zurück; ein unklarer Ausgang erzeugt bei Wiederholung keine zweite Sitzung.
+Nach der Sitzungsprüfung kann ausdrücklich ein neuer Auftrag vorbereitet werden.
+Dieser erhält eine neue Vorgangs-ID und kann eine zusätzliche Sitzung erzeugen;
+ein bereits laufender Auftrag wird dadurch nicht abgebrochen.
 
 ## Ein Plugin installieren
 

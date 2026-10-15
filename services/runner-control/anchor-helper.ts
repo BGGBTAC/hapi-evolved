@@ -1,4 +1,4 @@
-import { pinWorkspaceInHost, validWorkspaceIdentity } from './workspaceAnchor'
+import { pinWorkspaceInHost, validWorkspaceIdentity, WorkspaceAnchorError } from './workspaceAnchor'
 if(import.meta.main){
     const [state,projectId,rootPath,device,inode]=process.argv.slice(2)
     try{
@@ -6,5 +6,8 @@ if(import.meta.main){
         const expected=device||inode?{device:device!,inode:inode!}:undefined
         if(expected&&!validWorkspaceIdentity(expected))throw new Error('Invalid workspace identity')
         console.log(JSON.stringify(await pinWorkspaceInHost(state,projectId,rootPath,expected)))
-    }catch{console.error('Workspace anchor validation failed');process.exit(1)}
+    }catch(error){
+        if(error instanceof WorkspaceAnchorError){console.log(JSON.stringify({error:error.code}));process.exit(0)}
+        console.error('Workspace anchor validation failed');process.exit(1)
+    }
 }

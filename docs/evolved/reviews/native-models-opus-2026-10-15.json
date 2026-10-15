@@ -1,0 +1,360 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-10-15T16:29:52.268037+00:00",
+  "scope": "Native Codex/Claude metadata-only model discovery, bounded lifecycle and account cache, member-readable Hub snapshots, administrator refresh, signed operator control, and dynamic model selection in New Session, Composer and specialists.",
+  "verdict": "Actual Claude Opus 5.5 closure reports no blocking findings and approves the source. The small recommended maintenance-slot follow-up was applied with an additional real operator heartbeat regression. Full repository and final VM deployment results are recorded separately in VALIDATION.md.",
+  "actualCalls": [
+    {
+      "stage": "design",
+      "at": "2026-10-15T16:06:02.358476+00:00",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "sourceBaseCommit": "69f29d107d302cbab9f4b0323cd167ab63fc033d",
+      "inputSha256": "96ec99999bee369bd6e0381e2037980171367579d9e9db9f2055977c1c95fab6",
+      "outputSha256": "367fd68a444dda71214c6e778278383bb75349b866c5653648143f0b61e0ebad"
+    },
+    {
+      "stage": "final",
+      "at": "2026-10-15T16:16:36.017545+00:00",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "sourceBaseCommit": "69f29d107d302cbab9f4b0323cd167ab63fc033d",
+      "inputSha256": "edd9798d66284031da4b2a2d5c40972759e5f9c59c8435ee2cd953f6d9d8950b",
+      "outputSha256": "fd2a7efa1e865fdbaaba2ea3801b029892dd503eb84ac7b486ce44118dc4e99b"
+    },
+    {
+      "stage": "closure",
+      "at": "2026-10-15T16:26:25.260740+00:00",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "sourceBaseCommit": "69f29d107d302cbab9f4b0323cd167ab63fc033d",
+      "inputSha256": "7b162515c5bc891fabb43d61ac5e8c3efa4b3547e24f4cbdef539ac8c7b4f8cc",
+      "outputSha256": "6d671fc4c40aa06bcc19d243d74277c33b3cc127a39116178fbfcec50e846f26"
+    }
+  ],
+  "acceptedFindings": [
+    {
+      "id": "foreign-reader-revocation",
+      "source": "services/runner-control/operator.ts",
+      "problem": "A reader losing its session or role could terminate the active login owned by another administrator.",
+      "resolution": "Only loss of the worker owner authority drops that worker; regressions cover both status and models and successful owner continuation.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "read-timeout-owner-preservation",
+      "source": "services/runner-control/operator.ts",
+      "problem": "A slow queued metadata read could exceed the operator deadline and close a foreign login worker.",
+      "resolution": "Read-only timeout rejects only that caller and retains its pending slot until the real reply or EOF. Fifteen foreground slots leave one for maintenance. Real synthetic child tests verify timeout, bounded backpressure, heartbeat and late reply cleanup.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "model-login-queue-interference",
+      "source": "services/runner-auth/controller.ts",
+      "problem": "Discovery could delay another provider login code or cancellation behind model queries.",
+      "resolution": "Any nonterminal login blocks discovery for either provider before and within the native provider queue. Model status is bounded to 3 seconds and discovery to 8 seconds, with bounded cleanup.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "authentication-snapshot-race",
+      "source": "hub/src/evolved/providers.ts",
+      "problem": "Refresh after initial invalidation could cache an earlier account catalog after logout or code completion.",
+      "resolution": "Invalidate before and in finally after login start, code completion and logout, including lost/error responses. Generation prevents in-flight stale writes; tests exercise refresh between both invalidations.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "cold-refresh-status-loss",
+      "source": "web/src/evolved/useProviderModels.ts",
+      "problem": "Repeated cold mounts or refresh rate limits could erase a valid disconnected or cached status.",
+      "resolution": "Warm only absent or stale ready snapshots. Failed refresh preserves current GET data as stale with an error note; 401/403 clear data. Remount, 429/503 and authorization regressions pass.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "descriptor-model-dispatch",
+      "source": "web/src/components/AssistantChat/HappyComposer.tsx",
+      "problem": "Descriptor sessions used the legacy model callback instead of their descriptor callback.",
+      "resolution": "Use onAgentConfigChange for descriptor model selection, normalize auto/default, and show async rejection in the picker. Regression checks the actual descriptor path.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "native-account-rotation",
+      "source": "services/runner-auth/controller.ts",
+      "problem": "External native account changes during discovery could associate an old reply with a new credential fingerprint.",
+      "resolution": "Compare metadata fingerprints before and after discovery; discard changed results without reading credential contents. A stable retry rediscovers and can then reuse its native cache.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "native-metadata-parsing",
+      "source": "services/runner-auth/modelCatalog.ts",
+      "problem": "Default-ignorable Unicode labels and server-initiated RPC requests with colliding IDs could yield mismatched or rejected catalogs.",
+      "resolution": "Use the Hub-compatible label filter and ignore RPC messages carrying method. Bounded protocol tests cover both.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "invalid-provider-status",
+      "source": "hub/src/evolved/providers.ts",
+      "problem": "Unknown model provider paths raised an internal parse error.",
+      "resolution": "Return sanitized HTTP 400 invalid_provider after membership authorization.",
+      "closeout": "resolved"
+    }
+  ],
+  "preservedRequirements": [
+    "GET model snapshots requires a human project member/admin and never starts a process, provisions a runner, or creates a lease.",
+    "Refresh requires current project administrator authority and an existing ready managed lease; every deduplicated joining caller is reauthorized after await.",
+    "Signed fixed models IPC accepts only the provider and optional boolean refresh; no command, path, shell or prompt is caller-controlled.",
+    "No inference or user prompt is submitted during discovery. Native credentials remain in the private runner home; only file metadata is used for cache binding.",
+    "The response states native-reported provenance, entitlementVerified=false and upstreamRefresh=unknown. CLI-bundled or upstream-cached models are possible; five-minute HAPI freshness is not provider freshness or subscription entitlement.",
+    "No native cache files are removed and no experimental API-key discovery feature is enabled. Explicit refresh bypasses HAPI caches only.",
+    "Default and explicit manual model IDs remain available; existing selections survive refresh. API-key and subscription methods remain distinct.",
+    "Global specialist templates retain current project security profiles and runner permissions."
+  ],
+  "nonblockingDispositions": [
+    {
+      "advice": "Allow heartbeat job GET to consume the reserved maintenance slot.",
+      "disposition": "Applied immediately after closure, narrowed to internal get with touch=false; actual operator heartbeat at fifteen outstanding reads is covered. See postReviewChanges."
+    },
+    {
+      "advice": "Prevent every possible indefinitely hanging read slot.",
+      "disposition": "Deferred. Native command deadlines normally return; any broken worker remains bounded by fifteen foreground requests and sixteen workers, and authority revocation still closes it."
+    },
+    {
+      "advice": "Persist cold-refresh debounce across all React mounts.",
+      "disposition": "Deferred. Absent snapshots may request another bounded metadata warmup; native rate limiting applies and errors now preserve status."
+    },
+    {
+      "advice": "Require both legacy and descriptor callbacks to enable model choice.",
+      "disposition": "Not applied. The descriptor callback is authoritative for descriptor sessions; existing kind, unavailableReason and disabled controls still govern availability. Requiring a redundant legacy callback would disable valid descriptor sessions."
+    },
+    {
+      "advice": "Add exact session-to-managed-runner mismatch detection.",
+      "disposition": "Deferred. Composer props do not reliably expose this relation; existing UI explicitly identifies the selected managed project runner and warns that manual runner accounts/models may differ."
+    },
+    {
+      "advice": "Prove every returned model is currently enabled for the subscribed account.",
+      "disposition": "Not claimed. Supported native discovery protocols do not provide that proof; provider acceptance is checked when a model is used."
+    }
+  ],
+  "verificationEvidence": [
+    {
+      "check": "Hub/operator/protocol/anchor regressions",
+      "result": {
+        "passed": 39,
+        "failed": 0,
+        "assertions": 238
+      },
+      "logFile": "evolved-model-adapter-closeout-tests.log",
+      "logSha256": "29eac7450ae7523e5d2546eabbe54b836d5cd9f89733580e146072e537201b23",
+      "verification": "Executed locally by Codex team; actual Claude reviewed source and did not execute tests."
+    },
+    {
+      "check": "Native auth/model lifecycle",
+      "result": {
+        "passed": 34,
+        "failed": 0,
+        "assertions": 162
+      },
+      "logFile": "evolved-native-model-tests.log",
+      "logSha256": "87f133add8b126c3cda43dc3fa0b3290448e812cd837c793c2656d2c61ebdef3",
+      "verification": "Executed locally by Codex team; actual Claude reviewed source and did not execute tests."
+    },
+    {
+      "check": "Model UI regressions",
+      "result": {
+        "passed": 92,
+        "failed": 0
+      },
+      "logFile": "evolved-model-review-delta-tests.log",
+      "logSha256": "1124e16d6a0815afb20f00658e985dde6b97a34b18969481cc07c9bbb56f5b6e",
+      "verification": "Executed locally by Codex team; actual Claude reviewed source and did not execute tests."
+    },
+    {
+      "check": "Hub typecheck",
+      "result": {
+        "status": "passed"
+      },
+      "logFile": "evolved-model-hub-typecheck.log",
+      "logSha256": "6e0c423dcae445f4147b9c3326cf723025cda182e303a2e767f97ff3f0800a2a",
+      "verification": "Executed locally by Codex team; actual Claude reviewed source and did not execute tests."
+    },
+    {
+      "check": "Operator typecheck",
+      "result": {
+        "status": "passed"
+      },
+      "logFile": "evolved-model-control-typecheck.log",
+      "logSha256": "3065ace610a0105b4c257582e55ef899c8f4ceadc8c850eb746823d5cab622d3",
+      "verification": "Executed locally by Codex team; actual Claude reviewed source and did not execute tests."
+    },
+    {
+      "check": "Native worker typecheck",
+      "result": {
+        "status": "passed"
+      },
+      "logFile": "evolved-native-model-typecheck.log",
+      "logSha256": "8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92",
+      "verification": "Executed locally by Codex team; actual Claude reviewed source and did not execute tests."
+    },
+    {
+      "check": "Web typecheck",
+      "result": {
+        "status": "passed"
+      },
+      "logFile": "evolved-model-review-delta-tsc.log",
+      "logSha256": "8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92",
+      "verification": "Executed locally by Codex team; actual Claude reviewed source and did not execute tests."
+    },
+    {
+      "check": "Built web bundle",
+      "result": {
+        "status": "passed"
+      },
+      "logFile": "evolved-model-review-delta-build.log",
+      "logSha256": "519e4cef1ded99e8a61e4f4dc6bc08740374fb0ecfe82ed23f33ded25192848d",
+      "verification": "Executed locally by Codex team; actual Claude reviewed source and did not execute tests."
+    },
+    {
+      "check": "Anonymous real native CLI protocol smoke",
+      "result": {
+        "status": "passed",
+        "codexReportedModels": 7,
+        "claudeReportedModels": 5,
+        "authenticated": false,
+        "inference": false
+      },
+      "logFile": "evolved-native-model-smoke.log",
+      "logSha256": "09dd9d2c1efd568f0de0b2315697ac4b9f50f65af588fa85ad00592b1ee20665",
+      "verification": "Executed locally by Codex team; actual Claude reviewed source and did not execute tests."
+    },
+    {
+      "check": "Built UI browser inspection with synthetic provider/model responses",
+      "result": {
+        "status": "passed",
+        "views": 18,
+        "groups": 5,
+        "failures": 0
+      },
+      "logFile": "report.json",
+      "logSha256": "89f300c9505b2f336bc4a0be9236b5f1b256b27133f3af7014111ac6e277665c",
+      "verification": "Executed locally by Codex team; actual Claude reviewed source and did not execute tests."
+    }
+  ],
+  "reviewedSourceSha256": [
+    {
+      "path": "services/runner-auth/modelCatalog.ts",
+      "sha256": "0288bbd565b3ae230b309bb64cf1c1b9205049990d099d6f0f0903822216048d"
+    },
+    {
+      "path": "services/runner-auth/modelCatalog.test.ts",
+      "sha256": "2d41ed09998ffb1642e0198cc66efa45295fc3d9bc7d10b1df87149abf89d11b"
+    },
+    {
+      "path": "services/runner-auth/controller.ts",
+      "sha256": "58311ac5da04a11f9182807619b07e8db70faa05eea53ea43a6ce9bfe0342368"
+    },
+    {
+      "path": "services/runner-auth/controller.test.ts",
+      "sha256": "2b0807a601833320fcda28178606fc4e1019d885024d53a18874415d9852ea78"
+    },
+    {
+      "path": "services/runner-auth/worker.ts",
+      "sha256": "f2005b5bfc797764d8d7205d7c373bb422eba30c7b00c88d052a1d8ac647fc06"
+    },
+    {
+      "path": "hub/src/evolved/providerModels.ts",
+      "sha256": "7831041bae237e55ed0ec4a783af87b9f14f6c61e56c607ad8aeaefdbcabf7f5"
+    },
+    {
+      "path": "hub/src/evolved/providers.ts",
+      "sha256": "5c2210f2552291e59bd2c87bb828c351be7d59a701281e6440b847dde973658e"
+    },
+    {
+      "path": "hub/src/evolved/providers.test.ts",
+      "sha256": "a1447ac173ed55d42f07e95559cdfed99638b0b5803a7daf9183433d6e02103b"
+    },
+    {
+      "path": "hub/src/evolved/runnerControlProtocol.ts",
+      "sha256": "de6053233cbdf2f459a396be8207f48fe2aa9054a6d2917df1841458284eec82"
+    },
+    {
+      "path": "services/runner-control/operator.ts",
+      "sha256": "f5e62cd896e6ee8ea2867651772195eef76be83bfc0b520d70899166a8648e24"
+    },
+    {
+      "path": "services/runner-control/operator.test.ts",
+      "sha256": "deb822f30e9ffaaf31d2345c8c7aadcbf5a78a26bd04083ff97e5c7ecbc79896"
+    },
+    {
+      "path": "services/runner-control/protocol.test.ts",
+      "sha256": "e8970f27626aea209b9c835ea73ba178bc99ef292730ff28042095381e23ae47"
+    },
+    {
+      "path": "web/src/evolved/useProviderModels.ts",
+      "sha256": "4768064decaa08f2548d3c84d55dcc97bc712db686d1d8a796ed49fb7adac1c5"
+    },
+    {
+      "path": "web/src/evolved/useProviderModels.test.tsx",
+      "sha256": "c915fca82cf86a281a5586c0004c064aabb3d9b4abb81cd9f784032932ad421e"
+    },
+    {
+      "path": "web/src/evolved/ModelCatalogInput.tsx",
+      "sha256": "ada620d95fed6756d8ffbd69e6ca2440717b7699be3b2f856e611f7dc0ac5094"
+    },
+    {
+      "path": "web/src/evolved/ModelCatalogInput.test.tsx",
+      "sha256": "204cb95d58d456c268859f0b5cc9acea7450349ecdbe1ae881decebc93c2bea6"
+    },
+    {
+      "path": "web/src/evolved/AgentsPlugins.tsx",
+      "sha256": "6866d8056823738e0c3919785a4cb0d09b86c1587513f1a560f92dab0cf13ba9"
+    },
+    {
+      "path": "web/src/components/NewSession/index.tsx",
+      "sha256": "48c2d89d6befc6edf531b1384d4345db5ee87cbcd3a7d9e68a50b3ff8a15fc8e"
+    },
+    {
+      "path": "web/src/components/AssistantChat/HappyComposer.tsx",
+      "sha256": "3a2ceb7da4c24a6ebc36ae47ee2d63e3b0eeca98119f37311a366296b7aa3c8d"
+    },
+    {
+      "path": "hub/src/evolved/pluginManifest.ts",
+      "sha256": "05a308914bb38ca9487306ee923ad0adf135341f54bbd32917a71ca59b08fea1"
+    },
+    {
+      "path": "web/src/components/AssistantChat/HappyComposer.modelEffortButtons.test.tsx",
+      "sha256": "f2b9b45880fab59bfafb86dfc1c6d0c6fa8da63ff0543a5b9e1623207da09e8f"
+    }
+  ],
+  "postReviewChanges": [
+    {
+      "path": "services/runner-control/operator.ts",
+      "change": "Adopt the actual closure recommendation: internal heartbeat job get with touch=false can use the sixteenth maintenance slot."
+    },
+    {
+      "path": "services/runner-control/operator.test.ts",
+      "change": "Exercise the real operator heartbeat and active-job get with fifteen outstanding timed-out reads; preserve the owner worker."
+    }
+  ],
+  "postReviewSourceSha256": [
+    {
+      "path": "services/runner-control/operator.ts",
+      "sha256": "fa78dbd966983a8aaf789e6d1f1aa35e1d8ba899ca74161fec5da2550eaebb27"
+    },
+    {
+      "path": "services/runner-control/operator.test.ts",
+      "sha256": "d2fa699b9120e89e77c178c8ad16b17324bb887b8ef84f541b66bcf3f3472426"
+    }
+  ],
+  "relatedVerification": "native-models-2026-10-15.json",
+  "relatedReviews": [
+    "browser-provider-login-2026-10-15.json",
+    "agents-plugins-2026-10-15.json"
+  ],
+  "limits": [
+    "No real human subscription was authenticated or queried for model entitlement, and no model inference or provider billing request was performed.",
+    "Anonymous CLI protocol smoke verifies parsing and fixed commands only; its seven/five models are not authenticated availability evidence.",
+    "Browser model/provider response fixtures are synthetic and explicitly identified; actual isolated VM native login challenges are recorded separately.",
+    "Raw source prompts and actual Claude outputs remain outside the repository. This record contains sanitized findings, source identities and hashes only."
+  ]
+}

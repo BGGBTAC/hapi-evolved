@@ -1,9 +1,22 @@
 import { spawn } from 'node:child_process'
 import { constants, closeSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readlinkSync, realpathSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 export type WorkspaceIdentity = { device:string; inode:string }
 const same=(a:WorkspaceIdentity,b:WorkspaceIdentity)=>a.device===b.device&&a.inode===b.inode
+export class WorkspaceAnchorError extends Error {
+    readonly code='workspace_identity_changed'
+    constructor(){super('The configured workspace directory identity changed')}
+}
+/** Protect rename rights on every ancestor, not just the final root-owned file. */
+export function assertRootOwnedPath(path:string):void {
+    if(!path.startsWith('/')||realpathSync(path)!==path)throw new Error('Canonical root-owned path required')
+    for(let current=path;;current=dirname(current)){
+        const info=lstatSync(current)
+        if(info.isSymbolicLink()||info.uid!==0||(info.mode&0o022)!==0)throw new Error('Root-owned immutable path ancestors required')
+        if(current==='/')break
+    }
+}
 export function validWorkspaceIdentity(value:unknown):value is WorkspaceIdentity {
     const r=value as WorkspaceIdentity|null
     return !!r&&typeof r==='object'&&typeof r.device==='string'&&typeof r.inode==='string'&&/^\d{1,24}$/.test(r.device)&&/^[1-9]\d{0,23}$/.test(r.inode)
@@ -14,14 +27,20 @@ export function workspaceIdentity(path:string):WorkspaceIdentity {
     return{device:info.dev.toString(),inode:info.ino.toString()}
 }
 /** Fixed host-mount helper. Neither command nor flags come from HTTP input. */
-function fixedCommand(command:string,args:string[]):Promise<string>{
+export function runAnchorCommand(command:string,args:string[],options:{timeout?:number;descriptor?:number;processGroup?:boolean}={}):Promise<string>{
     return new Promise((resolve,reject)=>{
-        const child=spawn(command,args,{env:{PATH:'/usr/bin:/bin'},stdio:['ignore','pipe','pipe']})
+        // The outer helper owns one process group. Its mount children inherit
+        // that group, so outer timeout kills the helper and all fixed children.
+        const child=spawn(command,args,{env:{PATH:'/usr/bin:/bin'},detached:options.processGroup===true,stdio:['ignore','pipe','pipe',options.descriptor??'ignore']})
         let output='',size=0,failed=false
-        const fail=()=>{if(failed)return;failed=true;child.kill('SIGKILL');reject(new Error('Workspace anchor could not be established'))}
-        const timer=setTimeout(fail,8000)
-        child.stdout.on('data',(data:Buffer)=>{size+=data.length;if(size>4096)fail();else output+=data.toString('utf8')})
-        child.stderr.on('data',(data:Buffer)=>{size+=data.length;if(size>4096)fail()})
+        const fail=()=>{
+            if(failed)return;failed=true;clearTimeout(timer)
+            try{if(options.processGroup&&child.pid)process.kill(-child.pid,'SIGKILL');else child.kill('SIGKILL')}catch{/* Already exited. */}
+            reject(new Error('Workspace anchor could not be established'))
+        }
+        const timer=setTimeout(fail,options.timeout??4000)
+        child.stdout!.on('data',(data:Buffer)=>{size+=data.length;if(size>4096)fail();else output+=data.toString('utf8')})
+        child.stderr!.on('data',(data:Buffer)=>{size+=data.length;if(size>4096)fail()})
         child.on('error',fail);child.on('close',code=>{clearTimeout(timer);if(failed)return;if(code!==0)fail();else resolve(output.trim())})
     })
 }
@@ -35,40 +54,64 @@ function isHostMount(path:string):boolean {
  */
 export async function pinWorkspaceInHost(state:string,projectId:string,rootPath:string,expected?:WorkspaceIdentity):Promise<{path:string;identity:WorkspaceIdentity;restored:boolean}> {
     if(process.getuid?.()!==0||readlinkSync('/proc/self/ns/mnt')!==readlinkSync('/proc/1/ns/mnt'))throw new Error('Anchor helper must run in the host mount namespace')
+    assertRootOwnedPath(state)
     if(!/^[0-9a-f-]{36}$/.test(projectId)||!/^\/(?:managed-workspaces|workspaces)\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(rootPath))throw new Error('Invalid project workspace')
     if(rootPath.startsWith('/managed-workspaces/')&&rootPath!==`/managed-workspaces/${projectId}`)throw new Error('Project workspace mismatch')
     const prefix=rootPath.startsWith('/managed-workspaces/')?'managed-workspaces':'workspaces',name=rootPath.split('/')[2]!
     const parent=join(state,'runners',projectId),path=join(parent,'workspace')
+    assertRootOwnedPath(parent)
     const parentInfo=lstatSync(parent)
     if(!parentInfo.isDirectory()||parentInfo.uid!==0||(parentInfo.mode&0o077)!==0||realpathSync(parent)!==parent)throw new Error('Private root-owned anchor parent required')
     const flags=constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW
     const base=openSync(join(state,prefix),flags)
     let fd:number|undefined
+    let created=false
+    // At most 16 seconds of normal helper work plus 2 seconds for rollback;
+    // the outer process-group deadline is 24 seconds.
+    const deadline=Date.now()+16_000
+    const run=(command:string,args:string[],descriptor?:number)=>{
+        const remaining=deadline-Date.now()
+        if(remaining<=0)throw new Error('Workspace anchor timed out')
+        return runAnchorCommand(command,args,{descriptor,timeout:Math.min(4000,remaining)})
+    }
     try{
         fd=openSync(`/proc/self/fd/${base}/${name}`,flags)
         const info=fstatSync(fd,{bigint:true}),identity={device:info.dev.toString(),inode:info.ino.toString()}
-        if(expected&&(!validWorkspaceIdentity(expected)||!same(expected,identity)))throw new Error('Project directory identity changed')
+        if(expected&&(!validWorkspaceIdentity(expected)||!same(expected,identity)))throw new WorkspaceAnchorError()
         const mounted=isHostMount(path)
         if(!mounted){
             mkdirSync(path,{recursive:true,mode:0o700})
             const anchor=lstatSync(path)
             if(!anchor.isDirectory()||anchor.uid!==0||(anchor.mode&0o077)!==0||realpathSync(path)!==path)throw new Error('Unsafe anchor directory')
-            await fixedCommand('/usr/bin/mount',['--no-canonicalize','--bind',`/proc/${process.pid}/fd/${fd}`,path])
-            await fixedCommand('/usr/bin/mount',['--no-canonicalize','--make-private',path])
+            created=true
+            // libuv duplicates the held directory into the mount process as FD3.
+            // Even if this helper dies, no PID lookup can refer to somebody else.
+            await run('/usr/bin/mount',['--internal-only','--no-mtab','--no-canonicalize','--bind','/proc/self/fd/3',path],fd)
         }
-        if(!same(workspaceIdentity(path),identity))throw new Error('Workspace anchor points to a different directory')
+        if(!same(workspaceIdentity(path),identity))throw new WorkspaceAnchorError()
+        // Repair a previous bind interrupted before propagation was made private.
+        // Existing mounts need the same check as freshly attached anchors.
+        await run('/usr/bin/mount',['--internal-only','--no-mtab','--no-canonicalize','--make-private',path])
+        if(!same(workspaceIdentity(path),identity))throw new WorkspaceAnchorError()
         return{path,identity,restored:!mounted}
+    }catch(error){
+        // Never tear down an existing anchor on an identity mismatch. Roll back
+        // only a mount attempted by this call, before Docker can use its result.
+        if(created&&isHostMount(path))await runAnchorCommand('/usr/bin/umount',['--internal-only','--no-mtab','--no-canonicalize',path],{timeout:2000}).catch(()=>{})
+        throw error
     }finally{if(fd!==undefined)closeSync(fd);closeSync(base)}
 }
 export async function ensureWorkspaceAnchor(state:string,projectId:string,rootPath:string,expected?:WorkspaceIdentity):Promise<{path:string;identity:WorkspaceIdentity;restored:boolean}> {
     const helper=new URL('./anchor-helper.ts',import.meta.url).pathname
     for(const file of [helper,process.execPath]){
+        assertRootOwnedPath(file)
         const info=lstatSync(file)
         if(!info.isFile()||info.uid!==0||(info.mode&0o022)!==0||realpathSync(file)!==file)throw new Error('Root-owned anchor helper and runtime required')
     }
     // setns alone leaves a process's root/cwd referring to its previous namespace.
     // Select the host root too, then open the source FD in that same namespace.
-    const raw=await fixedCommand('/usr/bin/nsenter',['--mount=/proc/1/ns/mnt','--root=/proc/1/root','--wd=/','--',process.execPath,helper,state,projectId,rootPath,expected?.device??'',expected?.inode??''])
+    const raw=await runAnchorCommand('/usr/bin/nsenter',['--mount=/proc/1/ns/mnt','--root=/proc/1/root','--wd=/','--',process.execPath,helper,state,projectId,rootPath,expected?.device??'',expected?.inode??''],{timeout:24_000,processGroup:true})
+    if(JSON.parse(raw)?.error==='workspace_identity_changed')throw new WorkspaceAnchorError()
     const result=JSON.parse(raw) as {path:string;identity:WorkspaceIdentity;restored:boolean}
     if(result.path!==join(state,'runners',projectId,'workspace')||!validWorkspaceIdentity(result.identity)||typeof result.restored!=='boolean')throw new Error('Invalid workspace anchor result')
     return result
@@ -76,5 +119,5 @@ export async function ensureWorkspaceAnchor(state:string,projectId:string,rootPa
 /** Only used when explicitly tearing down the isolated integration fixture. */
 export async function removeTestWorkspaceAnchor(path:string):Promise<void>{
     if(!/^\/var\/lib\/hapi-evolved-browser-check-[0-9a-f-]{36}\/runners\/[0-9a-f-]{36}\/workspace$/.test(path))throw new Error('Only synthetic anchors may be removed by this helper')
-    if(isHostMount(path))await fixedCommand('/usr/bin/nsenter',['--mount=/proc/1/ns/mnt','--root=/proc/1/root','--wd=/','--','/usr/bin/umount','--no-canonicalize',path])
+    if(isHostMount(path))await runAnchorCommand('/usr/bin/nsenter',['--mount=/proc/1/ns/mnt','--root=/proc/1/root','--wd=/','--','/usr/bin/umount','--no-canonicalize',path],{processGroup:true})
 }

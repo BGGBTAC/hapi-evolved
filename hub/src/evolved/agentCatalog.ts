@@ -132,7 +132,7 @@ export function createAgentCatalogRoutes(config: { store: EvolvedStore; plugins:
             throw new EvolvedError('agent_start_indeterminate', 'Inspect existing project sessions before starting again. This start cannot be repeated safely.', 409)
         }
         const snapshot = catalog.snapshot(agentId), provider = body.provider ?? (snapshot.agent.providerPreference === 'either' ? 'claude' : snapshot.agent.providerPreference)
-        const model = body.model ?? (!body.provider || snapshot.agent.providerPreference === body.provider ? snapshot.agent.model : undefined)
+        const model = body.model ?? (snapshot.agent.providerPreference !== 'either' && (!body.provider || snapshot.agent.providerPreference === body.provider) ? snapshot.agent.model : undefined)
         let root: string
         try { root = realpathSync(project.rootPath) } catch { throw new EvolvedError('project_root_unavailable', 'Project directory is unavailable.', 409) }
         if (root !== project.rootPath || !withinProject(project, root)) throw new EvolvedError('project_root_unavailable', 'Project directory changed.', 409)

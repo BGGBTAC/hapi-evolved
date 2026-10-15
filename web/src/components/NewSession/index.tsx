@@ -7,6 +7,9 @@ import { usePlatform } from '@/hooks/usePlatform'
 import { useMachinePathsExists } from '@/hooks/useMachinePathsExists'
 import { useSpawnSession } from '@/hooks/mutations/useSpawnSession'
 import { useCodexModels } from '@/hooks/queries/useCodexModels'
+import { useOptionalEvolved } from '@/evolved/auth'
+import { useProviderModels } from '@/evolved/useProviderModels'
+import { ModelCatalogInput } from '@/evolved/ModelCatalogInput'
 import { useCursorModelsForMachine } from '@/hooks/queries/useCursorModelsForMachine'
 import { useAgyModels } from '@/hooks/queries/useAgyModels'
 import { useOpencodeModelsForCwd } from '@/hooks/queries/useOpencodeModelsForCwd'
@@ -307,11 +310,24 @@ export function NewSession(props: {
         preserveRestoredDraftRef.current = false
         setAgent(availableAgents[0]!)
     }, [agent, agentAvailability.error, agentAvailability.isLoading, availableAgents])
-    const codexModelsState = useCodexModels({
+    const evolved = useOptionalEvolved()
+    const nativeProvider = agent === 'claude' || agent === 'codex' ? agent : null
+    const providerModels = useProviderModels({ provider: nativeProvider })
+    const useProviderCatalog = Boolean(evolved?.project && nativeProvider)
+    const legacyCodexModels = useCodexModels({
         api: props.api,
         machineId,
         enabled: agent === 'codex' && Boolean(machineId)
     })
+    const codexModelsState = useMemo(() => useProviderCatalog && agent === 'codex' ? {
+        models: providerModels.data?.status === 'ready' ? providerModels.data.models.map(entry => ({
+            id: entry.id, displayName: entry.label, isDefault: entry.isDefault ?? false, supportedReasoningEfforts: entry.reasoningEfforts,
+            // Fast tier is only advertised by the selected machine's live account.
+            serviceTiers: legacyCodexModels.models.find(model => model.id === entry.id)?.serviceTiers,
+        })) : [],
+        isLoading: providerModels.isLoading,
+        error: providerModels.error,
+    } : legacyCodexModels, [agent, useProviderCatalog, providerModels.data, providerModels.isLoading, providerModels.error, legacyCodexModels])
     const [agySelectedModel, setAgySelectedModel] = useState<string | null>(null)
     // Whether the AGY model on screen is one the user picked here, as opposed to
     // one restored from a draft or a saved preference. A restored model that the
@@ -360,7 +376,8 @@ export function NewSession(props: {
 
     useEffect(() => {
         if (
-            agent !== 'codex'
+            useProviderCatalog
+            || agent !== 'codex'
             || model === 'auto'
             || codexModelsState.isLoading
             || codexModelsState.error
@@ -370,7 +387,7 @@ export function NewSession(props: {
         if (!codexModelsState.models.some((candidate) => candidate.id === model)) {
             setModel('auto')
         }
-    }, [agent, codexModelsState.error, codexModelsState.isLoading, codexModelsState.models, model])
+    }, [agent, useProviderCatalog, codexModelsState.error, codexModelsState.isLoading, codexModelsState.models, model])
     const showCodexFastMode = agent === 'codex'
         && !codexModelsState.error
         && codexModelAdvertisesFastTier(model === 'auto' ? null : model, codexModelsState.models)
@@ -1853,7 +1870,9 @@ export function NewSession(props: {
                     onClear={() => setSelectedPiImportSessionId(null)}
                 />
             ) : null}
-            {agent === 'dsh' ? null : agent === 'agy' ? (
+            {useProviderCatalog && nativeProvider ? (
+                <ModelCatalogInput key={`${evolved?.project?.id}:${nativeProvider}`} provider={nativeProvider} value={model} onChange={setModel} disabled={isFormDisabled} catalog={providerModels} />
+            ) : agent === 'dsh' ? null : agent === 'agy' ? (
                 <AgyModelSelector
                     machineId={machineId}
                     isLoading={agyModelsState.isLoading}

@@ -1,0 +1,277 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-10-15T15:56:02.909644+00:00",
+  "scope": "Global reusable specialist catalog, declarative public GitHub plugin manifest lifecycle, reviewed source pinning, template launch authorization and compact Agent/Plugin UI.",
+  "verdict": "No blocking findings remain after actual Claude Opus 5.5 closure and passing backend/UI tests. Deployment and browser integration are assessed separately.",
+  "actualCalls": [
+    {
+      "stage": "design",
+      "at": "2026-10-15T15:17:34.343307+00:00",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "sourceBaseCommit": "71d5bb50b8429f5b8a02161d3605eb67ad2284e6",
+      "inputSha256": "ce0fd7dac2a43edb897e979dbb6041a9b8aca735d34a2a61e2330b53e10e6ee8",
+      "outputSha256": "ff032e0cc39fa61c93b332038054ab319d022055f10f1ca629b90c01ae0d20d1"
+    },
+    {
+      "stage": "final",
+      "at": "2026-10-15T15:31:37.675303+00:00",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "sourceBaseCommit": "71d5bb50b8429f5b8a02161d3605eb67ad2284e6",
+      "inputSha256": "19f71981740a14831ef2033784dfea24d285dafd96e1d94e6c11cf5928356a88",
+      "outputSha256": "d1d0a90feedd8a65caf45da479e90064b6a3759a90c3b8cd28daeeee86b06b4a"
+    },
+    {
+      "stage": "closeout",
+      "at": "2026-10-15T15:48:09.219776+00:00",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "sourceBaseCommit": "71d5bb50b8429f5b8a02161d3605eb67ad2284e6",
+      "inputSha256": "c4a2d1da86b748570f1200e297340f6dbc30a854f9a7eee47b5dae042d9aac71",
+      "outputSha256": "b2364f54114e2d1ffb89605c014a8d319aed6a7a76aa7ca0712886e442333750"
+    },
+    {
+      "stage": "closure",
+      "at": "2026-10-15T15:53:07.494267+00:00",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "sourceBaseCommit": "69f29d107d302cbab9f4b0323cd167ab63fc033d",
+      "inputSha256": "219aa4a94943d8e5e78bad9b6ed641913e01347ab27c3d3472ff97bce6a3bd38",
+      "outputSha256": "c4021bf6c936494443c28fb442d7f3cd8f8e93f97880f0978e5c6f95de82550b"
+    }
+  ],
+  "acceptedFindings": [
+    {
+      "id": "bounded-commit-response",
+      "source": "hub/src/evolved/plugins.ts:83",
+      "problem": "Commit JSON with large patches could exceed the source response limit.",
+      "resolution": "Use the documented SHA media type with a 64-byte streaming limit; anonymous real GitHub probe returned exactly 40 bytes.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "stored-definition-quarantine",
+      "source": "hub/src/evolved/plugins.ts:21",
+      "problem": "Malformed stored manifests/custom definitions could break the whole catalog and prevent removal.",
+      "resolution": "Safe invalid DTOs remain visible and removable/editable, cannot launch or enable; tests cover malformed persisted rows.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "hidden-unicode",
+      "source": "hub/src/evolved/pluginManifest.ts:8",
+      "problem": "Invisible format and tag characters could evade human preview of model instructions.",
+      "resolution": "Unicode Default_Ignorable_Code_Point and explicit control-character checks reject hidden content, with tag/filler/selector regressions.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "instruction-budget",
+      "source": "hub/src/evolved/pluginManifest.ts:23",
+      "problem": "Saved combined instructions could leave no room for a task.",
+      "resolution": "Static instruction budget reserves 8 KiB at template save and manifest validation; final launch remains bounded to 64 KiB.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "dependent-update-budget",
+      "source": "hub/src/evolved/plugins.ts:106",
+      "problem": "A skill update could make an existing custom specialist impossible to launch.",
+      "resolution": "Preview and transactionally confirmed update resolve dependent skill texts, including disabled valid definitions, and reject excess budget; tests include concurrent template creation after preview.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "provider-model-preference",
+      "source": "hub/src/evolved/agentCatalog.ts:135",
+      "problem": "A model preference could be inherited for an incompatible or unspecified provider.",
+      "resolution": "Either-provider templates inherit no model, concrete preferences only inherit for the same provider, explicit user model remains allowed; UI clears on provider changes.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "creator-foreign-key",
+      "source": "hub/src/evolved/agentCatalog.ts:31",
+      "problem": "A shared template could prevent deletion of its creator.",
+      "resolution": "Nullable created_by with ON DELETE SET NULL preserves the shared template; regression deletes a synthetic creator.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "update-aba",
+      "source": "hub/src/evolved/plugins.ts:26",
+      "problem": "Source hashes returning to their original values could make an old preview valid again.",
+      "resolution": "Monotone installed revision participates in the preview base hash; X-to-Y-to-X regression rejects stale confirmation.",
+      "closeout": "resolved"
+    },
+    {
+      "id": "start-error-recovery",
+      "source": "web/src/evolved/AgentsPlugins.tsx:85",
+      "problem": "All start failures locked the form indefinitely.",
+      "resolution": "Only precise known preflight codes allow editing. Unknown/post-spawn outcomes retain the operation ID. Explicit confirmed new operation is available after session inspection.",
+      "closeout": "resolved"
+    }
+  ],
+  "rejectedOrSupersededAdvice": [
+    {
+      "advice": "Treat all HTTP 401/403/404 as safe preflight failures and automatically unlock a new operation.",
+      "disposition": "Rejected. Current authorization/snapshot checks can fail after spawn. Only explicit preflight codes are classified safe; an already uncertain operation remains uncertain on later preflight failure."
+    },
+    {
+      "advice": "Require providerPreference as a hard provider restriction.",
+      "disposition": "Rejected. It is an explicit user-overridable preference, never a permission grant."
+    },
+    {
+      "advice": "Create a migration for an earlier intermediate version of the new extension tables.",
+      "disposition": "Not applicable. Coordinator confirmed no intermediate version was deployed to persistent VM state."
+    }
+  ],
+  "preservedRequirements": [
+    "Installation administrator and fresh passkey are required for global mutations; human members can launch only in authorized projects.",
+    "Specialists reuse instructions without sharing project files, memory, credentials or security profiles.",
+    "Plugin content is declarative text and fixed validated colors, with no executable Hub hooks, archives, shell, native provider config or secret handling.",
+    "Public GitHub only; numeric repository identity, full commit SHA and raw manifest digest pin reviewed contents; explicit expiring session-bound preview precedes installation/update.",
+    "Launch inherits project namespace/root/current permissions, verifies persisted assignment acknowledgement and avoids automatic duplicate starts."
+  ],
+  "primarySources": [
+    {
+      "url": "https://docs.github.com/en/rest/commits/commits#get-a-commit",
+      "claim": "Get a commit supports application/vnd.github.sha to return the commit SHA without the patch payload."
+    },
+    {
+      "url": "https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html",
+      "claim": "Relative luminance contrast threshold informs the 4.5:1 plugin theme text validation."
+    }
+  ],
+  "verificationEvidence": [
+    {
+      "check": "Extension backend",
+      "result": {
+        "passed": 48,
+        "failed": 0,
+        "assertions": 177
+      },
+      "logFile": "evolved-catalog-tests.log",
+      "logSha256": "40d7eedcf0878634d03db3785b7550fd6291e0ff3b6ac8dfa534636dbdcddc03",
+      "verification": "Actual local execution; logs inspected by Codex reviewer. Claude reviewed source and did not execute tests."
+    },
+    {
+      "check": "Hub typecheck",
+      "result": {
+        "status": "passed"
+      },
+      "logFile": "evolved-model-hub-typecheck.log",
+      "logSha256": "6e0c423dcae445f4147b9c3326cf723025cda182e303a2e767f97ff3f0800a2a",
+      "verification": "Actual local execution; logs inspected by Codex reviewer. Claude reviewed source and did not execute tests."
+    },
+    {
+      "check": "Agent/plugin and Workspace UI",
+      "result": {
+        "passed": 24,
+        "failed": 0
+      },
+      "logFile": "evolved-agent-plugin-web-tests.log",
+      "logSha256": "c19e9eae4cf52b89d4e96b4e322028feafdb08cf2217054bfde0d952cafe0219",
+      "verification": "Actual local execution; logs inspected by Codex reviewer. Claude reviewed source and did not execute tests."
+    },
+    {
+      "check": "Web typecheck",
+      "result": {
+        "status": "passed"
+      },
+      "logFile": "evolved-agent-plugin-web-typecheck.log",
+      "logSha256": "c3412b92157711088fbde55d90eb3e7a9c01ca08be01d2bc2ac4cfff5f78df05",
+      "verification": "Actual local execution; logs inspected by Codex reviewer. Claude reviewed source and did not execute tests."
+    }
+  ],
+  "liveReadOnlyProbe": {
+    "url": "https://api.github.com/repos/tiann/hapi/commits/HEAD",
+    "status": 200,
+    "bytes": 40,
+    "fullShaResponse": true,
+    "responseSha256": "210dd83f758747edfa9d364169f0a8ecd163769657799bface07012bab3569a2"
+  },
+  "reviewedSourceSha256": [
+    {
+      "path": "hub/src/evolved/pluginManifest.ts",
+      "sha256": "ddbbba14342ed237df6c5a4c09686da927f2fd026ce66a02c11d00d3176c6684"
+    },
+    {
+      "path": "hub/src/evolved/extensionAccess.ts",
+      "sha256": "a8fb24b3d3fcc03719a116c1929b9b5e0182e7683e86598b5fb122975b47e4bc"
+    },
+    {
+      "path": "hub/src/evolved/plugins.ts",
+      "sha256": "83d8864349f02af69486f2d4c85624f27ded93a94a5dd4febd0dc658eacc7487"
+    },
+    {
+      "path": "hub/src/evolved/agentCatalog.ts",
+      "sha256": "cc0f5755ffd68b39b25708fd2b00da4137dd51b590d9ab5b2fe06dc4db673200"
+    },
+    {
+      "path": "hub/src/evolved/extensions.test.ts",
+      "sha256": "1671148b5b3e5a021e238553f205c2c1ca3a33c7698badf86d1d003b14d440a5"
+    },
+    {
+      "path": "web/src/evolved/AgentsPlugins.tsx",
+      "sha256": "3ca34fb6c740e245d15ee07155d4d26b4c4811cf3145370ccd003243a60880b9"
+    },
+    {
+      "path": "web/src/evolved/AgentsPlugins.test.tsx",
+      "sha256": "f131d06f1a49828fa964adb3be530a001ef5f6780f0090dbe8488aa9cec2997e"
+    },
+    {
+      "path": "docs/evolved/EXTENSIONS.md",
+      "sha256": "77193a2d8767ec96acfed9db2226aa65f2b7a597d0bf96168190b4592a94de78"
+    }
+  ],
+  "postReviewChanges": [
+    {
+      "path": "docs/evolved/EXTENSIONS.md",
+      "change": "Clarify either-provider model handling and explicit new operation after inspecting uncertain starts."
+    },
+    {
+      "path": "hub/src/evolved/pluginManifest.ts",
+      "change": "Native model aliases may contain square brackets, e.g. opus[1m]; the existing bounded safe single-argument model pattern remains. Actual native-models Opus review covers this delta."
+    },
+    {
+      "path": "hub/src/evolved/extensions.test.ts",
+      "change": "Add bounded bracket-alias regression; existing 48 tests now make 177 assertions."
+    },
+    {
+      "path": "web/src/evolved/AgentsPlugins.tsx",
+      "change": "Use the native dynamic model selector with default/manual fallback; separate native-models-opus-2026-10-15.json covers this integration."
+    },
+    {
+      "path": "web/src/evolved/AgentsPlugins.test.tsx",
+      "change": "Uncertain-start retry and dynamic-model/manual selection regressions; AgentPlugins and Workspace total 24 tests."
+    }
+  ],
+  "postReviewSourceSha256": [
+    {
+      "path": "docs/evolved/EXTENSIONS.md",
+      "sha256": "efe0d2b89a79591ef6d039da01e771b660846b4f484883bf05379a111badd1bb"
+    },
+    {
+      "path": "hub/src/evolved/pluginManifest.ts",
+      "sha256": "05a308914bb38ca9487306ee923ad0adf135341f54bbd32917a71ca59b08fea1"
+    },
+    {
+      "path": "hub/src/evolved/extensions.test.ts",
+      "sha256": "202d9cf902a89a2787fd89f9c47b4febf9e61fe4beb4b716d31c288b0b24d393"
+    },
+    {
+      "path": "web/src/evolved/AgentsPlugins.tsx",
+      "sha256": "6866d8056823738e0c3919785a4cb0d09b86c1587513f1a560f92dab0cf13ba9"
+    },
+    {
+      "path": "web/src/evolved/AgentsPlugins.test.tsx",
+      "sha256": "c13aca13a6bdac3a10504b3bf5355b6d5c431ed43159672ec4e2eebea0190502"
+    }
+  ],
+  "limits": [
+    "This record evaluates reviewed code, not deployment success or completed browser integration.",
+    "Actual provider account consent and a full live public-plugin installation were not performed by this reviewer.",
+    "Synthetic stores and public read-only GitHub requests were used; no real user credentials or databases were inspected or modified.",
+    "Raw prompts and Claude responses remain outside the repository; only sanitized dispositions and hashes are recorded."
+  ],
+  "relatedReview": "native-models-opus-2026-10-15.json"
+}

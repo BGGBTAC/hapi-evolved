@@ -15,6 +15,8 @@ or container image.
 - Reviewed, commit-pinned public GitHub plugins for agent templates, skills and
   validated color profiles, with update previews, disabling and removal.
 - Ocean, Iris and Sand color profiles, visual previews and a visible appearance link.
+- Native Claude/Codex model catalogs in session and specialist selectors, with
+  scoped caching, explicit refresh, account/source limits and manual model IDs.
 
 - Responsive workspace navigation, project dashboard and a unified desktop/PWA
   design, with dark/OLED themes, accessible mobile controls and new app icons.
