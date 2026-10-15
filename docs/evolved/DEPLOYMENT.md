@@ -114,9 +114,16 @@ Graphgenerationen sofort als unzugänglich; die physische Bereinigung wird dauer
 ## Einen isolierten Projekt-Runner starten
 
 Pro Projekt einen eigenen Compose-Stack und ein eigenes Runner-Home verwenden. Im Browser eine
-zeitlich begrenzte Runner-Freigabe mit `runner:connect` und den gewünschten Memory-/Codegraph-/
+dauerhafte oder befristete Runner-Freigabe mit `runner:connect` und den gewünschten Memory-/Codegraph-/
 Ressourcenrechten anlegen. Die einmalig ausgegebene Lease-Datei außerhalb aller Workspaces und
 außerhalb des Runner-Homes mit Modus `0600` speichern. Sie wird ausschließlich in den Proxy gemountet.
+
+**Dauerhaft – bis zum Widerruf** ist im Browser vorausgewählt und hat kein Ablaufdatum.
+Befristete Freigaben gelten höchstens sieben Tage. Bestehende befristete Freigaben bleiben
+unverändert. Auch dauerhafte Freigaben sind an aktuelle Rollen, Projektprofil und Widerruf gebunden;
+die vom Proxy bezogenen Capabilities bleiben kurzlebig. Für API-Aufrufe bedeutet
+`expiresInSeconds: null` ausdrücklich dauerhaft; ohne dieses Feld gilt weiterhin der bisherige
+Standard von 24 Stunden. Eine permanente Freigabe wird mit `expiresAt: null` zurückgegeben.
 
 Eine private Betreiberdatei `runner.env` enthält nur die folgenden Einstellungen. Die Vorprüfung
 akzeptiert ausschließlich unquotierte `KEY=VALUE`-Zeilen, Leerzeilen und Kommentare. Keine
@@ -216,8 +223,9 @@ Workspace-Roots führen zu einem Startfehler, statt die Pfadgrenze aufzuweichen.
 
 ### Isolierte VM-Abnahme ohne Provideranmeldung
 
-Für ein eigens angelegtes Testprojekt ein neues, leeres Runner-Home und eine kurzlebige
-`restricted`-Freigabe mit `runner:connect` verwenden. Die private `runner.env` erhält Modus
+Für ein eigens angelegtes Testprojekt ein neues, leeres Runner-Home verwenden und im
+Browser ausdrücklich „Befristet“ für eine kurzlebige `restricted`-Freigabe mit
+`runner:connect` wählen. Die private `runner.env` erhält Modus
 `0600` und die zusätzliche Kommentarzeile `# HAPI_EVOLVED_RUNNER_VALIDATION=<Projekt-UUID>`.
 Als separates Backend ist ausschließlich `EVOLVED_BACKEND_NETWORK=hapi-evolved-acceptance_backend`
 zulässig. Das Skript prüft dessen Compose-Eigentümer und internes Netzwerk.

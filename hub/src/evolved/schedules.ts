@@ -52,7 +52,7 @@ export class ScheduleService {
     private authorize(row: Schedule) {
         const project = this.store.requireProject(row.user_id, row.project_id, 'admin')
         if (project.profile !== row.profile) throw new EvolvedError('profile_changed', 'Schedule requires renewed approval after a profile change.', 403)
-        const leases = this.store.db.prepare("SELECT user_id FROM evolved_runner_leases WHERE project_id=? AND profile=? AND revoked_at IS NULL AND expires_at>? AND EXISTS(SELECT 1 FROM json_each(scopes) WHERE value='runner:connect')").all(project.id, project.profile, this.store.now()) as Array<{ user_id: string }>
+        const leases = this.store.db.prepare("SELECT user_id FROM evolved_runner_leases WHERE project_id=? AND profile=? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>?) AND EXISTS(SELECT 1 FROM json_each(scopes) WHERE value='runner:connect')").all(project.id, project.profile, this.store.now()) as Array<{ user_id: string }>
         const authorized = leases.some(lease => { try { this.store.requireProject(lease.user_id, project.id, 'admin'); return true } catch { return false } })
         if (!authorized) throw new EvolvedError('runner_unavailable', 'No authorized runner lease is available.', 403)
         return project

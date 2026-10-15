@@ -342,7 +342,7 @@ export async function runLiveCheck(config) {
                     Object.assign(handoff, { leaseId: lease.id, leaseExpiresAt: lease.expiresAt });
                 }
                 const { leases } = await browserApi(page, projectPath + '/runner-leases');
-                requireCheck(leases.some(lease => lease.id === handoff.leaseId && !lease.revokedAt && lease.expiresAt > Date.now()), 'runner_lease_missing_or_expired');
+                requireCheck(leases.some(lease => lease.id === handoff.leaseId && !lease.revokedAt && (lease.expiresAt === null || (typeof lease.expiresAt === 'number' && Number.isFinite(lease.expiresAt) && lease.expiresAt > Date.now()))), 'runner_lease_missing_or_expired');
                 const token = readPrivateFile(join(directory, 'runner.lease')).trim();
                 requireCheck(await anonymousStatus(browser, config.origin, '/api/evolved/runner/authority', { authorization: 'Bearer ' + token }) === 200, 'runner_authority_unavailable');
             });

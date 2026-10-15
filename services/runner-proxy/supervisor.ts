@@ -3,12 +3,12 @@ import { readFileSync, realpathSync } from 'node:fs'
 import { validRunnerRoot } from './workspace'
 import { hasNestedWorkspaceMount } from '../../hub/src/evolved/workspaces'
 
-type Authority = { projectId: string; profile: string; rootPath: string; expiresAt: number }
+type Authority = { projectId: string; profile: string; rootPath: string; expiresAt: number | null }
 export function validateAuthority(value: unknown, expected: { projectId: string; profile: string; rootPath: string }, now = Date.now()): value is Authority {
     if (!value || typeof value !== 'object') return false
     const actual = value as Authority
     return actual.projectId === expected.projectId && actual.profile === expected.profile && actual.rootPath === expected.rootPath
-        && typeof actual.expiresAt === 'number' && Number.isFinite(actual.expiresAt) && actual.expiresAt > now
+        && (actual.expiresAt === null || (typeof actual.expiresAt === 'number' && Number.isFinite(actual.expiresAt) && actual.expiresAt > now))
         && ['restricted', 'workspace', 'extended'].includes(actual.profile)
 }
 export function workspaceReadOnly(root: string, mountinfo: string): boolean {

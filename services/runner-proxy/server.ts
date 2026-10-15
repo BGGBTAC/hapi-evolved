@@ -7,6 +7,9 @@ import { boundedGitResponse, GIT_TIMEOUT_MS, gitPath, parseGitRequest, readGitBo
 
 type Grant = { token: string; expiresAt: number; projectId: string }
 const MAX_PENDING_BYTES = 8 * 1024 * 1024
+// Hub-issued capabilities last at most 15 minutes. Allow bounded clock skew
+// when a project proxy and the Hub run on different hosts.
+const MAX_GRANT_REMAINING_MS = 900_000 + 60_000
 export function queuedPacketBytes(value: unknown, depth = 0): number {
     if (depth > 32) return MAX_PENDING_BYTES + 1
     if (typeof value === 'string') return Buffer.byteLength(value)
@@ -42,7 +45,9 @@ export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; p
             const response = await fetch(new URL('/api/evolved/runner/token', hub), { method: 'POST',
                 headers: { authorization: `Bearer ${lease}`, 'content-type': 'application/json' }, body: '{}', redirect: 'error', signal: AbortSignal.timeout(10_000) })
             const next = await response.json() as Grant
-            if (!response.ok || !/^[A-Za-z0-9_-]{43}$/.test(next.token ?? '') || next.projectId !== config.projectId || next.expiresAt <= Date.now()) throw new Error('Runner lease unavailable or revoked')
+            if (!response.ok || !/^[A-Za-z0-9_-]{43}$/.test(next.token ?? '') || next.projectId !== config.projectId
+                || typeof next.expiresAt !== 'number' || !Number.isFinite(next.expiresAt)
+                || next.expiresAt <= Date.now() || next.expiresAt > Date.now() + MAX_GRANT_REMAINING_MS) throw new Error('Runner lease unavailable or revoked')
             grant = next
             return next
         })().finally(() => { renewing = null })
@@ -141,7 +146,7 @@ export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; p
                     const response = await fetch(new URL('/api/evolved/runner/authority', hub), {
                         headers: { authorization: `Bearer ${lease}` }, redirect: 'error', signal: AbortSignal.timeout(1800)
                     })
-                    const state = await response.json() as { projectId?: string; profile?: string; rootPath?: string; expiresAt?: number }
+                    const state = await response.json() as { projectId?: string; profile?: string; rootPath?: string; expiresAt?: number | null }
                     if (!response.ok || state.projectId !== config.projectId) return new Response('Runner lease unavailable', { status: 403 })
                     return Response.json({ projectId: state.projectId, profile: state.profile, rootPath: state.rootPath, expiresAt: state.expiresAt }, { headers: { 'cache-control': 'no-store' } })
                 } catch { return new Response('Runner authority unavailable', { status: 503 }) }

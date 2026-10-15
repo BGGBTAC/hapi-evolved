@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AutomationPanel } from './Automation'
 import { RunnerPanel } from './Runner'
@@ -197,7 +197,8 @@ describe('Operator access', () => {
             : { leases: [] })
         const client = mount(<RunnerPanel />)
         fireEvent.change(screen.getByLabelText('Runner-Name'), { target: { value: 'Isolated runner' } })
-        fireEvent.change(screen.getByLabelText('Gültigkeit (Stunden, maximal 168)'), { target: { value: '168' } })
+        fireEvent.click(screen.getByRole('radio', { name: 'Befristet' }))
+        fireEvent.change(screen.getByLabelText('HAPI-Zugang gültig für (Stunden, maximal 168)'), { target: { value: '168' } })
         fireEvent.click(screen.getByLabelText('Gedächtnis lesen'))
         fireEvent.click(screen.getByRole('button', { name: 'Runner-Zugang erstellen' }))
         expect(await screen.findByLabelText('Einmaliger Runner-Schlüssel')).toHaveValue('one-time-synthetic-token')
@@ -207,6 +208,52 @@ describe('Operator access', () => {
         fireEvent.click(screen.getByLabelText('Ich habe die Operator-Datei sicher abgelegt.'))
         fireEvent.click(screen.getByRole('button', { name: 'Schlüssel schließen' }))
         expect(screen.queryByLabelText('Einmaliger Runner-Schlüssel')).not.toBeInTheDocument()
+    })
+    it('defaults to permanent access and submits null even after returning from a temporary choice', async () => {
+        context.api.request.mockImplementation(async (_path: string, options: { method?: string }) => options?.method === 'POST'
+            ? { id: 'permanent-1', token: 'synthetic-permanent-token', projectId: 'project-1', profile: 'restricted', expiresAt: null }
+            : { leases: [] })
+        const client = mount(<RunnerPanel />)
+        expect(screen.getByRole('radio', { name: 'Dauerhaft – bis zum Widerruf' })).toBeChecked()
+        expect(screen.queryByLabelText('HAPI-Zugang gültig für (Stunden, maximal 168)')).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('radio', { name: 'Befristet' }))
+        fireEvent.change(screen.getByLabelText('HAPI-Zugang gültig für (Stunden, maximal 168)'), { target: { value: '48' } })
+        fireEvent.click(screen.getByRole('radio', { name: 'Dauerhaft – bis zum Widerruf' }))
+        expect(screen.queryByLabelText('HAPI-Zugang gültig für (Stunden, maximal 168)')).not.toBeInTheDocument()
+        fireEvent.change(screen.getByLabelText('Runner-Name'), { target: { value: 'Own runner' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Runner-Zugang erstellen' }))
+        expect(await screen.findByLabelText('Einmaliger Runner-Schlüssel')).toHaveValue('synthetic-permanent-token')
+        expect(context.api.request).toHaveBeenCalledWith('/projects/project-1/runner-leases', expect.objectContaining({
+            method: 'POST', body: { name: 'Own runner', scopes: ['runner:connect', 'git:read'], actionIds: [], expiresInSeconds: null },
+        }))
+        expect(screen.getByText(/Dauerhaft – bis zum Widerruf\. Nach dem Schließen/)).toBeInTheDocument()
+        expect(JSON.stringify(client.getQueryCache().getAll().map(query => query.state.data))).not.toContain('synthetic-permanent-token')
+    })
+    it('displays permanent and legacy timed accesses and revokes permanent access', async () => {
+        let revokedAt: number | null = null
+        const common = { scopes: ['runner:connect'], actionIds: [], profile: 'restricted', createdAt: Date.now() - 1000 }
+        context.api.request.mockImplementation(async (_path: string, options: { method?: string }) => {
+            if (options?.method === 'DELETE') { revokedAt = Date.now(); return { ok: true } }
+            return { leases: [
+                { ...common, id: 'permanent-1', name: 'Permanent runner', expiresAt: null, revokedAt },
+                { ...common, id: 'active-legacy', name: 'Existing timed runner', expiresAt: Date.now() + 60_000, revokedAt: null },
+                { ...common, id: 'expired-legacy', name: 'Expired timed runner', expiresAt: Date.now() - 60_000, revokedAt: null },
+            ] }
+        })
+        mount(<RunnerPanel />)
+        const permanentRow = (await screen.findByText('Permanent runner')).closest('.ev-row') as HTMLElement
+        const activeRow = screen.getByText('Existing timed runner').closest('.ev-row') as HTMLElement
+        const expiredRow = screen.getByText('Expired timed runner').closest('.ev-row') as HTMLElement
+        expect(within(permanentRow).getByText('Dauerhaft – bis zum Widerruf')).toBeInTheDocument()
+        expect(within(activeRow).getByText(/^Gültig bis/)).toBeInTheDocument()
+        expect(within(activeRow).getByRole('button', { name: 'Widerrufen' })).toBeEnabled()
+        expect(within(expiredRow).getByText(/^Abgelaufen bis/)).toBeInTheDocument()
+        expect(within(expiredRow).queryByRole('button', { name: 'Widerrufen' })).not.toBeInTheDocument()
+        fireEvent.click(within(permanentRow).getByRole('button', { name: 'Widerrufen' }))
+        fireEvent.click(within(permanentRow).getByRole('button', { name: 'Bestätigen' }))
+        await waitFor(() => expect(context.api.request).toHaveBeenCalledWith('/projects/project-1/runner-leases/permanent-1', { method: 'DELETE' }))
+        expect(await within(permanentRow).findByText(/^Widerrufen am/)).toBeInTheDocument()
+        expect(within(permanentRow).queryByRole('button', { name: 'Widerrufen' })).not.toBeInTheDocument()
     })
     it.each(['restricted', 'workspace', 'extended'] as const)('defaults Git scopes to the %s execution profile', async (profile) => {
         context.project.profile = profile

@@ -1,10 +1,24 @@
 # Claude- und Codex-Abos verbinden
 
 Unter **Abos verbinden** und im Bereich **Runner** findest du die Anmeldeschritte.
-HAPI-eVolved hat derzeit keinen eigenen Browser-Login für diese Anbieter. Die
-nativen CLIs melden sich im privaten Home des jeweiligen Runners an. Dafür brauchst
-du einen Betreiber mit Terminalzugang zum Runner-Server; die Anbieteranmeldung
-bestätigst du in deinem eigenen Browser. Ein HAPI-Passkey oder Runner-Zugang meldet
+**Die Abo-Anmeldung erfolgt derzeit im Runner-Terminal. Eine direkte Anmeldung in
+der HAPI-Weboberfläche gibt es noch nicht.** Ein Runner ist der Arbeitsdienst auf
+deinem Server: Er startet Claude oder Codex, bearbeitet Projektdateien und führt
+Git-Befehle aus. Die nativen CLIs melden sich in seinem privaten Home an. Ein
+Betreiber mit Serverzugang startet die Anmeldung; du bestätigst sie beim Anbieter
+in deinem eigenen Browser.
+
+Der Bereich **Runner** erstellt nur den HAPI-Zugang für diesen Dienst; er
+installiert oder startet ihn nicht. **Dauerhaft – bis zum Widerruf** ist für den
+eigenen Runner vorausgewählt und hat kein Ablaufdatum. Alternativ gilt ein
+befristeter Zugang bis zu 168 Stunden (7 Tage). Diese Stunden sind kein
+Rechenstundenkontingent und kein Zeitlimit für dein Anbieterabo.
+
+Nach Ablauf eines befristeten Zugangs stoppt der verwaltete Runner. Für weitere
+Arbeit braucht er einen neu eingerichteten HAPI-Zugang. Auch dauerhafte Zugänge
+werden durch Widerruf, Profilwechsel oder Änderungen der zugehörigen Rollen
+ungültig; die Arbeit wird dann gestoppt. Dateien und gespeicherte
+Anbieteranmeldungen bleiben erhalten. Ein HAPI-Passkey oder Runner-Zugang meldet
 dich nicht bei Claude oder ChatGPT an.
 
 ## Terminal des richtigen Runners öffnen

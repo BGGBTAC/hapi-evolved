@@ -94,9 +94,15 @@ try {
  await workspaceArea(page,'Runner');
  await page.getByLabel('Runner-Name',{exact:true}).fill('Synthetic runner');
  await page.getByLabel('Gedächtnis lesen',{exact:true}).check();
+ const permanentIssued=page.waitForResponse(r=>new URL(r.url()).pathname.endsWith('/runner-leases')&&r.request().method()==='POST'&&r.status()===201);
  await page.getByRole('button',{name:'Runner-Zugang erstellen',exact:true}).click();
+ const permanentResponse=await permanentIssued;
+ const permanentLease=await permanentResponse.json();
+ if(permanentResponse.request().postDataJSON().expiresInSeconds!==null||permanentLease.expiresAt!==null)throw Error('Permanent runner access was not explicitly issued');
  const leaseToken=await page.getByLabel('Einmaliger Runner-Schlüssel',{exact:true}).inputValue();
  if(!leaseToken)throw Error('Lease was not issued');
+ const authority=await fetch(`${origin}/api/evolved/runner/authority`,{headers:{authorization:`Bearer ${leaseToken}`}});
+ if(!authority.ok||(await authority.json()).expiresAt!==null)throw Error('Permanent authority was not preserved');
  const searchSessionId=await seedSearchSession(origin,leaseToken,join(state,'workspace'));
  const longHistorySessionId=await seedLongHistory(origin,leaseToken,join(state,'workspace'));
  const downloadPromise=page.waitForEvent('download');
@@ -110,6 +116,9 @@ try {
  await page.getByRole('button',{name:'Widerrufen',exact:true}).click();
  await page.getByRole('button',{name:'Bestätigen',exact:true}).click();
  await page.locator('.ev-row').filter({has:page.getByText('Synthetic runner',{exact:true})}).getByText(/Widerrufen am/).waitFor();
+ const revokedAuthority=await fetch(`${origin}/api/evolved/runner/authority`,{headers:{authorization:`Bearer ${leaseToken}`}});
+ if(revokedAuthority.status!==401)throw Error('Permanent runner access survived explicit revocation');
+ console.log('PASS permanent runner access, native authority and explicit revocation');
  await workspaceArea(page,'Vorschauen');
  await page.getByLabel('Vorschauname',{exact:true}).fill('Sandbox probe');
  await page.getByLabel('Absolutes Buildverzeichnis',{exact:true}).fill(join(state,'workspace/dist'));

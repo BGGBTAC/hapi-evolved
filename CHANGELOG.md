@@ -18,6 +18,8 @@ or container image.
   budgeted Graphiti/Neo4j knowledge graph.
 - Local Codegraph search, source inspection, graph/impact exploration and refresh.
 - Isolated Claude Code/Codex runners with revocable leases and project profiles.
+- Permanent runner access until revocation, with optional timed access; existing
+  access deadlines are preserved and internal credentials stay short-lived.
 - Automatic per-project directories and optional manual folder selection.
 - Project GitHub connections with repository grants and brokered Git operations.
 - Durable attachment originals, searchable history, saved prompts, scoped

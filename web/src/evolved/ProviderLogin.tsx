@@ -17,9 +17,9 @@ function Commands({ children }: { children: string }) {
 }
 
 export function ProviderLoginPanel() {
-    return <Panel title="Abos verbinden" description="Nutze dein Claude- oder ChatGPT-Abo mit den Agenten auf deinem Runner.">
+    return <Panel title="Abos verbinden" description="Die Anmeldung bei Claude oder ChatGPT erfolgt derzeit im Runner-Terminal. Eine direkte Abo-Anmeldung in dieser Weboberfläche gibt es noch nicht.">
         <div className="ev-stack">
-            <p>Die Anmeldung erfolgt derzeit im Terminal des jeweiligen Runners. HAPI-eVolved bietet dafür noch keinen direkten Browser-Login. Ein Betreiber mit Serverzugang führt die folgenden Schritte aus; die Anmeldung beim Anbieter bestätigst du in deinem eigenen Browser.</p>
+            <p>Der Runner ist der Arbeitsdienst auf deinem Server, der Claude oder Codex ausführt. Ein Betreiber mit Serverzugang öffnet dort das Terminal und startet die Anmeldung mit den Befehlen unten. Die Anmeldung beim Anbieter bestätigst du in deinem eigenen Browser.</p>
             <p role="status" className="ev-muted">Anmeldestatus hier nicht geprüft. Ein verbundener Runner oder eine Kapazitätsanzeige bestätigt keine gültige Anbieteranmeldung.</p>
             <div className="ev-form-grid">
                 <section aria-labelledby="provider-codex-title">

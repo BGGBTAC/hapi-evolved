@@ -23,7 +23,7 @@ export class PeerCompletionReporter {
             project = this.store.requireProject(child.user_id, child.project_id, 'admin')
             if (project.profile !== child.profile || !peerPolicy(this.store, project.id).enabled) return
             const row = child.lease_id
-                ? this.store.db.prepare('SELECT scopes FROM evolved_runner_leases WHERE id=? AND project_id=? AND user_id=? AND profile=? AND revoked_at IS NULL AND expires_at>?').get(child.lease_id, project.id, child.user_id, child.profile, this.store.now())
+                ? this.store.db.prepare('SELECT scopes FROM evolved_runner_leases WHERE id=? AND project_id=? AND user_id=? AND profile=? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>?)').get(child.lease_id, project.id, child.user_id, child.profile, this.store.now())
                 : this.store.db.prepare('SELECT scopes FROM evolved_capabilities WHERE id=? AND project_id=? AND user_id=? AND profile=? AND revoked_at IS NULL AND expires_at>?').get(child.capability_id, project.id, child.user_id, child.profile, this.store.now())
             if (!row || !(JSON.parse((row as { scopes: string }).scopes) as string[]).includes('peers:send')) return
         } catch { return }
@@ -38,7 +38,8 @@ export class PeerCompletionReporter {
             const current = this.store.requireProject(child.user_id, child.project_id, 'admin')
             if (current.profile !== child.profile || !peerPolicy(this.store, current.id).enabled) return
             const table = child.lease_id ? 'evolved_runner_leases' : 'evolved_capabilities'
-            const row = this.store.db.prepare(`SELECT scopes FROM ${table} WHERE id=? AND project_id=? AND user_id=? AND profile=? AND revoked_at IS NULL AND expires_at>?`)
+            const expiry = child.lease_id ? '(expires_at IS NULL OR expires_at>?)' : 'expires_at>?'
+            const row = this.store.db.prepare(`SELECT scopes FROM ${table} WHERE id=? AND project_id=? AND user_id=? AND profile=? AND revoked_at IS NULL AND ${expiry}`)
                 .get(child.lease_id ?? child.capability_id, current.id, child.user_id, child.profile, this.store.now()) as { scopes: string } | null
             if (!row || !(JSON.parse(row.scopes) as string[]).includes('peers:send')) return
         } catch { return }

@@ -178,9 +178,30 @@ gehören nicht als GitHub-Token oder allgemeiner Tresorschlüssel in ein Formula
 
 ## Runner anbinden
 
-Unter „Runner“ erstellt ein Projektadministrator einen befristeten Zugang:
+Ein **Runner** ist der Arbeitsdienst auf deinem Server. Er startet Claude oder
+Codex, bearbeitet Projektdateien und führt Git-Befehle aus. Damit du ihn über HAPI
+steuern kannst, benötigt er einen HAPI-Zugang für das Projekt.
 
-1. Namen und Gültigkeitsdauer zwischen einer und 168 Stunden wählen.
+Unter **Runner** erstellt ein Projektadministrator nur diesen Zugang. Die
+Weboberfläche installiert oder startet damit noch keinen Arbeitsdienst; das
+übernimmt der Betreiber gemäß [Deployment-Anleitung](DEPLOYMENT.md).
+
+**Dauerhaft – bis zum Widerruf** ist für deinen eigenen Runner vorausgewählt.
+Dieser Zugang hat kein Ablaufdatum. Wähle **Befristet**, wenn du den Zugang nur für
+eine bestimmte Zeit erlauben möchtest: maximal 168 Stunden, also 7 Tage. Die
+Stunden sind kein Rechenstundenkontingent und kein Zeitlimit für dein Anbieterabo.
+
+Nach Ablauf eines befristeten Zugangs stoppt der verwaltete Runner; für weitere
+Arbeit muss ein Administrator einen neuen Zugang erstellen und der Betreiber ihn
+beim Runner hinterlegen. Widerruf, Profilwechsel oder Änderungen der zugehörigen
+Rollen machen auch dauerhafte Zugänge ungültig und stoppen die Arbeit.
+Projektdateien und gespeicherte Anbieteranmeldungen bleiben erhalten.
+
+So erstellst du den Zugang:
+
+1. Einen Namen vergeben und **Dauerhaft – bis zum Widerruf** oder **Befristet**
+   wählen. Nur bei befristetem Zugang eine Gültigkeitsdauer zwischen einer und
+   168 Stunden angeben.
 2. Nur die benötigten Berechtigungen aktivieren. Ressourcenaktionen erfordern
    zusätzlich die freigegebenen Ressourcen-IDs.
 3. Mit frischem Passkey bestätigen und die einmalige Operator-Datei herunterladen.
@@ -192,9 +213,11 @@ Unter „Runner“ erstellt ein Projektadministrator einen befristeten Zugang:
 Der Schlüssel gehört außerhalb des Projektverzeichnisses und bleibt beim
 Operator beziehungsweise Runner-Proxy. Er wird weder in Agentenprompts noch in
 Logs oder Wissenseinträge kopiert. Der Proxy tauscht ihn gegen kurzlebige,
-projektgebundene Berechtigungen. Die Übersicht zeigt Laufzeit und Status;
-„Widerrufen“ entzieht den Zugang. Nach Ablauf oder Profilwechsel ist ein neuer
-Zugang nötig. Die eigentliche Runnerinstallation beschreibt die Betreiberanleitung.
+projektgebundene Berechtigungen. Die Übersicht zeigt Gültigkeit und Status;
+„Widerrufen“ entzieht auch einem dauerhaften Zugang die Berechtigung. Bereits
+vorhandene befristete Zugänge behalten ihr Ablaufdatum; sie werden nicht
+automatisch in dauerhafte Zugänge umgewandelt. Die eigentliche Runnerinstallation
+beschreibt die Betreiberanleitung.
 
 ## Vorschauen und Freigaben
 
