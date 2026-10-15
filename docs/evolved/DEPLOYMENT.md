@@ -37,6 +37,10 @@ gleichen Browser fortsetzen. Nach Ablauf ohne fertig registrierten Erstnutzer da
 ausschließlich `hub/bootstrap.token` entfernen und den neuen Hub neu starten. So entsteht ein
 neuer Einmalcode; die Datenbank bleibt erhalten. Es gibt keinen öffentlichen Reset-Endpunkt.
 
+Vor der menschlichen Ersteinrichtung lässt sich ein separater synthetischer Teststand
+mit der [HTTPS-Live-Abnahme](LIVE_ACCEPTANCE.md) einschließlich Passkey, Vault, Memory,
+Codegraph, Vorschau-Sandbox, Persistenz und Runner-Widerruf prüfen.
+
 ## Vault und Ressourcenaktionen
 
 Der eigene Vault-Prozess speichert AES-256-GCM-verschlüsselte Werte und pro Projekt verpackte
@@ -156,6 +160,35 @@ Es gibt keine Docker-Socket-, Host-Netz- oder fremden Projekt-Mounts.
 MCP-Werkzeuge für Codegraph, Memory und Ressourcen werden in Claude/Codex automatisch ergänzt.
 Im Runner ist auch `bun /app/cli/src/index.ts evolved --help` verfügbar.
 
+### Isolierte VM-Abnahme ohne Provideranmeldung
+
+Für ein eigens angelegtes Testprojekt ein neues, leeres Runner-Home und eine kurzlebige
+`restricted`-Freigabe mit `runner:connect` verwenden. Die private `runner.env` erhält Modus
+`0600` und die zusätzliche Kommentarzeile `# HAPI_EVOLVED_RUNNER_VALIDATION=<Projekt-UUID>`.
+Als separates Backend ist ausschließlich `EVOLVED_BACKEND_NETWORK=hapi-evolved-acceptance_backend`
+zulässig. Das Skript prüft dessen Compose-Eigentümer und internes Netzwerk.
+Haupt- und Runnerimage müssen bereits gebaut sein.
+
+```sh
+bun deploy/evolved/validate-runner-vm.mjs /privater/pfad/runner.env --start
+```
+
+Das Skript verwendet ausschließlich den Stacknamen `hapi-evolved-validation-<Projekt-UUID>`
+und markiert dessen drei Container. Es baut keine Images, ersetzt keine vorhandenen Container
+und verweigert unmarkierte oder abweichend konfigurierte Stacks. Ohne `--start` prüft es nur
+den bereits gestarteten Teststack. Docker muss lokal über einen Unixsocket erreichbar sein;
+bei Bedarf verwendet das Skript `sudo -n docker`.
+
+Die Abnahme prüft aktive Hubregistrierung, unprivilegierte Runnerprozesse ohne Linux-Capabilities,
+einen tatsächlich schreibgeschützten Workspace, getrennte Netze und Mounts ohne Docker-Socket
+oder Lease im Runner sowie gesperrte private Egressziele und Verwaltungs-API. Der Bericht enthält
+nur IDs und Prüfergebnisse. Providerlogin, Build, Stop und Widerruf bleiben separate Betreiberschritte;
+der Teststack bleibt zur anschließenden Widerrufsprüfung bestehen.
+Für den echten VM-Neustarttest bleibt dessen Wiederstartregel aktiv. Unmittelbar nach dem
+nachgewiesenen Lease-Widerruf den exakt benannten Teststack kontrolliert herunterfahren:
+Andernfalls versucht Docker nach Lease-Ablauf oder Widerruf wiederholt, den abgewiesenen
+Runner neu zu starten. Vor Aktivierung des finalen Hauptstacks auch den Abnahmestack entfernen.
+
 ## Betrieb, Sicherung und Aktualisierung
 
 `docker compose ... ps` und `logs --tail 100` prüfen ausschließlich diesen neuen Stack.
@@ -178,9 +211,12 @@ Vor dem ersten Hubstart im wiederhergestellten Linux-Container zuerst prüfen,
 dann die Notification-Epoche rotieren (hier aus dem Projektverzeichnis):
 
 ```sh
-docker compose --env-file /absolut/evolved/runtime.env -f deploy/evolved/compose.yml run --rm --no-deps hub bun hub/scripts/check-restored-attachments.ts /data/hapi.db /data/attachments
-docker compose --env-file /absolut/evolved/runtime.env -f deploy/evolved/compose.yml run --rm --no-deps hub bun hub/scripts/invalidate-restored-notifications.ts /data/hapi.db
+docker compose -p hapi-evolved --env-file /absolut/evolved/compose.env -f deploy/evolved/compose.yml run --rm --no-deps hub bun hub/scripts/check-restored-attachments.ts /data/hapi.db /data/attachments
+docker compose -p hapi-evolved --env-file /absolut/evolved/compose.env -f deploy/evolved/compose.yml run --rm --no-deps hub bun hub/scripts/invalidate-restored-notifications.ts /data/hapi.db
 ```
+
+Projektname und Betreiberdatei müssen zum wiederhergestellten Stack gehören. Für die separate
+Abnahme stattdessen `-p hapi-evolved-acceptance` und deren eigene `compose.env` verwenden.
 
 Erst bei erfolgreicher Prüfung und Rotation den Stack starten. Der Prüfer öffnet
 SQLite nur lesend, führt keine Migration/Reparatur/Löschung aus und folgt weder
