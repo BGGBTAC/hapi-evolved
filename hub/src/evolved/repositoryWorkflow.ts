@@ -238,13 +238,17 @@ export function createRepositoryWorkflow(config: Config) {
         const authority = await requestAuthority(c.req.raw, c.req.param('id')), body = await parseBody(c, z.object({ path: z.string().min(1).max(1024) }).strict())
         current(authority, true)
         if (!safePath(body.path) || excludedSourcePath(body.path)) throw new EvolvedError('source_excluded', 'Diese Datei ist ausgeschlossen.', 403)
-        const ctx = await resolve(authority, c.req.param('repositoryId'), true)
-        checkout(ctx.project, ctx.repository.path); idle(ctx.project.id)
-        const machine = target(ctx.project)
-        if (!config.intakeFile) throw unavailable('memory_unavailable', 'Wissensvorschläge sind derzeit nicht verfügbar.')
-        const result = await config.intakeFile(c.req.raw, ctx.project.id, `repositories/${ctx.repository.fullName}/${body.path}`, async () => { const live = await resolve(authority, ctx.repository.id, true); if (live.grant !== ctx.grant) throw changed(); checkout(live.project, live.repository.path); idle(live.project.id); if (target(live.project).machineId !== machine.machineId) throw changed() })
-        current(authority, true)
-        return c.json(result)
+        // Keep Git sync excluded through file I/O, grant revalidation and the
+        // completed ledger write, just as for worktree/diff/impact reads.
+        return read(authority, async () => {
+            const ctx = await resolve(authority, c.req.param('repositoryId'), true)
+            checkout(ctx.project, ctx.repository.path); idle(ctx.project.id)
+            const machine = target(ctx.project)
+            if (!config.intakeFile) throw unavailable('memory_unavailable', 'Wissensvorschläge sind derzeit nicht verfügbar.')
+            const result = await config.intakeFile(c.req.raw, ctx.project.id, `repositories/${ctx.repository.fullName}/${body.path}`, async () => { const live = await resolve(authority, ctx.repository.id, true); if (live.grant !== ctx.grant) throw changed(); checkout(live.project, live.repository.path); idle(live.project.id); if (target(live.project).machineId !== machine.machineId) throw changed() })
+            current(authority, true)
+            return c.json(result)
+        })
     })
     routes.get('/projects/:id/repositories/:repositoryId/sessions', async c => {
         const authority = await requestAuthority(c.req.raw, c.req.param('id')), ctx = await resolve(authority, c.req.param('repositoryId'))

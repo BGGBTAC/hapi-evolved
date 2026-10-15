@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, renameSync, symlinkSync } from 'node:fs'
+import { mkdirSync, renameSync, symlinkSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { PluginService } from './plugins'
 import { createAgentCatalogRoutes } from './agentCatalog'
@@ -10,6 +10,8 @@ import { MACHINE_CAPABILITIES } from '@hapi/protocol/runnerCapabilities'
 import type { RepoWorktree } from '@hapi/protocol/evolvedWorkspace'
 import { EvolvedStore, EvolvedError } from './store'
 import { createRepositoryRoutes } from './repositories'
+import { proposeMemoryFile } from './memory'
+import { MemoryService } from './memoryService'
 import { createProjectAuthMiddleware, createSessionTokenRoutes, verifyProjectToken } from './bridge'
 import { createMachinesRoutes } from '../web/routes/machines'
 import type { SyncEngine } from '../sync/syncEngine'
@@ -20,6 +22,11 @@ afterEach(() => { for (const fn of cleanups.splice(0)) fn() })
 const repo = { id: '123', owner: 'example', name: 'code', fullName: 'example/code', permission: 'read' }
 const snapshotId = 'a'.repeat(64)
 const listing = (): RepoWorktree => ({ repositoryId: repo.id, state: 'ready', branch: 'main', detached: false, head: 'b'.repeat(40), snapshotId, observedAt: 100, files: [{ path: 'src/main.ts', index: 'M', worktree: ' ', kind: 'file' }], truncated: false })
+function barrier() {
+    let release!: () => void
+    const promise = new Promise<void>(resolve => { release = resolve })
+    return { promise, release }
+}
 function setup() {
     const store = new EvolvedStore(':memory:')
     for (const id of ['admin', 'member', 'viewer']) store.db.prepare('INSERT INTO evolved_users VALUES(?,?,?,?)').run(id, id, id === 'admin' ? 1 : 0, Date.now())
@@ -33,6 +40,8 @@ function setup() {
     const calls: any[] = [], starts: Parameters<SyncEngine['spawnSession']>[] = [], graphCalls: any[] = [], liveSessions = new Set<string>()
     let run: (params: any) => Promise<unknown> = async params => params.action === 'worktree' ? listing() : { path: params.path, side: params.side, patch: '@@ -1 +1 @@\n-old\n+new', binary: false, truncated: false, observedAt: 101 }
     let grantRead: (() => void) | undefined
+    let fileRecheck: (() => Promise<void>) | undefined, fileStored: (() => Promise<void>) | undefined
+    const memory = new MemoryService(store, { available: async () => false, request: async () => { throw new Error('No cloud backend in this fixture') } })
     const engine = {
         getMachineByNamespace: (id: string, namespace: string) => id === machineId && namespace === project.namespace ? { id, active: true, metadata: { capabilities: [MACHINE_CAPABILITIES.AgentAvailability] } } : undefined,
         sendMessage: async (id: string, body: any) => { messages.set(id, [body]); afterAssignment?.() },
@@ -46,6 +55,12 @@ function setup() {
     } as unknown as SyncEngine
     const origin = 'https://workflow.example.test', secret = new Uint8Array(32).fill(5)
     const routes = createRepositoryRoutes({ store, origin, getEngine: () => engine, vault: { request: async () => { grantRead?.(); return { connected, repositories: granted ? [repo] : [] } } },
+        intakeFile: async (request, projectId, path, recheck) => {
+            const result = await proposeMemoryFile({ store, service: memory, request, projectId, path,
+                recheck: async () => { await fileRecheck?.(); await recheck() } })
+            await fileStored?.()
+            return result
+        },
         queryCodegraph: async (_project, operation, params) => { graphCalls.push({ operation, params }); return { status: 200, result: { nodes: [{ id: 'test', name: 'works', kind: 'function', file: 'repositories/example/code/tests/main.test.ts', line: 1 }], edges: [], lastIndexedAt: 200, pendingFiles: 0 } } } })
     const app = new Hono<WebAppEnv>()
     app.onError((error, c) => error instanceof EvolvedError ? c.json({ code: error.code, error: error.message }, error.status as 400) : c.json({ code: 'internal' }, 500))
@@ -60,8 +75,18 @@ function setup() {
     const diff = (body: unknown = { path: 'src/main.ts', side: 'staged', snapshotId }, user?: string) => request(`/repositories/${repo.id}/worktree/diff`, body, user)
     const token = async (user = 'member') => { const res = await app.request(`/api/evolved/session-token?projectId=${project.id}`, { headers: { cookie: `__Host-hapi-evolved=${cookies[user]}` } }); return (await res.json() as any).token as string }
     const spawn = async (body: unknown) => app.request('/api/machines/machine/spawn', { method: 'POST', headers: { authorization: `Bearer ${await token()}`, origin, 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const sync = (action: 'clone' | 'pull' = 'pull') => request(`/repositories/${repo.id}/sync`, { action, requestId: randomUUID() })
+    const waitJob = async (jobId: string) => {
+        for (let i = 0; i < 50; i++) {
+            const body = await (await request(`/repository-jobs/${jobId}`)).json() as { job: { state: string } }
+            if (body.job.state !== 'running') return body.job
+            await new Promise(resolve => setTimeout(resolve, 5))
+        }
+        throw new Error('Job did not settle')
+    }
     cleanups.push(() => { routes.close(); store.close() })
-    return { store, project, second, checkout, cookies, routes, request, load, diff, token, spawn, starts, calls, graphCalls, liveSessions, secret, messages, archived, app,
+    return { store, project, second, checkout, cookies, routes, request, load, diff, token, spawn, starts, calls, graphCalls, liveSessions, secret, messages, archived, app, memory, sync, waitJob,
+        onFileRecheck: (fn: () => Promise<void>) => { fileRecheck = fn }, onFileStored: (fn: () => Promise<void>) => { fileStored = fn }, restoreGrant: () => { granted = true },
         afterSpawn: (fn: () => void) => { afterSpawn = fn },
         afterAssignment: (fn: () => void) => { afterAssignment = fn },
         setRun: (value: typeof run) => { run = value }, revoke: () => { granted = false }, disconnect: () => { connected = false }, switchMachine: () => { machineId = 'replacement' }, downgrade: () => { capable = false }, onGrant: (fn: () => void) => { grantRead = fn } }
@@ -198,6 +223,63 @@ describe('repository workflow boundary', () => {
             expect(t.calls.map(call => call.action)).toEqual(['worktree', 'diff'])
         } finally { release() }
         expect((await diff).status).toBe(200)
+    })
+    test.each(['clone', 'pull'] as const)('file intake excludes concurrent %s through source revalidation and ledger completion', async action => {
+        const t = setup(); t.store.setProfile('admin', t.project.id, 'workspace')
+        writeFileSync(join(t.checkout, 'note.md'), 'A synthetic project decision.')
+        const sourceRead = barrier(), resumeRecheck = barrier(), stored = barrier(), resumeResponse = barrier()
+        t.onFileRecheck(async () => { sourceRead.release(); await resumeRecheck.promise })
+        t.onFileStored(async () => { stored.release(); await resumeResponse.promise })
+        t.setRun(async () => ({ local: { state: 'ready', branch: 'main', dirty: false } }))
+        const intake = t.request(`/repositories/${repo.id}/memory-intake`, { path: 'note.md' })
+        try {
+            await sourceRead.promise
+            for (const phase of ['recheck', 'stored']) {
+                if (phase === 'stored') { resumeRecheck.release(); await stored.promise }
+                const response = await t.sync(action)
+                expect(response.status).toBe(409)
+                expect(await response.json()).toMatchObject({ code: 'repository_busy' })
+                expect(t.store.db.query('SELECT COUNT(*) AS n FROM evolved_repository_jobs').get()).toEqual({ n: 0 })
+                expect(t.calls).toHaveLength(0)
+            }
+            expect(t.memory.ledger.list(t.project.id)).toHaveLength(1)
+        } finally { resumeRecheck.release(); resumeResponse.release(); await intake }
+        expect((await intake).status).toBe(200)
+        expect(await (await intake).json()).toMatchObject({ item: { status: 'proposed', body: 'A synthetic project decision.' } })
+        const response = await t.sync(action), body = await response.json() as { job: { id: string } }
+        expect(response.status).toBe(202)
+        expect((await t.waitJob(body.job.id)).state).toBe('succeeded')
+        expect(t.calls.map(call => call.action)).toEqual([action])
+    })
+    test.each(['source', 'grant'] as const)('file intake releases its reservation after %s failure without storing knowledge', async failure => {
+        const t = setup(); t.store.setProfile('admin', t.project.id, 'workspace')
+        if (failure === 'grant') {
+            writeFileSync(join(t.checkout, 'note.md'), 'A synthetic project decision.')
+            t.onFileRecheck(async () => { t.revoke() })
+        }
+        const intake = await t.request(`/repositories/${repo.id}/memory-intake`, { path: 'note.md' })
+        expect(intake.status).toBe(failure === 'source' ? 404 : 403)
+        expect(t.memory.ledger.list(t.project.id)).toHaveLength(0)
+        expect(t.store.db.query('SELECT COUNT(*) AS n FROM evolved_repository_jobs').get()).toEqual({ n: 0 })
+        t.restoreGrant(); t.setRun(async () => ({ local: { state: 'ready', branch: 'main', dirty: false } }))
+        const response = await t.sync(), body = await response.json() as { job: { id: string } }
+        expect(response.status).toBe(202)
+        expect((await t.waitJob(body.job.id)).state).toBe('succeeded')
+    })
+    test.each(['clone', 'pull'] as const)('a running %s blocks file intake without reading or storing a source', async action => {
+        const t = setup(); t.store.setProfile('admin', t.project.id, 'workspace')
+        writeFileSync(join(t.checkout, 'note.md'), 'A synthetic project decision.')
+        const dispatched = barrier(), finish = barrier(); let sourceRead = false
+        t.onFileRecheck(async () => { sourceRead = true })
+        t.setRun(async () => { dispatched.release(); await finish.promise; return { local: { state: 'ready', branch: 'main', dirty: false } } })
+        const response = await t.sync(action), body = await response.json() as { job: { id: string } }
+        expect(response.status).toBe(202)
+        try {
+            await dispatched.promise
+            const intake = await t.request(`/repositories/${repo.id}/memory-intake`, { path: 'note.md' })
+            expect(intake.status).toBe(409); expect(await intake.json()).toMatchObject({ code: 'repository_busy' })
+            expect(sourceRead).toBe(false); expect(t.memory.ledger.list(t.project.id)).toHaveLength(0)
+        } finally { finish.release(); await t.waitJob(body.job.id) }
     })
     test('session deletion removes only the matching namespace link and the project listing is indexed', async () => {
         const t = setup(); await t.spawn({ repositoryId: repo.id, agent: 'claude' })

@@ -79,6 +79,25 @@
     {
       "check": "publication_policy",
       "passed": 17
+    },
+    {
+      "check": "github_ci",
+      "sourceCommit": "e3dc8bde72e8c5b9fd2339c1693ddc75f97eebcf",
+      "runs": [
+        38819316589,
+        38819310649,
+        38819311649,
+        38819316794
+      ],
+      "result": "All required checks, CodeQL and fixture drift passed. Subsequent narrow review corrections require a fresh CI run."
+    },
+    {
+      "check": "file_memory_reservation_regressions",
+      "passed": 72,
+      "assertions": 353,
+      "newCases": 6,
+      "baseline": "Clone/pull admitted with HTTP 202 before the fix; now rejected with HTTP 409 before job creation.",
+      "typecheck": "Hub passed"
     }
   ],
   "implementationReview": {
@@ -110,11 +129,16 @@
     "Distinguish rejection before session reservation from uncertain delivered starts; retain sessions after transient failures.",
     "Namespace-scoped repository link cleanup and index.",
     "Preserve verified memory deduplication, source hash compatibility and CRLF/emoji excerpts.",
-    "Harden browser fixture files and use authoritative profile-switch assertions."
+    "Harden browser fixture files and use authoritative profile-switch assertions.",
+    "File memory intake reserves the repository against managed clone/pull until ledger completion; six concurrency/error regressions. Native workspace writers remain outside this reservation."
   ],
   "codeql": {
+    "sourceCommit": "e3dc8bde72e8c5b9fd2339c1693ddc75f97eebcf",
+    "analysisId": 1963652145,
+    "sarifSha256": "88f0d367ba6287a036393bc6f3a2962ac7c8e25bf94373dec51f210998da74b7",
+    "openAlerts": 0,
     "alert65": "Individually dismissed as false positive: URL is exclusively operator-configured, request data is POST body. No rule or path exclusion.",
-    "remainingInitialAlerts": "Fixture hardening requires scanner rerun. Alert 757 is eligible only for an individual reviewed false-positive disposition if it persists."
+    "alerts748through757": "Resolved by source corrections in the successful rerun, without dismissals."
   },
   "limitations": [
     "Conservative source filtering may hide harmless paths.",
@@ -123,5 +147,17 @@
     "Native read-only/planning modes do not create OS isolation.",
     "Existing dependency alerts remain open and are not claimed fixed by this milestone.",
     "Deployment acceptance is recorded separately; these source tests do not prove a running version."
-  ]
+  ],
+  "additionalReview": {
+    "at": "2026-10-15T22:58:49.886698+00:00",
+    "sourceCommit": "e3dc8bde72e8c5b9fd2339c1693ddc75f97eebcf",
+    "inputSha256": "f1f203f3bf461f1857b82ce25c8940fdd84177d3bab5d0882257efaf9999a529",
+    "outputSha256": "320b85f9adef12803fedbbb8cd017c732d3f0eb8187977c5388c467ef861ede5",
+    "success": true,
+    "models": [
+      "claude-opus-5-5"
+    ],
+    "scope": "Narrow correction following PR review: file memory intake now holds the existing project read reservation through file I/O, grant revalidation and completed ledger write.",
+    "result": "No remaining blocker; fresh CI required on the new commit."
+  }
 }

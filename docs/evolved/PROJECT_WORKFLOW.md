@@ -72,8 +72,10 @@ These consultations inform the implementation; they are not a security certifica
 The adversarial implementation review identified unnecessary interference between
 Git reads and synchronization. Runner readers now have a separate counter; status
 inspection remains available during reads, and the Hub rejects a conflicting sync
-before creating a job. Directory traversal closes temporary file descriptors as it
-advances; a regression covers 1,100 changed directories. Session starts explicitly
+before creating a job. File-to-memory intake holds the same project read reservation
+through source reading, authorization revalidation and ledger creation, so a managed
+clone or pull cannot start halfway through that operation. Directory traversal closes
+temporary file descriptors as it advances; a regression covers 1,100 changed directories. Session starts explicitly
 distinguish rejection before reservation from an uncertain result after reservation.
 Transient service failures do not archive an otherwise delivered specialist session.
 
