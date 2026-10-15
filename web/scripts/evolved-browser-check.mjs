@@ -73,7 +73,7 @@ try {
  await page.waitForFunction(()=>document.querySelector('select[aria-label="Aktives Projekt"]')?.selectedOptions[0]?.textContent==='Browsercheck');
  console.log('PASS automatic per-project directory and explicit server-side manual directory selection');
  await checkGithub(page);
- if (process.env.EVOLVED_TEST_CODEGRAPH_NODE) await checkCodegraph(page, join(state, 'workspace'));
+ if (process.env.EVOLVED_TEST_CODEGRAPH === '1') await checkCodegraph(page, join(state, 'workspace'));
  execFileSync('bun',['-e',`import {Database} from 'bun:sqlite';const db=new Database(process.argv[1]);db.prepare('UPDATE evolved_sessions SET created_at=?').run(Date.now()-6*60_000);db.close()`,join(state,'evolved.db')]);
  await workspaceArea(page,'Tresor');
  await page.getByLabel('Name',{exact:true}).fill('SYNTHETIC_UI_KEY');

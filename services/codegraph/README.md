@@ -89,10 +89,12 @@ Die Browserregression kann unter Linux x64 den echten Dienst einschließen
 (nach Installation der lokalen Codegraph-Abhängigkeiten und Web-Build):
 
 ```sh
-EVOLVED_TEST_CODEGRAPH_NODE="$PWD/services/codegraph/node_modules/@colbymchenry/codegraph-linux-x64/node" \
+EVOLVED_TEST_CODEGRAPH=1 \
   node web/scripts/evolved-browser-check.mjs
 ```
 
+Der Schalter aktiviert ausschließlich das fest installierte Linux-x64-Node-Bundle
+im Codegraph-Paket; ein frei gewählter ausführbarer Pfad wird nicht übernommen.
 Sie verwendet nur temporäre synthetische Konten/Workspaces und prüft den leeren
 Index, automatische Aufnahme neuer Dateien, Graphausschnitt, Quelltext und
 Neuindizierung über den echten authentifizierten Hub.
