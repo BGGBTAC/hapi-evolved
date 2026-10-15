@@ -4,6 +4,6 @@
   "private": true,
   "type": "module",
   "engines": { "node": ">=24" },
-  "scripts": { "start": "node server.mjs", "test": "node --test test/*.test.mjs" },
+  "scripts": { "start": "node --liftoff-only server.mjs", "test": "node --liftoff-only --test test/*.test.mjs" },
   "dependencies": { "@colbymchenry/codegraph": "1.6.0" }
 }

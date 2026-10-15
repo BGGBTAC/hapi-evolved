@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { accessSync, constants, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { spawn } from 'node:child_process'
@@ -68,13 +68,16 @@ Object.assign(process.env, { EVOLVED_SIDECHANNEL_ADAPTER: 'openai-chat-completio
 // Optional real local Codegraph fixture: all state and credentials are synthetic.
 let codegraphProcess: ReturnType<typeof spawn> | undefined
 process.on('exit', () => codegraphProcess?.kill('SIGTERM'))
-if (process.env.EVOLVED_TEST_CODEGRAPH_NODE) {
+if (process.env.EVOLVED_TEST_CODEGRAPH === '1') {
+    const codegraphNode = new URL('../../services/codegraph/node_modules/@colbymchenry/codegraph-linux-x64/node', import.meta.url).pathname
+    try { accessSync(codegraphNode, constants.X_OK) }
+    catch { throw new Error('The real Codegraph browser fixture requires the installed Linux x64 bundle: run npm ci --prefix services/codegraph --ignore-scripts') }
     const token = randomBytes(32).toString('hex')
     const tokenFile = join(tmp, 'codegraph-service.key')
     writeFileSync(tokenFile, token, { mode: 0o600 })
     const port = process.env.EVOLVED_TEST_CODEGRAPH_PORT!
     mkdirSync(join(tmp, 'managed-workspaces'), { recursive: true, mode: 0o700 })
-    codegraphProcess = spawn(process.env.EVOLVED_TEST_CODEGRAPH_NODE, [new URL('../../services/codegraph/server.mjs', import.meta.url).pathname], {
+    codegraphProcess = spawn(codegraphNode, ['--liftoff-only', new URL('../../services/codegraph/server.mjs', import.meta.url).pathname], {
         env: { ...process.env, EVOLVED_SERVICE_TOKEN_FILE: '', EVOLVED_SERVICE_TOKEN: token, EVOLVED_CODEGRAPH_HOST: '127.0.0.1', EVOLVED_CODEGRAPH_PORT: port, EVOLVED_CODEGRAPH_STATE_DIR: join(tmp, 'codegraph'), EVOLVED_CODE_ROOTS: JSON.stringify([workspace, join(tmp, 'managed-workspaces')]) }, stdio: 'ignore',
     })
     let ready = false

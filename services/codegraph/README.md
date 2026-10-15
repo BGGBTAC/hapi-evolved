@@ -18,6 +18,14 @@ npm ci --prefix services/codegraph --ignore-scripts
 npm start --prefix services/codegraph
 ```
 
+Docker und `npm start` starten Node mit `--liftoff-only`, wie vom eingebetteten
+Codegraph-SDK für große Indexläufe verlangt. Der Parameter verhindert dessen
+bekannten V8-WASM-Optimierungscompiler-Fehler und wird an die Worker vererbt.
+Bei einem direkten Start gilt daher `node --liftoff-only server.mjs`.
+`NODE_OPTIONS` oder ein nachträglicher Worker-Parameter sind dafür kein Ersatz.
+Der Parameter ersetzt keine Speichergrenze: Ein Container-OOM durch den gesamten
+Indexierungsbedarf muss weiterhin separat anhand des tatsächlichen Verbrauchs bewertet werden.
+
 Konfiguration:
 
 | Variable | Bedeutung |
@@ -63,7 +71,7 @@ Quelldateien bleiben erhalten. Bei Ausfall behält der Hub den Bereinigungsauftr
 ## Prüfung
 
 ```sh
-node --test services/codegraph/test/*.test.mjs
+node --liftoff-only --test services/codegraph/test/*.test.mjs
 ```
 
 Der Integrationstest baut einen echten temporären Index, prüft Aufrufkanten, Quelltextvorschau,
@@ -81,10 +89,12 @@ Die Browserregression kann unter Linux x64 den echten Dienst einschließen
 (nach Installation der lokalen Codegraph-Abhängigkeiten und Web-Build):
 
 ```sh
-EVOLVED_TEST_CODEGRAPH_NODE="$PWD/services/codegraph/node_modules/@colbymchenry/codegraph-linux-x64/node" \
+EVOLVED_TEST_CODEGRAPH=1 \
   node web/scripts/evolved-browser-check.mjs
 ```
 
+Der Schalter aktiviert ausschließlich das fest installierte Linux-x64-Node-Bundle
+im Codegraph-Paket; ein frei gewählter ausführbarer Pfad wird nicht übernommen.
 Sie verwendet nur temporäre synthetische Konten/Workspaces und prüft den leeren
 Index, automatische Aufnahme neuer Dateien, Graphausschnitt, Quelltext und
 Neuindizierung über den echten authentifizierten Hub.

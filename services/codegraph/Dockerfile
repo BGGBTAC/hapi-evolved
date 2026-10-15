@@ -7,4 +7,4 @@ ENV NODE_ENV=production DO_NOT_TRACK=1 CODEGRAPH_TELEMETRY=0 CODEGRAPH_NO_UPDATE
 RUN mkdir -p /data && chown node:node /data
 USER node
 EXPOSE 8011
-CMD ["node", "server.mjs"]
+CMD ["node", "--liftoff-only", "server.mjs"]
