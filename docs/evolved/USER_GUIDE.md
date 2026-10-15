@@ -1,4 +1,4 @@
-# HAPI evolved bedienen
+# HAPI-eVolved bedienen
 
 Öffne die vom Betreiber eingerichtete private HTTPS-Adresse. Der Arbeitsbereich
 ist unter `/evolved` erreichbar. Über „Sessions“ gelangst du zu den
@@ -62,6 +62,15 @@ Ein Projekt verleiht keinen Zugang zu einem fremden Team.
 Beim Anlegen reichen **Projektname und Team**: Im Hintergrund entsteht für jedes
 neue Projekt ein eigener Ordner. Gleiche Namen führen trotzdem zu getrennten
 Verzeichnissen. Die Projektkarte zeigt nach dem Anlegen den tatsächlichen Pfad.
+
+**Neue Sessions starten automatisch im Ordner des aktiven Projekts.** Du musst
+den Pfad weder suchen noch eingeben. Das Formular zeigt den Projektordner nur
+zur Orientierung; alte Pfadvorschläge, gespeicherte Formulare und Direktlinks
+ändern ihn nicht. Beim Projektwechsel wird der Ordner des neuen Projekts verwendet.
+Der Server prüft den Projektordner ebenfalls. Ist er nicht erreichbar, wird der
+Start mit einer verständlichen Meldung gestoppt; es gibt keinen Ausweichordner.
+Zusätzliche Worktrees außerhalb dieses Ordners und der Import fremder nativer
+Sessions sind in diesem Startformular nicht verfügbar.
 
 Systemadministratoren können optional **„Ordner manuell festlegen oder wählen“**
 öffnen und einen vorhandenen, vom Betreiber freigegebenen Serverordner verknüpfen.

@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { ApiClient } from '@/api/client'
 import type { CodexDuplicateSessionGroup, CodexLocalSessionSummary, Machine, PiLocalSessionSummary } from '@/types/api'
 import type { CodexCollaborationMode, GrokPermissionMode, PermissionMode, CopilotAgentMode } from '@hapi/protocol'
@@ -86,7 +86,7 @@ import { useToast } from '@/lib/toast-context'
 
 
 
-export function NewSession(props: {
+type NewSessionProps = {
     api: ApiClient
     machines: Machine[]
     isLoading?: boolean
@@ -95,7 +95,17 @@ export function NewSession(props: {
     onChooseFolder?: (args: { machineId: string | null; directory: string }) => void
     initialDirectory?: string
     initialMachineId?: string
-}) {
+}
+
+export function NewSession(props: NewSessionProps) {
+    const evolved = useOptionalEvolved()
+    // A different project/root gets a fresh form. In-flight callbacks from the
+    // previous form must never start or navigate into the newly selected scope.
+    const scope = evolved ? `project:${evolved.project?.id ?? ''}:${evolved.project?.rootPath ?? ''}` : 'legacy'
+    return <NewSessionForm key={scope} {...props} projectDirectory={evolved ? evolved.project?.rootPath ?? '' : null} />
+}
+
+function NewSessionForm(props: NewSessionProps & { projectDirectory: string | null }) {
     const { haptic } = usePlatform()
     const { t } = useTranslation()
     const { addToast } = useToast()
@@ -104,7 +114,16 @@ export function NewSession(props: {
     const { getRecentPaths, addRecentPath, getLastUsedMachineId, setLastUsedMachineId } = useRecentPaths()
 
     const [machineId, setMachineId] = useState<string | null>(props.initialMachineId ?? null)
-    const [directory, setDirectory] = useState(props.initialDirectory ?? '')
+    const [legacyDirectory, setDirectory] = useState(props.initialDirectory ?? '')
+    const isProjectSession = props.projectDirectory !== null
+    // The stored project root is authoritative, including before effects run.
+    // URL paths, legacy Browse drafts and recent paths cannot replace it.
+    const directory = props.projectDirectory ?? legacyDirectory
+    const activeFormRef = useRef(false)
+    useLayoutEffect(() => {
+        activeFormRef.current = true
+        return () => { activeFormRef.current = false }
+    }, [])
     const [suppressSuggestions, setSuppressSuggestions] = useState(false)
     const [isDirectoryFocused, setIsDirectoryFocused] = useState(false)
     const [agent, setAgent] = useState<AgentType>(loadPreferredAgent)
@@ -128,7 +147,8 @@ export function NewSession(props: {
     const [yoloMode, setYoloMode] = useState(loadPreferredYoloMode)
     const [nativePermissionMode, setNativePermissionMode] = useState<PermissionMode>('default')
     const [grokPermissionMode, setGrokPermissionMode] = useState<GrokPermissionMode>('default')
-    const [sessionType, setSessionType] = useState<SessionType>('simple')
+    const [legacySessionType, setSessionType] = useState<SessionType>('simple')
+    const sessionType = isProjectSession ? 'simple' : legacySessionType
     const [worktreeName, setWorktreeName] = useState('')
     const [directoryCreationConfirmed, setDirectoryCreationConfirmed] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -223,7 +243,7 @@ export function NewSession(props: {
 
     const restoredFromBrowseRef = useRef(false)
     useEffect(() => {
-        if (restoredFromBrowseRef.current) {
+        if (isProjectSession || restoredFromBrowseRef.current) {
             return
         }
         if (!shouldRestoreNewSessionFormDraft({
@@ -265,6 +285,7 @@ export function NewSession(props: {
         setWorktreeName(draft.worktreeName)
         clearNewSessionFormDraft()
     }, [
+        isProjectSession,
         props.initialDirectory,
         props.initialMachineId,
         machineId
@@ -547,16 +568,19 @@ export function NewSession(props: {
         [getRecentPaths, machineId]
     )
 
-    const trimmedDirectory = directory.trim()
-    const deferredDirectory = useDeferredValue(trimmedDirectory)
+    const trimmedDirectory = isProjectSession ? directory : directory.trim()
+    const deferredLegacyDirectory = useDeferredValue(trimmedDirectory)
+    const deferredDirectory = isProjectSession ? directory : deferredLegacyDirectory
     const allPaths = useDirectorySuggestions(machineId, sessions, recentPaths)
 
     const pathsToCheck = useMemo(
-        () => Array.from(new Set([
-            ...(deferredDirectory ? [deferredDirectory] : []),
-            ...allPaths
-        ])).slice(0, 1000),
-        [allPaths, deferredDirectory]
+        () => isProjectSession
+            ? (directory ? [directory] : [])
+            : Array.from(new Set([
+                ...(deferredDirectory ? [deferredDirectory] : []),
+                ...allPaths
+            ])).slice(0, 1000),
+        [isProjectSession, directory, allPaths, deferredDirectory]
     )
 
     const { pathExistence, outsideWorkspaceRoots, checkPathsExists } = useMachinePathsExists(
@@ -987,7 +1011,7 @@ export function NewSession(props: {
     const directoryOutsideWorkspaceRoots = trimmedDirectory
         ? outsideWorkspaceRoots.has(trimmedDirectory)
         : false
-    const needsDirectoryCreationWarning = !directoryOutsideWorkspaceRoots
+    const needsDirectoryCreationWarning = !isProjectSession && !directoryOutsideWorkspaceRoots
         && sessionType === 'simple'
         && trimmedDirectory !== ''
         && currentDirectoryExists === false
@@ -995,7 +1019,9 @@ export function NewSession(props: {
         && sessionType === 'worktree'
         && trimmedDirectory !== ''
         && currentDirectoryExists === false
-    const directoryStatusMessage = directoryOutsideWorkspaceRoots
+    const directoryStatusMessage = isProjectSession && currentDirectoryExists === false
+        ? t('newSession.projectDirectoryUnavailable')
+        : directoryOutsideWorkspaceRoots
         ? t('newSession.directoryOutsideWorkspaceRoots')
         : missingWorktreeDirectory
         ? t('session.directoryMissingWorktree')
@@ -1031,7 +1057,7 @@ export function NewSession(props: {
             }))
     }, [verifiedPaths])
 
-    const activeQuery = (!isDirectoryFocused || suppressSuggestions) ? null : directory
+    const activeQuery = (isProjectSession || !isDirectoryFocused || suppressSuggestions) ? null : directory
 
     const [suggestions, selectedIndex, moveUp, moveDown, clearSuggestions] = useActiveSuggestions(
         activeQuery,
@@ -1431,7 +1457,7 @@ export function NewSession(props: {
     }, [cursorPicker.catalog, cursorPicker.baseKey, cursorSelectedBase])
 
     const handleChooseFolderClick = useCallback(() => {
-        if (!props.onChooseFolder) {
+        if (isProjectSession || !props.onChooseFolder) {
             return
         }
         saveNewSessionFormDraft({
@@ -1456,6 +1482,7 @@ export function NewSession(props: {
         })
         props.onChooseFolder({ machineId, directory: trimmedDirectory })
     }, [
+        isProjectSession,
         props.onChooseFolder,
         agent,
         model,
@@ -1541,7 +1568,7 @@ export function NewSession(props: {
     }, [suggestions, selectedIndex, moveUp, moveDown, clearSuggestions, handleSuggestionSelect])
 
     async function handleCreate() {
-        if (!machineId || !trimmedDirectory || createInFlightRef.current) return
+        if (!activeFormRef.current || !machineId || !trimmedDirectory || createInFlightRef.current) return
 
         createInFlightRef.current = true
         setIsCreating(true)
@@ -1553,12 +1580,18 @@ export function NewSession(props: {
                 return
             }
             const existsResult = await checkPathsExists([trimmedDirectory])
+            if (!activeFormRef.current) return
             if (existsResult.outsideWorkspaceRoots?.includes(trimmedDirectory)) {
                 haptic.notification('error')
                 setError(t('newSession.directoryOutsideWorkspaceRoots'))
                 return
             }
             const directoryExists = existsResult.exists[trimmedDirectory]
+            if (isProjectSession && directoryExists !== true) {
+                haptic.notification('error')
+                setError(t('newSession.projectDirectoryUnavailable'))
+                return
+            }
 
             if (sessionType === 'worktree' && directoryExists === false) {
                 haptic.notification('error')
@@ -1566,7 +1599,7 @@ export function NewSession(props: {
                 return
             }
 
-            if (sessionType === 'simple' && directoryExists === false && !directoryCreationConfirmed) {
+            if (!isProjectSession && sessionType === 'simple' && directoryExists === false && !directoryCreationConfirmed) {
                 setDirectoryCreationConfirmed(true)
                 return
             }
@@ -1614,7 +1647,7 @@ export function NewSession(props: {
                 ? collaborationMode
                 : undefined
 
-            if (agent === 'codex' && selectedCodexImportSession) {
+            if (!isProjectSession && agent === 'codex' && selectedCodexImportSession) {
                 setIsImportingCodexSession(true)
                 const result = await props.api.syncCodexSession({
                     sessionIds: [selectedCodexImportSession.id],
@@ -1626,6 +1659,7 @@ export function NewSession(props: {
                     collaborationMode: resolvedCollaborationMode ?? 'default',
                     yolo: nativePermissionMode === 'yolo'
                 })
+                if (!activeFormRef.current) return
                 if (result.success) {
                     const importedSessionId = result.hapiSessionIds?.[0]
                     if (!importedSessionId) {
@@ -1639,6 +1673,7 @@ export function NewSession(props: {
                             ? { permissionMode: nativePermissionMode }
                             : undefined
                     )
+                    if (!activeFormRef.current) return
                     haptic.notification('success')
                     markCodexSessionsImported([selectedCodexImportSession.id])
                     savePreferredLaunchSettings(machineId, agent, preferredLaunchSettings)
@@ -1654,13 +1689,14 @@ export function NewSession(props: {
                 return
             }
 
-            if (agent === 'pi' && selectedPiImportSession) {
+            if (!isProjectSession && agent === 'pi' && selectedPiImportSession) {
                 setIsImportingPiSession(true)
                 const result = await props.api.importPiSessions({
                     sessionIds: [selectedPiImportSession.id],
                     cwd: selectedPiImportSession.cwd ?? trimmedDirectory,
                     machineId: piImportMachineId ?? machineId
                 })
+                if (!activeFormRef.current) return
                 const imported = result.results.find((item) => item.piSessionId === selectedPiImportSession.id)
                 if (imported?.error) {
                     setIsImportingPiSession(false)
@@ -1670,6 +1706,7 @@ export function NewSession(props: {
                 }
                 if (!imported?.hapiSessionId) throw new Error(result.error || t('piImport.failed.body'))
                 const reopened = await props.api.reopenSession(imported.hapiSessionId)
+                if (!activeFormRef.current) return
                 haptic.notification('success')
                 savePreferredLaunchSettings(machineId, agent, preferredLaunchSettings)
                 clearNewSessionFormDraft()
@@ -1700,6 +1737,7 @@ export function NewSession(props: {
             })
 
 
+            if (!activeFormRef.current) return
             if (result.type === 'success') {
                 haptic.notification('success')
                 savePreferredLaunchSettings(machineId, agent, preferredLaunchSettings)
@@ -1713,13 +1751,14 @@ export function NewSession(props: {
             haptic.notification('error')
             setError(result.message)
         } catch (e) {
+            if (!activeFormRef.current) return
             setIsImportingCodexSession(false)
             setIsImportingPiSession(false)
             haptic.notification('error')
             setError(e instanceof Error ? e.message : 'Failed to create session')
         } finally {
             createInFlightRef.current = false
-            setIsCreating(false)
+            if (activeFormRef.current) setIsCreating(false)
         }
     }
 
@@ -1794,7 +1833,14 @@ export function NewSession(props: {
                     Runner last spawn error: {runnerSpawnError}
                 </div>
             ) : null}
-            <DirectorySection
+            {isProjectSession ? (
+                <div className="space-y-1.5 px-3 py-3">
+                    <div className="text-xs font-medium text-[var(--app-hint)]">{t('newSession.projectDirectory')}</div>
+                    <p className="break-all font-mono text-sm" aria-label={t('newSession.projectDirectory')}>{directory || t('newSession.projectDirectoryUnavailable')}</p>
+                    <p className="text-xs text-[var(--app-hint)]">{t('newSession.projectDirectoryHint')}</p>
+                    {directoryStatusMessage ? <p role="status" className="text-xs text-red-600">{directoryStatusMessage}</p> : null}
+                </div>
+            ) : <DirectorySection
                 directory={directory}
                 suggestions={suggestions}
                 selectedIndex={selectedIndex}
@@ -1809,15 +1855,15 @@ export function NewSession(props: {
                 onSuggestionSelect={handleSuggestionSelect}
                 onPathClick={handlePathClick}
                 onChooseFolder={props.onChooseFolder ? handleChooseFolderClick : undefined}
-            />
-            <SessionTypeSelector
+            />}
+            {!isProjectSession && <SessionTypeSelector
                 sessionType={sessionType}
                 worktreeName={worktreeName}
                 worktreeInputRef={worktreeInputRef}
                 isDisabled={isFormDisabled}
                 onSessionTypeChange={setSessionType}
                 onWorktreeNameChange={setWorktreeName}
-            />
+            />}
             <AgentSelector
                 agent={agent}
                 agents={availableAgents}
@@ -1844,7 +1890,7 @@ export function NewSession(props: {
                     {t('newSession.noAvailableAgents')}
                 </div>
             ) : null}
-            {agent === 'codex' ? (
+            {!isProjectSession && agent === 'codex' ? (
                 <CodexImportActions
                     selectedSession={selectedCodexImportSession}
                     isLoading={isLoadingCodexImportSessions}
@@ -1857,7 +1903,7 @@ export function NewSession(props: {
                     onClear={() => setSelectedCodexImportSessionId(null)}
                 />
             ) : null}
-            {agent === 'pi' ? (
+            {!isProjectSession && agent === 'pi' ? (
                 <PiImportActions
                     selectedSession={selectedPiImportSession}
                     isLoading={isLoadingPiImportSessions}

@@ -1,4 +1,2 @@
 User-agent: *
 Allow: /
-
-Sitemap: https://hapi.manus.space/sitemap.xml

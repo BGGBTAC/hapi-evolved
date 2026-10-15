@@ -1,6 +1,23 @@
-# hapi-web
+# HAPI-eVolved web and PWA
 
-React Mini App / PWA for monitoring and controlling hapi sessions.
+The primary HAPI-eVolved client: a responsive workspace and coding-session UI for
+desktop and mobile browsers. This independent fork builds on
+[tiann/hapi](https://github.com/tiann/hapi)'s chat/session client. Start with the
+[Evolved quick start](../docs/evolved/QUICKSTART.md) and
+[user guide](../docs/evolved/USER_GUIDE.md).
+
+`src/evolved/` contains the project workspace, passkey boundary, provider-login
+cards, GitHub grants, persistent knowledge, Codegraph, Vault, previews, runner
+access and specialist/plugin catalog. **Abos verbinden** starts actual native
+provider login through the local control service; it does not collect provider
+passwords. Model menus use scoped native snapshots and preserve unknown/stale states.
+
+The default Evolved entry is `/evolved`; mobile bottom navigation and the desktop
+sidebar expose the same project context. Appearance uses the existing theme store,
+including coordinated light/dark profiles. Technical `hapi` API names remain;
+legacy Telegram/token-login components below are not Evolved authentication.
+
+The inherited React session engine remains alongside the Evolved workspace.
 
 ## What it does
 
@@ -19,8 +36,8 @@ React Mini App / PWA for monitoring and controlling hapi sessions.
 
 ## Runtime behavior
 
-- When opened inside Telegram, auth uses Telegram WebApp init data.
-- When opened in a normal browser, you can log in with `CLI_API_TOKEN:<namespace>` (or `CLI_API_TOKEN` for the default namespace).
+- Evolved mode uses passkey registration/login, a secure cookie session and current project roles.
+- Legacy standalone mode retains Telegram initData and `CLI_API_TOKEN[:namespace]`; these paths are not enabled by an Evolved Hub.
 - The login screen includes a top-right hub picker; if unset, the app uses the same origin it was loaded from.
 - Live updates come from the hub via SSE.
 - Session `@` suggestions require conversation content, including untitled conversations. Names and directory labels affect display/search, not eligibility; empty stubs stay excluded.
@@ -29,7 +46,8 @@ React Mini App / PWA for monitoring and controlling hapi sessions.
 
 See `src/router.tsx` for route definitions.
 
-- `/` - Redirect to /sessions.
+- `/` - Evolved workspace when Evolved mode is enabled; `/sessions` in legacy mode.
+- `/evolved` - Project workspace; authorized `tab` and `project` query parameters preserve navigation context.
 - `/sessions` - Session list.
 - `/sessions/$sessionId` - Chat interface.
 - `/sessions/new` - Create new session.
@@ -96,7 +114,10 @@ See `src/router.tsx` for route definitions.
 - Real-time via Socket.IO `/terminal`
 - Resize handling
 
-### Voice assistant
+### Inherited voice integrations
+
+Evolved blocks the host-global voice API/credential paths. The adapters below are
+legacy implementation references, not a currently supported Evolved assistant flow.
 
 - ElevenLabs (@elevenlabs/react), Gemini Live, and Qwen Realtime backends
 - Real-time voice control
@@ -127,11 +148,15 @@ Optional, not a requirement for every feature or a reason to expand a bug fix.
 
 ## Authentication
 
-See `src/hooks/useAuth.ts` and `src/hooks/useAuthSource.ts`.
+Evolved: `src/evolved/auth.tsx` owns passkey enrollment/login, fresh-auth retries,
+project selection and the session-token bridge. Sensitive login challenges stay in
+transient component state. Logout/account/project changes invalidate or abandon
+old requests; do not populate a new account's UI with late results.
 
-- Telegram Mini App: Uses initData from WebApp SDK.
-- Browser: Uses CLI_API_TOKEN from login prompt.
-- JWT tokens with auto-refresh.
+`src/hooks/useAuth.ts` and `useAuthSource.ts` also retain the legacy standalone
+Telegram/shared-token flows. Their presence is not an alternative Evolved login.
+Session APIs use the scoped bridge token, while Evolved feature routes use the
+human cookie session; authorization remains server-side.
 
 ## Data fetching
 
@@ -171,7 +196,7 @@ bun run dev:web
 ```
 
 
-If testing in Telegram, set:
+For legacy-only Telegram development, set:
 
 - `HAPI_PUBLIC_URL` to the public HTTPS URL of the dev server.
 - `CORS_ORIGINS` to include the dev server origin.
@@ -227,7 +252,12 @@ bun run build:web
 
 The built assets land in `web/dist` and are served by hapi-hub. The single executable can embed these assets.
 
-## Standalone hosting
+## Legacy standalone hosting
+
+The supported Evolved preview serves assets from the same private HTTPS origin as
+its Hub. Passkeys, cookies and mutation-origin checks must stay consistent; a
+static-site deployment is not a tested substitute. The following is the inherited
+legacy token-client hosting reference.
 
 You can host `web/dist` on a static host (GitHub Pages, Cloudflare Pages) and point it at any hapi hub:
 

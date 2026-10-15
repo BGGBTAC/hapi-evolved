@@ -1,9 +1,12 @@
 # HAPI-eVolved quick start
 
+An independent fork of [tiann/hapi](https://github.com/tiann/hapi), developed on its
+own roadmap for faster improvements to self-hosted coding-agent workflows.
+
 This starts a separate Linux preview installation. It does not migrate accounts,
 sessions or credentials from HAPI. Use source and Compose files from the same
-reviewed Evolved commit or published preview tag. Until implementation PRs are
-merged, the default branch alone may still contain upstream HAPI.
+reviewed Evolved revision. The public main branch is the source-preview entry;
+you can pin a specific reviewed commit before building for a reproducible deployment.
 
 ## Requirements
 
@@ -24,6 +27,9 @@ cd hapi-evolved
 bun install --frozen-lockfile
 bun deploy/evolved/init.ts "$HOME/.local/share/hapi-evolved"
 ```
+
+Keep the source, Compose definitions and images from the same revision. Do not
+install an upstream npm/Homebrew package into this checkout; it is a different build.
 
 The initializer keeps private files outside the repository and preserves keys on
 repeated runs. Edit `~/.local/share/hapi-evolved/compose.env`: set `EVOLVED_ORIGIN`
@@ -67,10 +73,32 @@ automatically. The optional manual control attaches an existing allowed server
 directory and requires installation-admin rights plus a recent passkey.
 A local browser folder picker would not select a directory on the server.
 
-Use the [GitHub guide](GITHUB.md) to connect repositories, and the
-[runner instructions](DEPLOYMENT.md#einen-isolierten-projekt-runner-starten) to start
-an isolated agent. For the browser flow, install the [local runner control service](DEPLOYMENT.md#browser-anmeldung-und-verwaltete-projektdienste), then open **Abos verbinden**. The browser provisions the project runner and starts native provider login. Connecting GitHub
-does not connect a model provider or authorize cloud spending.
+## Connect a provider and start work
+
+For browser-managed runners, the operator must first install the
+[local control service](DEPLOYMENT.md#browser-anmeldung-und-verwaltete-projektdienste).
+The Compose-only commands above do not install that privileged host service. Its
+bundled unit expects root-owned `/opt/hapi-evolved`, state under `/var/lib/hapi-evolved`
+and UID/GID1001; adapt the unit and protected paths for another layout. Do not point
+it at a user-writable source checkout. Follow the operator guide's initialization
+order; never recursively change existing data ownership to root.
+
+Then open **Abos verbinden**, select the project and connect Claude or Codex.
+The browser provisions the managed runner and opens the official provider sign-in
+flow. Finish the device-code flow (Codex) or submit the one-time return code
+(Claude). HAPI verifies native login status; it does not request the provider password.
+See [provider login](PROVIDER_LOGIN.md) for cancellation, logout and model selection.
+
+Create a session with the connected provider. It starts automatically in the
+selected project's saved folder; there is no path to find or type. Previously used
+folders and URL parameters cannot override that project folder.
+New projects are restricted by default;
+a project administrator must explicitly choose an appropriate profile for file changes.
+A native catalog can be cached and does not guarantee model entitlement.
+
+Use the [GitHub guide](GITHUB.md) to connect repositories separately. Alternatively,
+operators can configure a [manual isolated runner](DEPLOYMENT.md#einen-isolierten-projekt-runner-starten).
+Connecting GitHub or a coding subscription does not authorize cloud memory spending.
 
 ## Memory, backups and updates
 

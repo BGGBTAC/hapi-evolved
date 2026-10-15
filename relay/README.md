@@ -1,6 +1,17 @@
-# hapi-push-relay
+# HAPI-eVolved source: inherited native push relay
 
-The official HAPI push relay forwards end-to-end encrypted notifications
+This package is retained from [tiann/hapi](https://github.com/tiann/hapi) for
+protocol development and attribution. **HAPI-eVolved does not operate the upstream
+push service, distribute its signing credentials or promise native-app delivery.**
+The supported fork client is the [web/PWA](../docs/guide/pwa.md); see the
+[Evolved quick start](../docs/evolved/QUICKSTART.md).
+
+The implementation, environment variables and upstream deployment examples below
+are a legacy integration reference. A separately operated relay requires its own
+matching app identities and provider credentials. The `ghcr.io/tiann/...` image and
+`push.hapi.run` identify upstream infrastructure, not Evolved releases.
+
+The upstream HAPI push relay implementation forwards end-to-end encrypted notifications
 from self-hosted hubs to APNs (iOS) and Firebase Cloud Messaging (Android).
 
 ## Why it exists
@@ -192,19 +203,13 @@ FCM itself is [no-cost](https://firebase.google.com/pricing), subject to
 [project/device quotas](https://firebase.google.com/docs/cloud-messaging/throttling-and-quotas);
 relay hosting and bandwidth are separate costs.
 
-### Publishing images
+### Publication boundary
 
-The [Push Relay Image workflow](../.github/workflows/push-relay-image.yml)
-runs the relay type check and tests, then builds both architectures. Pushes to
-`main` affecting `relay/`, the workflow, or its dependency/type-check inputs
-publish `latest` and `sha-<full-commit-sha>`. Pull requests build without
-publishing. To publish manually, run **Actions → Push Relay Image → Run
-workflow** on `main`; dispatches on other branches only validate and build.
-
-Publishing uses the repository's `GITHUB_TOKEN` with `packages: write`; no
-registry credential needs to be added. After the first successful run, set
-the `hapi-push-relay` package visibility to **Public** in GitHub Packages so
-servers can pull without logging in. Forks publish under their own owner.
+The inherited [Push Relay Image workflow](../.github/workflows/push-relay-image.yml)
+is not an Evolved publication procedure. Follow [RELEASING.md](../RELEASING.md)
+and review registry names, app identities, signing and credential ownership before
+any release. A successful local relay test does not establish upstream service
+access or authorize publishing under its namespace.
 
 For local development, building from source remains available from the repo
 root:

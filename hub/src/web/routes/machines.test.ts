@@ -29,6 +29,31 @@ function createMachine(overrides?: Partial<Machine>): Machine {
 }
 
 describe('machines routes', () => {
+    it('keeps directory required and forwards explicit worktree paths in legacy mode', async () => {
+        const calls: Parameters<SyncEngine['spawnSession']>[] = []
+        const engine = {
+            getMachine: () => createMachine(),
+            spawnSession: async (...args: Parameters<SyncEngine['spawnSession']>) => {
+                calls.push(args)
+                return { type: 'success' as const, sessionId: 'legacy-session' }
+            }
+        } as unknown as SyncEngine
+        const app = new Hono<WebAppEnv>()
+        app.use('*', async (c, next) => { c.set('namespace', 'default'); await next() })
+        app.route('/api', createMachinesRoutes(() => engine))
+        const post = (body: unknown) => app.request('/api/machines/machine-1/spawn', {
+            method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
+        })
+        expect((await post({ agent: 'codex' })).status).toBe(400)
+        expect((await post({ directory: '' })).status).toBe(400)
+        expect(calls).toHaveLength(0)
+        expect((await post({ directory: '/legacy/project', agent: 'codex', sessionType: 'worktree', worktreeName: 'feature' })).status).toBe(200)
+        expect(calls[0]?.[1]).toBe('/legacy/project')
+        expect(calls[0]?.[6]).toBe('worktree')
+        expect(calls[0]?.[7]).toBe('feature')
+        expect(calls[0]?.[16]).toBe('default')
+        expect(calls[0]?.[17]).toBeUndefined()
+    })
     it('blocks spawn and availability inspection when the runner needs an upgrade', async () => {
         const machine = createMachine({
             metadata: {

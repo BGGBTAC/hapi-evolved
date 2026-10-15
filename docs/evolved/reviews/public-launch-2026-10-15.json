@@ -1,0 +1,868 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-15",
+  "scope": "Public launch: reachable Git history and refs, GitHub discussions and Actions, release presentation, and project-root session startup.",
+  "reviewedBaseCommit": "4600d764281bc1f2ca0a4e66485c9ce479a3db91",
+  "status": "Publication audit and final code review complete subject to the coordinator verifying the merged default branch and new PR text before changing visibility.",
+  "actualCalls": [
+    {
+      "stage": "design",
+      "at": "2026-10-15T17:30:40.634971+00:00",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "inputSha256": "d012494d335c4423870d0ab0b6b1d4bfe76d1485bc2dfd448c837f5d7cc85fed",
+      "outputSha256": "fa34b10ec766472a0e4fdab1f3836618515a28a1487f569610cd0fee502f96cc"
+    },
+    {
+      "stage": "rebrand-final",
+      "at": "2026-10-15T17:42:11.653195+00:00",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "inputSha256": "b3ba8a46de227069f845430d4fed5cf5e494407653ec75e00c63242f75e12a00",
+      "outputSha256": "9342cc91ea6cdd251732716a1030abcbb6f876bf0c7ec594fdc1de07bd550e2f"
+    },
+    {
+      "stage": "session-design",
+      "at": "2026-10-15T17:43:20.898313+00:00",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "inputSha256": "6fca19e506323f81151c23543a01992cac540bf3ce83e5011564e4f34d78541a",
+      "outputSha256": "f97a3e703e85db8337eb86284c99acb79f6cbc570b81e1f6dce97e1fac50ff70"
+    },
+    {
+      "stage": "session-final",
+      "at": "2026-10-15T17:51:29.972467+00:00",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "inputSha256": "4b56e13db63232f074b6710f5d09e7ce9a05285ef1cedaf5fadcdd0d61906386",
+      "outputSha256": "fdf8a19960fcaf6128dfece1feab53bc82882c9b785e6536e489d62fae82fcff"
+    },
+    {
+      "stage": "session-closure",
+      "at": "2026-10-15T17:57:12.152283+00:00",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "inputSha256": "66b618fc89b6cbba39b9f5a8b030dd77c11a74ccb81021bc2d4d773110db36da",
+      "outputSha256": "04cfa778c6b70018cc0e950e34fc2c2608179725aa680dc4e3362803c90b120b"
+    }
+  ],
+  "audit": {
+    "snapshotBoundary": "History and remote inventory taken before public-launch PR #9; separate working-tree delta includes the subsequent project-root session fix. Remote visibility remains a coordinator action.",
+    "repository": "BGGBTAC/hapi-evolved",
+    "confirmedCredentialFindings": 0,
+    "confirmedConfidentialDataBlockers": 0,
+    "historyRewriteRequired": false,
+    "git": {
+      "localReachableCommits": 1553,
+      "additionalPullRequestMergeCommits": 8,
+      "auditMirrorReachableCommits": 1561,
+      "patchBearingCommitsScanned": 1497,
+      "reachableObjects": 29174,
+      "blobs": 13467,
+      "textBlobs": 13397,
+      "binaryBlobs": 70,
+      "refCoverage": "All locally reachable refs plus fetched remote heads, tags and pull request head/merge refs in an isolated read-only audit mirror. No shared working refs or remote refs were changed.",
+      "commitMessageFindings": 0,
+      "historicalCandidates": 6,
+      "historicalFalsePositives": 6
+    },
+    "scanner": {
+      "name": "gitleaks",
+      "version": "8.30.1",
+      "sourceArchiveSha256": "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb",
+      "settings": {
+        "redact": 100,
+        "ignoreInlineAllowComments": true,
+        "maxArchiveDepth": 2,
+        "maxDecodeDepth": 5,
+        "logOpts": "--all"
+      },
+      "configurationOverridesDetected": false
+    },
+    "binaryReview": {
+      "inheritedPublicUpstreamObjectMatches": 62,
+      "firstPartyBrandingBlobs": 8,
+      "addedAccountOrCustomerScreenshots": 0,
+      "pngTextOrExifMetadataChunks": 0,
+      "logoGenerationProvenance": "The original generated logo retains an OpenAI C2PA caBX chunk; the inspected chunk contains no operator-domain/path or private-key-marker match. Public generation provenance was not removed.",
+      "visualScope": "Generated source logo inspected; other new binaries are generated logo/icon variants. Public upstream binaries were matched by Git object identity, not newly OCR-audited or reverse engineered."
+    },
+    "github": {
+      "branches": 9,
+      "remoteTags": 0,
+      "pullRequests": 8,
+      "standaloneIssues": 0,
+      "issueComments": 8,
+      "reviewComments": 9,
+      "reviews": 5,
+      "discussionTextObjects": 30,
+      "discussionSecretFindings": 0,
+      "attachments": 0,
+      "actionsRuns": 89,
+      "actionsLogArchivesDownloaded": 89,
+      "actionsExpandedBytes": 2051055,
+      "actionsSecretFindings": 0,
+      "actionsOperatorTopologyFindings": 0,
+      "actionsConclusions": {
+        "success": 4,
+        "failure": 55,
+        "skipped": 30
+      },
+      "runsWithExecutedSteps": 4,
+      "actionsArtifacts": 0,
+      "releases": 0,
+      "deployments": 0,
+      "pages": false,
+      "wiki": false,
+      "discussionsEnabled": false,
+      "selfHostedRunners": 0,
+      "repositoryActionsSecrets": 0,
+      "environments": 0,
+      "cacheEntries": 6,
+      "cachePayloadsDownloaded": false,
+      "cacheScope": "Producing setup-bun workflows, metadata and logs inspected. The upstream action caches the Bun binary. No auditor-triggered workflow or download was used to inspect cache payloads.",
+      "defaultWorkflowPermissions": "read",
+      "canApprovePullRequestReviews": false,
+      "upstreamGuards": "Verified on all eight feature-branch heads. Old upstream default main must be replaced by the reviewed merged chain before public visibility."
+    },
+    "workingTreeDelta": {
+      "fileCount": 98,
+      "scannerCandidates": 1,
+      "confirmedSecrets": 0,
+      "classification": "The only scanner candidate is unchanged authentication prose in docs/guide/agents.md:154. Additional privacy matches are generic example paths and the documented public upstream push-contact address.",
+      "sourceHashesExcludeSelfRecord": true,
+      "postScanChanges": "Only this generated audit record metadata was finalized after the full changed-file scan; its final content is separately rescanned before handoff."
+    },
+    "pr8Cleanup": {
+      "status": "Coordinator removed the active test endpoint and private infrastructure PR link; auditor reread and verified absence.",
+      "bodySha256": "9b97303f23b0f3332ee577429566c48f6567aa8093e6086fb2658a61b5bb88f0"
+    },
+    "pr9Draft": {
+      "bodySha256": "da567d41fe6e84e623a43dfd5d1006aa8f12cb53a03f716aa476687e0f430752",
+      "privacyMatches": {
+        "operator_private_subnet": 0,
+        "operator_path": 0,
+        "operator_domain": 0,
+        "private_infra_link": 0
+      },
+      "scannerFindings": 0
+    }
+  },
+  "historicalCandidateDisposition": [
+    {
+      "path": "cli/src/api/apiSession.test.ts",
+      "lines": [
+        1224,
+        1378
+      ],
+      "commit": "f8a1716527d8a18cca537db8001563432619309e",
+      "classification": "Two attachment SHA256 fixtures."
+    },
+    {
+      "path": "web/e2e-fixtures/settings-fixture.tsx",
+      "lines": [
+        60
+      ],
+      "commit": "33f51fd0abfd91750a13d835bf406a1dbef78241",
+      "classification": "Local E2E fixture token."
+    },
+    {
+      "path": "hub/src/web/routes/devices.test.ts",
+      "historicalLines": [
+        90
+      ],
+      "currentLines": [
+        108
+      ],
+      "commit": "1ad78f409aeeeecc6882e280c43e9cd10a568740",
+      "classification": "Synthetic push-registration fixture."
+    },
+    {
+      "path": "docs/guide/agents.md",
+      "historicalLines": [
+        116
+      ],
+      "currentLines": [
+        154
+      ],
+      "commit": "b7503d9309800a78ed6298db8bad0e2260407ba1",
+      "classification": "Authentication documentation prose."
+    },
+    {
+      "path": "docs/guide/cursor.md",
+      "historicalLines": [
+        44
+      ],
+      "commit": "3a8693f380acbc8cf06178a864dcb45737803e68",
+      "classification": "Authentication documentation prose in inherited history."
+    }
+  ],
+  "privacyDisposition": {
+    "operatorHistory": "Owner-authorized history preservation includes ordinary operator path/development metadata and private-address negative tests. These are not credentials; no customer conversation export or third-party account screenshot was identified.",
+    "attribution": "117 distinct author/committer email identities in the reachable history; first-party changes use one GitHub noreply identity. Contributor attribution is preserved, not republished in this record.",
+    "currentPresentationRedactions": [
+      {
+        "path": "docs/evolved/reviews/native-models-2026-10-15.json",
+        "change": "Personal browser-executable path replaced with an explicitly marked portable placeholder."
+      },
+      {
+        "path": "docs/evolved/reviews/opus-2026-10-15.json",
+        "change": "Development hostname replaced with a marked example-domain placeholder."
+      }
+    ],
+    "historicalEvidencePolicy": "Original review/test hashes, model metadata and result claims are preserved. Redaction is not a rerun and does not erase earlier Git objects.",
+    "privateKeyMarkers": "Additional PEM matches are rejection-test headers or deliberately invalid short placeholders in memory/push configuration tests, not usable keys."
+  },
+  "reviewDispositions": [
+    {
+      "finding": "Website memory description incorrectly named Kuzu.",
+      "status": "resolved",
+      "evidence": [
+        "website/src/locales/en.json:27",
+        "website/src/locales/zh.json:27"
+      ],
+      "resolution": "Graphiti/Neo4j, opt-in extraction, provider setup and budget requirements stated; confirmed by actual session-final Opus review."
+    },
+    {
+      "finding": "README browser provisioning omitted operator-control prerequisite.",
+      "status": "resolved",
+      "evidence": [
+        "README.md",
+        "docs/evolved/DEPLOYMENT.md"
+      ],
+      "resolution": "README explicitly links the required local control service and installation; coordinator local-link validation passed."
+    },
+    {
+      "finding": "Public-launch review JSON or touch-icon/feature-template artifacts absent.",
+      "status": "not reproduced",
+      "resolution": "All exact referenced files exist. The initial review JSON was intentionally omitted from its own review prompt and explicitly intermediate; this record replaces it."
+    },
+    {
+      "finding": "Old default main lacks upstream workflow guards.",
+      "status": "coordinator publication prerequisite",
+      "resolution": "Merge the reviewed PR dependency chain normally; verify final main tree/commit, workflow policy and new PR text before visibility change. No audit claim that visibility already changed."
+    },
+    {
+      "finding": "Project-scoped session directory could inherit URL, draft or recent-folder state.",
+      "status": "resolved",
+      "evidence": [
+        "web/src/components/NewSession/index.tsx",
+        "hub/src/evolved/bridge.ts",
+        "hub/src/web/routes/machines.ts"
+      ],
+      "resolution": "Stored existing project root is authoritative synchronously; human fresh spawn rejects alternate/nested paths and worktrees. Project/root keyed form and current-scope API prevent stale asynchronous navigation/spawn follow-up."
+    },
+    {
+      "finding": "Authority changes during body parsing could reach machine dispatch with a stale project snapshot.",
+      "status": "resolved",
+      "resolution": "Recheck live session/profile/root/namespace, machine namespace and saved canonical root synchronously after body-await before RPC; real route regressions cover revocation and changes."
+    },
+    {
+      "finding": "New project-folder locale keys or Worktree/import restriction documentation missing.",
+      "status": "not reproduced",
+      "evidence": [
+        "web/src/lib/locales/en.ts:362",
+        "web/src/lib/locales/ru.ts:351",
+        "web/src/lib/locales/zh-CN.ts:366",
+        "docs/evolved/USER_GUIDE.md:66",
+        "CHANGELOG.md:44"
+      ],
+      "resolution": "All three shipped Web locales contain the keys. User guide and changelog already state project-folder semantics and unsupported external worktree/import startup."
+    },
+    {
+      "finding": "Profile/root snapshot invalidation may affect SSE connections.",
+      "status": "verified intended behavior",
+      "evidence": [
+        "hub/src/evolved/bridge.ts:23",
+        "hub/src/web/routes/events.ts:118",
+        "web/src/hooks/useSSE.ts:860"
+      ],
+      "resolution": "Old connection closes when its snapshot changes. Reconnect resolves the current project from the still-valid pid/esid/sub JWT and uses bounded retry scheduling; the JWT does not embed a stale root/profile, so this change does not itself cause a reconnect loop."
+    },
+    {
+      "finding": "Publication counts precede PR9 and later session fix.",
+      "status": "resolved",
+      "resolution": "PUBLICATION_READINESS now explicitly identifies the pre-PR9 snapshot and requires final commit/new discussion delta checks."
+    },
+    {
+      "finding": "Inherited runner defaults to creating missing directories after the Hub existence check.",
+      "status": "resolved",
+      "evidence": [
+        "hub/src/web/routes/machines.ts",
+        "hub/src/sync/syncEngine.ts",
+        "hub/src/sync/rpcGateway.ts",
+        "cli/src/runner/validateWorkspaceDirectory.ts:84",
+        "hub/src/sync/syncEngineSpawnPrealloc.test.ts",
+        "hub/src/evolved/bridge.test.ts:144"
+      ],
+      "resolution": "Evolved fresh machine spawn supplies approvedNewDirectoryCreation=false through Engine and Gateway; legacy payload omits the key. Missing directory requests become childStarted:false errors and unused preallocated stubs are removed. Actual final Opus closure passed. Its optional route-test suggestion is already covered by bridge.test.ts:144."
+    },
+    {
+      "finding": "No-mkdir might remove an administrator folder-creation workflow.",
+      "status": "not applicable to this route",
+      "resolution": "The changed route starts sessions in an existing project. Project creation and the separate optional administrator selection of an existing permitted folder retain their own documented behavior."
+    }
+  ],
+  "verification": [
+    {
+      "scope": "Publication workflow checks",
+      "result": "17 tests passed; source policy checker passed.",
+      "kind": "auditor executed"
+    },
+    {
+      "scope": "Project session API/backend regression",
+      "result": "Final no-mkdir delta included: 74 tests and Hub typecheck passed.",
+      "kind": "owner evidence"
+    },
+    {
+      "scope": "Project session Web tests",
+      "result": "173 tests passed; Web typecheck and build passed.",
+      "kind": "owner evidence"
+    },
+    {
+      "scope": "Real isolated Hub/WebAuthn project-session browser",
+      "result": "6 check groups, 19 views, zero findings. Machine RPC responses controlled; exact root/project-header/simple DTO, hostile URL/draft/recents, second project and missing mount checked.",
+      "kind": "owner evidence",
+      "reportSha256": "a0a83fa1907a6cda5793e9d4e508c6b58967e45e835aedef8902b4fe22249994"
+    },
+    {
+      "scope": "Full affected package tests",
+      "result": "Final coordinator package runs: Hub 1793 passed + 3 skipped across 146 files; Web 3886 passed across 353 files. Both package typechecks passed.",
+      "kind": "coordinator evidence",
+      "hubLogSha256": "ffcf8c1cfed125dc8fdfb66838913684c7c0b6d78f30cd3cbad5b492f981bdbc"
+    },
+    {
+      "scope": "Website presentation",
+      "result": "Website build/typecheck and both-language responsive browser checks passed; memory wording correction rebuilt.",
+      "kind": "owner evidence"
+    },
+    {
+      "scope": "Native inherited directory validator",
+      "result": "15 CLI directory-validation tests passed, including missing-directory approval behavior.",
+      "kind": "coordinator evidence"
+    }
+  ],
+  "evidenceArtifacts": [
+    {
+      "name": "all-refs-redacted.json",
+      "sha256": "72bc5a63680c5eb767c122149ef651651e74464daed61410e41b4d357577ca7f"
+    },
+    {
+      "name": "all-refs-scan.log",
+      "sha256": "f80156020eb0edc6b89326cd062c38912a353bee0054bc0644bb54b0f78f0873"
+    },
+    {
+      "name": "messages-redacted.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "name": "messages-scan.log",
+      "sha256": "1518ea1f8b01616666e61d169a090419f3d1c9523a8bef8dd9f64e715dfc60e8"
+    },
+    {
+      "name": "privacy-history.json",
+      "sha256": "0dc895aa2b872cde26386ec21b649306e40f4d525f817404273cf7c75e9bbdc0"
+    },
+    {
+      "name": "binary-inventory.json",
+      "sha256": "e84c809515ed4365e05fb2c13d68e01d3378fe8a975cc26ad436b2fe18072159"
+    },
+    {
+      "name": "first-party-binaries.json",
+      "sha256": "3384de52078b333e4bbc6b5ba4d69aee2dc38b3e02115bb552e8ba759b8bbc9c"
+    },
+    {
+      "name": "logo-provenance-chunks.json",
+      "sha256": "ad9accee4ce7516014a55232b2b878a126b62bc7e867a022448e78fb52e7515a"
+    },
+    {
+      "name": "inventory-summary.json",
+      "sha256": "180718fd5668ea48fea45252a5790894090e6882fc24ed41dbcc7a09f6b3df82"
+    },
+    {
+      "name": "action-log-inventory.json",
+      "sha256": "326f2376782c443f55f563eb20bd609641b5cf52235a0c272370bdaf2e0b3cfa"
+    },
+    {
+      "name": "logs-redacted.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "name": "logs-scan.log",
+      "sha256": "3ff9b333f5bf63ac1d1fca00e4c05c0c66047a5806a16183dd6ae937f0a6cae0"
+    },
+    {
+      "name": "discussions-redacted.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "name": "discussions-scan.log",
+      "sha256": "2fd3687aeff8b9b7896d1c33db347f9a0900259ab390246bd4c10e52ac31d8bd"
+    },
+    {
+      "name": "historical-workflow-guards.json",
+      "sha256": "b89783cd2533f9ac24cae879ef806e1d07e098dccb62f3f7744f526b2966a3c3"
+    },
+    {
+      "name": "action-permissions.json",
+      "sha256": "f6e178fc1e56cf43900da383f85398b61de9ae61c6b8433116c1856605745924"
+    },
+    {
+      "name": "pr8-after-cleanup.json",
+      "sha256": "c55078b352078c44ad6679d5b59bf6aa8faec54d0a9c7071e8cfa9d04e9945ae"
+    },
+    {
+      "name": "launch-delta-redacted.json",
+      "sha256": "f9801bd54c34349f4af09d4aa3a324634ed401e70ffe8c6311f15bcc8481bec6"
+    },
+    {
+      "name": "launch-delta-scan.log",
+      "sha256": "75542fc575d840a3ab6b1d09d9077529b054b364bcb0419283733a12e2371fc1"
+    },
+    {
+      "name": "launch-delta-privacy.json",
+      "sha256": "707cbe41fed8908a851b0d2c462fbff155105ef633ad7ec95b5db70d45a4bcd3"
+    },
+    {
+      "name": "launch-delta-source-hashes.json",
+      "sha256": "2fb18a534fbcc4b375d9067cddc529fbaf20c670331c434d942bc6616314b0bf"
+    },
+    {
+      "name": "final-source-hashes.json",
+      "sha256": "1dea9b90e3b98f976c84fc30158f4337a6e13c5e5dec1562d45d1715c6c6251d"
+    },
+    {
+      "name": "session-final-source-hashes.json",
+      "sha256": "aa96ff31d12d26ffe412dff17041219b62266d7e147d71adac0d6b62c216ac7b"
+    },
+    {
+      "name": "session-closure-source-hashes.json",
+      "sha256": "c3813b21e858d6a264eddc5a0a3724655195f84e229078bee5edcbf6821aaa26"
+    },
+    {
+      "name": "pr9-draft-privacy.json",
+      "sha256": "442f33bd427e1622254790051630697f6ab7f1fd4fdee6bee2d8d431b41b7dbd"
+    },
+    {
+      "name": "pr9-draft-redacted.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "name": "pr9-draft-scan.log",
+      "sha256": "5d796c9c133a83d77d9ee8e1b84d0144d292a0f138d23b6ca9f12b20ef07b47a"
+    }
+  ],
+  "sourceHashes": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "fcb7cd7d6f538cef929da44360361f23660a645dab4b534fad3f3aa2c810a087"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "sha256": "2139a747d7e3734951f1b07274a64566205f67fc3ff60336184a2deeb759e9a0"
+    },
+    {
+      "path": "CODE_OF_CONDUCT.md",
+      "sha256": "ba5f49adaf04f939303581a98273680730ff4e20dcb52066361511946a000bd9"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "sha256": "0e733a7b9403a454335f4b94fc46494c4f60faf8b262dbd9a752f4725e4d48c4"
+    },
+    {
+      "path": "NOTICE",
+      "sha256": "5eb8322f9f22407d68a0e0ff93ff40175cd943c56d184e1a31fc7b11a1a14185"
+    },
+    {
+      "path": "README.md",
+      "sha256": "3caa782a1adf310193772618bd2ea5bde4b31e2c70df5e5ea3b98156376f982b"
+    },
+    {
+      "path": "RELEASING.md",
+      "sha256": "05b307ac55e6911dd11d198362ffa3fef416a4efd50ef54c97524e5c6997399a"
+    },
+    {
+      "path": "ROADMAP.md",
+      "sha256": "e2d3cac0a91fe64e1d9e98a06b270618de7e1c121b6da074ce63b3ed7e65b75e"
+    },
+    {
+      "path": "SECURITY.md",
+      "sha256": "6937fac15bd44619e58f114ed56d5c125e77bb0ef0da749abd0318ac63756ffd"
+    },
+    {
+      "path": "SUPPORT.md",
+      "sha256": "290bbb1c6a83e0e5de3a1ee6fb157e1dee5fed2352a5849d1c932c4b8770c64a"
+    },
+    {
+      "path": "android/README.md",
+      "sha256": "2bb520ebf937bd53c3f473433d25bab30fb6c7a545ad7674cec07f89e2b6450b"
+    },
+    {
+      "path": "assets/brand/README.md",
+      "sha256": "0020fb3b4f0e724673604ab77f75770050aabacc9c2052c2d477dd44d2ce0d92"
+    },
+    {
+      "path": "assets/brand/evolved/README.md",
+      "sha256": "24c282b3f1b511c4dae0b8450d227a1f0ffa0c5ad5023b4da82a8cb55b5f3593"
+    },
+    {
+      "path": "assets/brand/evolved/hapi-evolved-github-banner.svg",
+      "sha256": "a39a9890b4882b2e51a49244c84b38f3f6cc872a81165ef682edc6c8797fdcfb"
+    },
+    {
+      "path": "cli/README.md",
+      "sha256": "0bae3dbac519525e04751516b0cd6faba16065d549a8ff3a0e6ee2f11890cc5c"
+    },
+    {
+      "path": "cli/package.json",
+      "sha256": "2b1d248cdd0e2dee674cae295d732800d62add15882760bcb56ad76dbe632933"
+    },
+    {
+      "path": "cli/src/runner/README.md",
+      "sha256": "40cec22645d25db56d2dda48aeebc01385b4ac82dbc1cd634571e84a0353b7c6"
+    },
+    {
+      "path": "deploy/evolved/validate-runner-vm.mjs",
+      "sha256": "b95e4a7e18ee24d2097cdcf4c67cc6878b5658883c74946ed58676e38a44ac43"
+    },
+    {
+      "path": "docs/.vitepress/config.ts",
+      "sha256": "eb1ea60342803682ea4ef5349ef1e39fd36b2ebb6c83f982e7a739645ea15ff4"
+    },
+    {
+      "path": "docs/api/client-contract/auth.md",
+      "sha256": "740169da4d7c9526bb5add32ec675c64841de68a401c7e6d998c2e65a51ae62c"
+    },
+    {
+      "path": "docs/api/client-contract/errors.md",
+      "sha256": "3f3a044af17ae030368c5a10d71b77494287895e2a9083a0166308a6b50775d3"
+    },
+    {
+      "path": "docs/api/client-contract/index.md",
+      "sha256": "69d31d35c4f02cc1936886c5edfb374ffb902f91633b2342d54ddc777ee09ede"
+    },
+    {
+      "path": "docs/api/client-contract/messages.md",
+      "sha256": "e20ecdba85bcc5a46ed1ef21c6ea800de06985bd39081b79df0ce768c19d2b0e"
+    },
+    {
+      "path": "docs/api/client-contract/pagination.md",
+      "sha256": "bb98ba335a15231c56b836b73040749c934447d444517d18fa6a3383c080d306"
+    },
+    {
+      "path": "docs/api/client-contract/rest.md",
+      "sha256": "433e144fcc491a97ab7060c324eaf844e8295d25f69bb9461ba7354c03aac274"
+    },
+    {
+      "path": "docs/api/client-contract/sse.md",
+      "sha256": "ac56a2544674c8d91926cba55f74547c02fa16b7e3cfcfd78525ee31b69b01ce"
+    },
+    {
+      "path": "docs/api/native-companion-contract.md",
+      "sha256": "21f310dc37603a7729cf4dda551fcf20fc11628dd6506f7e443051bcb6c106dc"
+    },
+    {
+      "path": "docs/evolved/CAPACITY.md",
+      "sha256": "d48d774ad9418fe4edabae2fafd27076a82ce67dd57c43831b5e0c542f10f03e"
+    },
+    {
+      "path": "docs/evolved/DATA_HANDLING.md",
+      "sha256": "0537591df02762d883c884545bfca8ea7422ca7037d1030996268e5b0823a604"
+    },
+    {
+      "path": "docs/evolved/DEPLOYMENT.md",
+      "sha256": "b2d9cfb77ff3971d985edf2cfcafe0a4699a891de26c82920e9f7dcc90b3a4c1"
+    },
+    {
+      "path": "docs/evolved/PROJECT.md",
+      "sha256": "fde960c4f404af8925006c8b2eda044df661944828433abc4083816c8fc06d8a"
+    },
+    {
+      "path": "docs/evolved/PUBLICATION_READINESS.md",
+      "sha256": "81216a42c2f1521416741054bf8b643ebf81a755a8a83e2633e23b9e3a558891"
+    },
+    {
+      "path": "docs/evolved/QUICKSTART.md",
+      "sha256": "718cb714190227f2cf415193dac8765debc37d357e19b69b852d26d605a51db9"
+    },
+    {
+      "path": "docs/evolved/USER_GUIDE.md",
+      "sha256": "8b9d592d03fffe38a4f2820f662736705eff7330f0d72a0d2a6fd5b88cfd74ad"
+    },
+    {
+      "path": "docs/evolved/VALIDATION.md",
+      "sha256": "9e4674fdc896beeb49484b343126e5f2750e288c93bc28f956842b079a79cc00"
+    },
+    {
+      "path": "docs/evolved/reviews/native-models-2026-10-15.json",
+      "sha256": "37150f570121887128fed2a5106a09ab6c4d507e5d0d6a4e65443bd0bcd0a5c4"
+    },
+    {
+      "path": "docs/evolved/reviews/opus-2026-10-15.json",
+      "sha256": "755ce3a2d33eaf98d50d075e7a91211eaa0c8a12ee5e3c7f88e8931626f8e375"
+    },
+    {
+      "path": "docs/guide/agents.md",
+      "sha256": "2f9a8803951c7734ad2acf2a798f52f4c902a10e95fddaf648820530b77d4b85"
+    },
+    {
+      "path": "docs/guide/codex-shared-sessions.md",
+      "sha256": "e33afbd617783a6b1662da8f10f0ea49dd19188f08c3724469d68b1883752875"
+    },
+    {
+      "path": "docs/guide/deployment.md",
+      "sha256": "bc7976ade5108c21988d3738ae4c871801c60facd566738990e876af5918b8ef"
+    },
+    {
+      "path": "docs/guide/faq.md",
+      "sha256": "67faa27862371d0b71b703d58aa6ab642c7473053b0ad21b3fcb22f3d5ba2315"
+    },
+    {
+      "path": "docs/guide/how-it-works.md",
+      "sha256": "2c6f31d82beb3b77afa2fbbada8d8719086050e8dae04c04e77c8225dc8af64f"
+    },
+    {
+      "path": "docs/guide/installation.md",
+      "sha256": "b5f6097ddb79f22eb249abf6226a34a627e7a2a88ae6458a0875461525114f8f"
+    },
+    {
+      "path": "docs/guide/namespace.md",
+      "sha256": "514243ecf73a5cdac06ca7784f382f3577f6168313917dafb055a4b7d0495f46"
+    },
+    {
+      "path": "docs/guide/native-apps.md",
+      "sha256": "0090665901ad9eaa694821dfbd52f67768f784590bb7e42672153a27ac1a3df2"
+    },
+    {
+      "path": "docs/guide/notifications.md",
+      "sha256": "0531ea673a812e820ef3be28f6bd4e3e19d8de2f6c019863ee203aa8f0f516bc"
+    },
+    {
+      "path": "docs/guide/pwa.md",
+      "sha256": "231224a0712a62f5314222b986f07d18ab6af829c33815ffd70334e3fb6b796c"
+    },
+    {
+      "path": "docs/guide/quick-start.md",
+      "sha256": "99ab066dfabe0465f5b75dbbeec20035399ebbc97e41cba67b3b3b93b5e89154"
+    },
+    {
+      "path": "docs/guide/voice-assistant.md",
+      "sha256": "ed02a743e5e73f39fc5ca070268347617304238e917ad74d39398ce487fddd00"
+    },
+    {
+      "path": "docs/guide/why-hapi.md",
+      "sha256": "beee93ad833547997b5d536615827443d8ac04ddc2b82fee095e6d92a8b65c78"
+    },
+    {
+      "path": "docs/index.md",
+      "sha256": "685964a4dd8f843db6e29218c9dba64e7a15f03bb838d80a8d44042b3d3f6a7d"
+    },
+    {
+      "path": "docs/native-chat-scroll-profile.md",
+      "sha256": "7329c47c571d8e4c29e5784f1ba0e43313a9ba37ac762a96b69196af02aba107"
+    },
+    {
+      "path": "docs/native-chat-scrolling.md",
+      "sha256": "c255b4f4867bdae167cca74af1552ceac2e33534bb837ed3a51b80a622a246fb"
+    },
+    {
+      "path": "docs/privacy.md",
+      "sha256": "a1cdfbf91adbdc58b37d8e0976b7db641e93f6e835963f0d7ea1575a25682ea6"
+    },
+    {
+      "path": "docs/public/evolved-icon.svg",
+      "sha256": "af49048f0094cb06ddfe9a54fee0daed876dee9196b5990e1f17bf4b258ce625"
+    },
+    {
+      "path": "docs/public/evolved-mark.svg",
+      "sha256": "cddac2ce89af8ee146bb0d7dd66e63643492057b7919cb77b6cee756c9f89dcb"
+    },
+    {
+      "path": "hub/README.md",
+      "sha256": "edbbf699ba400684894c636d3fda7643980990a0aa5aa7b512b565b03c11369d"
+    },
+    {
+      "path": "hub/package.json",
+      "sha256": "e0ea22e7f96c0135a7d763be83252cf2569ae585d45ab95311f5e15ace2e4138"
+    },
+    {
+      "path": "hub/src/evolved/bridge.test.ts",
+      "sha256": "f7152bb618cd8195745f518d546a3190caff1da16479c3325f9360b7aadc92d5"
+    },
+    {
+      "path": "hub/src/evolved/bridge.ts",
+      "sha256": "b148eba020cbe5b973fffb03302bd433c3830801b8874f14c6abcab481debc4a"
+    },
+    {
+      "path": "hub/src/sync/opencodeClear.test.ts",
+      "sha256": "94b7b6d47cabf1d0e9bee6aaa36afe458433d9caf5f19b785c8bc2f2daea68f7"
+    },
+    {
+      "path": "hub/src/sync/rpcGateway.ts",
+      "sha256": "fc6351673ab33ab1d60f5dd2cb2ad80ab1c6803412bb98d2e0ac3ebdbf12eb8d"
+    },
+    {
+      "path": "hub/src/sync/syncEngine.ts",
+      "sha256": "060a13c2550bafa8414f386671483260bf48673b356a9d84559d72c04aa0407d"
+    },
+    {
+      "path": "hub/src/sync/syncEngineSpawnPrealloc.test.ts",
+      "sha256": "262d66314d03ea59268f25044698d7fd0aecdcbfa4ba532efe06d5c340426cba"
+    },
+    {
+      "path": "hub/src/web/routes/machines.test.ts",
+      "sha256": "ad34184e9a4edb75cf9bf8744a95ed02a2d5c8e392c1597bba70198165e05b89"
+    },
+    {
+      "path": "hub/src/web/routes/machines.ts",
+      "sha256": "abc5c6a0b86ffdc2d53bf750615f3b16442c178f3b9052641938714755a603e8"
+    },
+    {
+      "path": "ios/README.md",
+      "sha256": "e898923336ba79f91e5ae6aba3e5451d62bc525389188760ddbf4c8581f9ded1"
+    },
+    {
+      "path": "package.json",
+      "sha256": "4b50cf7bd1e0dd28eaf87766d6021a591f968e7f64b3f6f2dee9e34269f8e105"
+    },
+    {
+      "path": "relay/README.md",
+      "sha256": "85b4aa79e5a336d44f004ec20a6f182951aced1bc8ca7d362013b738c480249e"
+    },
+    {
+      "path": "relay/package.json",
+      "sha256": "a3944192af79177c2dc9d906ed479b1f66f0588d35c6cfa9fe1991e1758892ad"
+    },
+    {
+      "path": "services/codegraph/README.md",
+      "sha256": "aff8fc6beb5715ce9e49988a0c8693a78c79858a9828e75b276b112a469f2dc4"
+    },
+    {
+      "path": "services/memory/README.md",
+      "sha256": "17ef9cc5069d0c58f7bcd67c32c937b871492d99ac06ab366d19de6837757053"
+    },
+    {
+      "path": "shared/fixtures/README.md",
+      "sha256": "c89bc875f802bf3e1346944d9aab9080033e73f17992966acbb456fa1af45330"
+    },
+    {
+      "path": "web/README.md",
+      "sha256": "084ec3d5bb7c99f9ccccfe488ffac0285f1fe0f4898c1e24ac550d169094ade4"
+    },
+    {
+      "path": "web/scripts/evolved-provider-check.mjs",
+      "sha256": "2f041cd0d8fd9c5cda49a3fc19353f517cee7631ee684129c1daf91f064a2fd4"
+    },
+    {
+      "path": "web/src/components/NewSession/index.test.tsx",
+      "sha256": "a33c31d0f900bd37a6b1cfc349fdd732f35d6cec706488ca6a97d71719115e16"
+    },
+    {
+      "path": "web/src/components/NewSession/index.tsx",
+      "sha256": "b2ff19fe7cbafb9bf324832e9a435936aea04b211b215444233e64c46ae3035c"
+    },
+    {
+      "path": "web/src/lib/locales/en.ts",
+      "sha256": "0c316e107ec18d8cecfb951d2632f36707de8cb167077d5584193fa7e9fddd6b"
+    },
+    {
+      "path": "web/src/lib/locales/ru.ts",
+      "sha256": "0b0ccaf093e7610d9a9a59fa5ad14955bc485a7b623d0e55f589d02aeb778929"
+    },
+    {
+      "path": "web/src/lib/locales/zh-CN.ts",
+      "sha256": "d204968b1a93c0748a0df82531ca7d56059fa3c216df0f3585028eabdf9c42fb"
+    },
+    {
+      "path": "web/src/routes/settings/about.tsx",
+      "sha256": "aa4de942f8e8bbd05d6438898d6ec27e86e638ac45607aa519ae4561c5c7a69f"
+    },
+    {
+      "path": "web/src/routes/settings/index.test.tsx",
+      "sha256": "6d10be473d5ad1e883234ed61984455f40ffea5766c836736f38f0187f3fcbef"
+    },
+    {
+      "path": "website/index.html",
+      "sha256": "27aa40fc658ad22f9f15efa8a419a6b7d623adf975309e6f692681ee088ca648"
+    },
+    {
+      "path": "website/public/_redirects",
+      "sha256": "55648c1d87e326daeb533fd6b0cf9a174a8712445f7a0ef15bfdd191da2a947c"
+    },
+    {
+      "path": "website/public/evolved-apple-touch-icon.png",
+      "sha256": "26a94fdf31df6e1b867eb57d24c6d9172881afc9c04ef2f2df7ab2ffadb058a5"
+    },
+    {
+      "path": "website/public/evolved-icon.svg",
+      "sha256": "af49048f0094cb06ddfe9a54fee0daed876dee9196b5990e1f17bf4b258ce625"
+    },
+    {
+      "path": "website/public/evolved-mark.svg",
+      "sha256": "cddac2ce89af8ee146bb0d7dd66e63643492057b7919cb77b6cee756c9f89dcb"
+    },
+    {
+      "path": "website/public/robots.txt",
+      "sha256": "16ceb5ee3e0dc13aa9adf31a3ebbe45a1d965b8c2b9f72eaf84e5911e140ed95"
+    },
+    {
+      "path": "website/src/components/LanguageToggle.tsx",
+      "sha256": "096fd1b702d061753be302fda09bf3bdcef03c1a2da6b270a699d7f77e3ffbb2"
+    },
+    {
+      "path": "website/src/components/Layout.tsx",
+      "sha256": "17ec66fd1f893b555aed674ba6c6742548edd0540a5531185d16ebe5bbedd052"
+    },
+    {
+      "path": "website/src/components/ModeToggle.tsx",
+      "sha256": "9ac4be1b9d1ac3680b02a99f015c7d4c1d8c4a09675a37e367b405413b218bda"
+    },
+    {
+      "path": "website/src/components/SEO.tsx",
+      "sha256": "cfe61bec6214cbade81771285860c46f58e486e1155bb0b5da9b62fad6c6b526"
+    },
+    {
+      "path": "website/src/index.css",
+      "sha256": "76b74434224c15bb62f4246af24f312f8a48fee214e27e135e3854569913863a"
+    },
+    {
+      "path": "website/src/locales/en.json",
+      "sha256": "78f2198f92f9e7ad639d78a8ae9ccd9712de85a9347d1a39e12e1031320ba03d"
+    },
+    {
+      "path": "website/src/locales/zh.json",
+      "sha256": "34a4b883e46e8880b80557861be74f962badc36c90c8766d04ba57c2e1297c7d"
+    },
+    {
+      "path": "website/src/pages/Home.tsx",
+      "sha256": "7d54c53c4de4b886c1c29b38dba7629b28c64813327fdd2f694c44f0b3d0dd7e"
+    },
+    {
+      "path": "website/vite.config.ts",
+      "sha256": "7ba0eac53a2866c83f2cd5da4368c867295e849c43c08be1edec81aad2555dbe"
+    }
+  ],
+  "limits": [
+    "Raw review payloads, downloaded discussions/logs and scanner matches remain outside the repository; only sanitized locations, counts and hashes are committed.",
+    "This is an internal audit and source review of the stated snapshots, not an external security certification or proof that no secret exists.",
+    "Cache payloads and inaccessible/deleted GitHub objects are outside coverage. Public upstream binary matches do not imply a fresh binary/OCR audit.",
+    "No actual provider login, paid inference, disaster-recovery restore, native-client parity or legal opinion is claimed.",
+    "Auditor performed no commit, force push, history rewrite, ref deletion, remote content mutation or visibility change. Final main/visibility/anonymous access verification belongs to the coordinator."
+  ],
+  "primarySources": [
+    "https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/setting-repository-visibility",
+    "https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository",
+    "https://github.com/oven-sh/setup-bun/blob/v2/src/action.ts"
+  ],
+  "finalReview": {
+    "stage": "session-closure",
+    "verdict": "pass",
+    "blockingFindings": [],
+    "scope": "No-mkdir propagation, unchanged legacy behavior, stub cleanup and concrete closure of the preceding session/release findings."
+  }
+}

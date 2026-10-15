@@ -1,4 +1,23 @@
-# Installation
+# Installing HAPI-eVolved
+
+Start with the [Evolved quick start](../evolved/QUICKSTART.md) and
+[operator guide](../evolved/DEPLOYMENT.md). The preview is a separate Linux stack
+with passkey accounts, project permissions and private service state. Its browser
+provider flow also needs the local runner control service.
+
+HAPI-eVolved is an independent fork of [tiann/hapi](https://github.com/tiann/hapi).
+Build this repository at a reviewed Evolved commit. The npm, Homebrew and release
+commands below install **upstream HAPI**, not HAPI-eVolved.
+
+## Legacy HAPI reference
+
+::: warning Standalone upstream mode
+Everything below describes the inherited standalone/shared-token runtime. It is
+retained for contributors and legacy operators, not as the Evolved setup path.
+`CLI_API_TOKEN`, public relay pairing and upstream app downloads do not establish
+Evolved users, project roles or managed runners. Upstream hosted services and
+platform support are not operated or promised by this fork.
+:::
 
 Install the HAPI CLI and set up the hub. For phone client builds and pairing,
 see [Native apps (iOS / Android)](./native-apps.md); for browser installation,

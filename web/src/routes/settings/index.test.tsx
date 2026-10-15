@@ -348,7 +348,11 @@ describe('responsive settings pages', () => {
         expect(screen.getByText('App Version')).toBeInTheDocument()
         expect(screen.getByText(String(__APP_VERSION__))).toBeInTheDocument()
         expect(screen.getByText('Protocol Version')).toBeInTheDocument()
-        expect(screen.getByRole('link', { name: 'hapi.run' })).toHaveAttribute('rel', 'noopener noreferrer')
+        expect(screen.getByRole('heading', { name: 'HAPI-eVolved' })).toBeInTheDocument()
+        expect(screen.getByRole('link', { name: 'GitHub' })).toHaveAttribute('href', 'https://github.com/BGGBTAC/hapi-evolved')
+        expect(screen.getByRole('link', { name: 'GitHub' })).toHaveAttribute('rel', 'noopener noreferrer')
+        expect(screen.getByRole('link', { name: 'tiann/hapi' })).toHaveAttribute('href', 'https://github.com/tiann/hapi')
+        expect(screen.getByText('HAPI-eVolved is an independently maintained fork of tiann/hapi.')).toBeInTheDocument()
     })
 
     it('links common voice settings to full-page voices and advanced pages', () => {

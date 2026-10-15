@@ -63,7 +63,7 @@
         "vite-plugin-pwa": "^1.2.0"
     },
     "version": "0.1.0",
-    "description": "Self-hosted coding-agent workspace with teams, a local vault, persistent memory and code intelligence",
+    "description": "A fast-moving, self-hosted fork of HAPI. Run Claude and Codex from your browser with persistent memory, Codegraph, specialist agents and GitHub plugins.",
     "license": "AGPL-3.0-only",
     "repository": {
         "type": "git",

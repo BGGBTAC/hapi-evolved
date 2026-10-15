@@ -1,4 +1,13 @@
-# Codex shared sessions
+# Codex shared sessions in HAPI-eVolved
+
+This technical guide describes the shared native Codex runtime retained and extended
+by HAPI-eVolved. Start with [provider login](../evolved/PROVIDER_LOGIN.md) and the
+[Evolved deployment](../evolved/DEPLOYMENT.md); the product path uses project-scoped
+runners and enforces the current profile across native configuration changes.
+
+CLI/RPC names remain compatible with the inherited HAPI session engine. References
+to native mobile clients below describe their source implementations, not a claim
+that their authentication or UI is supported by the Evolved preview.
 
 Codex **0.154.0 or newer**: the official terminal UI and HAPI Web / native
 clients share one app-server. No local/remote ownership switch. Both can send

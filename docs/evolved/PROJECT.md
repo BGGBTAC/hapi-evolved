@@ -1,18 +1,30 @@
 # HAPI-eVolved
 
+HAPI-eVolved ist ein eigenständiger Fork von [tiann/hapi](https://github.com/tiann/hapi).
+Das Ziel ist eine schnellere, flexiblere Weiterentwicklung praktischer Agenten-Workflows:
+Projekte und Teams, geschützte Zugänge, persistentes Wissen und Code-Intelligenz auf
+der eigenen Infrastruktur. Der Fork trifft eigene Produkt- und Releaseentscheidungen;
+er ist keine offizielle HAPI-Veröffentlichung und keine Leistung der Modellanbieter.
+
 Projekt und Quellcode: https://github.com/BGGBTAC/hapi-evolved
 
-Ausgangspunkt: `tiann/hapi` auf `5847b034e5cb84f2617766945c994b7905c5c03e`.
-GitHub erlaubt keinen privaten Fork eines öffentlichen Repositories. Dieses
-Repository wurde deshalb als eigenständiges privates Repository angelegt und
-bewahrt die Upstream-Historie. Die Vorbereitung einer öffentlichen Preview ist
-in [RELEASING.md](https://github.com/BGGBTAC/hapi-evolved/blob/main/RELEASING.md) beschrieben; die Sichtbarkeit ist ein
-separater Betreiberschritt.
-Die AGPL-3.0-only-Lizenz und Urheberhinweise gelten weiter.
+Die Upstream-Basis ist `5847b034e5cb84f2617766945c994b7905c5c03e`. Die ursprüngliche
+Git-Historie, Urheberhinweise und AGPL-3.0-only-Lizenz bleiben erhalten. Das Repository
+wurde zunächst unabhängig und privat angelegt; eine öffentliche Präsentation ändert
+weder die Herkunft noch automatisch die tatsächliche Repositorysichtbarkeit.
+Einstieg: [English quick start](QUICKSTART.md), [Benutzeranleitung](USER_GUIDE.md),
+[Releaseverfahren](https://github.com/BGGBTAC/hapi-evolved/blob/main/RELEASING.md).
 
-## Vereinbarter Umfang der ersten Version
+## Umfang der Linux-/Web-Preview
 
-- Eigenständige Neuinstallation, Web/PWA, Linux, Claude Code und Codex.
+- Eigenständige Neuinstallation, Web/PWA, Linux, Claude Code und Codex. Zusätzliche
+  geerbte Agentadapter und native Appquellen sind Entwicklungswege, keine aktuelle
+  Supportzusage für das Evolved-Berechtigungsmodell.
+- Browsergestützte native Anbieteranmeldung über **Abos verbinden**. Der getrennte
+  lokale Steuerdienst richtet dafür einen privaten Projektrunner ein; Kontoanmeldung,
+  widerrufbarer HAPI-Zugang, Modellkatalog und gemeldete Abo-Kapazität bleiben getrennt.
+- Globale Spezialistenvorlagen und deklarative GitHub-Plugins mit Vorschau und
+  festgelegtem Quellcommit. Profile, Rollen und Projektgrenzen gelten auch bei deren Start.
 - Jedes neue Projekt erhält automatisch ein eigenes UUID-Verzeichnis im
   verwalteten Workspacebereich. Manuelles Verknüpfen vorhandener Verzeichnisse
   ist eine optionale Systemadmin-Aktion; Projektpfade dürfen sich nicht überlappen.
@@ -61,6 +73,7 @@ Bedienung und Betriebsgrenzen stehen in [`BACKLOG_FEATURES.md`](BACKLOG_FEATURES
 
 Browser → Passkey-/Projekt-API → Hub-Quellenregister und ACL.
 Hub → signierte, zeitlich begrenzte Anfragen → Vault/Broker.
+Hub → signierter lokaler Socket → Host-Steuerdienst → verwalteter Projektrunner.
 Hub → authentisierte interne Dienste → Codegraph bzw. Graphiti → Neo4j.
 Projekt-Runner → widerrufbare Projekt-Capability → Hub.
 Projekt-Git → Runner-Proxy → Hub-ACL → signierter Vault-Broker → GitHub.
@@ -83,5 +96,6 @@ Tests, Browserprüfung einschließlich Passkey-Flow, Integration der neuen Diens
 negative Tests für Projektgrenzen, Rechteentzug, Recovery, Vault-Integrität,
 Replay/Idempotenz und Memory-Löschung. Ein unkonfigurierter Cloud-Provider wird
 als pausiert dargestellt; Tests ohne Providerzugang belegen keine reale
-Cloud-Extraktion. Komplexe Entscheidungen und die abschließende Prüfung werden
-mit Claude Opus 5.5 besprochen.
+Cloud-Extraktion. Die dokumentierten Entwicklungsrunden enthalten tatsächliche Reviews mit Claude
+Opus 5.5. Reviewbefunde, Korrekturen und Testgrenzen sind historische Nachweise;
+sie ersetzen weder eine unabhängige Sicherheitsprüfung noch die Prüfung neuer Änderungen.

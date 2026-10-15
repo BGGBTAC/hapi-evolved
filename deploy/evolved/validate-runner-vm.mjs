@@ -122,7 +122,7 @@ try {
         socket.on('data',chunk=>{result+=chunk.toString();if(result.includes('\\r\\n')){socket.destroy(); /^HTTP\\/1\\.1 403 /.test(result)?resolve():reject(Error('CONNECT was not denied'))}});
         socket.on('error',reject);socket.on('close',()=>{if(!result.includes('\\r\\n'))reject(Error('Incomplete CONNECT response'))});
     }) }
-    const deniedTargets=['10.66.6.1:443','169.254.169.254:443','100.64.0.1:443','unlisted.hapi-validation.invalid:443'];
+    const deniedTargets=['10.0.0.1:443','169.254.169.254:443','100.64.0.1:443','unlisted.hapi-validation.invalid:443'];
     for (const target of deniedTargets) await denied(target);
     const browser=await fetch('http://runner-proxy:3010/health',{headers:{origin:'https://invalid.test'},signal:AbortSignal.timeout(3000)});
     const admin=await fetch('http://runner-proxy:3010/api/evolved/me',{signal:AbortSignal.timeout(3000)});

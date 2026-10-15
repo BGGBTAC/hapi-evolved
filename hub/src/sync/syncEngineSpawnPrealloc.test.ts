@@ -8,6 +8,50 @@ import { SyncEngine } from './syncEngine'
  * to the runner so buildCliArgs can stamp argv before the first webhook.
  */
 describe('SyncEngine.spawnSession preallocates HAPI id for fresh machine spawns', () => {
+    it('serializes an explicit no-mkdir policy through the real gateway while preserving the legacy default', async () => {
+        const store = new Store(':memory:')
+        const registry = new RpcRegistry()
+        const sent: Array<Record<string, unknown>> = []
+        const socket = {
+            id: 'directory-policy-socket',
+            timeout() {
+                return { async emitWithAck(_event: string, payload: { params: string }) {
+                    const params = JSON.parse(payload.params) as Record<string, unknown>
+                    sent.push(params)
+                    if (params.approvedNewDirectoryCreation === false) {
+                        return JSON.stringify({ type: 'requestToApproveDirectoryCreation', directory: params.directory })
+                    }
+                    return JSON.stringify({ type: 'success', sessionId: params.reservedSessionId })
+                } }
+            }
+        }
+        registry.register(socket as never, 'directory-machine:spawn-happy-session')
+        const io = { of: () => ({ sockets: new Map([[socket.id, socket]]) }) }
+        const engine = new SyncEngine(store, io as never, registry, { broadcast() {} } as never)
+        try {
+            engine.getOrCreateMachine('directory-machine', { host: 'localhost', platform: 'linux', happyCliVersion: '0.1.0' }, null, 'default')
+            for (const approval of [false, undefined]) {
+                const result = await engine.spawnSession(
+                    'directory-machine', '/project/missing-mount', 'claude',
+                    undefined, undefined, undefined, 'simple', undefined, undefined,
+                    undefined, 'plan', undefined, undefined, undefined, undefined,
+                    undefined, 'default', approval
+                )
+                const params = sent.at(-1)!
+                expect(params.directory).toBe('/project/missing-mount')
+                expect(params.permissionMode).toBe('plan')
+                expect(typeof params.reservedSessionId).toBe('string')
+                if (approval === false) {
+                    expect(params.approvedNewDirectoryCreation).toBe(false)
+                    expect(result).toMatchObject({ type: 'error', childStarted: false })
+                    expect(store.sessions.getSession(params.reservedSessionId as string)).toBeNull()
+                } else {
+                    expect(Object.hasOwn(params, 'approvedNewDirectoryCreation')).toBe(false)
+                    expect(result.type).toBe('success')
+                }
+            }
+        } finally { engine.stop() }
+    })
     it('creates a hub row and forwards that id as reservedSessionId', async () => {
         const store = new Store(':memory:')
         const engine = new SyncEngine(

@@ -1,4 +1,62 @@
-# FAQ
+# HAPI-eVolved FAQ
+
+## HAPI-eVolved essentials
+
+### What is different from upstream HAPI?
+
+This independent fork of [tiann/hapi](https://github.com/tiann/hapi) develops new
+features on its own schedule: project permissions, browser provider sign-in,
+constrained GitHub access, persistent memory, Codegraph and specialist agents.
+See [Why HAPI-eVolved?](./why-hapi.md) and the [quick start](../evolved/QUICKSTART.md).
+
+### Which installation should I use?
+
+Use the source-based Linux Evolved stack. Upstream npm/Homebrew packages and
+`hapi hub --relay` are different deployment paths. Existing HAPI accounts, sessions
+and credentials are not imported automatically. Use a separate state directory.
+
+### Where do I connect my Claude or Codex subscription?
+
+Open **Abos verbinden** in the workspace. An installation administrator must have
+configured the local control service. The browser then prepares a private project
+runner and starts native provider sign-in. Finish on the official provider page;
+Claude also asks for its one-time return code. No provider password belongs in
+HAPI. [Provider login](../evolved/PROVIDER_LOGIN.md) describes the steps and limits.
+
+### What is a runner, and what do its access hours mean?
+
+A runner is the working service that executes the agent and accesses project files.
+Its HAPI access can be permanent until revoked or explicitly time-limited. This is
+separate from a provider subscription. Expired or revoked access stops managed work;
+files and native logins are preserved. Creating a manual access credential alone
+does not install a runner. The browser provider flow can provision a managed one.
+
+### Why is capacity or the model list unknown?
+
+Capacity only shows values actually reported by the native agent. Model catalogs
+come from the managed project service and may be cached. Neither proves account
+entitlement or remaining paid credit. The provider checks access at execution.
+See [capacity](../evolved/CAPACITY.md) and [provider models](../evolved/PROVIDER_LOGIN.md).
+
+### Can I use the native phone apps or another agent?
+
+The validated product path is Claude/Codex on Linux with web/PWA. Other adapters
+and native clients are inherited development paths, not a blanket support promise.
+See [agents](./agents.md) and [native client status](./native-apps.md).
+
+### Does self-hosted mean offline or free model usage?
+
+No. Hosting, provider subscriptions/API usage and optional services have their own
+costs. Coding agents send requests to their providers; memory extraction additionally
+requires operator configuration and a project budget. Local memory search and the
+code index do not require a cloud model. See [data handling](../evolved/DATA_HANDLING.md).
+
+## Inherited HAPI FAQ and troubleshooting
+
+The original answers below describe standalone HAPI and retained integrations.
+They preserve implementation context and historical anchors. Shared-token login,
+upstream relays, native release claims and provider availability are not Evolved
+setup instructions or current fork support guarantees.
 
 ## General
 

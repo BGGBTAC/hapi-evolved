@@ -12,7 +12,8 @@ supported in-place import of an existing HAPI installation.
 
 ## Start with the documentation
 
-- [Installation, operation and recovery](docs/evolved/DEPLOYMENT.md)
+- [Quick start and first account — English](docs/evolved/QUICKSTART.md)
+- [Installation, operation and recovery — German](docs/evolved/DEPLOYMENT.md)
 - [User guide](docs/evolved/USER_GUIDE.md)
 - [Project scope and architecture](docs/evolved/PROJECT.md)
 - [Validation evidence and known limits](docs/evolved/VALIDATION.md)

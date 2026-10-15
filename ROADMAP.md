@@ -1,14 +1,22 @@
-# Roadmap
+# HAPI-eVolved roadmap
 
-This is a priority guide, not a release schedule. Discuss substantial proposals
-in this repository's issues before implementation.
+HAPI-eVolved is a fast-moving, independent fork of HAPI. We prioritize useful
+features that make self-hosted agent work simpler, more capable and easier to
+control. This is a priority guide, not a release schedule. Discuss substantial
+proposals in this repository's issues before implementation.
 
-## First public preview
+## Available in the source preview
 
-- Review and merge implementation, deployment and publication work.
-- Verify the exact release commit with CI and isolated end-to-end acceptance.
-- Complete history/artifact disclosure review and enable private security reporting.
-- Distribute a source preview with its commit, checksums and documented limits.
+- Browser subscription login and persistent managed Claude/Codex project runners.
+- Dynamic native model catalogs, reusable specialist agents and GitHub extensions.
+- Automatic project folders, direct GitHub workflows and local credential management.
+- Persistent memory, Codegraph and project-scoped workflow tools.
+- Responsive desktop/PWA navigation, usage visibility and selectable color profiles.
+
+See the [changelog](CHANGELOG.md) for details and [validation](docs/evolved/VALIDATION.md)
+for tested behavior. Repository visibility, a tagged release, npm packages and
+prebuilt images are separate delivery steps; the [release process](RELEASING.md)
+describes their checks.
 
 ## Next validation work
 

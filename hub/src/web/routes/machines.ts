@@ -12,7 +12,8 @@ import type { SyncEngine } from '../../sync/syncEngine'
 import { RpcTargetMissingError } from '../../sync/rpcGateway'
 import type { WebAppEnv } from '../middleware/auth'
 import { requireMachine } from './guards'
-import { projectPermissionMode } from '../../evolved/bridge'
+import { projectPermissionMode, projectSpawnDirectory } from '../../evolved/bridge'
+import { EvolvedError } from '../../evolved/store'
 
 export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
@@ -86,7 +87,19 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         }
 
         const body = await c.req.json().catch(() => null)
-        const parsed = SpawnSessionRequestSchema.safeParse(body)
+        const access = c.get('evolvedAccess')
+        const project = access?.project
+        let spawnBody = body
+        if (project && body && typeof body === 'object' && !Array.isArray(body)) {
+            try {
+                // Normalize only the Evolved route. The shared/legacy schema keeps directory required.
+                spawnBody = { ...body, directory: projectSpawnDirectory(project, body.directory, body.sessionType, body.worktreeName) }
+            } catch (error) {
+                if (error instanceof EvolvedError) return c.json({ error: error.message, code: error.code }, error.status as 400)
+                throw error
+            }
+        }
+        const parsed = SpawnSessionRequestSchema.safeParse(spawnBody)
         if (!parsed.success) {
             return c.json({ error: 'Invalid body' }, 400)
         }
@@ -99,7 +112,18 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         }
         const startingMode = parsed.data.startingMode
         const namespace = c.get('namespace')
-        const project = c.get('evolvedAccess')?.project
+        if (access) {
+            // Body parsing is asynchronous. Never dispatch with a revoked session or
+            // a project/profile/root snapshot that changed since the auth middleware.
+            if (!access.valid()) return c.json({ error: 'Session or project access changed. Retry with current project access.', code: 'project_access_changed' }, 401)
+            const currentMachine = requireMachine(c, engine, machineId)
+            if (currentMachine instanceof Response) return currentMachine
+            try { parsed.data.directory = projectSpawnDirectory(access.project, parsed.data.directory, parsed.data.sessionType, parsed.data.worktreeName) }
+            catch (error) {
+                if (error instanceof EvolvedError) return c.json({ error: error.message, code: error.code }, error.status as 400)
+                throw error
+            }
+        }
         const permissionMode = project ? projectPermissionMode(project, parsed.data.agent, parsed.data.permissionMode) : parsed.data.permissionMode
 
         const result = await engine.spawnSession(
@@ -119,7 +143,9 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
             parsed.data.collaborationMode,
             parsed.data.copilotAgentMode,
             startingMode,
-            namespace
+            namespace,
+            // A lost project mount must fail, never silently create a replacement.
+            project ? false : undefined
         )
         return c.json(result)
     })

@@ -1,4 +1,15 @@
-# Namespace (Advanced)
+# Projects and inherited namespaces
+
+HAPI-eVolved uses passkey users, teams and project roles. A project's namespace
+is assigned by the server; adding a suffix to a token cannot create membership.
+Use the [user guide](../evolved/USER_GUIDE.md) and
+[runner deployment](../evolved/DEPLOYMENT.md) for the supported path.
+
+## Legacy shared-token reference
+
+The following is the original [HAPI](https://github.com/tiann/hapi) standalone
+namespace arrangement. It is not an Evolved account or authorization model:
+Evolved rejects the shared owner token as browser/project-runner authentication.
 
 Namespaces are intended for small teams sharing a single public HAPI hub. Each team member uses a different namespace to isolate their sessions and machines without running separate hubs.
 

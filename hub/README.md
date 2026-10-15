@@ -1,6 +1,37 @@
-# hapi-hub
+# HAPI-eVolved Hub
 
-Telegram bot + HTTP API + realtime updates for hapi hub.
+The Hub is the authorization, session and source-ledger service in **HAPI-eVolved**,
+an independent fork of [tiann/hapi](https://github.com/tiann/hapi). It serves the
+web/PWA and retains HAPI's Socket.IO/REST/SSE session engine. Start with the
+[Evolved quick start](../docs/evolved/QUICKSTART.md), not the standalone token flow.
+
+## Evolved responsibilities and boundaries
+
+- Passkey users, sessions/recovery, teams, project roles and execution profiles.
+- Dedicated project directories and current authorization on protected APIs/events.
+- Session history, durable attachment originals, activity feed and source-backed memory.
+- Signed requests to the separate encrypted Vault/GitHub broker; no Vault master key in the Hub.
+- Authenticated calls to local Codegraph and optional budgeted Graphiti/Neo4j processing.
+- Signed local calls to the runner control service for browser provider login and
+  managed project runners. The Hub has no Docker socket or arbitrary host-shell API.
+- Native provider model snapshots, explicit refresh authorization and reported
+  account-capacity windows; no invented entitlement or remaining-credit estimates.
+
+Entry points are `src/evolved/runtime.ts`, `api.ts`, `security.ts`, `bridge.ts` and
+the corresponding feature modules. `deploy/evolved/compose.yml` supplies private
+mounts and service configuration. For initialization, control-service installation,
+backups and credentials use the [operator guide](../docs/evolved/DEPLOYMENT.md).
+
+## Inherited engine and legacy configuration reference
+
+The retained sections below include **standalone HAPI mode**. In Evolved mode,
+`CLI_API_TOKEN` is not browser login or project-runner authorization. `/api/auth`,
+Telegram binding, global credential/voice settings and host-wide import APIs are
+blocked by the Evolved bridge. Shared session APIs are reachable only through
+project-scoped authorization; listing a legacy endpoint below does not enable it.
+Native app/push references do not promise an Evolved mobile release or upstream service access.
+
+The inherited engine includes Telegram adapters, HTTP APIs and realtime session updates.
 
 ## What it does
 
@@ -11,11 +42,11 @@ Telegram bot + HTTP API + realtime updates for hapi hub.
 - Serves the web app from `web/dist` or embedded assets in the single binary; network-relay mode uses the separately hosted official web app.
 - Persists state in SQLite via `bun:sqlite`.
 
-## Configuration
+## Legacy standalone configuration
 
 See `src/configuration.ts` for all options.
 
-### Required
+### Required in legacy mode
 
 - `CLI_API_TOKEN` - Base shared secret used by CLI, web login and native pairing. Clients append `:<namespace>` for isolation. Auto-generated on first run if not set.
 
@@ -61,7 +92,7 @@ Official native apps register their encryption keys automatically; no push
 provider setup is needed on a fresh hub. See the [native companion push
 contract](../docs/api/native-companion-contract.md).
 
-## Running
+## Running the legacy standalone Hub
 
 Binary (single executable):
 
@@ -305,7 +336,13 @@ Maintenance scripts (run with the hub stopped before swapping files):
 
 ## Security model
 
-Access is controlled by:
+Evolved uses passkey sessions, server-assigned project namespaces, role/profile
+checks and bounded capabilities. The separate Vault, credential proxy and local
+control service form additional trust boundaries. See
+[data handling](../docs/evolved/DATA_HANDLING.md) and the
+[project trust boundaries](../docs/evolved/PROJECT.md).
+
+In inherited standalone mode, access is controlled by:
 - Telegram initData verification plus bound Telegram users (bound via `CLI_API_TOKEN:<namespace>`).
 - `CLI_API_TOKEN` base secret for CLI and browser access (namespace is appended by clients).
 
@@ -327,7 +364,11 @@ The hub build output is `hub/dist/index.js`, and the web assets are in `web/dist
 - Telegram Mini Apps require HTTPS and a public URL. If the hub has no public IP, use Cloudflare Tunnel or Tailscale and set `HAPI_PUBLIC_URL` to the HTTPS endpoint.
 - If the web app is hosted on a different origin, set `CORS_ORIGINS` (or `HAPI_PUBLIC_URL`) to include that static host origin.
 
-## Standalone web hosting
+## Legacy standalone web hosting
+
+The tested Evolved installation serves web assets from its private Hub origin.
+The cross-origin example below is retained for the legacy token client; it is not
+a tested Evolved passkey/cookie deployment recipe.
 
 The web UI can be hosted separately from the hub (for example on GitHub Pages or Cloudflare Pages):
 

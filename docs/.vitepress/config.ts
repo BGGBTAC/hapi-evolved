@@ -2,15 +2,15 @@ import { defineConfig } from 'vitepress'
 
 export default defineConfig({
   title: 'HAPI-eVolved',
-  description: 'Self-hosted agent workspaces, protected credentials and persistent knowledge',
+  description: 'HAPI-eVolved: an independent HAPI fork for self-hosted agents, protected credentials and persistent knowledge',
   base: '/docs/',
 
   head: [
-    ['link', { rel: 'icon', href: '/docs/favicon.ico' }],
+    ['link', { rel: 'icon', href: '/docs/evolved-icon.svg' }],
   ],
 
   themeConfig: {
-    logo: '/logo.svg',
+    logo: { src: '/evolved-mark.svg', alt: 'HAPI-eVolved' },
 
     nav: [
       { text: 'Evolved Quick Start', link: '/evolved/QUICKSTART' },
@@ -33,32 +33,32 @@ export default defineConfig({
         ]
       },
       {
-        text: 'Upstream HAPI reference',
+        text: 'Evolved guides',
         items: [
-          { text: 'Quick Start', link: '/guide/quick-start' },
-          { text: 'Installation', link: '/guide/installation' },
-          { text: 'Native Apps', link: '/guide/native-apps' },
-          { text: 'PWA', link: '/guide/pwa' }
-        ]
-      },
-      {
-        text: 'Guide',
-        items: [
-          { text: 'How it Works', link: '/guide/how-it-works' },
-          { text: 'Voice Assistant', link: '/guide/voice-assistant' },
-          { text: 'Why HAPI', link: '/guide/why-hapi' },
+          { text: 'Getting started', link: '/guide/quick-start' },
+          { text: 'Why HAPI-eVolved?', link: '/guide/why-hapi' },
+          { text: 'How it works', link: '/guide/how-it-works' },
+          { text: 'PWA', link: '/guide/pwa' },
           { text: 'FAQ', link: '/guide/faq' }
         ]
       },
       {
-        text: 'Agents',
+        text: 'Upstream HAPI reference',
+        items: [
+          { text: 'Installation', link: '/guide/installation' },
+          { text: 'Native apps', link: '/guide/native-apps' },
+          { text: 'Voice assistant', link: '/guide/voice-assistant' }
+        ]
+      },
+      {
+        text: 'Upstream agent reference',
         items: [
           { text: 'Agents', link: '/guide/agents' },
           { text: 'Codex Usage & Limits', link: '/guide/codex-shared-sessions' }
         ]
       },
       {
-        text: 'Advanced',
+        text: 'Upstream advanced reference',
         items: [
           { text: 'Namespace', link: '/guide/namespace' },
           { text: 'Deployment', link: '/guide/deployment' },
@@ -66,7 +66,7 @@ export default defineConfig({
         ]
       },
       {
-        text: 'API',
+        text: 'Shared API reference',
         items: [
           { text: 'Native Companion Contract', link: '/api/native-companion-contract' },
           {
@@ -90,8 +90,8 @@ export default defineConfig({
     ],
 
     footer: {
-      message: 'AGPL-3.0-only · <a href="/docs/evolved/DATA_HANDLING.html">Evolved data handling</a> · Includes upstream HAPI documentation.',
-      copyright: 'Copyright © 2025-present'
+      message: 'Independent fork of <a href="https://github.com/tiann/hapi">tiann/hapi</a> · <a href="https://github.com/BGGBTAC/hapi-evolved/blob/main/NOTICE">AGPL-3.0-only and attribution</a> · <a href="/docs/evolved/DATA_HANDLING.html">Data handling</a>',
+      copyright: 'HAPI and HAPI-eVolved contributors. Original notices retained.'
     },
 
     search: {

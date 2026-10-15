@@ -1,5 +1,14 @@
 # Message pagination, windowing, and optimistic sends
 
+HAPI-eVolved retains this client/session protocol from
+[tiann/hapi](https://github.com/tiann/hapi), but its **authentication and project
+boundaries differ**. The supported Evolved client is the web/PWA. Native client
+conformance is not proof of Evolved passkey or team/project compatibility.
+
+Wire decoding and stream/pagination rules below remain implementation references;
+apply them only after the Evolved authentication bridge and current project ACLs.
+See the [contract overview](./index.md) for this scope distinction.
+
 **Audience:** Implementers of native HAPI clients (iOS / Android). This page specifies the message paging protocol (`GET /api/sessions/:id/messages`), the epoch reset contract, the tail-sync loop, recommended client windowing, and the optimistic-send / cancel lifecycle. Companion pages: [sse](./sse.md), [messages](./messages.md), [rest](./rest.md).
 
 Source of truth: `shared/src/apiTypes.ts` (`MessagesQuerySchema`, `MessagesResponse`, `SendMessageRequestSchema`), `hub/src/web/routes/messages.ts`, `hub/src/sync/messageService.ts`, `hub/src/store/messages.ts`, reference client `web/src/lib/message-window-store.ts` + `web/src/lib/messages.ts`.

@@ -2,7 +2,11 @@
 
 HAPI-eVolved is an independent fork maintained in
 [BGGBTAC/hapi-evolved](https://github.com/BGGBTAC/hapi-evolved). Contributions and
-reports about this fork belong here. The 0.1.0 preview focuses on a fresh Linux
+reports about this fork belong here. Our aim is to bring useful new features to
+a self-hosted agent workspace quickly, through focused changes and reproducible
+checks. Upstream contributions retain their attribution; Evolved has its own roadmap.
+
+The 0.1.0 preview focuses on a fresh Linux
 deployment, Web/PWA access, and Claude Code and Codex project runners. Inherited
 upstream code does not imply support for every upstream deployment or client.
 
@@ -58,6 +62,8 @@ affected packages. The root scripts include:
 | Shared protocol | `bun run test:shared` and typechecks for affected consumers |
 | Relay | `bun run typecheck:relay`, `bun run test:relay` |
 | Runner proxy | `bun run typecheck:proxy`, `bun run test:proxy` |
+| Browser provider login | `bun run typecheck:runner-auth`, `bun run test:runner-auth` |
+| Host runner control | `bun run typecheck:runner-control`, `bun run test:runner-control` |
 | Deployment helpers | `bun run test:deployment` |
 
 `bun run typecheck` runs all configured package typechecks. `bun run test` runs

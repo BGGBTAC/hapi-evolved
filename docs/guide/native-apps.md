@@ -1,4 +1,23 @@
-# Native apps (iOS / Android)
+# Native apps: inherited client reference
+
+HAPI-eVolved currently targets the **web app and mobile PWA**. The iOS and Android
+source trees are inherited from [tiann/hapi](https://github.com/tiann/hapi) and remain
+available for development. Evolved passkey onboarding, team/project access and
+browser provider login have not been established as supported native-app flows.
+A successful protocol fixture test alone does not establish that compatibility.
+
+For a phone today, use the [PWA](./pwa.md) on your Evolved HTTPS origin. The
+[quick start](../evolved/QUICKSTART.md) sets up the corresponding hub.
+
+## Legacy build, pairing and capability reference
+
+::: warning No Evolved mobile release promise
+The following describes the inherited clients and upstream distribution paths.
+Upstream apps, signing accounts, Firebase/APNs credentials and hosted push relay
+are not operated by HAPI-eVolved. Shared-token pairing below is not the Evolved
+passkey login. Build instructions are development references, not verified native
+release or store-availability claims for this fork.
+:::
 
 HAPI includes native iOS and Android clients for controlling sessions on a hub
 you run. Agents execute on your CLI/Runner machines; the hub stores the session

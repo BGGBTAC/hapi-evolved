@@ -1,4 +1,12 @@
-# Persistentes Memory
+# HAPI-eVolved: persistentes Memory
+
+Dieser Dienst gehört zur eigenständigen Weiterentwicklung von
+[tiann/hapi](https://github.com/tiann/hapi). Einstieg:
+[Quickstart](../../docs/evolved/QUICKSTART.md),
+[Betreiberanleitung](../../docs/evolved/DEPLOYMENT.md) und
+[Datenflüsse](../../docs/evolved/DATA_HANDLING.md).
+Graphiti und Neo4j bleiben eigene Drittanbieterkomponenten mit ihren jeweiligen
+Lizenzen; ein verbundenes Claude-/Codex-Abo konfiguriert diesen Dienst nicht.
 
 Der Hub besitzt das maßgebliche SQLite-Quellenledger und die Kostenreservierungen. Dieser Python-Dienst
 projiziert freigegebene Episoden mit `graphiti-core==0.30.2` in Neo4j. Die Abhängigkeiten sind in

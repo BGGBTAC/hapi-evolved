@@ -1,4 +1,12 @@
-# Golden protocol fixtures
+# HAPI-eVolved protocol fixtures
+
+These fixtures describe the retained HAPI wire/message engine in the independent
+[HAPI-eVolved fork](https://github.com/BGGBTAC/hapi-evolved), derived from
+[tiann/hapi](https://github.com/tiann/hapi). Protocol identifiers are deliberately
+unchanged. Fixture conformance does not establish native-app support for Evolved
+passkeys, teams or project authorization. See the
+[client contract scope](../../docs/api/client-contract/index.md) and
+[Evolved quick start](../../docs/evolved/QUICKSTART.md).
 
 Machine-generated conformance fixtures for the HAPI client protocol. The
 **web implementation is the source of truth**: every `expected*` value in

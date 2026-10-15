@@ -1,4 +1,4 @@
-# Privacy and data handling
+# HAPI-eVolved privacy and data handling
 
 This describes the self-hosted stack, not a hosted-service privacy policy.
 Operators are responsible for their installation, providers and retention.

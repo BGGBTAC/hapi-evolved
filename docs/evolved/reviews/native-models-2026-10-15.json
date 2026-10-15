@@ -91,10 +91,11 @@
       "log": "/tmp/evolved-agent-plugin-web-typecheck.log"
     },
     {
-      "command": "PLAYWRIGHT_CHROME_PATH=/home/benedict/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome node web/scripts/evolved-extensions-browser-check.mjs",
+      "command": "PLAYWRIGHT_CHROME_PATH=<absolute-path-to-Chromium> node web/scripts/evolved-extensions-browser-check.mjs",
       "result": "PASS",
       "log": "/tmp/evolved-extensions-browser-check.log",
-      "scope": "Real isolated Hub/vault and virtual WebAuthn. Synthetic GitHub metadata/manifests and controlled model-provider HTTP fixture only. Global agent CRUD across two projects; dynamic model selection and offline manual ID persisted by real Hub; pinned plugin install/update/disable/reenable/delete; dependent-skill repair; applied plugin theme and fallback; canceled uninstall; inert instructions; mobile overflow check."
+      "scope": "Real isolated Hub/vault and virtual WebAuthn. Synthetic GitHub metadata/manifests and controlled model-provider HTTP fixture only. Global agent CRUD across two projects; dynamic model selection and offline manual ID persisted by real Hub; pinned plugin install/update/disable/reenable/delete; dependent-skill repair; applied plugin theme and fallback; canceled uninstall; inert instructions; mobile overflow check.",
+      "publicationRedaction": "Personal absolute browser binary path replaced with a portable placeholder for publication; this is a redacted historical command, not a new test run. Original test results and source/log hashes are preserved."
     }
   ],
   "notClaimed": [

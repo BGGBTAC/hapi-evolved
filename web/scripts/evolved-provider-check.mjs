@@ -4,13 +4,19 @@
  * Run after build:web; PLAYWRIGHT_CHROME_PATH optionally selects local Chromium.
  */
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const runnerProtocol = JSON.parse(execFileSync('bun', ['-e', `
+    import { CURRENT_MACHINE_CAPABILITIES, RUNNER_CAPABILITIES } from './shared/src/runnerCapabilities.ts';
+    import { PROTOCOL_VERSION } from './shared/src/version.ts';
+    import { APP_VERSION } from './shared/src/buildInfo.ts';
+    process.stdout.write(JSON.stringify({ machineCapabilities: CURRENT_MACHINE_CAPABILITIES, runnerCapabilities: RUNNER_CAPABILITIES, protocolVersion: PROTOCOL_VERSION, appVersion: APP_VERSION }));
+`], { cwd: repo, encoding: 'utf8', timeout: 10000 }));
 const state = mkdtempSync('/tmp/hapi-evolved-ui-provider-');
 const output = mkdtempSync('/tmp/hapi-provider-browser-');
 const report = { fixture: 'real Hub/Vault/WebAuthn and built UI; provider/model API responses and the agent-start machine are synthetic; no live provider login or model inference', checks: [], views: [], failures: [] };
@@ -29,7 +35,7 @@ try {
     }
     if (!ready) throw Error('Fixture did not start');
     browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_CHROME_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROME_PATH } : {}), args: ['--no-sandbox'] });
-    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: 'block' });
     page = await context.newPage();
     const consoleErrors = [];
     page.on('pageerror', error => consoleErrors.push(String(error)));
@@ -155,6 +161,69 @@ try {
     if (await modelPicker.inputValue() !== 'opus' || modelRefreshes !== 2) throw Error('Explicit catalog refresh lost selected model');
     report.checks.push('Synthetic native catalog: automatic cold-admin POST, resolved model selection, explicit refresh preserves selected ID; no task submitted');
     report.checks.push('18px native radio controls with >=44px labels; no viewport overflow; profiles persist after reload');
+    // New project sessions must derive cwd from real Hub-created project metadata.
+    // Machine RPCs are synthetic and never start an agent or perform inference.
+    const projectSessionRequests = [], projectPathChecks = [];
+    let runnerFolderExists = true;
+    const projectFolders = new Map([[project.id, project.rootPath]]);
+    await page.route('**/api/machines', route => {
+        const projectId = route.request().headers()['x-hapi-project-id'];
+        return route.fulfill({ json: { machines: [{
+            id: 'synthetic-project-runner', namespace: `evolved:${projectId}`, seq: 1,
+            active: true, activeAt: Date.now(), createdAt: Date.now(), updatedAt: Date.now(),
+            protocolVersion: runnerProtocol.protocolVersion,
+            metadataVersion: 1, runnerStateVersion: 1,
+            metadata: { host: 'Isolated project runner', platform: 'linux', happyCliVersion: runnerProtocol.appVersion, capabilities: runnerProtocol.machineCapabilities, workspaceRoots: projectFolders.has(projectId) ? [projectFolders.get(projectId)] : [] },
+            runnerState: { status: 'running', capabilities: runnerProtocol.runnerCapabilities },
+        }] } });
+    });
+    await page.route('**/api/machines/synthetic-project-runner/**', async route => {
+        const request = route.request(), suffix = new URL(request.url()).pathname.split('/synthetic-project-runner/')[1];
+        if (suffix === 'agent-availability') return route.fulfill({ json: { agents: [{ agent: 'claude', available: true }] } });
+        if (suffix === 'paths/exists') {
+            const { paths } = request.postDataJSON();
+            projectPathChecks.push({ projectId: request.headers()['x-hapi-project-id'], paths });
+            return route.fulfill({ json: { exists: Object.fromEntries(paths.map(path => [path, runnerFolderExists])) } });
+        }
+        if (suffix === 'spawn') {
+            projectSessionRequests.push({ projectId: request.headers()['x-hapi-project-id'], body: request.postDataJSON() });
+            return route.fulfill({ json: { type: 'error', message: 'Synthetic spawn captured; no agent was started.' } });
+        }
+        return route.fulfill({ status: 404, json: { error: 'Synthetic machine endpoint unavailable' } });
+    });
+    await page.evaluate(() => {
+        localStorage.setItem('hapi:newSession:agent', 'claude');
+        localStorage.setItem('hapi:lastMachineId', 'synthetic-project-runner');
+        localStorage.setItem('hapi:recentPaths', JSON.stringify({ 'synthetic-project-runner': ['/outside-project-recent'] }));
+        sessionStorage.setItem('hapi:new-session-form-draft', JSON.stringify({ agent: 'claude', model: 'auto', machineId: 'synthetic-project-runner', sessionType: 'worktree', worktreeName: '../../outside-draft' }));
+    });
+    await page.goto(`${origin}/sessions/new`);
+    await page.getByLabel('Project folder', { exact: true }).waitFor();
+    if (await page.getByLabel('Project folder', { exact: true }).textContent() !== project.rootPath) throw Error('Direct project session did not use stored folder');
+    if (await page.getByRole('textbox', { name: 'Directory', exact: true }).count() || await page.getByRole('button', { name: 'Browse', exact: true }).count() || await page.getByText('Worktree', { exact: true }).count()) throw Error('Project session exposes a directory/worktree picker');
+    await page.setViewportSize({ width: 390, height: 900 });
+    await page.evaluate(() => { document.querySelectorAll('.app-scroll-y').forEach(element => { element.scrollTop = 0; }); });
+    if (await page.getByText(/runner\(s\) out of date/).count()) throw Error('Synthetic machine does not advertise the current protocol capabilities');
+    await capture('project-session-folder', 390, 'light');
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    await page.getByText('Synthetic spawn captured; no agent was started.').waitFor();
+    if (projectSessionRequests.length !== 1 || projectSessionRequests[0].body.directory !== project.rootPath || projectSessionRequests[0].body.sessionType !== 'simple' || projectSessionRequests[0].body.worktreeName !== undefined || projectSessionRequests[0].projectId !== project.id) throw Error('Project start request escaped its stored folder/scope');
+    const { project: secondProject } = await request('/projects', { teamId: team.id, name: 'Second session project' });
+    projectFolders.set(secondProject.id, secondProject.rootPath);
+    await page.goto(`${origin}/evolved?tab=projects&project=${secondProject.id}`);
+    await page.waitForFunction(id => document.querySelector('select[aria-label="Aktives Projekt"]')?.value === id, secondProject.id);
+    await page.goto(`${origin}/sessions/new?machineId=synthetic-project-runner&directory=${encodeURIComponent(project.rootPath)}`);
+    await page.getByLabel('Project folder', { exact: true }).waitFor();
+    if (await page.getByLabel('Project folder', { exact: true }).textContent() !== secondProject.rootPath) throw Error('Old project URL overrode new project root');
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    await page.getByText('Synthetic spawn captured; no agent was started.').waitFor();
+    if (projectSessionRequests.length !== 2 || projectSessionRequests[1].body.directory !== secondProject.rootPath || projectSessionRequests[1].projectId !== secondProject.id) throw Error('Second project start used stale root or authority');
+    if (projectPathChecks.some(check => check.paths.some(path => path !== (check.projectId === project.id ? project.rootPath : secondProject.rootPath)))) throw Error('URL/draft/recent path reached machine discovery');
+    runnerFolderExists = false;
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    await page.getByText('Project folder unavailable on the runner. Ask an administrator to check the project folder and runner mount.').first().waitFor();
+    if (projectSessionRequests.length !== 2) throw Error('Missing project folder triggered a spawn/mkdir');
+    report.checks.push('Project session: real Hub-assigned root, no directory/worktree picker; hostile URL/draft/recents ignored; exact project/root/simple spawn DTO; second project isolated; missing runner folder blocks spawn (machine responses synthetic)');
     if (consoleErrors.length) throw Error(`Browser exceptions: ${consoleErrors.join('; ')}`);
     report.checks.push('No browser runtime exceptions');
 } catch (error) { report.failures.push(String(error)); process.exitCode = 1; if (page) await page.screenshot({ path: join(output, 'failure.png'), fullPage: true }).catch(() => {}); }

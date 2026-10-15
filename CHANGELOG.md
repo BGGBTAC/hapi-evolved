@@ -8,6 +8,9 @@ or container image.
 
 ### Added
 
+- A coherent HAPI-eVolved project identity across GitHub, documentation and the
+  web interface, with explicit upstream fork attribution and a separate roadmap.
+
 - Browser-based native Codex/Claude subscription login, account status, cancellation
   and logout; missing project runners are provisioned automatically by a narrow
   local control service. Provider credentials persist in private runner homes.
@@ -37,6 +40,10 @@ or container image.
 - A dedicated logo, community documentation and source-preview packaging.
 
 ### Fixed
+
+- New project sessions automatically use the stored project folder. Old paths,
+  form drafts and URL parameters cannot override it; the server validates the
+  root and rejects unrelated folders and unsupported external worktree starts.
 
 - Repository write grants are selectable independently of the execution profile,
   with contextual push requirements and an explicit profile/runner setup path.

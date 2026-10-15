@@ -1,5 +1,10 @@
 # Native transcript scrolling
 
+This is an inherited native-client implementation reference in the HAPI-eVolved
+source tree, derived from [tiann/hapi](https://github.com/tiann/hapi). It preserves
+rendering and fixture invariants, not an Evolved mobile release/compatibility claim.
+Use the [web/PWA](./guide/pwa.md) for the supported mobile preview.
+
 Native-only presentation policy. No Web, Hub or REST/SSE format changes.
 iOS and Android still reduce the same protocol messages; golden fixtures pin
 that contract, not the native view appearance.

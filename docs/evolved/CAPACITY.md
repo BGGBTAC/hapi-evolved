@@ -35,8 +35,9 @@ Das optionale `overage`-Fenster bezeichnet zusätzliche Nutzung und ist kein
 zusätzliches kostenloses Abo-Budget. Lokale PTY-/ACP-Sessions ohne eingebundene
 strukturierte Kapazitätsmeldungen bleiben ebenfalls unbekannt.
 
-Die normale Anmeldung erfolgt weiterhin in der jeweiligen nativen CLI. Für die
-Kapazitätsanzeige werden keine zusätzlichen Anbieter-Credentials eingerichtet,
+Die Anmeldung erfolgt über den nativen CLI-Ablauf, bei verwalteten Projekten aus
+[Abos verbinden](PROVIDER_LOGIN.md) im Browser. Für die Kapazitätsanzeige werden
+keine zusätzlichen Anbieter-Credentials eingerichtet,
 keine Credentialdateien ausgelesen und keine Tokens an den Browser geliefert.
 
 Offizielle Protokollquellen, geprüft am 15. Oktober 2026:

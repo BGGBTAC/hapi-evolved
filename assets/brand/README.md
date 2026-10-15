@@ -1,10 +1,12 @@
-# HAPI brand assets
+# Inherited HAPI brand assets
 
-The separate [HAPI-eVolved logo](evolved/README.md) is available for the evolved
-project. The sources and export process below describe the inherited HAPI brand.
+HAPI-eVolved uses its [own brand assets](evolved/README.md) for the web app,
+documentation and project presentation. This directory preserves the original
+HAPI artwork and export process for upstream attribution and contributor reference.
 
-Canonical HAPI icon source used by the web, documentation, website, Android,
-and iOS applications.
+The sources below originally supplied upstream HAPI's web, documentation, website,
+Android and iOS icons. Native assets remain inherited; the preview validates the
+Evolved web/PWA client.
 
 ## Design decisions
 
@@ -46,13 +48,16 @@ and iOS applications.
 - `svg/hapi-monochrome.svg` — one-color mark.
 - `svg/hapi-lockup-horizontal.svg` — tightened horizontal lockup.
 
-## Sync platform assets
+## Legacy platform export
 
 ```bash
 ./assets/brand/export.sh
 ```
 
-The script renders into a temporary directory, then updates only the files used
+This upstream exporter can overwrite Evolved web/docs/website artwork. Do not use
+it to refresh the Evolved identity; use the exporter in [the Evolved guide](evolved/README.md).
+
+For upstream asset work, the script renders into a temporary directory, then updates only the files used
 by `web/`, `docs/`, `website/`, `android/`, and `ios/`. Generated intermediates
 are deliberately not stored in the repository.
 

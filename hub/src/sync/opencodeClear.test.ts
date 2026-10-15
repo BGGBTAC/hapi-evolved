@@ -798,6 +798,8 @@ describe('SyncEngine.clearOpenCodeSession', () => {
                 undefined,
                 // forkSession / reservedSessionId — clear uses reopen existingSessionId
                 undefined,
+                undefined,
+                // Legacy reopen keeps its existing directory-creation default.
                 undefined
             )
             expect(engine.getSessionByNamespace(replacementSessionId, 'default')?.metadata).toMatchObject({

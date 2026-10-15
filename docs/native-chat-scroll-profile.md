@@ -1,5 +1,10 @@
 # Native 聊天滚动：模拟器实测
 
+> 历史测量记录：以下结果来自上游 [tiann/hapi](https://github.com/tiann/hapi)
+> 的原生客户端基线，保留作为 HAPI-eVolved 的工程参考。它们不是本分支的发布验收，
+> 也不证明原生应用支持 Evolved 的 Passkey／项目权限。当前移动端入口是
+> [Web/PWA](./guide/pwa.md)。
+
 日期：2026-09-10。业务代码基线：`5194271f`。
 
 ## 结论

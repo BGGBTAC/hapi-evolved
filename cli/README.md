@@ -1,4 +1,30 @@
-# hapi CLI
+# HAPI-eVolved CLI
+
+The `hapi` executable is the agent/session runtime of **HAPI-eVolved**, an independent
+fork of [tiann/hapi](https://github.com/tiann/hapi) with its own feature roadmap.
+The executable, environment variables and wire names remain compatible where the
+implementation still uses them; the product name is not a package-renaming migration.
+
+## Evolved deployment path
+
+Use the [quick start](../docs/evolved/QUICKSTART.md) and
+[provider login](../docs/evolved/PROVIDER_LOGIN.md) for Claude/Codex on Linux.
+The managed project runner launches this CLI behind a private credential proxy.
+The proxy holds the project lease and supplies short-lived capabilities; the agent
+receives neither the lease nor a shared Hub owner token. Current profile/role checks
+constrain session start, resume, native configuration and protected operations.
+
+For development and manual runners, follow the
+[operator guide](../docs/evolved/DEPLOYMENT.md). Browser-created manual access alone
+does not install a process. Upstream npm/Homebrew packages install upstream HAPI,
+not this fork. Additional agent adapters below remain development references;
+Evolved remote spawning currently permits Claude and Codex.
+
+## Shared runtime and legacy command reference
+
+The commands and lifecycle invariants below describe the retained CLI engine.
+Direct shared-token authentication and its standalone setup apply only to legacy
+mode; they do not create Evolved accounts, teams or project rights.
 
 Choose a supported coding agent from your terminal and control its sessions remotely through the hapi hub. See the [supported agents](../docs/guide/agents.md).
 
@@ -14,7 +40,7 @@ Choose a supported coding agent from your terminal and control its sessions remo
 - Manages a background runner for long-running sessions.
 - Includes diagnostics and auth helpers.
 
-## Typical flow
+## Legacy standalone flow
 
 1. Start the hub and set env vars (see ../hub/README.md).
 2. Set the same CLI_API_TOKEN on this machine or run `hapi auth login`.
@@ -265,7 +291,7 @@ Data is stored in `~/.hapi/` (or `$HAPI_HOME`):
 - Cursor Agent CLI installed (`agent` on PATH) for `hapi cursor`. Install: `curl https://cursor.com/install -fsS | bash` (macOS/Linux), `irm 'https://cursor.com/install?win32=true' | iex` (Windows).
 - Grok Build CLI installed (`grok` on PATH) for `hapi grok`. Authenticate with `grok login --device-auth` on headless runner machines, or set `XAI_API_KEY`.
 - OpenCode CLI installed (`opencode` on PATH).
-- Bun 1.4.0 for building from source.
+- Bun 1.3.14 for this Evolved source revision; use the version pinned by the repository.
 
 ## Build from source
 
@@ -298,6 +324,11 @@ bun run build:single-exe
 - `src/modules/` - Tool implementations (ripgrep, difftastic, git).
 
 ## Releasing
+
+Follow [this fork's release procedure](../RELEASING.md). Do not publish upstream
+package names, native identities or registries as an Evolved release. The inherited
+script described below is implementation context, not authorization or the supported
+public release procedure for this fork.
 
 From the repository root, `bun run release-all <version>` updates the CLI package,
 shared app version, iOS `MARKETING_VERSION` (app and notification extension, all

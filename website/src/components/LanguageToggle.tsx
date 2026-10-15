@@ -14,7 +14,7 @@ export function LanguageToggle() {
       variant="outline"
       size="sm"
       onClick={toggleLanguage}
-      className="font-bold border-2 border-border shadow-hard hover:translate-y-0.5 hover:shadow-none transition-all w-12"
+      className="h-9 w-10 font-semibold"
     >
       {i18n.language.startsWith('zh') ? 'EN' : '中'}
     </Button>

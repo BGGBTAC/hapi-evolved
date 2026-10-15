@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="420" viewBox="0 0 1280 420" role="img" aria-labelledby="title description">
+  <title id="title">HAPI-eVolved — Your agents. Your infrastructure. Faster evolution.</title>
+  <desc id="description">An independent, self-hosted fork of HAPI for Claude and Codex, with memory, Codegraph and plugins.</desc>
+  <rect width="1280" height="420" rx="24" fill="#10292D"/>
+  <path d="M0 1h1280M0 419h1280" stroke="#285054"/>
+  <text x="72" y="49" fill="#A4C5C5" font-family="Arial, Helvetica, sans-serif" font-size="14" letter-spacing="2.6">OPEN SOURCE · SOURCE PREVIEW</text>
+  <g transform="translate(66 87) scale(2.25)" fill="none" color="#73E2CD">
+    <path d="M33 32a14 14 0 1 1 3-13H11m25 0h6M29 7l5-4" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="42" cy="19" r="4" fill="currentColor"/>
+    <circle cx="36" cy="3" r="3" fill="currentColor"/>
+  </g>
+  <text x="214" y="159" fill="#F3FAF9" font-family="Arial, Helvetica, sans-serif" font-size="76" font-weight="700" letter-spacing="-2">HAPI-eVolved</text>
+  <text x="216" y="211" fill="#C2DAD7" font-family="Arial, Helvetica, sans-serif" font-size="29">Your agents. Your infrastructure. Faster evolution.</text>
+  <path d="M72 266h1136" stroke="#36585B"/>
+  <text x="72" y="315" fill="#F3FAF9" font-family="Arial, Helvetica, sans-serif" font-size="25">Claude &amp; Codex</text>
+  <circle cx="294" cy="307" r="3" fill="#73E2CD"/>
+  <text x="319" y="315" fill="#F3FAF9" font-family="Arial, Helvetica, sans-serif" font-size="25">Persistent memory</text>
+  <circle cx="562" cy="307" r="3" fill="#73E2CD"/>
+  <text x="587" y="315" fill="#F3FAF9" font-family="Arial, Helvetica, sans-serif" font-size="25">Codegraph</text>
+  <circle cx="745" cy="307" r="3" fill="#73E2CD"/>
+  <text x="770" y="315" fill="#F3FAF9" font-family="Arial, Helvetica, sans-serif" font-size="25">GitHub plugins</text>
+  <text x="72" y="375" fill="#A4C5C5" font-family="Arial, Helvetica, sans-serif" font-size="19">Self-hosted. Independently maintained. Built on HAPI.</text>
+</svg>

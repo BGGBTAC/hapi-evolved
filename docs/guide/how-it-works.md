@@ -1,4 +1,47 @@
-# How it Works
+# HAPI-eVolved architecture
+
+HAPI-eVolved extends [tiann/hapi](https://github.com/tiann/hapi)'s session engine
+with project authorization, isolated services and persistent knowledge. The fork
+ships and develops independently; see the [quick start](../evolved/QUICKSTART.md).
+
+## Evolved service boundaries
+
+```text
+Browser / PWA -- passkey session --> Hub: roles, projects, sessions, sources
+                                      |-- signed actions --> separate Vault / GitHub broker
+                                      |-- private API ----> Codegraph source index
+                                      |-- budgeted API ---> Graphiti / Neo4j memory
+                                      +-- signed socket --> local runner control service
+                                                               |
+                                                        project runner + agent
+                                                               |
+                                              private proxy --> authorized Hub APIs
+```
+
+A project starts with its own managed folder and a restrictive execution profile.
+The browser's **Abos verbinden** page starts native provider sign-in; the local
+control service provisions the project runner when necessary. That service is
+privileged on the host, so its source and workspace anchors are root-owned. The
+Hub and agent containers do not receive the Docker socket. See the
+[operator guide](../evolved/DEPLOYMENT.md) for the exact trust boundaries.
+
+A runner access lease grants HAPI project access, not provider subscription time.
+Permanent leases remain revocable; temporary leases expire. The proxy exchanges
+them for short-lived capabilities and authorization is rechecked. Provider-native
+credentials remain in the private runner home; GitHub PATs instead remain in the
+separate Vault. [Data handling](../evolved/DATA_HANDLING.md) explains this distinction.
+
+Hub SQLite is authoritative for users, permissions, sessions and knowledge sources.
+Graphiti/Neo4j derives optional memory under a configured budget. Codegraph is a
+separate local code index. Search rechecks current project/source permissions;
+these are not interchangeable databases.
+
+## Shared session machinery and legacy integrations
+
+The transport and lifecycle details below describe the inherited session engine.
+Socket.IO, REST and SSE remain in use, but Evolved adds its authentication bridge
+and project checks. Legacy standalone CLI commands, Telegram/token pairing and
+native clients below do not replace the Evolved setup or imply current support.
 
 HAPI connects coding agents, a self-hosted hub, and web/native clients for remote control.
 

@@ -1,4 +1,17 @@
-# HAPI Android
+# HAPI-eVolved source: inherited Android client
+
+This Android client is inherited from [tiann/hapi](https://github.com/tiann/hapi).
+It remains an engineering reference in the independent HAPI-eVolved fork, not a
+supported Evolved mobile release. Evolved passkey onboarding, project roles and
+provider-login flows have not been established as compatible native workflows.
+Use the [web/PWA](../docs/guide/pwa.md) for the current mobile preview and the
+[quick start](../docs/evolved/QUICKSTART.md) for installation.
+
+The capabilities and build instructions below describe the inherited client.
+Protocol fixture conformance does not prove end-to-end Evolved compatibility.
+Bundle/application identifiers, signing accounts, store links and official push
+references remain upstream context; do not publish this fork under those identities
+or assume its publisher credentials are available. Follow [RELEASING.md](../RELEASING.md).
 
 Native Android client (Kotlin + Jetpack Compose) for the HAPI hub. Fully
 independent from the web app; shares the
@@ -8,7 +21,7 @@ golden fixtures (`shared/fixtures/`).
 - **applicationId**: `run.hapi.companion` · **minSdk** 26 · **target/compileSdk** 36
 - **Toolchain**: Gradle 8.14.2 (wrapper) · AGP 8.11.1 · Kotlin 2.1.21 · Compose BOM 2025.05.00 · JDK 17+ (CI uses 21)
 
-## Current capabilities
+## Inherited client capabilities
 
 The app provides sessions/chat, approvals and questions, new sessions,
 attachments, files/Git, Scratchlist, standard dictation, usage/storage,

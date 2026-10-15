@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { Hono } from 'hono'
-import { mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { SignJWT } from 'jose'
@@ -22,6 +22,9 @@ function setup() {
     store.setMember('alice', team.id, 'charlie', 'viewer')
     const project = store.createProject('alice', team.id, 'A', root), second = store.createProject('bob', other.id, 'B')
     const cookie = store.createSession('alice'), secret = new Uint8Array(32).fill(7), origin = 'https://evolved.test'
+    const spawnCalls: Parameters<SyncEngine['spawnSession']>[] = []
+    const machineNamespaces = new Map<string, string>()
+    let afterSpawnBodyRead: (() => void) | undefined
     const app = new Hono<WebAppEnv>()
     app.route('/api/evolved', createSessionTokenRoutes(store, secret, origin))
     app.use('/api/*', createProjectAuthMiddleware(store, secret, origin))
@@ -32,15 +35,21 @@ function setup() {
     app.post('/api/machines/:id/list-directory', c => c.json({ ok: true }))
     app.post('/api/machines/:id/paths/exists', c => c.json({ ok: true }))
     app.post('/api/sessions/:id/codex/plan/implement', c => c.json({ ok: true }))
+    app.use('/api/machines/:id/spawn', async (c, next) => {
+        const read = c.req.json.bind(c.req)
+        c.req.json = async <T>() => { const value = await read<T>(); afterSpawnBodyRead?.(); return value }
+        await next()
+    })
     app.route('/api', createMachinesRoutes(() => ({
-        getMachine: () => ({ namespace: project.namespace, metadata: { capabilities: [MACHINE_CAPABILITIES.AgentAvailability] } }),
-        spawnSession: async (...args: unknown[]) => ({ permissionMode: args[10] })
+        getMachine: (id: string) => ({ namespace: machineNamespaces.get(id) ?? project.namespace, metadata: { capabilities: [MACHINE_CAPABILITIES.AgentAvailability] } }),
+        spawnSession: async (...args: Parameters<SyncEngine['spawnSession']>) => { spawnCalls.push(args); return { permissionMode: args[10] } }
     }) as unknown as SyncEngine))
     const mint = async (session = cookie, id = project.id) => {
         const response = await app.request(`/api/evolved/session-token?projectId=${id}`, { headers: { cookie: `__Host-hapi-evolved=${session}` } })
         return { response, body: await response.json() as { token: string } }
     }
-    return { store, team, project, second, cookie, secret, origin, app, mint }
+    return { store, team, project, second, cookie, secret, origin, app, mint, spawnCalls, machineNamespaces,
+        duringSpawnBodyRead: (callback: () => void) => { afterSpawnBodyRead = callback } }
 }
 describe('Evolved project boundary', () => {
     test('restricted and workspace profiles reject Codex autoReview explicitly', () => {
@@ -117,6 +126,113 @@ describe('Evolved project boundary', () => {
         expect((await post('/api/sessions/x/codex/plan/implement', { planId: 'plan' })).status).toBe(403)
         t.store.setProfile('alice', t.project.id, 'workspace')
         expect(await (await post('/api/machines/x/spawn', { directory: t.project.rootPath, agent: 'codex' })).json()).toMatchObject({ permissionMode: 'default' })
+    })
+    test('fresh project spawns pass the saved canonical root and policy to the engine without a client directory', async () => {
+        const t = setup(), { body } = await t.mint()
+        const headers = { authorization: `Bearer ${body.token}`, origin: t.origin, 'content-type': 'application/json' }
+        for (const directory of [undefined, '', '  ', t.project.rootPath, `${t.project.rootPath}/`]) {
+            const response = await t.app.request('/api/machines/x/spawn', { method: 'POST', headers, body: JSON.stringify({ directory, agent: 'codex', model: 'selected-model', sessionType: 'simple' }) })
+            expect(response.status).toBe(200)
+            const args = t.spawnCalls.at(-1)!
+            expect(args[0]).toBe('x')
+            expect(args[1]).toBe(t.project.rootPath)
+            expect(args[2]).toBe('codex')
+            expect(args[3]).toBe('selected-model')
+            expect(args[6]).toBe('simple')
+            expect(args[10]).toBe('read-only')
+            expect(args[16]).toBe(t.project.namespace)
+            expect(args[17]).toBe(false)
+        }
+        expect(t.spawnCalls).toHaveLength(5)
+    })
+    test('explicit outside, nested, traversal and symlink paths never silently fall back to the project root', async () => {
+        const t = setup(), { body } = await t.mint()
+        mkdirSync(join(t.project.rootPath, 'child'))
+        symlinkSync(t.project.rootPath, join(t.project.rootPath, 'alias'))
+        const headers = { authorization: `Bearer ${body.token}`, origin: t.origin, 'content-type': 'application/json' }
+        for (const directory of [tmpdir(), t.second.rootPath, join(t.project.rootPath, 'child'), `${t.project.rootPath}/child/..`, join(t.project.rootPath, 'alias'), 'relative']) {
+            const response = await t.app.request('/api/machines/x/spawn', { method: 'POST', headers, body: JSON.stringify({ directory }) })
+            expect(response.status).toBe(403)
+            expect(await response.json()).toMatchObject({ code: 'project_directory_mismatch' })
+        }
+        expect(t.spawnCalls).toHaveLength(0)
+    })
+    test('switching projects changes the authoritative root and never carries the previous path or machine across', async () => {
+        const t = setup()
+        const next = t.store.createProject('alice', t.team.id, 'Next')
+        t.machineNamespaces.set('next-machine', next.namespace)
+        const previousToken = (await t.mint()).body.token, nextToken = (await t.mint(t.cookie, next.id)).body.token
+        const post = (token: string, machine: string, value: unknown, selected = next.id) => t.app.request(`/api/machines/${machine}/spawn`, {
+            method: 'POST', headers: { authorization: `Bearer ${token}`, origin: t.origin, 'content-type': 'application/json', 'x-hapi-project-id': selected }, body: JSON.stringify(value)
+        })
+        expect((await post(previousToken, 'x', {})).status).toBe(403)
+        expect((await post(nextToken, 'next-machine', { directory: t.project.rootPath })).status).toBe(403)
+        expect((await post(nextToken, 'x', {})).status).toBe(403)
+        expect(t.spawnCalls).toHaveLength(0)
+        expect((await post(nextToken, 'next-machine', {})).status).toBe(200)
+        expect(t.spawnCalls[0]?.[1]).toBe(next.rootPath)
+        expect(t.spawnCalls[0]?.[16]).toBe(next.namespace)
+    })
+    test('missing, non-directory, unset or symlink-replaced stored roots return a conflict before dispatch', async () => {
+        for (const state of ['missing', 'file', 'unset', 'symlink']) {
+            const t = setup(), { body } = await t.mint()
+            if (state === 'unset') t.store.db.prepare('UPDATE evolved_projects SET root_path=? WHERE id=?').run('', t.project.id)
+            else if (state === 'symlink') {
+                const moved = `${t.project.rootPath}-previous`
+                renameSync(t.project.rootPath, moved); directories.push(moved)
+                symlinkSync(moved, t.project.rootPath)
+            } else {
+                rmSync(t.project.rootPath, { recursive: true })
+                if (state === 'file') writeFileSync(t.project.rootPath, 'not a directory')
+            }
+            const response = await t.app.request('/api/machines/x/spawn', {
+                method: 'POST', headers: { authorization: `Bearer ${body.token}`, origin: t.origin, 'content-type': 'application/json' }, body: '{}'
+            })
+            expect(response.status).toBe(409)
+            expect(await response.json()).toMatchObject({ code: 'project_root_unavailable' })
+            expect(t.spawnCalls).toHaveLength(0)
+        }
+    })
+    test('project worktree requests are rejected even for extended profiles before invoking the runner', async () => {
+        const t = setup(), { body } = await t.mint()
+        t.store.setProfile('alice', t.project.id, 'extended')
+        for (const extra of [{ sessionType: 'worktree' }, { sessionType: 'simple', worktreeName: 'sibling' }, { worktreeName: '' }]) {
+            const response = await t.app.request('/api/machines/x/spawn', {
+                method: 'POST', headers: { authorization: `Bearer ${body.token}`, origin: t.origin, 'content-type': 'application/json' }, body: JSON.stringify(extra)
+            })
+            expect(response.status).toBe(400)
+            expect(await response.json()).toMatchObject({ code: 'project_worktree_unavailable' })
+        }
+        expect(t.spawnCalls).toHaveLength(0)
+    })
+    test('rechecks session, project policy and machine authority after asynchronous body parsing', async () => {
+        for (const change of ['logout', 'profile', 'root', 'machine']) {
+            const t = setup()
+            if (change === 'profile') t.store.setProfile('alice', t.project.id, 'workspace')
+            const { body } = await t.mint()
+            t.duringSpawnBodyRead(() => {
+                if (change === 'logout') t.store.revokeSession(t.cookie)
+                if (change === 'profile') t.store.setProfile('alice', t.project.id, 'restricted')
+                if (change === 'root') t.store.db.prepare('UPDATE evolved_projects SET root_path=? WHERE id=?').run(t.second.rootPath, t.project.id)
+                if (change === 'machine') t.machineNamespaces.set('x', t.second.namespace)
+            })
+            const response = await t.app.request('/api/machines/x/spawn', {
+                method: 'POST', headers: { authorization: `Bearer ${body.token}`, origin: t.origin, 'content-type': 'application/json' },
+                body: JSON.stringify(change === 'profile' ? { agent: 'codex', permissionMode: 'default' } : {})
+            })
+            expect(response.status).toBe(change === 'machine' ? 403 : 401)
+            expect(t.spawnCalls).toHaveLength(0)
+        }
+    })
+    test('rechecks the root filesystem before engine dispatch even when the saved path has not changed', async () => {
+        const t = setup(), { body } = await t.mint()
+        t.duringSpawnBodyRead(() => rmSync(t.project.rootPath, { recursive: true }))
+        const response = await t.app.request('/api/machines/x/spawn', {
+            method: 'POST', headers: { authorization: `Bearer ${body.token}`, origin: t.origin, 'content-type': 'application/json' }, body: '{}'
+        })
+        expect(response.status).toBe(409)
+        expect(await response.json()).toMatchObject({ code: 'project_root_unavailable' })
+        expect(t.spawnCalls).toHaveLength(0)
     })
     test('runner directory discovery cannot cross the canonical project root', async () => {
         const t = setup(), { body } = await t.mint()

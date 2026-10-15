@@ -1,4 +1,4 @@
-# Community conduct
+# HAPI-eVolved community conduct
 
 This code applies to HAPI-eVolved issues, pull requests, reviews and other
 project-managed community spaces. It also applies when someone represents the

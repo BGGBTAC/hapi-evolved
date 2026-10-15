@@ -1,47 +1,24 @@
-# Quick Start
+# Get started with HAPI-eVolved
 
-<Steps>
+Use the [HAPI-eVolved quick start](../evolved/QUICKSTART.md) to create a separate
+Linux installation. The fork is developed independently from
+[tiann/hapi](https://github.com/tiann/hapi), with its own release scope and feature
+roadmap. Upstream `@twsxtd/hapi` packages and `tiann/tap/hapi` do not install this fork.
 
-## Install HAPI
+1. Build a reviewed Evolved commit and initialize private state outside the checkout.
+2. Start the Hub, Vault, Codegraph, Memory and Neo4j stack behind your private HTTPS origin.
+3. Use the local one-time setup code to register a passkey, then create a team and project.
+4. Install the local runner control service and choose **Abos verbinden** to connect
+   Claude or Codex through the provider's official sign-in page.
+5. Start a session. The project profile controls what the agent may do; new projects
+   begin restricted. Grant write access explicitly when the task needs it.
 
-```bash
-npm install -g @twsxtd/hapi --registry=https://registry.npmjs.org
-```
+Provider login and GitHub connection are separate. To clone or push repositories,
+follow the [GitHub guide](../evolved/GITHUB.md). Cloud knowledge processing also has
+its own configuration and budget; a connected subscription does not enable it.
 
-Other install options (Homebrew, npx, prebuilt binary, source): [Installation](./installation.md#install-the-cli)
-
-## Start the hub
-
-```bash
-hapi hub --relay
-```
-
-On first run, HAPI prints an access token and saves it to `~/.hapi/settings.json`. The terminal displays a web URL and two QR codes for web access and native app pairing.
-
-Details and local-only mode: [Hub setup](./installation.md#hub-setup)
-
-## Start a coding session
-
-```bash
-hapi
-```
-
-Choose an installed agent from the picker. Its session appears in connected web and native clients.
-To start one directly, use `hapi claude`, `hapi codex`, or another
-[supported agent command](./agents.md). Scripts must specify the agent explicitly.
-
-## Open the UI
-
-- **Web / PWA:** open the web URL shown in the terminal, or scan the web QR code. Enter your access token if prompted.
-- **Native iOS / Android:** open the app and scan the companion QR, or enter the HTTPS hub URL and access token. See [Native apps](./native-apps.md) for build and pairing instructions.
-
-</Steps>
-
-## Next steps
-
-- [Seamless Handoff](./how-it-works.md#seamless-handoff) - Switch between terminal and phone seamlessly
-- [Hub setup](./installation.md#hub-setup) - Access HAPI from anywhere
-- [Notifications](./notifications.md) - Native app, Web Push, Telegram and ServerChan notifications
-- [Deployment](./deployment.md) - Run HAPI as a persistent background service
-- [Native apps](./native-apps.md) - Build, pair and use the iOS / Android clients
-- [Install the PWA](./pwa.md) - Add the web app to your home screen
+Use the [PWA guide](./pwa.md) for phone installation, the
+[user guide](../evolved/USER_GUIDE.md) for daily work, and the
+[operator guide](../evolved/DEPLOYMENT.md) for backups and updates.
+[Legacy installation](./installation.md#legacy-hapi-reference) remains available
+for contributors investigating the inherited standalone runtime.
