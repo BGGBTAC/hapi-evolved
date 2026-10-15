@@ -74,7 +74,7 @@ if (process.env.EVOLVED_TEST_CODEGRAPH_NODE) {
     writeFileSync(tokenFile, token, { mode: 0o600 })
     const port = process.env.EVOLVED_TEST_CODEGRAPH_PORT!
     mkdirSync(join(tmp, 'managed-workspaces'), { recursive: true, mode: 0o700 })
-    codegraphProcess = spawn(process.env.EVOLVED_TEST_CODEGRAPH_NODE, [new URL('../../services/codegraph/server.mjs', import.meta.url).pathname], {
+    codegraphProcess = spawn(process.env.EVOLVED_TEST_CODEGRAPH_NODE, ['--liftoff-only', new URL('../../services/codegraph/server.mjs', import.meta.url).pathname], {
         env: { ...process.env, EVOLVED_SERVICE_TOKEN_FILE: '', EVOLVED_SERVICE_TOKEN: token, EVOLVED_CODEGRAPH_HOST: '127.0.0.1', EVOLVED_CODEGRAPH_PORT: port, EVOLVED_CODEGRAPH_STATE_DIR: join(tmp, 'codegraph'), EVOLVED_CODE_ROOTS: JSON.stringify([workspace, join(tmp, 'managed-workspaces')]) }, stdio: 'ignore',
     })
     let ready = false
