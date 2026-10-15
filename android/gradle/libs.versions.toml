@@ -41,7 +41,7 @@ googleServices = "4.4.2"
 fragment = "1.8.5"
 # Per-app locales (B-M5a): AppCompatDelegate.setApplicationLocales back to
 # API 26 (appcompat 1.7.1, 2025-06, on Google Maven).
-appcompat = "1.7.1"
+appcompat = "1.8.0"
 
 [libraries]
 # AndroidX
