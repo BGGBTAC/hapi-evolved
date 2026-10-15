@@ -5,5 +5,5 @@
   "type": "module",
   "engines": { "node": ">=24" },
   "scripts": { "start": "node --liftoff-only server.mjs", "test": "node --liftoff-only --test test/*.test.mjs" },
-  "dependencies": { "@colbymchenry/codegraph": "1.6.0" }
+  "dependencies": { "@colbymchenry/codegraph": "1.6.2" }
 }
