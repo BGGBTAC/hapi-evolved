@@ -65,8 +65,8 @@ or container image.
 - Replay duplication, usage-history paging and delayed client-cache updates.
 - Claude resume identity handling, reconnect behavior and process cleanup.
 - Attachment migration/restore integrity and notification epochs after restore.
-- Runner restart after a Linux boot or PID namespace change, preserving machine
-  identity and session state.
+- Runner restart after a Linux boot or container restart, including reused PID
+  namespace identifiers, preserving machine identity, credentials and workspaces.
 
 ### Validation and limits
 
