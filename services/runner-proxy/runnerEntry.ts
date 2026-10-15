@@ -5,18 +5,36 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { validRunnerRoot } from './workspace'
 
-export type RunnerNamespace = { version: 1; bootId: string; pidNamespace: string }
+export type RunnerNamespace = { version: 2; bootId: string; pidNamespace: string; initStartTime: string }
+type LegacyRunnerNamespace = { version: 1; bootId: string; pidNamespace: string }
 const namespaceFile = '.runner-namespace.json'
 const transientFiles = ['runner.state.json', 'runner.state.json.lock']
 function requireSafe(value: unknown, message: string): asserts value { if (!value) throw new Error(message) }
 function sameInode(a: Stats, b: Stats): boolean { return a.dev === b.dev && a.ino === b.ino }
+
+function validStartTime(value: unknown): value is string {
+    return typeof value === 'string' && /^(0|[1-9]\d{0,19})$/.test(value) && BigInt(value) <= 18446744073709551615n
+}
+
+/** Linux stat comm can itself contain spaces and ')'; fields follow its last ')'. */
+export function parseInitStartTime(record: string): string {
+    requireSafe(Buffer.byteLength(record) <= 8192 && record.startsWith('1 ('), 'PID1 start identity unavailable')
+    const end = record.lastIndexOf(') ')
+    requireSafe(end >= 3, 'PID1 start identity unavailable')
+    const fields = record.slice(end + 2).trim().split(/\s+/)
+    // state is field 3; starttime is field 22. Preserve uint64 precision.
+    const start = fields[19]
+    requireSafe(/^[A-Za-z]$/.test(fields[0] ?? '') && validStartTime(start), 'PID1 start identity unavailable')
+    return start
+}
 
 export function currentRunnerNamespace(): RunnerNamespace {
     requireSafe(process.platform === 'linux', 'Supervised runner requires Linux')
     const bootId = readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim()
     const namespace = statSync('/proc/self/ns/pid')
     requireSafe(/^[0-9a-f-]{36}$/.test(bootId), 'Linux boot identity unavailable')
-    return { version: 1, bootId, pidNamespace: `${namespace.dev}:${namespace.ino}` }
+    const initStartTime = parseInitStartTime(readFileSync('/proc/1/stat', 'utf8'))
+    return { version: 2, bootId, pidNamespace: `${namespace.dev}:${namespace.ino}`, initStartTime }
 }
 
 function privateDirectory(path: string): void {
@@ -33,7 +51,7 @@ function ownedFile(path: string): Stats | undefined {
     requireSafe(info.isFile() && info.nlink === 1 && info.uid === process.getuid?.(), 'Unsafe runner metadata file')
     return info
 }
-function readNamespace(path: string): RunnerNamespace | undefined {
+function readNamespace(path: string): RunnerNamespace | LegacyRunnerNamespace | undefined {
     const before = ownedFile(path)
     if (!before) return undefined
     const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
@@ -42,10 +60,11 @@ function readNamespace(path: string): RunnerNamespace | undefined {
         requireSafe(sameInode(before, opened) && opened.size <= 4096 && (opened.mode & 0o7777) === 0o600, 'Unsafe runner namespace marker')
         const value: unknown = JSON.parse(readFileSync(fd, 'utf8'))
         requireSafe(value && typeof value === 'object' && !Array.isArray(value), 'Invalid runner namespace marker')
-        const record = value as Partial<RunnerNamespace>
-        requireSafe(record.version === 1 && typeof record.bootId === 'string' && /^[0-9a-f-]{36}$/.test(record.bootId)
+        const record = value as Partial<Omit<RunnerNamespace, 'version'>> & { version?: number }
+        requireSafe((record.version === 1 || record.version === 2) && typeof record.bootId === 'string' && /^[0-9a-f-]{36}$/.test(record.bootId)
             && typeof record.pidNamespace === 'string' && /^\d+:\d+$/.test(record.pidNamespace), 'Invalid runner namespace marker')
-        return record as RunnerNamespace
+        requireSafe(record.version === 1 || validStartTime(record.initStartTime), 'Invalid runner start identity')
+        return record as RunnerNamespace | LegacyRunnerNamespace
     } finally { closeSync(fd) }
 }
 
@@ -86,11 +105,12 @@ export function acquireRunnerHome(home: string) {
                 privateDirectory(stateHome)
                 const markerPath = join(stateHome, namespaceFile), previous = readNamespace(markerPath)
                 const files = transientFiles.map(name => ({ path: join(stateHome, name), info: ownedFile(join(stateHome, name)) }))
-                const sameNamespace = previous?.bootId === scope.bootId && previous.pidNamespace === scope.pidNamespace
+                const sameNamespace = previous?.version === 2 && previous.bootId === scope.bootId
+                    && previous.pidNamespace === scope.pidNamespace && previous.initStartTime === scope.initStartTime
                 if (sameNamespace) return { reset: false }
-                // Legacy PID-only files have no namespace information. Migration is
-                // allowed only by the verified container PID1 entry, under this lock.
-                requireSafe(previous || allowLegacy || files.every(file => !file.info), 'Legacy runner state requires verified supervised startup')
+                // v1 namespaces can be recycled by the kernel, so their generation
+                // is unknown too. Migrate only at verified PID1 entry, under this lock.
+                requireSafe(previous?.version === 2 || allowLegacy || (!previous && files.every(file => !file.info)), 'Legacy runner state requires verified supervised startup')
                 for (const file of files) {
                     if (!file.info) continue
                     assertOwnership()

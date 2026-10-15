@@ -4,6 +4,33 @@ Dieser datierte Bericht belegt den damaligen Quellstand, nicht automatisch die
 aktuelle Veröffentlichung. Einstieg und heutiger Umfang: [Quickstart](QUICKSTART.md)
 und [Projekt](PROJECT.md).
 
+## Wiederverwendete Runner-Kennungen am 15.10.2026
+
+Bei der Testinstallation wurde ein zweiter Startfehler reproduziert: Nach dem
+Ersetzen eines Containers konnte Linux dieselbe PID-Namespace-Kennung erneut
+vergeben. Der bisherige Marker hielt diese Kennung zusammen mit der Boot-ID
+für dieselbe Runner-Generation. Alte Prozessdateien blieben dadurch bestehen,
+und der native Runner meldete irrtümlich einen bereits laufenden Prozess.
+
+Der Folgefix auf `fix/runner-start-generation`, ausgehend von
+`9188df4703c2f27722b3829793bcd25866b38787`, berücksichtigt zusätzlich die
+Startzeit des Container-Initprozesses. Ein begrenzter Parser liest diese
+Kennung aus `/proc/1/stat`. Die Migration des bisherigen Markers bleibt auf
+den verifizierten Containerstart unter der vorhandenen exklusiven Sperre
+beschränkt. Ausschließlich die beiden bisherigen transienten Prozessdateien
+werden bei einer neuen Generation bereinigt; Zugangsdaten und Arbeitsordner
+gehören nicht zu dieser Bereinigung.
+
+Die vollständige Runner-Proxy-Suite bestand 34 Tests mit 262 Assertions,
+einschließlich elf Entry-Tests. Der Typecheck bestand ebenfalls. Die übrigen
+Produktdateien und ihre vorherigen Paketprüfungen sind unverändert.
+
+Design und Abschlussprüfung sind im
+[separaten Reviewbeleg](reviews/runner-start-generation-2026-10-15.json)
+festgehalten. Der neue Marker ist für das alte Runnerimage nicht lesbar;
+ein späterer Hub-Rückfall muss daher die bereits geprüfte Runner-Reparatur
+beibehalten. Die vorherigen Quell- und Prüfbelege bleiben unverändert.
+
 ## Runner-Wiederverbindung und RPC-Zuordnung am 15.10.2026
 
 Der Folgefix auf `fix/runner-rpc-reconnect` basiert auf dem zusammengeführten

@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-15",
+  "scope": "Supervised runner startup after kernel reuse of a PID namespace inode and native runner PID; narrowly scoped container-init generation marker and safe version1 migration.",
+  "reviewedBaseCommit": "9188df4703c2f27722b3829793bcd25866b38787",
+  "branch": "fix/runner-start-generation",
+  "status": "Approved after actual Claude Opus 5.5 design consultation and final source closure; no unresolved blocking findings in the reviewed scope.",
+  "actualCalls": [
+    {
+      "stage": "design",
+      "at": "2026-10-15T18:44:31.020655+00:00",
+      "requestedModel": "claude-opus-5-5",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "inputSha256": "2576b87ae8a75e941d22db216cf21462a10730aafee88f79daa52e62001089d5",
+      "outputSha256": "94a3fbc6a51c5a9ac96e4ddaab4c3e9e4f7a587d7fe3980276bc6274a3dbad97"
+    },
+    {
+      "stage": "closure",
+      "at": "2026-10-15T18:46:23.909408+00:00",
+      "requestedModel": "claude-opus-5-5",
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "success": true,
+      "inputSha256": "6c669ea47895a9f60aa0f3f14f0802e0d40e52d80434d6a46ce2777ab0b79f96",
+      "outputSha256": "ccb14174afb346fd68828dbd90788ee5586192cce07812718f23ed89bd671659"
+    }
+  ],
+  "finalReviewDisposition": {
+    "initialDesignVerdict": "approve with required implementation corrections",
+    "closureVerdict": "approved",
+    "closureBlockers": 0,
+    "independentTestExecutionByReviewer": false
+  },
+  "finding": {
+    "id": "recycled-namespace-and-pid-startup",
+    "cause": "A new container can receive the same kernel PID namespace inode and native runner PID as its predecessor. The version1 marker compared only boot identity and namespace identity, preserved obsolete PID files, and allowed the native CLI to mistake its own reused PID for a matching running daemon and exit successfully. Force-recreating the container alone did not solve the observed deployment failure.",
+    "resolution": "Version2 additionally records the exact boot-relative starttime of container PID1 from /proc/1/stat. Only an exact version2 match of boot, namespace and init starttime preserves transient files. A new generation resets the existing fixed pair of runner.state.json and runner.state.json.lock under the existing exclusive kernel guard and owned-file/inode checks.",
+    "evidence": [
+      "services/runner-proxy/runnerEntry.ts",
+      "services/runner-proxy/runnerEntry.test.ts",
+      "cli/src/runner/run.ts",
+      "cli/src/runner/controlClient.ts"
+    ]
+  },
+  "designDispositions": [
+    {
+      "requirement": "A version1 marker must never count as the same generation.",
+      "status": "resolved",
+      "evidence": "Equality now requires version 2 and initStartTime in addition to the existing bootId and pidNamespace."
+    },
+    {
+      "requirement": "Accepting a legacy marker must not bypass the verified-startup migration gate.",
+      "status": "resolved",
+      "evidence": "Version1 migration requires the existing allowLegacy flag supplied by the verified PID1 entry while holding the exclusive home lock. A version 1 marker alone cannot authorize cleanup."
+    },
+    {
+      "requirement": "Both marker schemas must be validated before any transient deletion.",
+      "status": "resolved",
+      "evidence": "The reader accepts versions 1 and 2; version 2 requires an exact canonical uint64 decimal initStartTime. Malformed or missing fields fail closed."
+    },
+    {
+      "requirement": "Parse PID1 stat safely without rounding timestamps or splitting the command name incorrectly.",
+      "status": "resolved",
+      "evidence": "The pure parser limits input to 8192 bytes, requires PID1, finds the final closing-parenthesis delimiter, selects stat field 22 and validates its exact uint64 decimal string. Regression inputs include nested parentheses, spaces, a newline, values above Number.MAX_SAFE_INTEGER and overflow."
+    }
+  ],
+  "sourceHashes": [
+    {
+      "path": "services/runner-proxy/runnerEntry.ts",
+      "sha256": "fa8970f0e8b04952ddd890b88d867eaa5cc847be4fc76d0345826004246fe2e9"
+    },
+    {
+      "path": "services/runner-proxy/runnerEntry.test.ts",
+      "sha256": "11670d64df531a0861ba6d82c86edb47ccf416be7462d4eb198b03c17abace69"
+    }
+  ],
+  "verification": [
+    {
+      "scope": "Focused runner-entry regression suite",
+      "result": "11 passed, 0 failed; 78 assertions. Covers reused namespace with changed init starttime, identical generation, version 1 migration gate, malformed version 2 markers and parser edge cases.",
+      "evidenceFiles": [
+        "evolved-runner-generation-tests.log"
+      ]
+    },
+    {
+      "scope": "Full Proxy package",
+      "result": "34 passed, 0 failed; 262 assertions across 5 files. Proxy typecheck passed.",
+      "evidenceFiles": [
+        "evolved-runner-generation-proxy-full.log",
+        "evolved-runner-generation-typecheck.log"
+      ]
+    }
+  ],
+  "evidenceHashes": [
+    {
+      "name": "evolved-runner-generation-tests.log",
+      "sha256": "da1613bbefc6fa1a465de59ad15e50d7f2dc93e7bb2460d094453733c8856dbe"
+    },
+    {
+      "name": "evolved-runner-generation-proxy-full.log",
+      "sha256": "752c0739e58c6f7c94e6e71321677588cc89b45e7f95c736b598d66e92aab5d6"
+    },
+    {
+      "name": "evolved-runner-generation-typecheck.log",
+      "sha256": "8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92"
+    }
+  ],
+  "primaryReferences": [
+    {
+      "title": "Linux kernel documentation: proc stat fields, table1-4",
+      "url": "https://docs.kernel.org/filesystems/proc.html",
+      "use": "Confirms the boot-relative process start_time field and its position in the stat field sequence."
+    }
+  ],
+  "deploymentConstraints": [
+    "The previous runner image understands only marker version1 and refuses version2. After successful migration, retain the repaired runner image if rolling the Hub or Proxy image back; the runner change does not alter the Hub wire protocol. Do not roll all images back blindly.",
+    "Deploy and validate the repaired runner independently against the currently working Hub before switching the Hub/Proxy release. Record the retained runner image in the operator deployment report. No manual marker edits or credential-file cleanup are required."
+  ],
+  "limits": [
+    "This is a source/design review, not an external security certification. The actual provider and canonical model metadata are recorded for both calls.",
+    "PID1 starttime has kernel clock-tick resolution. Combined with boot and namespace identity it resolves the observed sequential Docker restart path; it is not presented as a cryptographic uniqueness primitive for arbitrary runtimes.",
+    "The existing safe migration changes only the two named transient files and the generation marker. Settings, native provider credentials, session history and resume-process registries remain outside the cleanup set.",
+    "The parser and marker reader fail closed if the kernel identity is unavailable or malformed. No fallback treats an unreadable identity as matching.",
+    "Live deployment and restart validation are performed by the coordinator/operator after this source review. This record does not itself claim a deployed release, successful provider login, inference or publication.",
+    "Prior RPC and publication review records and their source/test hashes remain unchanged."
+  ]
+}
