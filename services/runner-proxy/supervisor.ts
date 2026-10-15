@@ -38,7 +38,7 @@ async function main() {
     // The unprivileged subreaper collects orphaned agent descendants.
     const child = spawn('/usr/bin/setpriv', ['--reuid', String(uid), '--regid', String(gid), '--clear-groups',
         '--bounding-set=-all', '--inh-caps=-all', '--ambient-caps=-all', '--no-new-privs', '--',
-        '/usr/bin/tini', '-s', '--', 'bun', '/app/cli/src/index.ts', 'runner', 'start-sync', '--workspace-root', expected.rootPath], {
+        '/usr/bin/tini', '-s', '--', 'bun', '/app/services/runner-proxy/runnerEntry.ts'], {
         stdio: 'inherit', env: { ...process.env, HAPI_RUNNER_SUPERVISED: '1', USER: 'runner', HOME: '/runner' }
     })
     child.on('error', error => { console.error('Runner process could not start:', (error as NodeJS.ErrnoException).code ?? 'unknown'); process.exit(1) })

@@ -1,7 +1,7 @@
 // Run on the host against the isolated validation container; synthetic source only.
 // The container sees these fixtures through its read-only /workspaces mount.
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm, access } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, access, stat, chown } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -9,6 +9,12 @@ const state = process.env.EVOLVED_VALIDATION_STATE ?? '/tmp/hapi-evolved-stack-v
 const container = process.env.EVOLVED_VALIDATION_CONTAINER ?? 'hapi-evolved-check-codegraph-1';
 const projectId = randomUUID();
 const root = await mkdtemp(join(state, 'workspaces/adapter-validation-'));
+// The Docker operator may be root while the service runs under a dedicated UID.
+// Keep the synthetic private fixture readable by that service, without opening it.
+if (process.getuid?.() === 0) {
+    const owner = await stat(join(state, 'workspaces'));
+    await chown(root, owner.uid, owner.gid);
+}
 const containerRoot = '/workspaces/' + basename(root);
 const remote = `import { readFile } from 'node:fs/promises';
 let data=''; for await (const chunk of process.stdin) data+=chunk;
@@ -56,6 +62,8 @@ try {
     await assert.rejects(access(join(state, 'codegraph', 'projects', projectId)));
     await access(join(state, 'codegraph', 'deleted', projectId));
     await access(join(root, 'secrets/private.ts'));
-    console.log(JSON.stringify({ codegraph: 'passed', sdk: '1.6.0', node: status.node, calls: true,
-        sourceExclusion: true, automaticDeletion: true, durableDropContract: true, network: 'private-backend-only', readOnlyWorkspace: true }));
+    // Report only observations made above; image version and mount/network isolation
+    // require separate operator inspection and are not established by API success.
+    console.log(JSON.stringify({ codegraph: 'passed', node: status.node, calls: true,
+        sourceExclusion: true, automaticDeletion: true, durableDropContract: true }));
 } finally { await call('drop').catch(() => {}); await rm(root, { recursive: true, force: true }); }
