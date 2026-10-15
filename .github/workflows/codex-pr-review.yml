@@ -33,14 +33,14 @@ jobs:
       # Load executable scripts and prompts from trusted base code. PR objects
       # are fetched for inspection below, never checked out or run.
       - name: Checkout review policy
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
 
       - name: Prepare review context and check for duplicate inputs
         id: prepare
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             const { prepareReview } = require('./.github/scripts/pr-review.cjs');
@@ -58,7 +58,7 @@ jobs:
       - name: Analyze requirement, approach, and code
         id: run_codex
         if: steps.prepare.outputs.should_review == 'true'
-        uses: openai/codex-action@v1.11
+        uses: openai/codex-action@52fe01ec70a42f454c9d2ebd47598f9fd6893d56 # v1.11
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
@@ -79,7 +79,7 @@ jobs:
       - name: Validate and publish one review
         id: publish
         if: steps.prepare.outputs.should_review == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           HAPI_BOT_LOGINS: ${{ vars.HAPI_BOT_LOGINS }}
           REVIEW_CONTEXT_PATH: ${{ steps.prepare.outputs.context_path }}
