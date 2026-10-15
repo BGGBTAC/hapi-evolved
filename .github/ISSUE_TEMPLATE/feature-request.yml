@@ -1,6 +1,7 @@
 name: Feature request
 description: Describe a workflow improvement for HAPI-eVolved.
 title: "[Feature]: "
+labels: [enhancement]
 body:
   - type: markdown
     attributes:

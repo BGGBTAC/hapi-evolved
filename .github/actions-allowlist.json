@@ -1,0 +1,15 @@
+{
+  "github_owned_allowed": true,
+  "verified_allowed": false,
+  "patterns_allowed": [
+    "docker/build-push-action@*",
+    "docker/login-action@*",
+    "docker/metadata-action@*",
+    "docker/setup-buildx-action@*",
+    "docker/setup-qemu-action@*",
+    "gradle/actions/setup-gradle@*",
+    "openai/codex-action@*",
+    "oven-sh/setup-bun@*",
+    "reactivecircus/android-emulator-runner@*"
+  ]
+}

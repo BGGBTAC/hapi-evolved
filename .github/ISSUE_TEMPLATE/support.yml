@@ -1,6 +1,7 @@
 name: Support request
 description: Ask about setup, usage or documentation, or arrange a private contact channel.
 title: "[Support]: "
+labels: [question]
 body:
   - type: markdown
     attributes:

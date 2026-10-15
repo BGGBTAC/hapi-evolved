@@ -27,7 +27,7 @@ jobs:
     steps:
       - name: Check for existing HAPI Bot response
         id: check_bot
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             const marker = "*HAPI Bot*";
@@ -65,13 +65,13 @@ jobs:
 
       - name: Checkout repository
         if: steps.check_bot.outputs.has_bot != 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
       - name: Run Codex for Issue Auto Response
         if: steps.check_bot.outputs.has_bot != 'true'
-        uses: openai/codex-action@v1.11
+        uses: openai/codex-action@52fe01ec70a42f454c9d2ebd47598f9fd6893d56 # v1.11
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}

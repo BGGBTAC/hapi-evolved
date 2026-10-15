@@ -6,6 +6,11 @@ The root and CLI packages remain private to prevent accidental npm publication.
 Repository visibility and a versioned release are separate actions. Making the
 source public does not publish packages, create a release tag or deploy a website.
 
+The repository's [GitHub governance policy](docs/evolved/GITHUB_GOVERNANCE.md)
+documents branch protection, required checks and the administrator-only creation
+of immutable tags. A published tag cannot be moved or deleted through the normal
+workflow; correct a release with a new version. Do not create temporary test tags.
+
 ## Release inputs
 
 Use one reviewed commit containing implementation, deployment fixes, branding,
