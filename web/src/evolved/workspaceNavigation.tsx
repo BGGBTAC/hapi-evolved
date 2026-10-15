@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 export const workspacePages = [
     { id: 'overview', label: 'Übersicht', group: 'Arbeitsplatz', description: 'Sitzungen, Freigaben und nächste Schritte.' },
     { id: 'projects', label: 'Projekte', group: 'Arbeitsplatz', description: 'Deine Projekte, Ordner und Ausführungsprofile.' },
+    { id: 'agents', label: 'Agenten & Plugins', group: 'Arbeitsplatz', description: 'Agenten für alle Projekte und geprüfte Erweiterungen.' },
     { id: 'capacity', label: 'Kapazität', group: 'Arbeitsplatz', description: 'Gemeldete Nutzungslimits deiner Agentenanbieter.' },
     { id: 'github', label: 'GitHub', group: 'Projektwerkzeuge', description: 'Repositories verbinden und gezielt freigeben.' },
     { id: 'memory', label: 'Gedächtnis', group: 'Projektwerkzeuge', description: 'Wissen mit nachvollziehbaren Quellen bewahren.' },
@@ -27,7 +28,7 @@ export function parseWorkspaceSearch(search: Record<string, unknown>): Workspace
         ...(typeof search.project === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(search.project) ? { project: search.project } : {}),
     }
 }
-export function requiresProject(tab: WorkspaceTab) { return !['overview', 'projects', 'team', 'providers'].includes(tab) }
+export function requiresProject(tab: WorkspaceTab) { return !['overview', 'projects', 'team', 'providers', 'agents'].includes(tab) }
 export const workspaceStorageKey = (baseUrl: string, userId: string) => `hapi.evolved.workspace:${baseUrl}:${userId}`
 export function readWorkspaceTab(baseUrl: string, userId: string): WorkspaceTab {
     try {
@@ -39,6 +40,7 @@ export function readWorkspaceTab(baseUrl: string, userId: string): WorkspaceTab 
 const icons: Record<WorkspaceTab | 'sessions' | 'more' | 'close' | 'arrow', ReactNode> = {
     overview: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>,
     projects: <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z" />,
+    agents: <><rect x="4" y="7" width="16" height="13" rx="3" /><path d="M12 3v4M8 12h.01M16 12h.01M8 16h8M2 11v5m20-5v5" /></>,
     capacity: <><path d="M4 18a9 9 0 1 1 16 0M12 13l4-5" /><circle cx="12" cy="13" r="1" /></>,
     github: <><circle cx="6" cy="5" r="2" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="7" r="2" /><path d="M6 7v10M18 9v2a5 5 0 0 1-5 5H6" /></>,
     memory: <><path d="M12 5C8 2 3 3 3 3v16s5-1 9 2c4-3 9-2 9-2V3s-5-1-9 2Zm0 0v16" /></>,

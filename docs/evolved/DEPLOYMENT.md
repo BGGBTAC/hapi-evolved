@@ -5,6 +5,31 @@ HAPI-Instanz und importiert keine bisherigen Sitzungen, Konten oder Secrets. Vor
 Docker mit Compose, Git und Bun 1.3.14. Für Codegraph außerhalb von Docker: Node 24.
 Für den gesamten Dienstverbund einschließlich eines Runners etwa 12 GB RAM einplanen.
 
+## Browser-Anmeldung und verwaltete Projektdienste
+
+Der normale Benutzerweg ist **Abos verbinden**: HAPI richtet pro Projekt einen privaten Runner ein und startet die native Codex- beziehungsweise Claude-Anmeldung. Dafür benötigt diese Installation zusätzlich den lokalen Hostdienst `hapi-evolved-control.service`. Die manuelle Runnerkonfiguration weiter unten bleibt für zusätzliche externe Runner verfügbar.
+
+Die mitgelieferte Unit verwendet das Layout `/opt/hapi-evolved` für den überprüften Quellstand, `/var/lib/hapi-evolved` für den Zustand und UID/GID `1001`. Quellverzeichnis und Compose-Datei müssen root gehören und dürfen für Hub/Runner nicht schreibbar sein. `deploy/evolved/init.ts` erzeugt den privaten 32-Byte-Schlüssel `credentials/hub/runner-control.key`; bestehende Schlüssel bleiben erhalten. Keine Schlüsselwerte in Unit, Umgebungsdateien oder Terminalausgaben kopieren.
+
+Nach dem Build von Hub und Runner auf dem eigenen Installationshost als Betreiber einrichten:
+
+```sh
+sudo install -d -m 0755 /usr/local/lib/hapi-evolved
+sudo install -m 0755 /usr/local/bin/bun /usr/local/lib/hapi-evolved/bun
+sudo install -m 0644 /opt/hapi-evolved/deploy/evolved/hapi-evolved-control.service /etc/systemd/system/hapi-evolved-control.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now hapi-evolved-control.service
+sudo systemctl status hapi-evolved-control.service --no-pager
+```
+
+Der installierte Bun muss Version **1.3.14** haben. Bei anderem Layout die Unit vor dem Start anpassen. Die eigene Installation darf den Socketpfad `/run/hapi-evolved-control` beim Compose-Start anlegen; die Unit verwaltet dessen Laufzeitverzeichnis. Der Hub bindet dieses Verzeichnis schreibgeschützt ein und besitzt keinen Docker-Socket. Der Hostdienst besitzt Docker-Zugriff, akzeptiert jedoch nur signierte, zeitlich begrenzte Projektoperationen; Image, Compose-Datei, Container, Befehle und Hostpfade werden fest vom Betreiber vorgegeben. Es gibt kein allgemeines Shell- oder Dateisystem-API.
+
+Private Runnerzustände liegen unter `runners/<Projekt-UUID>/home`, die zugehörige Lease außerhalb dieses Homes. Der Operator erzeugt eine eigene dauerhafte Lease und lässt manuell erstellte Zugänge unverändert. Das aktuelle Projektprofil bestimmt den Workspace-Mount. Nach Widerruf oder Profilwechsel kann **Verbinden** eine neue passende Freigabe erzeugen; bestehende native Anbieteranmeldungen bleiben im privaten Home erhalten.
+
+Der native Login-Helfer startet im Runner mit leeren Linux-Capability-Sätzen, ohne zusätzliche Gruppen und mit `NoNewPrivileges`. Loginprozesse sind auf 15 Minuten begrenzt. Der Hostdienst prüft die ursprüngliche Browser-Sitzung, Rolle, Lease und das Profil laufend; bei Ausfall beendet der Helfer die nativen Prozesse selbständig. Anmeldungsergebnisse werden mit dem nativen Statusbefehl geprüft. Bei bestehender API-Anmeldung ist ein ausdrückliches Abmelden nötig, bevor ein anderes Konto verbunden wird.
+
+Für Updates zuerst eine konsistente verschlüsselte Sicherung anlegen, dann Images bauen und den lokalen Steuerdienst zusammen mit dem eigenen Stack neu starten. Bestehende verwaltete Runner bei einem Imagewechsel über ihre gespeicherte `runner.env` neu erstellen; keine Provider-Credentials kopieren oder ausgeben. Die Integration kann auf der Test-VM mit `sudo bun deploy/evolved/check-browser-login.ts` geprüft werden: Sie erzeugt ausschließlich eigene temporäre Konten und Container, prüft echte anonyme Provider-Challenges und räumt diese Testressourcen wieder auf. Sie meldet kein Abonnentenkonto an und sendet keine Modellanfrage.
+
 ## Dienste initialisieren
 
 ```sh

@@ -8,6 +8,14 @@ or container image.
 
 ### Added
 
+- Browser-based native Codex/Claude subscription login, account status, cancellation
+  and logout; missing project runners are provisioned automatically by a narrow
+  local control service. Provider credentials persist in private runner homes.
+- Reusable global specialist definitions with project-scoped, idempotent starts.
+- Reviewed, commit-pinned public GitHub plugins for agent templates, skills and
+  validated color profiles, with update previews, disabling and removal.
+- Ocean, Iris and Sand color profiles, visual previews and a visible appearance link.
+
 - Responsive workspace navigation, project dashboard and a unified desktop/PWA
   design, with dark/OLED themes, accessible mobile controls and new app icons.
 - Project-scoped subscription-capacity views from native Claude/Codex telemetry,

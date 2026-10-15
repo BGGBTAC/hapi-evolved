@@ -30,12 +30,15 @@ services:
       EVOLVED_SERVICE_TOKEN_FILE: /credentials/service.token
       EVOLVED_CODEGRAPH_URL: http://codegraph:8011
       EVOLVED_MEMORY_URL: http://memory:8012
+      EVOLVED_RUNNER_CONTROL_SOCKET: /runner-control/control.sock
+      EVOLVED_RUNNER_CONTROL_KEY_FILE: /credentials/runner-control.key
     ports: ["127.0.0.1:${EVOLVED_LISTEN_PORT:-3006}:3006"]
     volumes:
       - ${EVOLVED_STATE_DIR:?Run deploy/evolved/init.ts}/hub:/data
       - ${EVOLVED_STATE_DIR}/credentials/hub:/credentials:ro
       - ${EVOLVED_STATE_DIR}/workspaces:/workspaces:ro
       - ${EVOLVED_STATE_DIR}/managed-workspaces:/managed-workspaces
+      - /run/hapi-evolved-control:/runner-control:ro
     networks: [backend, frontend]
     depends_on: [vault, codegraph, memory]
     mem_limit: 2g

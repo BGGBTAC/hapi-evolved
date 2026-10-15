@@ -15,6 +15,9 @@ import { createPeerRoutes } from './peers'
 import { createGithubPrRunnerRoutes } from './githubPr'
 import { createGithubGitTransport, createGithubRoutes } from './github'
 import { createCapacityRoutes } from './capacity'
+import { createProviderRoutes, UnixProviderControl } from './providers'
+import { PluginService, createPluginRoutes } from './plugins'
+import { createAgentCatalogRoutes } from './agentCatalog'
 import { createSidechannelRoutes, SidechannelService, sidechannelConfig } from './sidechannel'
 import { createScheduleRoutes, ScheduleService } from './schedules'
 import { PeerCompletionReporter } from './peerReports'
@@ -33,7 +36,7 @@ export function createEvolvedRuntime(dataDir: string, secret: Uint8Array) {
     if (!Array.isArray(roots) || roots.some(root => typeof root !== 'string')) throw new Error('EVOLVED_CODE_ROOTS must be a JSON array of absolute directories')
     const managedWorkspaceRoot = process.env.EVOLVED_MANAGED_WORKSPACE_ROOT ?? join(dataDir, 'project-workspaces')
     const databaseFile = process.env.EVOLVED_DB_PATH ?? join(dataDir, 'evolved.db'), bootstrapFile = process.env.EVOLVED_BOOTSTRAP_FILE ?? join(dataDir, 'bootstrap.token')
-    const credentialFiles = [process.env.EVOLVED_VAULT_SIGNING_KEY_FILE, process.env.EVOLVED_SERVICE_TOKEN_FILE].filter((file): file is string => !!file)
+    const credentialFiles = [process.env.EVOLVED_VAULT_SIGNING_KEY_FILE, process.env.EVOLVED_SERVICE_TOKEN_FILE, process.env.EVOLVED_RUNNER_CONTROL_KEY_FILE].filter((file): file is string => !!file)
     assertManagedWorkspaceSeparation(managedWorkspaceRoot, dataDir, databaseFile, bootstrapFile, credentialFiles)
     const managed = openManagedWorkspaceRoot(managedWorkspaceRoot)
     try {
@@ -65,6 +68,14 @@ export function createEvolvedRuntime(dataDir: string, secret: Uint8Array) {
     routes.route('/', createGithubPrRunnerRoutes(store, () => getSyncEngine(), dataDir))
     routes.route('/', createGithubRoutes({ store, vault, origin }))
     routes.route('/', createCapacityRoutes(store, () => getSyncEngine(), origin))
+    const controlSocket = process.env.EVOLVED_RUNNER_CONTROL_SOCKET
+    const controlKeyFile = process.env.EVOLVED_RUNNER_CONTROL_KEY_FILE
+    const controlKey = controlKeyFile ? privateFile(controlKeyFile) : undefined
+    if (controlKey && controlKey.length !== 32) throw new Error('Runner control key must contain exactly 32 bytes')
+    routes.route('/', createProviderRoutes(store, { key: controlKey, control: controlSocket && controlKey ? new UnixProviderControl(controlSocket, controlKey) : undefined }))
+    const plugins = new PluginService(store)
+    routes.route('/', createPluginRoutes(plugins, origin))
+    routes.route('/', createAgentCatalogRoutes({ store, plugins, origin, getSyncEngine: () => getSyncEngine() }))
     routes.route('/', createSidechannelRoutes(new SidechannelService(store, sidechannelConfig()), () => getSyncEngine(), origin))
     const schedules = new ScheduleService(store, () => getSyncEngine())
     routes.route('/', createScheduleRoutes(schedules, () => getSyncEngine()))

@@ -13,6 +13,8 @@ Operators are responsible for their installation, providers and retention.
 | Derived knowledge | Memory service and Neo4j | Optional provider, budgets and generation-based deletion |
 | Code index | Codegraph private mirror/index | Local processing with credential exclusions |
 | Native provider credentials | Dedicated runner home | Native provider CLI; readable by that runner's agent |
+| Browser provider challenges | Bounded login-worker memory and transient browser state | Bound to the initiating HAPI session; expiry, cancellation and live authorization |
+| Specialist definitions and plugin manifests | Private hub database | Installation-admin changes, version-pinned sources, project-scoped starts |
 | Backups and service logs | Operator storage | Operator encryption, access and retention |
 
 ## External requests
@@ -21,6 +23,9 @@ Memory sends selected authorized content to its model provider only after
 configuration and project approval. Native agent requests use their own provider
 sessions and terms. GitHub operations send repository queries and Git data to
 GitHub. Offline synthetic tests do not establish real provider billing or quality.
+Plugin previews read public GitHub repository metadata and the manifest at the
+resolved commit; no repository scripts are executed. Provider sign-in opens the
+provider's official account page. HAPI does not request the provider password.
 
 Codegraph works locally. Compose disables configured Codegraph, Graphiti and
 Neo4j telemetry/update paths. This does not describe every inherited client,

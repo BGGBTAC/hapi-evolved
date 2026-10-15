@@ -4,7 +4,7 @@ x-runner: &runner
   cap_drop: [ALL]
   security_opt: [no-new-privileges:true]
   read_only: true
-  restart: unless-stopped
+  restart: "${EVOLVED_RUNNER_RESTART_POLICY:-unless-stopped}"
   tmpfs: ["/tmp:rw,nosuid,size=256m"]
   logging:
     driver: json-file
@@ -30,6 +30,8 @@ services:
       EVOLVED_RUNNER_GID: ${EVOLVED_GID:-1000}
       EVOLVED_RUNNER_ROOT: ${EVOLVED_WORKSPACE_PREFIX:-/workspaces}/${EVOLVED_PROJECT_DIRECTORY:?Project directory required}
       EVOLVED_RUNNER_PROFILE: ${EVOLVED_RUNNER_PROFILE:?Current project profile required}
+      EVOLVED_RUNNER_WORKSPACE_DEVICE: ${EVOLVED_RUNNER_WORKSPACE_DEVICE:-}
+      EVOLVED_RUNNER_WORKSPACE_INODE: ${EVOLVED_RUNNER_WORKSPACE_INODE:-}
       HTTPS_PROXY: http://egress:3128
       HTTP_PROXY: http://egress:3128
       NO_PROXY: runner-proxy,localhost,127.0.0.1
@@ -60,7 +62,7 @@ services:
     command: [bun, services/runner-proxy/egress.ts]
     environment:
       EVOLVED_EGRESS_HOST: 0.0.0.0
-      EVOLVED_EGRESS_HOSTS: ${EVOLVED_EGRESS_HOSTS:-api.anthropic.com,claude.ai,console.anthropic.com,api.openai.com,chatgpt.com,auth.openai.com}
+      EVOLVED_EGRESS_HOSTS: ${EVOLVED_EGRESS_HOSTS:-api.anthropic.com,claude.ai,claude.com,console.anthropic.com,platform.claude.com,api.openai.com,chatgpt.com,auth.openai.com}
     networks: [project, provider-egress]
     mem_limit: 128m
 networks:

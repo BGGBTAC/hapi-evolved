@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "id": "quality-kit",
+  "name": "Quality Kit",
+  "description": "Review-Anweisungen und ein kontrastreiches Farbprofil",
+  "version": "1.0.0",
+  "skills": [
+    {
+      "id": "regressions",
+      "name": "Regressionen prüfen",
+      "description": "Verhalten vor und nach einer Änderung vergleichen",
+      "instructions": "Prüfe konkrete Auslöser, Randfälle und passende Regressionstests. Halte Projektregeln und Berechtigungen ein."
+    }
+  ],
+  "agents": [
+    {
+      "id": "reviewer",
+      "name": "Qualitätsreview",
+      "description": "Belegbares Review einer Änderung",
+      "instructions": "Prüfe die Änderung und melde Befunde mit Datei, Zeile und Auslöser. Verändere beim Review keine Projektdateien ohne passenden Auftrag.",
+      "providerPreference": "either",
+      "skills": ["regressions"]
+    }
+  ],
+  "themes": [
+    {
+      "id": "clear-blue",
+      "name": "Klares Blau",
+      "mode": "light",
+      "colors": {
+        "background": "#ffffff",
+        "surface": "#f7fafc",
+        "text": "#15202b",
+        "muted": "#455565",
+        "accent": "#075985",
+        "accentText": "#ffffff",
+        "border": "#8899aa"
+      }
+    }
+  ]
+}

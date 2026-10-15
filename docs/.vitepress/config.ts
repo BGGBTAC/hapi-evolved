@@ -23,6 +23,8 @@ export default defineConfig({
         items: [
           { text: 'Quick start', link: '/evolved/QUICKSTART' },
           { text: 'GitHub connection', link: '/evolved/GITHUB' },
+          { text: 'Browser provider login', link: '/evolved/PROVIDER_LOGIN' },
+          { text: 'Specialists and plugins', link: '/evolved/EXTENSIONS' },
           { text: 'Privacy and data', link: '/evolved/DATA_HANDLING' },
           { text: 'Deployment (DE)', link: '/evolved/DEPLOYMENT' },
           { text: 'User guide (DE)', link: '/evolved/USER_GUIDE' },

@@ -8,6 +8,7 @@ import { EvolvedApi, EvolvedApiError, hubUrl, type EvolvedMe, type EvolvedProjec
 import { authenticatePasskey, createPasskey, type AuthenticationOptionsJSON, type RegistrationOptionsJSON } from './webauthn'
 import { ActionStatus, ErrorNotice, Field, Loading, Panel, submit, useAction } from './ui'
 import { EvolvedBrand } from './Brand'
+import { PluginThemeSync } from './PluginThemeSync'
 import './evolved.css'
 
 export type EvolvedSession = {
@@ -300,6 +301,7 @@ function EvolvedSessionProvider({ baseUrl, authenticated, onboarding }: {
     if (!me) return <EvolvedLogin api={api} initialized={initialized} enrollment={enrollment} onAuthenticated={refresh} />
     const project = me.accessibleProjects.find(item => item.id === projectId) ?? null
     return <EvolvedContext.Provider value={{ api, me, project, selectProject, refresh: reloadContext, logout, reauthenticate }}>
+        <PluginThemeSync key={`${api.baseUrl}:${me.user.id}`} api={api} userId={me.user.id} />
         {!project ? onboarding : bridgeError ? <main lang="de" className="evolved ev-login"><ErrorNotice error={bridgeError} /><button onClick={() => void issueToken()}>Projekt erneut öffnen</button><button onClick={() => void logout()}>Abmelden</button></main> : !token || tokenProjectId !== projectId ? <main lang="de" className="evolved ev-login"><Loading /></main> : authenticated({ api: hubApi, token, projectId: project.id })}
     </EvolvedContext.Provider>
 }

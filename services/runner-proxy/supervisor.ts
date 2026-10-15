@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { readFileSync, realpathSync } from 'node:fs'
+import { readFileSync, realpathSync, statSync } from 'node:fs'
 import { validRunnerRoot } from './workspace'
 import { hasNestedWorkspaceMount } from '../../hub/src/evolved/workspaces'
 
@@ -28,10 +28,17 @@ export function droppedPrivileges(status: string, uid: number, gid: number): boo
         && fields.get('Groups') === ''
         && ['CapInh', 'CapPrm', 'CapEff', 'CapBnd', 'CapAmb'].every(name => /^0+$/.test(fields.get(name) ?? ''))
 }
+export function pinnedWorkspaceMatches(root:string,device:string|undefined,inode:string|undefined):boolean {
+    if(!device&&!inode)return true // Externally managed runners keep their existing operator contract.
+    if(!/^\d{1,24}$/.test(device??'')||!/^[1-9]\d{0,23}$/.test(inode??''))return false
+    const info=statSync(root,{bigint:true})
+    return info.isDirectory()&&info.dev.toString()===device&&info.ino.toString()===inode
+}
 async function main() {
     if (process.pid !== 1 || process.getuid?.() !== 0) throw new Error('Runner supervisor must be the container root PID 1')
     const expected = { projectId: process.env.EVOLVED_PROJECT_ID ?? '', profile: process.env.EVOLVED_RUNNER_PROFILE ?? '', rootPath: realpathSync(process.env.EVOLVED_RUNNER_ROOT ?? '/invalid') }
     if (!validRunnerRoot(expected.rootPath, expected.projectId)) throw new Error('Canonical project mount required')
+    if(!pinnedWorkspaceMatches(expected.rootPath,process.env.EVOLVED_RUNNER_WORKSPACE_DEVICE,process.env.EVOLVED_RUNNER_WORKSPACE_INODE)) throw new Error('Pinned project workspace is not mounted')
     const uid = Number(process.env.EVOLVED_RUNNER_UID), gid = Number(process.env.EVOLVED_RUNNER_GID)
     if (!Number.isSafeInteger(uid) || !Number.isSafeInteger(gid) || uid < 1 || gid < 1) throw new Error('Unprivileged runner UID/GID required')
     const mountinfo = readFileSync('/proc/self/mountinfo', 'utf8')

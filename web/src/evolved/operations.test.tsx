@@ -199,6 +199,7 @@ describe('Operator access', () => {
         fireEvent.change(screen.getByLabelText('Runner-Name'), { target: { value: 'Isolated runner' } })
         fireEvent.click(screen.getByRole('radio', { name: 'Befristet' }))
         fireEvent.change(screen.getByLabelText('HAPI-Zugang gültig für (Stunden, maximal 168)'), { target: { value: '168' } })
+        fireEvent.click(screen.getByText(/^Berechtigungen anpassen/))
         fireEvent.click(screen.getByLabelText('Gedächtnis lesen'))
         fireEvent.click(screen.getByRole('button', { name: 'Runner-Zugang erstellen' }))
         expect(await screen.findByLabelText('Einmaliger Runner-Schlüssel')).toHaveValue('one-time-synthetic-token')
@@ -259,6 +260,7 @@ describe('Operator access', () => {
         context.project.profile = profile
         context.api.request.mockResolvedValue({ leases: [] })
         mount(<RunnerPanel />)
+        fireEvent.click(screen.getByText(/^Berechtigungen anpassen/))
         expect(screen.getByLabelText('GitHub-Repositorys lesen')).toBeChecked()
         const write = screen.getByLabelText('In GitHub-Repositorys pushen')
         if (profile === 'restricted') { expect(write).not.toBeChecked(); expect(write).toBeDisabled() }
@@ -274,6 +276,7 @@ describe('Operator access', () => {
         context.api.request.mockResolvedValue({ leases: [] })
         const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
         const view = render(<QueryClientProvider client={client}><RunnerPanel /></QueryClientProvider>)
+        fireEvent.click(screen.getByText(/^Berechtigungen anpassen/))
         fireEvent.click(screen.getByLabelText('In GitHub-Repositorys pushen'))
         expect(screen.getByLabelText('In GitHub-Repositorys pushen')).not.toBeChecked()
         fireEvent.click(screen.getByLabelText('In GitHub-Repositorys pushen'))

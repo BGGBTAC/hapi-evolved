@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from '@/lib/use-translation'
-import { getAppearanceOptions, useAppearance } from '@/hooks/useTheme'
-import { getColorThemeOptions, getColorThemePreview, useColorTheme, type ColorThemePreset } from '@/hooks/useColorTheme'
+import { getAppearanceOptions, useAppearance, useTheme } from '@/hooks/useTheme'
+import { getColorThemeOptions, getColorThemePreview, getColorThemePickerValue, getPluginThemeMode, useColorTheme, type ColorThemePreset, type ColorScheme } from '@/hooks/useColorTheme'
 import { getFontScaleOptions, useFontScale } from '@/hooks/useFontScale'
 import { getTerminalFontSizeOptions, useTerminalFontSize } from '@/hooks/useTerminalFontSize'
 import { getSessionListStatusModeOptions, useSessionListStatusMode } from '@/hooks/useSessionListStatusMode'
@@ -22,42 +22,49 @@ function PlusIcon() {
     return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
 }
 
-function ColorThemePicker() {
+function ColorThemePicker({ onAppearanceChange }: { onAppearanceChange: (mode: 'light' | 'dark') => void }) {
     const { t } = useTranslation()
     const { colorTheme, setColorTheme } = useColorTheme()
+    const { colorScheme } = useTheme()
+    const options = getColorThemeOptions()
+    const recommended = options.filter(option => option.value === 'default' || option.value.startsWith('evolved-'))
+    const additional = options.filter(option => option.value !== 'default' && !option.value.startsWith('evolved-') && !option.value.startsWith('plugin:'))
+    const plugins = options.filter(option => option.value.startsWith('plugin:'))
+    const choose = (theme: ColorThemePreset) => {
+        const mode = getPluginThemeMode(theme)
+        if (mode) onAppearanceChange(mode)
+        setColorTheme(theme)
+    }
+    const group = (items: typeof options) => <div role="radiogroup" aria-label={t('settings.display.colorTheme')} className="grid grid-cols-2 gap-3">{items.map(option => <ColorThemeOption key={option.value} theme={option.value} scheme={option.pluginMode ?? colorScheme} label={option.label ?? t(option.labelKey)} selected={colorTheme === option.value} onSelect={choose} />)}</div>
 
     return (
         <div className="px-3 py-3">
             <SettingsFieldLabel>{t('settings.display.colorTheme')}</SettingsFieldLabel>
-            <div role="radiogroup" aria-label={t('settings.display.colorTheme')} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {getColorThemeOptions().map((option) => (
-                    <ColorThemeOption
-                        key={option.value}
-                        theme={option.value}
-                        label={t(option.labelKey)}
-                        selected={colorTheme === option.value}
-                        onSelect={setColorTheme}
-                    />
-                ))}
-            </div>
+            <p className="mb-3 text-xs text-[var(--app-hint)]">{t('settings.display.colorTheme.description')}</p>
+            {group(recommended)}
+            {additional.length > 0 && <details className="mt-3" open={additional.some(option => option.value === colorTheme)}><summary className="min-h-11 cursor-pointer py-3 text-sm font-medium">{t('settings.display.colorTheme.more')}</summary>{group(additional)}</details>}
+            {plugins.length > 0 && <div className="mt-4"><h3 className="mb-2 text-sm font-semibold">{t('settings.display.colorTheme.plugins')}</h3>{group(plugins)}</div>}
         </div>
     )
 }
 
-function ColorThemeOption(props: { theme: ColorThemePreset; label: string; selected: boolean; onSelect: (theme: ColorThemePreset) => void }) {
+function ColorThemeOption(props: { theme: ColorThemePreset; scheme: ColorScheme; label: string; selected: boolean; onSelect: (theme: ColorThemePreset) => void }) {
     const preview = getColorThemePreview(props.theme)
+    const background = getColorThemePickerValue(props.theme, props.scheme, 'background') ?? (props.scheme === 'light' ? preview.light : preview.dark)
+    const surface = getColorThemePickerValue(props.theme, props.scheme, 'surface') ?? (props.scheme === 'light' ? '#ffffff' : '#1b2724')
+    const accent = getColorThemePickerValue(props.theme, props.scheme, 'accent') ?? preview.accent
     return (
         <label
-            className={`flex min-w-0 items-center gap-2 rounded-lg border px-2 py-2 text-left text-sm transition-colors ${props.selected
+            className={`relative flex min-w-0 cursor-pointer flex-col gap-2 rounded-xl border p-2 text-left text-sm transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[var(--app-link)] ${props.selected
                 ? 'border-[var(--app-link)] bg-[var(--app-subtle-bg)] text-[var(--app-link)]'
                 : 'border-[var(--app-border)] text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'}`}
         >
             <input type="radio" name="color-theme" value={props.theme} checked={props.selected} onChange={() => props.onSelect(props.theme)} className="sr-only" />
-            <span className="relative h-7 w-7 shrink-0 overflow-hidden rounded-md border border-[var(--app-border)]" style={{ backgroundColor: preview.light }} aria-hidden="true">
-                <span className="absolute inset-y-0 right-0 w-1/2" style={{ backgroundColor: preview.dark }} />
-                <span className="absolute inset-x-1 bottom-1 h-1 rounded-full" style={{ backgroundColor: preview.accent }} />
+            <span className="flex h-16 w-full gap-2 overflow-hidden rounded-lg p-2" style={{ backgroundColor: background }} aria-hidden="true">
+                <span className="flex w-5 shrink-0 flex-col gap-1 rounded-sm p-1" style={{ backgroundColor: surface }}><span className="h-1 w-full rounded-full" style={{ backgroundColor: accent }} /><span className="h-1 w-full rounded-full opacity-40" style={{ backgroundColor: accent }} /></span>
+                <span className="flex min-w-0 flex-1 flex-col gap-1.5 pt-1"><span className="h-1.5 w-2/3 rounded-full" style={{ backgroundColor: accent }} /><span className="h-5 w-full rounded" style={{ backgroundColor: surface }} /><span className="h-1 w-1/2 rounded-full opacity-40" style={{ backgroundColor: accent }} /></span>
             </span>
-            <span className="min-w-0 truncate font-medium">{props.label}</span>
+            <span className="flex min-h-6 min-w-0 items-center justify-between gap-1 px-1 font-medium"><span className="break-words">{props.label}</span>{props.selected && <span aria-hidden="true">✓</span>}</span>
         </label>
     )
 }
@@ -135,6 +142,7 @@ function ThemeColorControls() {
 export default function SettingsDisplayPage() {
     const { t } = useTranslation()
     const { appearance, setAppearance } = useAppearance()
+    const { colorTheme, setColorTheme } = useColorTheme()
     const { fontScale, setFontScale } = useFontScale()
     const { terminalFontSize, setTerminalFontSize } = useTerminalFontSize()
     const { sessionListStatusMode, setSessionListStatusMode } = useSessionListStatusMode()
@@ -165,9 +173,13 @@ export default function SettingsDisplayPage() {
                     value={appearance}
                     columns={4}
                     options={getAppearanceOptions().map((option) => ({ value: option.value, label: t(option.labelKey) }))}
-                    onChange={setAppearance}
+                    onChange={next => {
+                        const pluginMode = getPluginThemeMode(colorTheme)
+                        if (pluginMode && (next === 'system' || (next === 'light' ? 'light' : 'dark') !== pluginMode)) setColorTheme('default')
+                        setAppearance(next)
+                    }}
                 />
-                <ColorThemePicker />
+                <ColorThemePicker onAppearanceChange={setAppearance} />
                 <ThemeColorControls />
             </SettingsSection>
 
