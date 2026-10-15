@@ -1,7 +1,12 @@
 # AGENTS.md
 
-HAPI is a local-first platform for running coding agents with remote control via web/phone.
-CLI wraps agents → hub (Socket.IO) → web/native clients (REST + SSE).
+HAPI-eVolved is an independent fork of tiann/hapi for rapidly delivering useful,
+reviewed coding-agent workflows on self-hosted infrastructure. Its supported preview
+is Linux + Docker Compose, Web/PWA, Claude Code and Codex; see README.md.
+CLI wraps agents → hub (Socket.IO) → web clients (REST + SSE). Native clients and
+other inherited adapters remain contributor references, not preview parity promises.
+Preserve upstream attribution, licenses and technical protocol/package identifiers;
+use HAPI-eVolved for this project's user-facing identity.
 
 ## Task boundaries
 

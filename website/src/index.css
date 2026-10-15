@@ -1,4 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -45,48 +44,48 @@
 
 :root {
   /* Cozy Maker Workshop Theme - Light Mode */
-  /* Primary: Soft but vibrant Coral/Orange for that "Happy" vibe */
-  --primary: oklch(0.65 0.2 30); 
+  /* Existing eVolved teal mark, with readable light and dark surfaces. */
+  --primary: #0f766e;
   --primary-foreground: oklch(0.98 0 0);
-  
+
   /* Background: Creamy/Warm White */
   --background: oklch(0.98 0.01 85);
   --foreground: oklch(0.2 0.02 85); /* Soft Black */
-  
+
   /* Card: White with a slight warmth */
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.2 0.02 85);
-  
+
   /* Popover */
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.2 0.02 85);
-  
+
   /* Secondary: Mint Green for accents */
   --secondary: oklch(0.9 0.1 150);
   --secondary-foreground: oklch(0.25 0.05 150);
-  
+
   /* Muted: Warm Grey */
   --muted: oklch(0.92 0.01 85);
   --muted-foreground: oklch(0.5 0.02 85);
-  
+
   /* Accent: Soft Lavender */
   --accent: oklch(0.92 0.05 300);
   --accent-foreground: oklch(0.3 0.1 300);
-  
+
   /* Destructive: Soft Red */
   --destructive: oklch(0.65 0.2 20);
   --destructive-foreground: oklch(0.98 0 0);
-  
+
   /* Border: Darker for Neo-Brutalist feel */
-  --border: oklch(0.2 0.02 85);
-  --input: oklch(0.2 0.02 85);
-  --ring: oklch(0.65 0.2 30);
-  
+  --border: oklch(0.86 0.01 180);
+  --input: oklch(0.86 0.01 180);
+  --ring: #0f766e;
+
   /* Radius: Larger for friendly feel */
   --radius: 1rem;
-  
+
   /* Chart Colors */
-  --chart-1: oklch(0.65 0.2 30);
+  --chart-1: #0f766e;
   --chart-2: oklch(0.7 0.15 150);
   --chart-3: oklch(0.7 0.15 250);
   --chart-4: oklch(0.8 0.15 85);
@@ -94,56 +93,56 @@
 
   --sidebar: oklch(0.98 0.01 85);
   --sidebar-foreground: oklch(0.2 0.02 85);
-  --sidebar-primary: oklch(0.65 0.2 30);
+  --sidebar-primary: #0f766e;
   --sidebar-primary-foreground: oklch(0.98 0 0);
   --sidebar-accent: oklch(0.92 0.05 300);
   --sidebar-accent-foreground: oklch(0.3 0.1 300);
   --sidebar-border: oklch(0.2 0.02 85);
-  --sidebar-ring: oklch(0.65 0.2 30);
-  
+  --sidebar-ring: #0f766e;
+
   /* Custom Fonts */
-  --font-sans: "Nunito", sans-serif;
-  --font-mono: "Space Mono", monospace;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 
 .dark {
   /* Cyberpunk Neon Palette */
-  --primary: oklch(0.7 0.2 145); /* Neon Green */
+  --primary: #5eead4; /* Neon Green */
   --primary-foreground: oklch(0.1 0.1 145);
-  
+
   --background: oklch(0.12 0.02 260); /* Deep Void Blue */
   --foreground: oklch(0.92 0.01 260);
-  
+
   --card: oklch(0.15 0.03 260);
   --card-foreground: oklch(0.92 0.01 260);
-  
+
   --popover: oklch(0.15 0.03 260);
   --popover-foreground: oklch(0.92 0.01 260);
-  
+
   --secondary: oklch(0.25 0.05 260);
   --secondary-foreground: oklch(0.92 0.01 260);
-  
+
   --muted: oklch(0.2 0.03 260);
   --muted-foreground: oklch(0.6 0.05 260);
-  
+
   --accent: oklch(0.25 0.05 260);
   --accent-foreground: oklch(0.92 0.01 260);
-  
+
   --destructive: oklch(0.6 0.2 20);
   --destructive-foreground: oklch(0.98 0 0);
-  
+
   --border: oklch(0.3 0.05 260);
   --input: oklch(0.3 0.05 260);
-  --ring: oklch(0.7 0.2 145);
-  
+  --ring: #5eead4;
+
   --sidebar: oklch(0.12 0.02 260);
   --sidebar-foreground: oklch(0.92 0.01 260);
-  --sidebar-primary: oklch(0.7 0.2 145);
+  --sidebar-primary: #5eead4;
   --sidebar-primary-foreground: oklch(0.1 0.1 145);
   --sidebar-accent: oklch(0.25 0.05 260);
   --sidebar-accent-foreground: oklch(0.92 0.01 260);
   --sidebar-border: oklch(0.3 0.05 260);
-  --sidebar-ring: oklch(0.7 0.2 145);
+  --sidebar-ring: #5eead4;
 }
 
 @layer base {
@@ -190,10 +189,10 @@
     width: 100%;
     margin-left: auto;
     margin-right: auto;
-    padding-left: 1.5rem;
-    padding-right: 1.5rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
   }
-  
+
   /* Neo-Brutalist Shadow Utility */
   .shadow-hard {
     box-shadow: 4px 4px 0px 0px var(--color-border);
@@ -204,7 +203,7 @@
   .shadow-hard-lg {
     box-shadow: 8px 8px 0px 0px var(--color-border);
   }
-  
+
   /* Card Hover Effect */
   .hover-lift {
     transition: transform 0.2s ease, box-shadow 0.2s ease;

@@ -1,72 +1,100 @@
-# Preview preparation and acceptance — 2026-10-15
+# Public-launch audit — 2026-10-15
 
-This report covers the automatic project-directory flow, project GitHub broker
-and publication files on `feat/publication-readiness`. The containing Git commit
-identifies the reviewed source. This remains a private source preview; no public
-release, package publication or visibility change is claimed.
+The independent audit found no confirmed credentials or confidential-data blocker
+in the inspected history and GitHub material. The public-launch work is based on
+`4600d764281bc1f2ca0a4e66485c9ce479a3db91`. The final rebranding commit, default
+branch and publication result must be checked separately; this report does not
+claim that visibility has already changed.
 
-## Verified behavior
+## Evidence and scope
 
-- Creating a project without a manual path creates its own private UUID folder.
-  Manual browsing starts only after the administrator requests it. Overlapping
-  roots, symlinks, nested mounts and protected paths are rejected.
-- Browser GitHub setup uses real Hub and signed Vault routes. The acceptance
-  provider supplies synthetic responses; no real GitHub token was imported.
-  Connection persistence, project isolation, read/write grants, rotation,
-  disconnect, token clearing and browser-storage exclusion were checked.
-- Native Git cloned, fetched and pushed a branch through the production runner
-  proxy, Hub and signed Vault into a local Git HTTP backend. Revoked access was
-  denied. This proves the transport path, not organization approval or a live
-  GitHub account's permissions.
-- Role/profile changes permanently revoke existing runner leases. Git requires
-  a lease-derived capability. Transfers are bounded before body reads and stop
-  when authorization expires or is revoked.
+The history and GitHub inventories below are the snapshot before the public-launch
+PR (#9). The working-tree delta scan separately covers the rebranding and the
+subsequent project-root session fix. New PR text and the final default-branch
+commit are checked again by the coordinator before visibility changes.
 
-## Validation
+| Surface | Inspected evidence | Result |
+| --- | --- | --- |
+| Git history | 1,553 locally reachable commits, plus eight GitHub PR merge commits; 1,561 commits total in an isolated audit mirror | All branch, tag and PR head/merge refs were included; six secret-scanner candidates match previously verified fixtures, hashes or prose |
+| Historical text | 13,397 text blobs among 29,174 reachable objects | Operator paths, a development hostname and negative-test private addresses were classified; no live credential was confirmed |
+| Binary history | 70 blobs | 62 match inherited public upstream history; eight added logo/icon blobs have no PNG text/EXIF metadata; the generated logo was visually inspected |
+| GitHub discussions | Eight PRs, eight issue comments, nine review comments and five reviews | Thirty text objects scanned; no attached files or secret candidates; PR #8 test-system and private operational links removed and the updated body rechecked |
+| GitHub Actions | All 89 available run logs downloaded, about 2.05 MB expanded | No secret-scanner or operator-topology candidates; a failed or skipped run is not represented as passing CI |
+| Other GitHub surfaces | Nine branches; no remote tags, release assets, Actions artifacts, deployments, Pages, wiki or discussions | Absence verified through the repository/API inventories |
+| Actions configuration | No registered self-hosted runners, repository Actions secrets or environments | Hosted runners, read-only token defaults and no Actions PR approvals; upstream automation is guarded on all eight feature branches |
+| Actions caches | Six Bun tool caches inventoried | Metadata and producing workflows/logs inspected; cache payloads were not downloaded through a workflow |
+| Publication policy | Existing workflow/source-bundle checks | 17 tests passed; read-only defaults, upstream guards and source-bundle checks remain enforced |
 
-| Check | Result |
-| --- | --- |
-| `bun install --frozen-lockfile` | Passed |
-| `bun run test` | 9,038 passed, 15 intentionally skipped, no failures |
-| `bun run typecheck` | CLI, Hub, Web, relay and runner proxy passed |
-| `bun run build:web` | Production build passed |
-| `bun run --cwd docs docs:build` | Passed with link checking enabled |
-| Publication policy and source-bundle tests | 17 passed |
-| Workflow `actionlint` 1.7.12 | Passed; optional shellcheck/pyflakes not installed |
-| Codegraph service tests | 4 passed, including a real FIFO regression |
-| Memory service tests | 9 passed |
-| Additional VM acceptance-guard tests | 11 passed |
-| Evolved Chromium browser acceptance | All nine acceptance groups passed |
+Gitleaks 8.30.1 was run with complete redaction, inline allow-comments ignored,
+archive depth two and decode depth five. Commit messages were separately scanned
+without findings. It processed 1,497 patch-bearing commits;
+the reachable-commit counts above also include commits without a scanned patch.
+No raw scanner matches, credentials, downloaded logs or private audit exports are
+committed with this report.
 
-The skipped tests require optional provider/native integrations or explicitly
-supplied operator fixtures. The browser suite uses temporary state and virtual
-passkeys; it does not modify the operator's account. Remote GitHub Actions are
-separate evidence: local success is not a remote CI pass.
+The six historical candidates are two attachment SHA256 fixtures, a local web
+fixture token, a synthetic push-registration token and two documentation prose
+matches. Additional private-key markers are rejection-test headers or short
+invalid PEM placeholders, not usable keys. The audit does not try these values
+against external accounts.
 
-After the final small review fixes, the affected suites were rerun: Hub (1,677
-passed, three skipped), runner proxy (19 passed), deployment guards (22 passed)
-and Codegraph (four passed), plus Hub/proxy typechecks and the documentation
-build. The earlier full-suite total above is retained as the result of that
-actual command, rather than inflated with repeated tests.
+## Historical privacy disposition
 
-## Review and publication limits
+The authorized publication preserves Git history and contributor attribution.
+Historical paths belonging to this project's operator, a development hostname
+and private addresses used as denied-network test cases are ordinary project
+metadata in their inspected contexts. They are not access credentials. No
+customer data, private conversation export or third-party account screenshot was
+identified. First-party commits use one GitHub noreply identity; the remaining
+identities are inherited contributor history.
 
-Claude Opus 5.5 reviewed the design and implementation adversarially. Concrete
-findings were corrected and the changes reviewed again; the
-[redacted review record](reviews/publication-github-2026-10-15.json) records model
-identity, input hashes, dispositions and residual limits. Review is evidence,
-not a guarantee that no defect remains.
+Portable current documentation removes unnecessary personal paths. A browser
+binary path in the historical native-model verification record was replaced by
+an explicitly marked placeholder; original test results and hashes remain
+historical evidence. A development hostname in an earlier review was also replaced
+with a marked documentation placeholder, preserving the original review hashes.
+This cleanup does not pretend to remove prior Git objects.
+The coordinator removed the live test-system and private operational links from
+the public-facing PR description; a subsequent read verified the cleanup. Neither change requires a history rewrite or deletion of refs.
 
-The secret audit scanned all then-available Git refs (1,546 commits) and the
-working snapshot. Its six historical candidates were classified as synthetic
-fixtures, hashes or prose; no real credential was confirmed. Privacy review also
-covered 13,040 historical text blobs. This does not establish that every retained
-artifact is suitable for publication: historical operator paths and private
-development context require a separate visibility decision. Current documentation
-uses portable paths; Git history was not rewritten.
+GitHub states that changing visibility exposes repository code and Actions
+history/logs. A later history rewrite alone cannot guarantee removal from cached
+views or PR references. These are the reasons this audit covers more than the
+current source archive. See [repository visibility](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/setting-repository-visibility)
+and [sensitive-data removal](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository).
 
-The publication workflow only builds a source artifact with its exact commit,
-manifest and SHA256 checksums. Follow [RELEASING.md](https://github.com/BGGBTAC/hapi-evolved/blob/main/RELEASING.md) before
-changing visibility or creating a release. Live GitHub account authorization,
-Git LFS/SSH, GitHub App authorization, cloud-provider quality, native-client
-parity and a complete disaster-recovery restore remain outside this acceptance.
+## Completion checks
+
+The final source review passed after the project-session fix. The Hub and Web
+use the saved project root, reject unsupported alternate folders/worktrees and
+retire stale form callbacks. The Evolved spawn RPC explicitly disables implicit
+directory creation, while inherited legacy behavior stays unchanged. The
+additional Claude Opus 5.5 closure reported no blocking findings. The prepared
+PR #9 text and the complete changed-file snapshot were also scanned; the only
+source candidate was previously classified authentication documentation prose.
+
+The final public default branch must contain the reviewed rebranding and the
+completed dependency PR chain. Verify its exact commit, rerun the publication
+policy and relevant docs/web checks, then scan the final commit delta and any
+new public-facing discussion text, including PR #9 and the project-root session
+fix. Preserve the root license, CLI notices and
+third-party attribution. A source preview artifact identifies its commit and
+checksums; it is not a provider-account acceptance test or a package release.
+
+Current product, integration and deployment results live in
+[VALIDATION.md](VALIDATION.md). The earlier 9,038-test preview was a historical
+run, not the current launch total. The actual Claude Opus 5.5 design and final
+review evidence, model identity and sanitized dispositions are recorded in
+[the public-launch review](reviews/public-launch-2026-10-15.json). Remote
+publication and anonymous access are verified by the coordinator after the
+already-authorized visibility action.
+
+## Limits
+
+This is evidence for the inspected refs and API snapshot, not a guarantee that
+no secret can exist. Cache payloads and inaccessible/deleted GitHub objects are
+not covered. Public upstream binaries were matched by Git object identity;
+they were not reverse engineered or newly OCR-audited. No actual provider login,
+paid inference, native-client parity, legal opinion or disaster-recovery restore
+is claimed by this publication audit. No history rewrite, remote deletion or
+visibility mutation was performed by the auditor.

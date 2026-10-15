@@ -1,4 +1,18 @@
-# Notifications
+# HAPI-eVolved activity and notification reference
+
+In HAPI-eVolved, live session state and the persistent activity feed are scoped
+to the authorized project. The feed records ready/task/completion events; it is
+not a durable copy of permission prompts. Review current pending requests in the
+session before approving. See [activity and catch-up](../evolved/BACKLOG_FEATURES.md).
+
+Browser/OS notification delivery is an optional convenience, not a guarantee that
+background agents or a phone stay online. [PWA guidance](./pwa.md) covers the primary
+mobile client. Native push, Telegram and ServerChan below are **inherited upstream
+integration references**; their presence does not establish a tested Evolved flow.
+The upstream push service and publisher credentials are not operated by this fork.
+Shared-token Telegram binding is unavailable in Evolved mode.
+
+## Legacy notification integrations
 
 Get notified when sessions need input, request permissions, fail, or complete — via native app notifications, Telegram, Server酱 (ServerChan), Web Push, or voice.
 

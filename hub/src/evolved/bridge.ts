@@ -4,6 +4,7 @@ import { dirname, isAbsolute, relative } from 'node:path'
 import { lstatSync, realpathSync } from 'node:fs'
 import { EvolvedError, EvolvedStore, hashToken, type EvolvedPrincipal, type EvolvedProject } from './store'
 import { cookieToken } from './security'
+import { existingWorkspace } from './workspaces'
 import type { WebAppEnv } from '../web/middleware/auth'
 import type { PermissionMode } from '@hapi/protocol'
 
@@ -29,7 +30,12 @@ export async function verifyProjectToken(token: string, secret: Uint8Array, stor
         return { principal, project }
     }
     const { principal, project } = resolve()
-    return { principal, project, userId: legacyUserId(store, sub), valid: () => { try { resolve(); return true } catch { return false } } }
+    return { principal, project, userId: legacyUserId(store, sub), valid: () => {
+        try {
+            const live = resolve().project
+            return live.profile === project.profile && live.rootPath === project.rootPath && live.namespace === project.namespace
+        } catch { return false }
+    } }
 }
 
 export function authenticateRunner(token: string, store: EvolvedStore): EvolvedAccess | null {
@@ -98,6 +104,28 @@ export function projectPermissionMode(project: EvolvedProject, agent: string | n
         : agent === 'codex' ? 'default' : 'acceptEdits'
 }
 
+/** A fresh browser session starts at its persisted project root, never a client path. */
+export function projectSpawnDirectory(project: EvolvedProject, directory: unknown, sessionType?: unknown, worktreeName?: unknown): string {
+    let root: string
+    try {
+        root = existingWorkspace(project.rootPath)
+    } catch {
+        throw new EvolvedError('project_root_unavailable', 'The saved project directory is unavailable or changed. Ask the installation administrator to check it.', 409)
+    }
+    if (sessionType === 'worktree' || worktreeName !== undefined) {
+        // The inherited runner creates sibling worktrees, outside the single project mount.
+        throw new EvolvedError('project_worktree_unavailable', 'New project sessions must use the project directory. Worktree creation is not available in Evolved.', 400)
+    }
+    if (directory === undefined || (typeof directory === 'string' && directory.trim() === '')) return root
+    if (typeof directory !== 'string') throw new EvolvedError('invalid_directory', 'Directory must be a string.', 400)
+    let requested: string | undefined
+    try { requested = existingWorkspace(directory.trim()) } catch { /* All invalid client paths are denied. */ }
+    if (requested !== root) {
+        throw new EvolvedError('project_directory_mismatch', 'New sessions must start in the saved project directory.', 403)
+    }
+    return root
+}
+
 export function createProjectAuthMiddleware(store: EvolvedStore, secret: Uint8Array, origin: string): MiddlewareHandler<WebAppEnv> {
     return async (c, next) => {
         const path = c.req.path
@@ -123,11 +151,19 @@ export function createProjectAuthMiddleware(store: EvolvedStore, secret: Uint8Ar
         }
         if (write && /\/(spawn|permission-mode|approve)$/.test(path)) {
             const body = await c.req.json().catch(() => null) as Record<string, unknown> | null
-            if (!body) return c.json({ error: 'Invalid body.' }, 400)
+            if (!body || typeof body !== 'object' || Array.isArray(body)) return c.json({ error: 'Invalid body.' }, 400)
             if (!permissionAllowed(access.project, body.mode) || !permissionAllowed(access.project, body.permissionMode) || (body.yolo === true && access.project.profile !== 'extended')) return c.json({ error: 'Project profile forbids this permission mode.' }, 403)
             if (path.endsWith('/spawn')) {
                 if (body.agent !== undefined && !['claude', 'codex'].includes(String(body.agent))) return c.json({ error: 'v1 supports Claude and Codex.' }, 400)
-                if (typeof body.directory !== 'string' || !withinProject(access.project, body.directory)) return c.json({ error: 'Directory is outside this project.' }, 403)
+                if (/^\/api\/machines\/[^/]+\/spawn$/.test(path)) {
+                    try { projectSpawnDirectory(access.project, body.directory, body.sessionType, body.worktreeName) }
+                    catch (error) {
+                        if (error instanceof EvolvedError) return c.json({ error: error.message, code: error.code }, error.status as 400)
+                        throw error
+                    }
+                } else if (typeof body.directory !== 'string' || !withinProject(access.project, body.directory)) {
+                    return c.json({ error: 'Directory is outside this project.' }, 403)
+                }
             }
         }
         c.set('userId', access.userId)

@@ -1,4 +1,18 @@
-# Voice input and assistant
+# Voice integrations: inherited reference
+
+This page preserves the upstream HAPI voice adapter documentation for contributors.
+It is **not the Evolved provider-subscription setup**. Use
+[Abos verbinden](../evolved/PROVIDER_LOGIN.md) for native Claude/Codex login.
+
+Evolved's project API rejects inherited host-global `/api/voice` and provider-key
+settings routes. The voice-assistant setup and key-saving instructions below
+therefore describe legacy standalone mode, not a supported Evolved workflow.
+Any separately enabled browser speech recognition has its own explicit opt-in and
+data-flow boundaries; see [backlog features](../evolved/BACKLOG_FEATURES.md).
+Neither a visible voice control nor a retained adapter proves that an external
+provider integration has been validated in this fork.
+
+## Legacy voice reference
 
 Control your AI coding agent with your voice. The built-in voice assistant supports three backends: **ElevenLabs** Conversational AI, **Gemini Live**, and **Qwen Realtime**. Pick whichever provider you have credentials for — the hub detects what's configured and the web app lets you switch.
 

@@ -1,4 +1,11 @@
-# Lokaler Codegraph-Dienst
+# HAPI-eVolved: lokaler Codegraph-Dienst
+
+Dieser Adapter ergänzt den unabhängigen Fork von
+[tiann/hapi](https://github.com/tiann/hapi). Er ist vom persistenten Memory-Graphen
+getrennt und benötigt keine Modellanmeldung. Einstieg:
+[Quickstart](../../docs/evolved/QUICKSTART.md) und
+[Betreiberanleitung](../../docs/evolved/DEPLOYMENT.md).
+Die Codegraph-SDK-Herkunft und MIT-Lizenz bleiben erhalten.
 
 Node 24 betreibt das gepinnte `@colbymchenry/codegraph@1.6.0` unabhängig vom Bun-Hub.
 Der Hub prüft Passkey-Sitzung, Projektmitgliedschaft und Capability-Scope vor jeder Anfrage;

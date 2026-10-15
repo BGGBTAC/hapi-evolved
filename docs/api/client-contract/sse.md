@@ -1,5 +1,14 @@
 # SSE stream (`GET /api/events`)
 
+HAPI-eVolved retains this client/session protocol from
+[tiann/hapi](https://github.com/tiann/hapi), but its **authentication and project
+boundaries differ**. The supported Evolved client is the web/PWA. Native client
+conformance is not proof of Evolved passkey or team/project compatibility.
+
+Wire decoding and stream/pagination rules below remain implementation references;
+apply them only after the Evolved authentication bridge and current project ACLs.
+See the [contract overview](./index.md) for this scope distinction.
+
 **Audience:** Implementers of native HAPI clients (iOS / Android). This page specifies the hub's server-sent-events stream: subscription model, framing, resume protocol, the `SyncEvent` union, and the versioned session-patch algorithm. Companion pages: [auth](./auth.md), [REST](./rest.md), [pagination](./pagination.md), [messages](./messages.md).
 
 Source of truth: `hub/src/web/routes/events.ts`, `hub/src/sse/sseManager.ts`, `hub/src/web/sseCompression.ts`, `shared/src/schemas.ts` (`SyncEventSchema`), reference client `web/src/hooks/useSSE.ts`.

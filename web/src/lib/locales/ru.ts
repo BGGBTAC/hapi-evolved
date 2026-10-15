@@ -30,7 +30,7 @@ export default {
   'message.shareTurn': 'Поделиться ходом как изображением',
   'shareTurn.title': 'Поделиться ходом как изображением',
   'shareTurn.badge': 'Общий ход',
-  'shareTurn.generated': 'Создано в HAPI',
+  'shareTurn.generated': 'Создано в HAPI-eVolved',
   'shareTurn.cancel': 'Отмена',
   'shareTurn.copy': 'Копировать',
   'shareTurn.copying': 'Копирование…',
@@ -41,8 +41,8 @@ export default {
   'shareTurn.saving': 'Сохранение…',
 
   // Вход / Аутентификация
-  'login.title': 'HAPI',
-  'login.subtitle': 'Vibe Coding — в любое время, в любом месте',
+  'login.title': 'HAPI-eVolved',
+  'login.subtitle': 'Ваши агенты. Ваша инфраструктура. Быстрое развитие.',
   'login.bind.title': 'Привязать Telegram',
   'login.submit': 'Войти',
   'login.bind.submit': 'Привязать',
@@ -348,6 +348,9 @@ export default {
   // Форма новой сессии
   'newSession.title': 'Создать сессию',
   'newSession.machine': 'Машина',
+  'newSession.projectDirectory': 'Папка проекта',
+  'newSession.projectDirectoryHint': 'Автоматически используется сохранённая папка проекта. Выбирать путь не нужно.',
+  'newSession.projectDirectoryUnavailable': 'Папка проекта недоступна на раннере. Попросите администратора проверить папку и её подключение к раннеру.',
   'newSession.directory': 'Каталог',
   'newSession.placeholder': '/путь/к/проекту',
   'newSession.browse': 'Обзор',
@@ -779,8 +782,8 @@ export default {
   'toast.task.failed': 'Задача не удалась',
 
   // Предложение установки
-  'install.title': 'Установить HAPI',
-  'install.description': 'Добавьте HAPI на главный экран для быстрого доступа.',
+  'install.title': 'Установить HAPI-eVolved',
+  'install.description': 'Добавьте HAPI-eVolved на главный экран для быстрого доступа.',
   'install.button': 'Установить',
 
   // Переключатель языка
@@ -1111,8 +1114,12 @@ export default {
   'settings.machines.error': 'Не удалось переименовать эту машину.',
   'settings.hub.machines.summary': 'Собственные имена для ваших машин',
   'settings.about.title': 'О приложении',
-  'settings.about.description': 'Ссылки и информация о версии HAPI.',
-  'settings.about.website': 'Сайт',
+  'settings.about.description': 'HAPI-eVolved — независимо поддерживаемый форк tiann/hapi.',
+  'settings.about.website': 'Проект и исходный код',
+  'settings.about.mission': 'Ваши агенты. Ваша инфраструктура. Быстрое развитие — практичные функции с явным управлением.',
+  'settings.about.documentation': 'Документация',
+  'settings.about.upstream': 'Исходный HAPI',
+  'settings.about.license': 'Лицензия и авторство',
   'settings.about.appVersion': 'Версия приложения',
   'settings.about.protocolVersion': 'Версия протокола',
 
@@ -1163,7 +1170,7 @@ export default {
   'misc.contextRemaining': 'Осталось: {value} ({percent}%)',
 
   // Выбор цели Web Share
-  'share.title': 'Поделиться в HAPI',
+  'share.title': 'Поделиться в HAPI-eVolved',
   'share.subtitle': 'Выберите сессию, к которой это прикрепить.',
   'share.recentSessions': 'Недавние активные сессии',
   'share.newSession': 'Новая сессия',

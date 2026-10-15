@@ -1,4 +1,46 @@
-# Abnahme von HAPI evolved 0.1.0
+# Prüfberichte: HAPI-eVolved 0.1.0
+
+Dieser datierte Bericht belegt den damaligen Quellstand, nicht automatisch die
+aktuelle Veröffentlichung. Einstieg und heutiger Umfang: [Quickstart](QUICKSTART.md)
+und [Projekt](PROJECT.md).
+
+## Projektordner und öffentliche Dokumentation am 15.10.2026
+
+Die Änderung auf `docs/evolved-public-launch` basiert auf
+`4600d764281bc1f2ca0a4e66485c9ce479a3db91`. Neue Projektsitzungen verwenden
+automatisch den gespeicherten Projektordner. Formularentwürfe, frühere Pfade,
+URL-Parameter und verspätete Ergebnisse eines Projektwechsels dürfen diesen
+Ordner nicht ersetzen. Der Hub prüft Ordner, aktuelle Berechtigung und
+Maschinenzugehörigkeit erneut unmittelbar vor dem Start. Ein fehlender oder
+ausgetauschter Ordner führt zu einer verständlichen Fehlermeldung; dieser
+Startweg legt keinen Ersatzordner und keinen externen Worktree an.
+
+Die vollständigen betroffenen Paketsuiten bestanden 1.793 Hub-Tests und
+3.886 Web-Tests; drei bestehende bedingte Hub-Integrationstests wurden
+übersprungen. Beide Typechecks bestanden. Weitere 17 Veröffentlichungstests
+und 22 Deployment-Prüfungen bestanden ebenfalls. Diese Zahlen bezeichnen
+diesen Lauf, nicht eine erneute Abnahme der unveränderten übrigen Pakete.
+Zusätzlich bestanden 15 vorhandene CLI-Tests zur Verzeichnisprüfung. Der
+Evolved-Start übermittelt ausdrücklich `approvedNewDirectoryCreation: false`
+bis zum Runner; ein fehlender Ordner löst keine automatische Neuanlage aus.
+
+Web- und Landingpage-Build sowie Dokumentationsbuild bestanden. Die Landingpage
+wurde bei 1440, 390 und 320 Pixeln in Englisch/Chinesisch, mit Themewechsel und
+mobiler Navigation geprüft. Ein isolierter echter Hub mit Passkeys und
+automatisch angelegten Projektordnern bestand sechs Browser-Prüfgruppen mit
+19 Ansichten. Der Sitzungsstart übermittelte ausschließlich den jeweiligen
+Projektordner und die passende Projekt-ID, auch nach Projektwechsel; ein
+fehlender Runnerordner verhinderte den Start. Maschinen-RPCs und
+Providerantworten waren dabei kontrollierte Testantworten. Es wurden keine
+persönlichen Anbieteranmeldungen oder kostenpflichtigen Agentenaufträge ausgeführt.
+
+README, About, Landingpage, Komponenten- und Benutzerdokumentation erklären
+den unabhängigen Fork, den unterstützten Preview-Umfang und die erhaltene
+Upstream-Zuordnung. Der [Veröffentlichungsbericht](PUBLICATION_READINESS.md)
+trennt Quellprüfung und GitHub-Sichtbarkeit. Die tatsächlichen Opus-Aufrufe
+stehen im [Reviewbeleg](reviews/public-launch-2026-10-15.json).
+
+## Ursprüngliche Abnahme am 14.10.2026
 
 Prüfung am 14.10.2026 auf einer isolierten Linux-Testinstallation. Grundlage ist
 `tiann/hapi@5847b034e5cb84f2617766945c994b7905c5c03e`; Entwicklung auf `feat/evolved-v1`.

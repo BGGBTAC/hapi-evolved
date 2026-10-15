@@ -1,4 +1,4 @@
-# Security policy
+# HAPI-eVolved security policy
 
 This policy covers **HAPI-eVolved**, maintained in
 [BGGBTAC/hapi-evolved](https://github.com/BGGBTAC/hapi-evolved). Report issues in

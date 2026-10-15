@@ -1,4 +1,19 @@
-# Deployment
+# Deploying HAPI-eVolved
+
+The [Evolved operator guide](../evolved/DEPLOYMENT.md) is the deployment reference
+for this independent fork of [tiann/hapi](https://github.com/tiann/hapi): separate
+Hub/Vault/services, private HTTPS, passkeys, constrained runners and consistent
+backups. Start with its [quick start](../evolved/QUICKSTART.md).
+
+## Legacy deployment reference
+
+::: warning Inherited standalone runtime
+The remainder documents upstream HAPI's relay and standalone service arrangements.
+These commands do not deploy the Evolved service boundaries or browser-login
+operator. Do not use the upstream public relay or token pairing as a replacement
+for Evolved project authorization. Retained host paths are examples, not this
+project's infrastructure. References to official services mean upstream services.
+:::
 
 Run the hub and runner as persistent background services, and configure remote access tunnels.
 

@@ -1,104 +1,66 @@
 ---
-title: Privacy Policy
+title: HAPI-eVolved data and privacy
 aside: false
 ---
 
-# Privacy Policy
+# HAPI-eVolved data and privacy
 
-::: warning Inherited upstream policy
-The policy below describes upstream HAPI and its publisher's services, not the
-independent HAPI-eVolved project. For Evolved storage, providers and retention,
-read [Privacy and data handling](./evolved/DATA_HANDLING.md). This fork does not
-operate the upstream push relay or accept privacy requests on its publisher's behalf.
-:::
+HAPI-eVolved is self-hosted software. Its operator controls the installation,
+access, retention and configured external services. This page is a product data
+summary, not a privacy policy on behalf of every operator or an upstream service.
+The detailed reference is [Privacy and data handling](./evolved/DATA_HANDLING.md).
 
-**Effective date: September 12, 2026** · Applies to the HAPI mobile companion apps (Android and iOS) and the self-hosted HAPI hub.
+## Data in your installation
 
-::: tip The short version
-HAPI is self-hosted software. Your app connects to a hub **you** operate; the HAPI project does not run a central account or application backend that receives your conversations or source code. Optional features can send data to services you or the app enable — notably the HAPI push relay, Firebase Cloud Messaging, Apple Push Notification service, voice-transcription providers, and the coding-agent/model providers configured on your machine. The HAPI push relay processes device and connection metadata to deliver encrypted notifications, prevent abuse, and diagnose delivery failures. HAPI contains no advertising or tracking SDKs and no product analytics.
-:::
+The Hub stores accounts, passkey public credentials, roles, sessions and knowledge
+sources in private databases. Project files live in their bound workspace.
+Attachments, service logs and backups have separate operator-managed storage.
+The Vault stores encrypted values and GitHub credentials; its master key stays
+outside agent workspaces. Native Claude/Codex credentials instead live in their
+private runner home, where that runner's agent can use them.
 
-In this policy, “we” means the maintainers and publisher of the HAPI project. The person or organization operating a hub controls the data stored on that hub and the external services configured for it.
+The browser stores preferences and some local working state. Provider sign-in
+challenges are transient, bound to the initiating HAPI session and expire; HAPI
+opens the official provider page rather than asking for the provider password.
+Use a private HTTPS origin and protect devices that can access the installation.
 
-## Data stored on your device
+## Requests outside your host
 
-- Paired hub addresses and access credentials. Credentials are kept in platform-protected app storage.
-- Preferences and app state, such as theme, language, notification choices, drafts, recent paths, and a random device identifier used for push registration.
-- Cached hub data, including session/message snapshots and generated images, for performance and limited offline display.
-- Files, photos, and audio you explicitly select or record while preparing an attachment or dictation request. Camera and dictation scratch files use temporary cache storage and are normally deleted after ingestion or cancellation.
+- Coding agents contact the providers selected and authenticated by the operator/user.
+- GitHub connection and Git operations contact GitHub through the project broker.
+- Plugin previews fetch a public repository's manifest at a resolved commit; they
+  do not execute repository scripts.
+- Optional memory processing sends authorized content to its configured model
+  provider after configuration and project budget approval.
+- Any optional voice, push or other integration has its own destination and terms.
 
-The mobile operating system and app-store software may separately create device backups or diagnostics according to your device settings and their own policies.
+Self-hosting does not make these requests offline. A provider subscription, native
+login or account entitlement is separate from HAPI authentication. Codegraph runs
+locally; the standard stack disables its configured telemetry/update checks and
+those of Graphiti/Neo4j. This is not a claim about every inherited adapter or
+service an operator may add.
 
-## How data is used and where it travels
+## Deletion and support
 
-The app uses your data to authenticate to your hub, display and update sessions, send commands and attachments, perform notification actions, and provide features you request. Core app traffic travels between the app and your self-hosted hub. The Android app accepts only HTTPS hub URLs and disables cleartext network traffic.
+Revocation blocks future protected operations; it cannot retract already downloaded
+data. Knowledge deletion invalidates derived results and queues graph cleanup.
+Project removal preserves source directories. Backups retain deleted content until
+the operator's retention window expires. Consult the
+[backup and restore guide](./evolved/DEPLOYMENT.md) before restoring old state.
 
-Selecting a chat or Scratchlist attachment starts uploading it after preparation,
-before you send the message or save the entry. Chat attachments travel through
-the hub to the session's CLI machine; Scratchlist attachments are stored by the
-hub. Sending or saving references those uploaded files. Removing unused
-attachments requests cleanup on a best-effort basis; it does not guarantee
-immediate remote deletion.
+Never attach databases, runner homes, private keys, bootstrap/recovery codes or
+raw authenticated network traces to a public issue. Prefer a synthetic reproduction.
+Use this repository's [security reporting policy](https://github.com/BGGBTAC/hapi-evolved/blob/main/SECURITY.md)
+for suspected vulnerabilities, and contact the operator for installation-specific
+access, retention or deletion questions.
 
-Dictation audio is uploaded when you stop recording for transcription. The
-transcript is inserted into the draft for you to review and send.
+## Upstream provenance
 
-Your hub, coding agents, plugins, and command-line tools may send prompts, source code, files, audio, or other content to services you configure, such as AI model or transcription providers. Those services process data under their own terms and privacy policies. HAPI does not choose or control your self-hosted configuration.
-
-## Push notifications
-
-**Android:** notifications use Google Firebase Cloud Messaging (FCM). When push is enabled, the app registers its FCM token, random app device identifier, and device-generated encryption key with each paired hub. Official app delivery through the HAPI push relay is end-to-end encrypted: the relay and Google carry ciphertext and routing metadata, but cannot read notification content. Private builds using a hub configured for direct FCM retain an unencrypted notification payload, including session identifiers, title, status, and action type; Google processes that data under [Firebase's privacy terms](https://firebase.google.com/support/privacy). Builds without Firebase configuration do not register for or receive FCM push.
-
-**iOS:** notifications are end-to-end encrypted. Your hub encrypts the content with a key that exists only on your device and your hub; Apple's push service and the HAPI push relay carry ciphertext and routing metadata only, and cannot read the notification content. Self-hosters using a separately signed app build with matching APNs credentials can bypass the relay; a different developer account's credentials alone cannot send notifications to an app signed by the official publisher.
-
-### HAPI native push relay
-
-The default hub configuration uses the official relay at `https://push.hapi.run` for iOS push and for Android push when no private Firebase credentials are configured. This service is separate from the optional network tunnel enabled by `hapi hub --relay`. Encryption protects notification content, **not all metadata**:
-
-- **Data received:** the target platform, an APNs or FCM device token, the encrypted notification envelope, and optional delivery settings such as priority and a notification-grouping identifier. The relay can observe request timing, envelope size, and the source IP of the connecting hub or proxy; that IP is not necessarily the phone's IP.
-- **Uses:** forwarding notifications to Apple or Google, limiting abusive requests, and diagnosing delivery failures. This information is not used for advertising, cross-app tracking, marketing, or product analytics.
-- **Rate-limit state:** device tokens and source IPs are kept in bounded process-memory maps with counters and refill times. There is no fixed expiration timer: entries may remain until capacity-based eviction or process restart. These maps are not written to a database by the relay.
-- **Operational logs:** the relay writes a stable, platform-scoped, truncated SHA-256 hash of the device token and a delivery, error, or rate-limit outcome to its log output. Hashing avoids logging the usable token, but still allows events for a device to be correlated; it is not a claim of complete anonymity. The relay does not deliberately log notification envelopes, decrypted content, or raw device tokens.
-- **Hosting logs:** container logging and any reverse proxy may retain operational or connection logs according to their deployment configuration. The relay source code does not impose a retention period or automatically delete those external logs. Its lack of a database does not mean that the hosting environment retains no data.
-
-Only the device and its paired hubs hold the notification decryption key. Each hub stores its device registration, including the random app device identifier, APNs or FCM token, and encryption key; the random app device identifier and encryption key are not included in the relay push request. Apple or Google receives the device token, encrypted envelope, and delivery settings needed to route the notification.
-
-## Camera
-
-Camera access is used to scan pairing QR codes and, when you choose it, to take a photo attachment. QR frames are processed on the device and are not retained or uploaded by HAPI. A captured photo is held temporarily and is sent to your hub only if you submit it as an attachment. Pairing is also available through manual entry.
-
-## Microphone
-
-Microphone access is used only when you start voice dictation. The app records a temporary audio file until you stop or cancel. On transcription, the audio is sent to your hub, which forwards it to the transcription provider configured by the hub operator (for example OpenAI, ElevenLabs, Deepgram, Groq, or an OpenAI-compatible/local service). The provider's policy applies to that processing. The app deletes its temporary recording after reading it; the returned text is placed in the composer.
-
-## What the HAPI project collects
-
-The HAPI project does not receive product-analytics events, advertising identifiers, conversations, source code, or hub access credentials through a central HAPI backend. The official native push relay does process the device and operational metadata described above; push device tokens are different from advertising identifiers. The apps contain no advertising, tracking, product-analytics, or third-party crash-reporting SDKs. If you contact us by email or GitHub, we receive the information you voluntarily include in that communication.
-
-Google Play, the Apple App Store, operating-system vendors, Firebase, and other services you enable may collect installation, device, diagnostic, notification, or service-usage data independently under their own policies.
-
-## Retention and deletion
-
-Unpairing a hub removes that hub's credentials from the app and attempts to unregister push delivery; cached content may remain until the operating system clears the cache, you clear the app's storage, or you uninstall the app. Uninstalling removes app-controlled local data, subject to any operating-system backup you enabled.
-
-Data stored on a hub remains under the hub operator's control and retention settings. Delete it from the hub, its underlying storage, and any configured provider as appropriate. HAPI has no central user account to delete.
-
-For native relay data, stopping delivery does not erase earlier operational logs. Hub operators can disable push with `HAPI_IOS_PUSH=off` or `HAPI_ANDROID_PUSH=off` for the corresponding platform; unpairing also attempts to remove that hub's device registration. Rate-limit entries are removed through the eviction/restart behavior described above, not by an app-side account-deletion action. External log deletion and rotation are controlled separately by the hosting operator.
-
-To ask about the official relay's deployed log retention or request deletion of relay-related personal data, email [twsxtd@gmail.com](mailto:twsxtd@gmail.com). We will determine what records we can identify and the applicable deletion or retention requirements. We cannot identify a device from an email address alone and do not promise that all records can be located or that data on independently operated hubs or providers can be deleted by HAPI. Do not post device tokens, hub access credentials, or encryption keys in public issues or include them in an initial email; contact us privately to establish a safe way to handle your request.
-
-## Security
-
-The Android app requires HTTPS for hub connections. Mobile credentials use platform-protected app storage, and normal operating-system app sandboxing limits access by other apps. No transmission or storage system is perfectly secure; hub operators are responsible for securing their hub, TLS endpoint, host machine, backups, credentials, and configured third-party services.
-
-## Children
-
-HAPI is a developer tool and is not directed at children under 13.
-
-## Open source
-
-The complete source code of the apps and the hub is available at [github.com/tiann/hapi](https://github.com/tiann/hapi) — the claims above can be verified in the code.
-
-## Changes & contact
-
-If this policy changes, the updated version will be published at this address with a new effective date. Questions and concerns: open an issue on [GitHub](https://github.com/tiann/hapi/issues) or email [twsxtd@gmail.com](mailto:twsxtd@gmail.com).
+This independent fork preserves the source history and notices of
+[tiann/hapi](https://github.com/tiann/hapi). Its inherited native clients reference
+upstream publisher services and privacy terms. HAPI-eVolved does not operate
+`push.hapi.run`, upstream app-store listings or their support contacts, and cannot
+make retention or deletion commitments on their behalf. The
+[upstream privacy document at the fork baseline](https://github.com/tiann/hapi/blob/5847b034e5cb84f2617766945c994b7905c5c03e/docs/privacy.md)
+remains a historical source, not this fork's hosted-service policy. Native clients
+are [development paths](./guide/native-apps.md), not a supported Evolved release claim.

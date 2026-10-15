@@ -1,5 +1,17 @@
 # Native client contract
 
+HAPI-eVolved retains this client/session protocol from
+[tiann/hapi](https://github.com/tiann/hapi), but its **authentication and project
+boundaries differ**. The supported Evolved client is the web/PWA. Native client
+conformance is not proof of Evolved passkey or team/project compatibility.
+
+In Evolved mode, use `/api/evolved/auth/*` for human passkey sessions and the
+project-scoped session-token bridge for retained session APIs. The legacy
+`POST /api/auth` shared-token exchange and host-global configuration routes below
+are unavailable. Never infer authorization from `protocolVersion` alone. See
+`hub/src/evolved/security.ts`, `bridge.ts` and `runtime.ts` in this source revision,
+and the [operator guide](../../evolved/DEPLOYMENT.md).
+
 **Audience:** Implementers of native HAPI clients — the iOS app (`ios/`), the Android app (`android/`), and any other non-web client that talks to a hub's client API. These pages are the primary spec for that work: every claim is grounded in hub/web source, and each section names its source file so implementers (human or AI agent) can verify against code.
 
 **Scope:** The HTTP contract between a client and one hub — pairing and auth, REST endpoints, SSE streaming, message pagination, message decoding, and error semantics. Core session/chat features use **REST + SSE**. Web terminals additionally use the JWT-authenticated Socket.IO `/terminal` namespace, outside this contract; `/cli` is the internal CLI↔hub namespace and is not a native-client API.

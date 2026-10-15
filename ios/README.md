@@ -1,10 +1,23 @@
-# HAPI iOS
+# HAPI-eVolved source: inherited iOS client
+
+This iOS client is inherited from [tiann/hapi](https://github.com/tiann/hapi).
+It remains an engineering reference in the independent HAPI-eVolved fork, not a
+supported Evolved mobile release. Evolved passkey onboarding, project roles and
+provider-login flows have not been established as compatible native workflows.
+Use the [web/PWA](../docs/guide/pwa.md) for the current mobile preview and the
+[quick start](../docs/evolved/QUICKSTART.md) for installation.
+
+The capabilities and build instructions below describe the inherited client.
+Protocol fixture conformance does not prove end-to-end Evolved compatibility.
+Bundle/application identifiers, signing accounts, store links and official push
+references remain upstream context; do not publish this fork under those identities
+or assume its publisher credentials are available. Follow [RELEASING.md](../RELEASING.md).
 
 Native SwiftUI/UIKit client for HAPI, independent of `web/` at the code level.
 It shares the [client protocol](../docs/api/client-contract/index.md) and
 web-generated golden fixtures in `shared/fixtures/`.
 
-## Current capabilities
+## Inherited client capabilities
 
 The app provides sessions/chat, approvals and questions, new sessions,
 attachments, files/Git, Scratchlist, standard dictation, usage/storage,

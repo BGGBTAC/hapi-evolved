@@ -236,7 +236,8 @@ export class RpcGateway {
         // latter is adopt-stub (create/getOrCreate with id), not reopen.
         forkSession?: boolean,
         /** Fresh machine-spawn stub — distinct from reopen existingSessionId. */
-        reservedSessionId?: string
+        reservedSessionId?: string,
+        approvedNewDirectoryCreation?: boolean
     ): Promise<
         | { type: 'success'; sessionId: string }
         | {
@@ -273,7 +274,8 @@ export class RpcGateway {
                     collaborationMode,
                     copilotAgentMode,
                     startingMode,
-                    forkSession: forkSession === true
+                    forkSession: forkSession === true,
+                    ...(approvedNewDirectoryCreation !== undefined ? { approvedNewDirectoryCreation } : {})
                 }
             )
             if (result && typeof result === 'object') {

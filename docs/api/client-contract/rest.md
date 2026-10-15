@@ -1,5 +1,17 @@
 # REST endpoints
 
+HAPI-eVolved retains this client/session protocol from
+[tiann/hapi](https://github.com/tiann/hapi), but its **authentication and project
+boundaries differ**. The supported Evolved client is the web/PWA. Native client
+conformance is not proof of Evolved passkey or team/project compatibility.
+
+In Evolved mode, use `/api/evolved/auth/*` for human passkey sessions and the
+project-scoped session-token bridge for retained session APIs. The legacy
+`POST /api/auth` shared-token exchange and host-global configuration routes below
+are unavailable. Never infer authorization from `protocolVersion` alone. See
+`hub/src/evolved/security.ts`, `bridge.ts` and `runtime.ts` in this source revision,
+and the [operator guide](../../evolved/DEPLOYMENT.md).
+
 Endpoint tables for native clients, grouped by feature. Request/response shapes reference the Zod schemas in `shared/src/schemas.ts` and `shared/src/apiTypes.ts` (package `@hapi/protocol`) — those schemas, not the prose here, are the field-level source of truth. Route behavior is grounded in `hub/src/web/routes/*.ts`; `web/src/api/client.ts` is the reference consumer.
 
 These tables describe the hub interface. The [native app guide](../../guide/native-apps.md#sessions-and-everyday-use)

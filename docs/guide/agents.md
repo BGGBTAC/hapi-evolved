@@ -1,4 +1,19 @@
-# Supported Agents
+# Coding agents in HAPI-eVolved
+
+HAPI-eVolved's current Linux preview supports **Claude Code and Codex** through
+project-scoped runners. Connect them in [Abos verbinden](../evolved/PROVIDER_LOGIN.md),
+then start sessions from the workspace. The managed runner supplies the native
+model catalog; listed models may be cached and do not prove account entitlement.
+Project profiles restrict each provider's permission modes, including on resume.
+A CLI flag cannot override the server's project policy.
+
+The inherited adapter catalog below is retained from
+[tiann/hapi](https://github.com/tiann/hapi) and subsequent work in this fork.
+It describes code paths, not a support promise for every provider/platform in the
+Evolved product. Evolved remote spawning currently permits Claude and Codex only.
+Additional providers require their own integration validation before inclusion.
+
+## Inherited adapter reference
 
 HAPI is a wrapper around AI coding agents. One CLI (`hapi <agent>`) starts any supported agent locally and exposes the same session for remote control from the web app, PWA, and Telegram — with permission prompts, message queueing, and seamless handoff between terminal and phone.
 
@@ -8,7 +23,7 @@ agents are disabled with a reason. Scripts must use `hapi <agent> [options]`.
 `hapi --help` shows HAPI's own help. Options after an agent name belong to that
 agent's integration; their supported syntax varies by agent.
 
-## Support matrix
+## Adapter capability matrix (not Evolved release support)
 
 | Agent | Command | Integration | Local | Remote | Permission modes | Resume |
 |-------|---------|-------------|:-----:|:------:|------------------|:------:|
@@ -22,7 +37,7 @@ agent's integration; their supported syntax varies by agent.
 | DeepSeek Harness | `hapi dsh` | ACP (`dsh-acp-demo` or configured server) | — | ✓ | Managed by DSH ACP composition | ✓* |
 | Antigravity (agy) | `hapi agy` | Headless print mode (per-turn `agy -p` + NDJSON) | — | ✓ | `request-review` `always-proceed` | ✓ |
 | Pi | `hapi pi` | `pi --mode rpc` (JSON-line RPC over stdio) | — | ✓ | none (always auto-approve) | ✓ |
-| Gemini CLI | — | **Removed** — Google sunset the consumer Gemini CLI (2026-06-18) | — | — | — | — |
+| Gemini CLI | — | Removed from the inherited launcher; not an Evolved provider | — | — | — | — |
 
 Gemini is no longer launchable: `hapi gemini` is kept as a tombstone command that prints a clear error, and existing Gemini sessions remain viewable in the web UI but cannot be resumed.
 

@@ -1,6 +1,8 @@
 HAPI-eVolved
 
-An independent development of HAPI by the HAPI-eVolved contributors.
+An independent fork of HAPI, maintained by the HAPI-eVolved contributors.
+Our goal is to deliver useful agent-workspace features quickly, with focused
+review, explicit support boundaries and credit to the upstream project.
 Repository: https://github.com/BGGBTAC/hapi-evolved
 Upstream: https://github.com/tiann/hapi
 Baseline: 5847b034e5cb84f2617766945c994b7905c5c03e

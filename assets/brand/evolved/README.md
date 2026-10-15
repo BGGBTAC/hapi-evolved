@@ -43,3 +43,11 @@ Playwright's default cache. Use the same Chromium build for byte-identical
 exports; the script reports its version and output hashes. No ImageMagick,
 external fonts, network resources or image-generation service is involved.
 Original raster artwork is never read or rewritten by the exporter.
+
+## Repository banner
+
+`hapi-evolved-github-banner.svg` is the code-native GitHub README banner. It uses
+the existing graph-e companion, a fixed dark background for readability in both
+GitHub themes, and the project tagline: **Your agents. Your infrastructure. Faster evolution.**
+It has no scripts, external resources or embedded raster images. The original
+logo and its provenance above remain unchanged.

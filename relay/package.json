@@ -2,7 +2,7 @@
     "name": "hapi-push-relay",
     "private": true,
     "version": "0.1.0",
-    "description": "Official HAPI push relay - forwards E2E-encrypted push envelopes from self-hosted hubs to APNs and FCM, seeing ciphertext only",
+    "description": "Inherited HAPI push-relay component for contributor development; not an official HAPI-eVolved hosted service",
     "author": "weishu",
     "license": "AGPL-3.0-only",
     "type": "module",

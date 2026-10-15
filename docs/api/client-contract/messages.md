@@ -1,5 +1,14 @@
 # Message decode tree
 
+HAPI-eVolved retains this client/session protocol from
+[tiann/hapi](https://github.com/tiann/hapi), but its **authentication and project
+boundaries differ**. The supported Evolved client is the web/PWA. Native client
+conformance is not proof of Evolved passkey or team/project compatibility.
+
+Wire decoding and stream/pagination rules below remain implementation references;
+apply them only after the Evolved authentication bridge and current project ACLs.
+See the [contract overview](./index.md) for this scope distinction.
+
 **Audience:** Implementers of native HAPI clients (iOS / Android). This page specifies how to decode `DecryptedMessage.content` into renderable chat structure. This is the largest porting surface — the reference pipeline is `web/src/chat/` (~4600 lines); this page is its wire-level contract. Companion pages: [pagination](./pagination.md) (how messages arrive), [sse](./sse.md) (live delivery).
 
 Source of truth: `shared/src/schemas.ts` (`DecryptedMessageSchema`), `shared/src/messages.ts` (envelope helpers), `web/src/chat/normalize.ts`, `web/src/chat/normalizeUser.ts`, `web/src/chat/normalizeAgent.ts`, `web/src/chat/types.ts`, `hub/src/store/contentCodec.ts`.

@@ -1,133 +1,52 @@
 {
-  "nav": {
-    "features": "Features",
-    "howItWorks": "How it Works",
-    "installation": "Installation",
-    "getStarted": "Get Started",
-    "viewOnGithub": "View on GitHub"
-  },
-  "hero": {
-    "version": "{{version}} is now available",
-    "title": "Vibe Coding <br/> <span class=\"text-primary\">Anytime, Anywhere.</span>",
-    "subtitle": "Go for a hike, grab a coffee, or just relax. Your AI agents work in the background. Get native app or messaging app notifications when they need your input.",
-    "startBtn": "Start Your Freedom",
-    "githubBtn": "View on GitHub",
-    "notification": {
-      "title": "Instant Notification",
-      "content": "\"Task completed! 3 files updated.<br/>Ready for review?\""
-    }
-  },
-  "showcase": {
-    "handoff": "Seamless Handoff",
-    "title": "Start on Desktop. <br class=\"hidden md:block\" /> <span class=\"text-primary\">Continue Anywhere. Switch Back Anytime.</span>",
-    "subtitle": "Your session lives on your machine. Your phone is just a window. Work locally with native Claude Code or Codex, switch to remote when away, double-space to switch back instantly.",
-    "localCore": {
-      "title": "Local Core",
-      "desc": "Heavy lifting happens on your powerful desktop machine. No cloud limits."
+    "seo": {
+        "title": "HAPI-eVolved — Your agents. Your infrastructure. Faster evolution.",
+        "description": "An independent fork of HAPI for self-hosted coding agents: project workspaces, protected credentials, GitHub access, persistent memory and code graphs."
     },
-    "remoteControl": {
-      "title": "Remote Control",
-      "desc": "Continue sessions from native iOS/Android apps, the PWA, or Telegram Mini App."
+    "nav": { "skip": "Skip to content", "main": "Main navigation", "menu": "Open navigation", "features": "Capabilities", "origins": "Why eVolved", "docs": "Documentation", "getStarted": "Self-host eVolved", "source": "View source" },
+    "hero": {
+        "preview": "Open-source preview · Self-hosted",
+        "title": "Your agents. Your infrastructure.",
+        "highlight": "Faster evolution.",
+        "description": "A practical workspace for coding agents, with your projects, credentials and knowledge under your control. An independent, fast-moving fork of HAPI — built for the work you want to get done.",
+        "note": "AGPL-3.0-only · Source installation · Desktop and mobile web",
+        "panelSubtitle": "One workspace. Connected capabilities.",
+        "panelLabel": "Built around your projects",
+        "workspace": { "title": "A place for every project", "description": "Automatic project folders, runner access and agent sessions." },
+        "knowledge": { "title": "Context that carries forward", "description": "Persistent memory and code relationships you can inspect." },
+        "control": { "title": "Permissions you can manage", "description": "Passkeys, project profiles and explicit credential grants." }
     },
-    "modeSwitch": {
-      "title": "Switch Freely",
-      "desc": "Move between terminal and mobile seamlessly. Double-space to return to local. Session state stays perfectly synced."
+    "features": {
+        "eyebrow": "What eVolved adds",
+        "title": "Useful details, connected.",
+        "description": "Build on HAPI’s agent control with tools for everyday development. Integrations require their own setup; provider availability and permissions still apply.",
+        "projects": { "title": "Project workspaces", "description": "Give each project its own folder automatically, or choose a path. Manage project members, profiles and revocable runner access." },
+        "providers": { "title": "Browser provider login", "description": "Connect Claude or Codex through their native login flows. Inspect native model catalogs and use a model ID when needed." },
+        "vault": { "title": "Local credential vault", "description": "Manage encrypted secrets in the browser, with passkey-protected administration and scoped access for agents." },
+        "github": { "title": "GitHub connections", "description": "Grant repository read or write access explicitly. Push also requires a suitable project profile, runner scope and GitHub credential." },
+        "memory": { "title": "Persistent memory", "description": "Keep project knowledge beyond one session. Opt in to the optional Graphiti/Neo4j service for connected memory and retrieval, with configured providers and budgets." },
+        "codegraph": { "title": "Codegraph", "description": "Inspect repository symbols and relationships through the integrated code graph. Indexes help navigate code; they do not replace tests." },
+        "extensions": { "title": "Agents and plugins", "description": "Create reusable specialist profiles. Preview declarative plugins from public GitHub repositories, including skills and themes." },
+        "interface": { "title": "Desktop and PWA", "description": "Work from a responsive browser interface with themes, project navigation and session controls. Install the PWA on supported browsers." }
     },
-    "screenshots": {
-      "startAnywhere": {
-        "title": "Start Anywhere",
-        "desc": "Launch sessions with Claude, Codex, or Gemini directly from your phone."
-      },
-      "seamlessChat": {
-        "title": "Seamless Chat",
-        "desc": "Continue your coding conversation exactly where you left off."
-      },
-      "reviewCode": {
-        "title": "Review Code",
-        "desc": "Full syntax highlighting for reviewing changes on the go."
-      },
-      "fullTerminal": {
-        "title": "Full Terminal Access",
-        "desc": "Execute commands and manage your environment remotely through the web app's terminal."
-      },
-      "powerfulCommands": {
-        "title": "Powerful Commands",
-        "desc": "Use /review, /undo, and more to control the agent efficiently."
-      },
-      "manageWorkspaces": {
-        "title": "Manage Workspaces",
-        "desc": "Switch between multiple active sessions and worktrees instantly."
-      }
-    }
-  },
-  "lifestyle": {
-    "title": "The \"Vibe Coding\" Lifestyle",
-    "subtitle": "HAPI isn't just a tool; it's a declaration of independence from your desk.",
-    "cards": {
-      "explore": {
-        "title": "Go Explore",
-        "desc": "Agents run locally on your powerful desktop. You? You're miles away, enjoying the view."
-      },
-      "sip": {
-        "title": "Sip & Approve",
-        "desc": "Get a ping on your phone. Review the plan. Tap \"Approve\". Go back to your latte."
-      },
-      "walk": {
-        "title": "Walk Away",
-        "desc": "Literally. Walk away from the screen. HAPI keeps the session alive and secure until you return."
-      }
-    }
-  },
-  "features": {
-    "title": "Power When You Need It",
-    "telegram": {
-      "title": "Messaging App Integration",
-      "desc": "The perfect balance of distance and control. Get notified via Telegram or other apps only when your input is truly needed."
+    "setup": {
+        "eyebrow": "Start with your own infrastructure",
+        "title": "A deliberate setup. A flexible workspace.",
+        "description": "eVolved is a source preview for self-hosting. Follow the project quick start for the current requirements, security boundaries and deployment options.",
+        "build": { "title": "Build the source", "description": "Clone this repository and follow the Bun build instructions. Managed runners need a Linux container environment." },
+        "configure": { "title": "Create your workspace", "description": "Bootstrap the hub, register a passkey and create a project. Connect the providers and repositories you need." },
+        "work": { "title": "Run, inspect, improve", "description": "Start an agent, review its changes and retain useful knowledge. Extend the setup as your workflow develops." },
+        "sourceTitle": "Get HAPI-eVolved",
+        "sourceDescription": "The source repository is the distribution and documentation entry point for this preview.",
+        "guide": "Read the complete quick start",
+        "requirements": "AI providers have separate accounts, subscriptions or API charges. Optional graph services and managed runners require additional configuration."
     },
-    "yolo": {
-      "title": "YOLO Mode",
-      "desc": "Trust your agents? Enable YOLO mode to bypass approvals and let them sprint while you sleep."
+    "origins": {
+        "title": "A fork with a clear purpose.",
+        "description": "HAPI-eVolved builds on the local-first agent control created by the contributors to",
+        "mission": "Our direction is faster, practical feature development: connect the tools developers need, make their controls visible, and review changes before shipping.",
+        "independence": "This is an independently maintained project. It is not the upstream HAPI release or an official product of Anthropic, OpenAI or GitHub. The original licenses and contributor notices are retained.",
+        "credits": "Read the attribution and notices"
     },
-    "terminal": {
-      "title": "Full Terminal Access",
-      "desc": "Open the terminal in your phone's browser or desktop web app to run commands on your working machine."
-    }
-  },
-  "howItWorks": {
-    "title": "How it Works",
-    "step1": {
-      "title": "1. Start on Desktop",
-      "desc": "Launch HAPI on your machine. It keeps your session alive and ready for remote access."
-    },
-    "step2": {
-      "title": "2. Connect Mobile",
-      "desc": "Pair a native iOS/Android app with your hub, or open the PWA or Mini App to control your sessions."
-    },
-    "step3": {
-      "title": "3. Vibe Code",
-      "desc": "Let agents do the heavy lifting. Approve changes, run commands, and enjoy your freedom."
-    }
-  },
-  "installation": {
-    "title": "Get Started in Seconds",
-    "e2ee": "🔒 End-to-end encrypted with WireGuard + TLS",
-    "npm": {
-      "step1": "1. Start the Server",
-      "step2": "2. Start a Coding Session",
-      "step3": "3. Open the URL",
-      "step3Hint": "URL and QR code shown in terminal"
-    }
-  },
-  "cta": {
-    "title": "Ready to Vibe?",
-    "subtitle": "Join the revolution. Stop watching progress bars and start enjoying your life.",
-    "btn": "Get Started Now"
-  },
-  "footer": {
-    "desc": "Vibe Coding Anytime, Anywhere. <br/> The local-first AI agent platform for developers who love freedom.",
-    "product": "Product",
-    "community": "Community",
-    "copyright": "© {{year}} HAPI Team. Open source under AGPL License.",
-    "designedWith": "Designed with <span class=\"text-red-500\">♥</span> for Vibe Coding."
-  }
+    "footer": { "description": "Your agents. Your infrastructure. Faster evolution. An independent fork of HAPI.", "issues": "Issues", "upstream": "Upstream HAPI" }
 }

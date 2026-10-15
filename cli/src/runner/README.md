@@ -1,4 +1,22 @@
-# HAPI CLI Runner: Control Flow and Lifecycle
+# HAPI-eVolved CLI runner: control flow and lifecycle
+
+This is the inherited **inner CLI runner**, not the complete Evolved operator.
+HAPI-eVolved is an independent fork of [tiann/hapi](https://github.com/tiann/hapi).
+Its supported deployment adds the host control service, private lease proxy and
+container supervisor around this lifecycle. See
+[deployment](../../../docs/evolved/DEPLOYMENT.md) and
+[browser provider login](../../../docs/evolved/PROVIDER_LOGIN.md).
+
+Managed project runners are restored by the operator only after checking current
+authority and the root-owned workspace anchor. Container `restart=no` is distinct
+from the CLI's retained version-handoff machinery below. On authorization loss,
+the Evolved supervisor stops the working container. The isolated entry wrapper
+also protects a persistent runner home against stale PID reuse across namespaces.
+It preserves machine identity and native login data.
+
+The direct-token and standalone `hapi runner start` paths below are legacy/runtime
+references. Do not run them outside the Evolved isolation boundary as a substitute
+for a scoped project runner. The image and CLI name remain `hapi` for compatibility.
 
 The runner is a persistent background process that starts and manages HAPI
 sessions from web/phone. After you update the CLI, it can restart itself onto
@@ -44,7 +62,7 @@ Control Flow:
 
 ### Version Detection & Auto-Update
 
-The runner detects when the CLI binary changes (e.g., after `npm update -g @twsxtd/hapi`):
+The standalone runner detects when its installed CLI binary changes. In an Evolved container, update the reviewed image through the operator instead of installing an upstream npm package:
 1. At startup, records `startedWithCliMtimeMs` (file modification time of CLI binary)
 2. Heartbeat compares current CLI mtime with recorded mtime via `getInstalledCliMtimeMs()`
 3. Replays the original runner arguments (including workspace roots), marking the replacement as an authorized handoff child

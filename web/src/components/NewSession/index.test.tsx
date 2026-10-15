@@ -19,6 +19,12 @@ const mocks = vi.hoisted(() => ({
         'agy', 'claude', 'codex', 'dsh', 'copilot', 'cursor', 'grok', 'kimi', 'opencode', 'pi'
     ].map((agent) => ({ agent, available: true })),
     evolved: false,
+    projectId: 'project-1',
+    projectRoot: '/projects/project-1',
+    recentPaths: [] as string[],
+    lastMachineId: null as string | null,
+    pathProbes: [] as string[][],
+    opencodeProbes: [] as Array<{ cwd: string; enabled: boolean }>,
     codexModelsLoading: false,
     agyModelsLoading: false,
     agyModels: [{ modelId: 'gemini-3.6-flash-low', name: 'Gemini 3.6 Flash (Low)' }],
@@ -43,7 +49,7 @@ const mocks = vi.hoisted(() => ({
     addToast: vi.fn()
 }))
 
-vi.mock('@/evolved/auth', () => ({ useOptionalEvolved: () => mocks.evolved ? { project: { id: 'project-1' } } : null }))
+vi.mock('@/evolved/auth', () => ({ useOptionalEvolved: () => mocks.evolved ? { project: { id: mocks.projectId, rootPath: mocks.projectRoot } } : null }))
 vi.mock('@/evolved/useProviderModels', () => ({ useProviderModels: () => ({ enabled: mocks.evolved, canRefresh: true, data: { provider: 'codex', status: 'ready', models: [{ id: 'new-native-model', label: 'Fresh native model', reasoningEfforts: ['high'] }] }, isLoading: false, error: null, refresh: vi.fn() }) }))
 vi.mock('@/lib/use-translation', () => ({
     useTranslation: () => ({ t: (key: string) => key })
@@ -66,18 +72,21 @@ vi.mock('@/hooks/queries/useSessions', () => ({
 }))
 vi.mock('@/hooks/useRecentPaths', () => ({
     useRecentPaths: () => ({
-        getRecentPaths: () => [],
+        getRecentPaths: () => mocks.recentPaths,
         addRecentPath: vi.fn(),
-        getLastUsedMachineId: () => null,
+        getLastUsedMachineId: () => mocks.lastMachineId,
         setLastUsedMachineId: vi.fn()
     })
 }))
 vi.mock('@/hooks/useMachinePathsExists', () => ({
-    useMachinePathsExists: () => ({
-        pathExistence: { 'C:\\repo': mocks.directoryExists },
-        outsideWorkspaceRoots: new Set<string>(),
-        checkPathsExists: mocks.checkPathsExists
-    })
+    useMachinePathsExists: (_api: ApiClient, _machineId: string | null, paths: string[]) => {
+        mocks.pathProbes.push([...paths])
+        return {
+            pathExistence: Object.fromEntries(paths.map(path => [path, mocks.directoryExists])),
+            outsideWorkspaceRoots: new Set<string>(),
+            checkPathsExists: mocks.checkPathsExists
+        }
+    }
 }))
 vi.mock('@/hooks/queries/useAgentAvailability', () => ({
     // Mirror the real hook: no machineId → query disabled → empty agents, not loading.
@@ -135,13 +144,16 @@ vi.mock('@/hooks/queries/useCursorModelsForMachine', () => ({
     })
 }))
 vi.mock('@/hooks/queries/useOpencodeModelsForCwd', () => ({
-    useOpencodeModelsForCwd: () => ({
+    useOpencodeModelsForCwd: (args: { cwd: string; enabled: boolean }) => {
+        mocks.opencodeProbes.push(args)
+        return {
         availableModels: mocks.opencodeModels,
         currentModelId: mocks.opencodeCurrentModelId,
         isLoading: mocks.opencodeModelsLoading,
         error: null,
         refetch: vi.fn()
-    })
+        }
+    }
 }))
 vi.mock('@/hooks/queries/useOpencodeModelVariants', () => ({
     useOpencodeModelVariants: (args: { enabled: boolean }) => {
@@ -203,7 +215,12 @@ vi.mock('@/components/PiSessionImportDialog', () => ({
         </>
     ) : null
 }))
-vi.mock('./DirectorySection', () => ({ DirectorySection: () => null }))
+vi.mock('./DirectorySection', () => ({
+    DirectorySection: (props: { directory: string; onDirectoryChange: (value: string) => void; onChooseFolder?: () => void }) => <>
+        <input aria-label="Legacy directory" value={props.directory} onChange={event => props.onDirectoryChange(event.target.value)} />
+        {props.onChooseFolder ? <button onClick={props.onChooseFolder}>Browse legacy folders</button> : null}
+    </>
+}))
 vi.mock('./MachineSelector', () => ({
     MachineSelector: (props: { machines: Machine[]; machineId: string | null; isDisabled: boolean; onChange: (machineId: string) => void }) => (
         <select
@@ -216,7 +233,7 @@ vi.mock('./MachineSelector', () => ({
         </select>
     )
 }))
-vi.mock('./SessionTypeSelector', () => ({ SessionTypeSelector: () => null }))
+vi.mock('./SessionTypeSelector', () => ({ SessionTypeSelector: () => <div data-testid="session-type-picker" /> }))
 vi.mock('./PermissionField', () => ({
     PermissionField: (props: {
         agent: string
@@ -300,8 +317,8 @@ describe('NewSession launch preferences', () => {
         mocks.onSuccess.mockReset()
         mocks.notification.mockReset()
         mocks.checkPathsExists.mockReset()
-        mocks.checkPathsExists.mockImplementation(async () => ({
-            exists: { 'C:\\repo': mocks.directoryExists }
+        mocks.checkPathsExists.mockImplementation(async (paths: string[]) => ({
+            exists: Object.fromEntries(paths.map(path => [path, mocks.directoryExists]))
         }))
         mocks.availableAgents.splice(
             0,
@@ -310,6 +327,12 @@ describe('NewSession launch preferences', () => {
                 .map((agent) => ({ agent, available: true }))
         )
         mocks.evolved = false
+        mocks.projectId = 'project-1'
+        mocks.projectRoot = '/projects/project-1'
+        mocks.recentPaths = []
+        mocks.lastMachineId = null
+        mocks.pathProbes = []
+        mocks.opencodeProbes = []
         mocks.codexModelsLoading = false
         mocks.agyModelsLoading = false
         mocks.agyModels = [{ modelId: 'gemini-3.6-flash-low', name: 'Gemini 3.6 Flash (Low)' }]
@@ -349,6 +372,133 @@ describe('NewSession launch preferences', () => {
         fireEvent.click(screen.getByTestId('create'))
         await waitFor(() => expect(mocks.spawnSession).toHaveBeenCalled())
         expect(mocks.spawnSession.mock.calls[0][0].model).toBe('newer-native-id')
+    })
+
+    it('starts directly in the stored project folder without a directory selection', async () => {
+        mocks.evolved = true
+        mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'project-session' })
+        render(<NewSession api={api} machines={[machine]} onSuccess={mocks.onSuccess} onCancel={() => {}} onChooseFolder={vi.fn()} />)
+        expect(screen.getByText(mocks.projectRoot)).toBeInTheDocument()
+        expect(screen.queryByRole('textbox', { name: 'Legacy directory' })).not.toBeInTheDocument()
+        expect(screen.queryByText('Browse legacy folders')).not.toBeInTheDocument()
+        expect(screen.queryByTestId('session-type-picker')).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'codexSync.newSessionInline.choose' })).not.toBeInTheDocument()
+        await waitFor(() => expect(screen.getByTestId('create')).toBeEnabled())
+        fireEvent.click(screen.getByTestId('create'))
+        await waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledWith('project-session'))
+        expect(mocks.checkPathsExists).toHaveBeenLastCalledWith(['/projects/project-1'])
+        expect(mocks.spawnSession).toHaveBeenCalledWith(expect.objectContaining({ directory: '/projects/project-1', sessionType: 'simple', worktreeName: undefined }))
+        expect(mocks.pathProbes.every(paths => paths.length === 1 && paths[0] === '/projects/project-1')).toBe(true)
+        expect(mocks.opencodeProbes.every(probe => probe.cwd === '/projects/project-1')).toBe(true)
+    })
+
+    it('ignores hostile URL paths, old Browse worktrees and recent folders in a project', async () => {
+        mocks.evolved = true
+        mocks.recentPaths = ['/another-project', '/tmp/recent']
+        mocks.lastMachineId = 'machine-1'
+        sessionStorage.setItem('hapi:new-session-form-draft', JSON.stringify({ agent: 'codex', model: 'auto', machineId: 'machine-1', sessionType: 'worktree', worktreeName: '../../outside' }))
+        mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'project-session' })
+        const props = { api, machines: [machine, { id: 'machine-2' } as Machine], onSuccess: mocks.onSuccess, onCancel: () => {} }
+        const view = render(<NewSession {...props} initialDirectory="/url/hostile" />)
+        fireEvent.change(screen.getByRole('combobox', { name: 'machine-selector' }), { target: { value: 'machine-2' } })
+        view.rerender(<NewSession {...props} initialDirectory="/url/changed" />)
+        expect(screen.getByText('/projects/project-1')).toBeInTheDocument()
+        fireEvent.click(screen.getByTestId('create'))
+        await waitFor(() => expect(mocks.spawnSession).toHaveBeenCalled())
+        expect(mocks.spawnSession.mock.calls[0][0]).toMatchObject({ machineId: 'machine-2', directory: '/projects/project-1', sessionType: 'simple', worktreeName: undefined })
+        expect(mocks.pathProbes.every(paths => paths.length === 1 && paths[0] === '/projects/project-1')).toBe(true)
+    })
+
+    it('does not fall back to a URL path when the project folder is unavailable', () => {
+        mocks.evolved = true
+        mocks.projectRoot = ''
+        render(<NewSession api={api} machines={[machine]} initialDirectory="/url/hostile" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        expect(screen.getByText('newSession.projectDirectoryUnavailable')).toBeInTheDocument()
+        expect(screen.getByTestId('create')).toBeDisabled()
+        expect(mocks.pathProbes.every(paths => paths.length === 0)).toBe(true)
+        expect(mocks.spawnSession).not.toHaveBeenCalled()
+    })
+
+    it.each([false, undefined])('does not create a missing or unverified project folder on the runner (%s)', async exists => {
+        mocks.evolved = true
+        mocks.checkPathsExists.mockResolvedValue({ exists: { '/projects/project-1': exists } })
+        render(<NewSession api={api} machines={[machine]} onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        fireEvent.click(screen.getByTestId('create'))
+        await waitFor(() => expect(screen.getByText('newSession.projectDirectoryUnavailable')).toBeInTheDocument())
+        fireEvent.click(screen.getByTestId('create'))
+        await waitFor(() => expect(mocks.checkPathsExists).toHaveBeenCalledTimes(2))
+        expect(mocks.spawnSession).not.toHaveBeenCalled()
+    })
+
+    it('uses a new project root immediately for discovery and cancels the previous preflight', async () => {
+        mocks.evolved = true
+        let finish!: (result: { exists: Record<string, boolean> }) => void
+        mocks.checkPathsExists.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+        mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'project-2-session' })
+        const props = { api, machines: [machine], onSuccess: mocks.onSuccess, onCancel: () => {} }
+        const view = render(<NewSession {...props} />)
+        fireEvent.click(screen.getByTestId('create'))
+        mocks.projectId = 'project-2'
+        mocks.projectRoot = '/projects/project-2'
+        mocks.pathProbes = []
+        mocks.opencodeProbes = []
+        view.rerender(<NewSession {...props} initialDirectory="/projects/project-1" />)
+        expect(screen.getByText('/projects/project-2')).toBeInTheDocument()
+        await act(async () => { finish({ exists: { '/projects/project-1': true } }) })
+        expect(mocks.spawnSession).not.toHaveBeenCalled()
+        expect(mocks.onSuccess).not.toHaveBeenCalled()
+        expect(mocks.pathProbes.every(paths => paths.length === 1 && paths[0] === '/projects/project-2')).toBe(true)
+        expect(mocks.opencodeProbes.every(probe => probe.cwd === '/projects/project-2')).toBe(true)
+        fireEvent.click(screen.getByTestId('create'))
+        await waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledWith('project-2-session'))
+        expect(mocks.spawnSession).toHaveBeenCalledTimes(1)
+        expect(mocks.spawnSession.mock.calls[0][0].directory).toBe('/projects/project-2')
+    })
+
+    it('ignores a late spawn result after the project changes', async () => {
+        mocks.evolved = true
+        let finish!: (result: { type: 'success'; sessionId: string }) => void
+        mocks.spawnSession.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+        const props = { api, machines: [machine], onSuccess: mocks.onSuccess, onCancel: () => {} }
+        const view = render(<NewSession {...props} />)
+        fireEvent.click(screen.getByTestId('create'))
+        await waitFor(() => expect(mocks.spawnSession).toHaveBeenCalledTimes(1))
+        mocks.projectId = 'project-2'
+        mocks.projectRoot = '/projects/project-2'
+        view.rerender(<NewSession {...props} />)
+        await act(async () => { finish({ type: 'success', sessionId: 'late-project-1-session' }) })
+        expect(mocks.onSuccess).not.toHaveBeenCalled()
+        expect(mocks.notification).not.toHaveBeenCalledWith('success')
+        expect(screen.getByText('/projects/project-2')).toBeInTheDocument()
+        expect(screen.getByTestId('create')).toBeEnabled()
+    })
+
+    it('resets the form when the persisted folder of the same project changes', async () => {
+        mocks.evolved = true
+        let finish!: (result: { exists: Record<string, boolean> }) => void
+        mocks.checkPathsExists.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+        const props = { api, machines: [machine], onSuccess: mocks.onSuccess, onCancel: () => {} }
+        const view = render(<NewSession {...props} />)
+        fireEvent.click(screen.getByTestId('create'))
+        mocks.projectRoot = '/projects/moved'
+        view.rerender(<NewSession {...props} />)
+        await act(async () => { finish({ exists: { '/projects/project-1': true } }) })
+        expect(mocks.spawnSession).not.toHaveBeenCalled()
+        expect(screen.getByText('/projects/moved')).toBeInTheDocument()
+        expect(screen.getByTestId('create')).toBeEnabled()
+    })
+
+    it('keeps editable folders, Browse and worktree selection for legacy sessions', async () => {
+        mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'legacy-session' })
+        const choose = vi.fn()
+        render(<NewSession api={api} machines={[machine]} initialDirectory="/legacy" onSuccess={mocks.onSuccess} onCancel={() => {}} onChooseFolder={choose} />)
+        expect(screen.getByTestId('session-type-picker')).toBeInTheDocument()
+        fireEvent.change(screen.getByRole('textbox', { name: 'Legacy directory' }), { target: { value: '/legacy/chosen' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Browse legacy folders' }))
+        expect(choose).toHaveBeenCalledWith({ machineId: 'machine-1', directory: '/legacy/chosen' })
+        fireEvent.click(screen.getByTestId('create'))
+        await waitFor(() => expect(mocks.spawnSession).toHaveBeenCalled())
+        expect(mocks.spawnSession.mock.calls[0][0].directory).toBe('/legacy/chosen')
     })
 
     it('hides unavailable Agents and falls back to the first available Agent', async () => {

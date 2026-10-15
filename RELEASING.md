@@ -3,7 +3,8 @@
 The first distribution is a **source preview**, version 0.1.0. No npm package,
 official container registry, hosted service or app-store release is implied.
 The root and CLI packages remain private to prevent accidental npm publication.
-This document does not change the GitHub repository's visibility.
+Repository visibility and a versioned release are separate actions. Making the
+source public does not publish packages, create a release tag or deploy a website.
 
 ## Release inputs
 
@@ -88,10 +89,26 @@ visibility changes. See [GitHub visibility documentation](https://docs.github.co
 Private reports require the repository feature to be enabled; see
 [GitHub reporting configuration](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository).
 
-## Publish only after the gates pass
+## Publish the repository after the gates pass
 
-An authorized maintainer changes visibility, creates a version tag on the
-reviewed commit, and creates a GitHub **pre-release** with the source artifact,
+First bring the reviewed implementation and presentation onto the default branch
+through pull requests. Preserve the original upstream ancestry and credits.
+Confirm the final README, About description, topics and support links identify
+HAPI-eVolved as an independent fork, with its own supported installation path.
+
+An authorized maintainer can then change repository visibility and verify anonymous
+access to the default branch and documentation. Enable private vulnerability
+reporting and verify that GitHub reports it enabled. Keep operator-specific
+deployment evidence private; retain public source and test provenance.
+
+If hosted CI could not start because of an account or infrastructure restriction,
+record that limitation separately from reproducible local checks and independent
+review. Do not relabel an unstarted job as passing or disregard a test failure.
+
+## Publish a versioned release separately
+
+For a separately authorized versioned distribution, create a version tag on the
+reviewed commit and a GitHub **pre-release** with the source artifact,
 checksums and truthful validation notes. Do not reuse upstream package names or
 publisher credentials. Include installation steps, supported platforms, known
 limits, license and the source SHA. `.github/release.yml` helps categorize notes;

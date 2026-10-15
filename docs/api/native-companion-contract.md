@@ -1,5 +1,13 @@
 # Native companion API contract (phone + Wear + iOS)
 
+Inherited background-push protocol from [tiann/hapi](https://github.com/tiann/hapi).
+HAPI-eVolved's supported preview client is the web/PWA. This contract does not add
+native passkey login, project role support, signing credentials or a hosted relay.
+The legacy shared-token exchange below is unavailable in Evolved mode. Retained
+API names and encrypted envelope formats are development references; see
+[native client status](../guide/native-apps.md) and
+[Evolved data handling](../evolved/DATA_HANDLING.md).
+
 **Audience:** Implementers of native companion apps (Android phone + Wear OS via FCM, iOS via APNs) that pair with a hapi hub.
 
 **Auth:** Exchange the pairing `code` / CLI access token with `POST /api/auth`:
