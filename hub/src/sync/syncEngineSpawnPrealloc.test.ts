@@ -8,6 +8,25 @@ import { SyncEngine } from './syncEngine'
  * to the runner so buildCliArgs can stamp argv before the first webhook.
  */
 describe('SyncEngine.spawnSession preallocates HAPI id for fresh machine spawns', () => {
+    it('persists server-owned context before dispatch and retains it on lost acknowledgement', async () => {
+        const store = new Store(':memory:'), engine = new SyncEngine(store, {} as never, new RpcRegistry(), { broadcast() {} } as never)
+        const links = new Map<string, string>()
+        let dispatched = 0, reserved: string | undefined
+        try {
+            engine.getOrCreateMachine('context-machine', { host: 'local', platform: 'linux', happyCliVersion: 'test' }, null, 'project')
+            ;(engine as unknown as { rpcGateway: { spawnSession: (...args: unknown[]) => Promise<never> } }).rpcGateway.spawnSession = async (...args) => {
+                dispatched++; reserved = args[17] as string
+                expect(store.sessions.getSession(reserved)?.namespace).toBe('project')
+                expect(links.get(reserved)).toBe('repository-123')
+                throw new Error('Lost acknowledgement')
+            }
+            const result = await engine.spawnSession('context-machine', '/project/repositories/example/code', 'claude', undefined, undefined, false, 'simple', undefined, undefined, undefined, 'plan', undefined, undefined, undefined, undefined, 'remote', 'project', false, id => { links.set(id, 'repository-123') })
+            expect(result.type).toBe('error'); expect(dispatched).toBe(1); expect(store.sessions.getSession(reserved!)?.id).toBe(reserved)
+            let rejectedId: string | undefined
+            await expect(engine.spawnSession('context-machine', '/project', 'claude', undefined, undefined, false, 'simple', undefined, undefined, undefined, 'plan', undefined, undefined, undefined, undefined, 'remote', 'project', false, id => { rejectedId = id; throw new Error('Binding rejected') })).rejects.toThrow('Binding rejected')
+            expect(dispatched).toBe(1); expect(store.sessions.getSession(rejectedId!)).toBeNull()
+        } finally { engine.stop() }
+    })
     it('serializes an explicit no-mkdir policy through the real gateway while preserving the legacy default', async () => {
         const store = new Store(':memory:')
         const registry = new RpcRegistry()

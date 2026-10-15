@@ -6,7 +6,8 @@ import { queryKeys } from '@/lib/query-keys'
 
 type SpawnInput = {
     machineId: string
-    directory: string
+    directory?: string
+    repositoryId?: string
     agent?: AgentFlavor
     model?: string
     effort?: string
@@ -47,7 +48,8 @@ export function useSpawnSession(api: ApiClient | null): {
                 input.serviceTier,
                 input.collaborationMode,
                 input.copilotAgentMode,
-                input.startingMode
+                input.startingMode,
+                input.repositoryId
             )
         },
         onSuccess: () => {

@@ -51,3 +51,9 @@ describe('Evolved API authorization transport', () => {
         expect(fetcher).toHaveBeenCalledTimes(2)
     })
 })
+
+it.each([false, true, 'false', null])('preserves only boolean reservation markers in API errors (%s)', async reserved => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ error: 'Preflight', code: 'repository_read_busy', reserved }, { status: 409 })))
+    try { await new EvolvedApi('').request('/projects/test/agent-catalog/builtin:review/start', { method: 'POST', body: {} }); throw new Error('Expected error') }
+    catch (error) { expect(error).toBeInstanceOf(EvolvedApiError); expect((error as EvolvedApiError).reserved).toBe(typeof reserved === 'boolean' ? reserved : undefined) }
+})

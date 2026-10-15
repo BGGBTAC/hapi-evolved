@@ -32,10 +32,12 @@ Claude Code & Codex · AGPL-3.0-only
 | Connect your coding subscriptions | Native Claude/Codex browser sign-in, persistent private credentials and automatically managed project runners |
 | Choose models as providers evolve | Native model catalogs, refresh, provider defaults and a custom model ID |
 | Start a project without setup chores | An automatic folder for every project; new sessions use it automatically, with optional manual folder selection when creating the project |
-| Work with GitHub directly | Clone and update project repositories in the browser; every project agent discovers the same grants and uses brokered Git access |
+| Work with GitHub directly | Clone and update project repositories, explicitly start sessions in a checkout, and inspect local changes without starting a model |
+| Review changes in context | Repository diffs, Codegraph impact hints and a review specialist in the same checkout |
+| Know what is ready | Project diagnostics for the working folder, live runner RPC, native login, repositories, Codegraph and memory |
 | Reuse your best agents | Global specialist templates that run within each project's permissions and profile |
 | Add your own extensions | Public GitHub plugins for agent templates, skills and color profiles, with preview and pinned revisions |
-| Keep useful context | Persistent local knowledge and search, plus an optional Graphiti/Neo4j knowledge graph |
+| Keep useful context | Source-linked proposals from stored messages and files, persistent local search, and an optional Graphiti/Neo4j knowledge graph |
 | Understand a codebase | Codegraph symbol search, callers, impact analysis and affected-test exploration |
 | Control access and credentials | Passkeys, team/project roles, an encrypted local vault and revocable runner access |
 | Stay productive on any screen | Responsive desktop and mobile layouts, light/dark/OLED modes and selectable color profiles |

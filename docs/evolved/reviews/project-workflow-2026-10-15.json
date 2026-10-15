@@ -1,0 +1,163 @@
+{
+  "date": "2026-10-15",
+  "status": "implementation_reviewed_pending_ci_and_deployment",
+  "sourceTree": "7c1ea7d1ec55ec172ffa5142d956f82bd64975ca",
+  "planning": {
+    "at": "2026-10-15T21:55:05.576284+00:00",
+    "sourceCommit": "4515385d65a60f728081d28483c94e7657f06ade",
+    "inputSha256": "dd248f2256324ff3dc95af088dab7e925c5b0727971d2ac4fc942344c8a3da6b",
+    "outputSha256": "5283e900768625cca85aead1ca031558dd75e54efc8c9876d9426a5b2dee3d2f",
+    "exitCode": 0,
+    "isError": false,
+    "models": [
+      "claude-fable-5-1"
+    ]
+  },
+  "designReview": {
+    "at": "2026-10-15T21:57:36.876299+00:00",
+    "sourceCommit": "b26f77d8260cd89f1e3d9a430f638d1014c23039",
+    "inputSha256": "d8cafa4828238ba9c4a507a5efb29961f62751a5010015d088b27feaa3692aa7",
+    "outputSha256": "d5d59815bac5d77c561871e067c67d84cd78156cb036298063eac836057961a1",
+    "success": true,
+    "models": [
+      "claude-opus-5-5"
+    ]
+  },
+  "finalReview": {
+    "at": "2026-10-15T22:41:44.968165+00:00",
+    "sourceCommit": "0a6c7913dbd7bd43cf057ba1272177962a49141a",
+    "inputSha256": "4d1c37271ea459b0d4a5be67f34de481e52a3f7ab3b487be7b44ac3b77bf0654",
+    "outputSha256": "05758b603593cf11a1a3f4dca15bcb53cb3929052dfcd2d0231b164f296ae84c",
+    "success": true,
+    "models": [
+      "claude-opus-5-5"
+    ],
+    "scope": "Source excerpts and evidence recorded in the hashed review input; reviewed working-tree changes follow the source commit.",
+    "result": "No remaining implementation blocker; G1 and G2 closed. Merge requires passing CI and CodeQL rerun."
+  },
+  "validation": [
+    {
+      "check": "full_package_tests",
+      "passed": 9783,
+      "skippedTests": 15,
+      "scope": "Before the final small runner/fixture corrections; followed by 72 targeted CLI/RPC tests."
+    },
+    {
+      "check": "workspace_typechecks",
+      "passed": 7
+    },
+    {
+      "check": "targeted_runner_rpc_tests",
+      "passed": 72
+    },
+    {
+      "check": "new_browser_acceptance",
+      "passedGroups": 8,
+      "viewports": [
+        1440,
+        390,
+        320
+      ],
+      "screenshots": 6,
+      "codegraphNodes": 4,
+      "codegraphEdges": 4,
+      "reportSha256": "c409ce3862d4ed89badc4d906921f5dcd64f450b2452e0c81b4ded101e50b0b7",
+      "scope": "Isolated Hub, Vault, WebAuthn, Socket.IO, Git and Codegraph. Synthetic GitHub responses and native agent availability, path probes and execution."
+    },
+    {
+      "check": "existing_evolved_browser_acceptance",
+      "result": "passed"
+    },
+    {
+      "check": "fixtures",
+      "passed": 89
+    },
+    {
+      "check": "codegraph_service_sdk",
+      "passed": 2
+    },
+    {
+      "check": "publication_policy",
+      "passed": 17
+    },
+    {
+      "check": "github_ci",
+      "sourceCommit": "e3dc8bde72e8c5b9fd2339c1693ddc75f97eebcf",
+      "runs": [
+        38819316589,
+        38819310649,
+        38819311649,
+        38819316794
+      ],
+      "result": "All required checks, CodeQL and fixture drift passed. Subsequent narrow review corrections require a fresh CI run."
+    },
+    {
+      "check": "file_memory_reservation_regressions",
+      "passed": 72,
+      "assertions": 353,
+      "newCases": 6,
+      "baseline": "Clone/pull admitted with HTTP 202 before the fix; now rejected with HTTP 409 before job creation.",
+      "typecheck": "Hub passed"
+    }
+  ],
+  "implementationReview": {
+    "at": "2026-10-15T22:23:30.452298+00:00",
+    "sourceCommit": "4515385d65a60f728081d28483c94e7657f06ade",
+    "inputSha256": "4274042ceab25bac40189233b0882fc44ce2341d538737ef1fb32e8958fbd074",
+    "outputSha256": "7b7abad624cfaca1345d247f113f03d15410904c15932bc9b8cd1f715ac2c758",
+    "success": true,
+    "models": [
+      "claude-opus-5-5"
+    ],
+    "scope": "Source excerpts and evidence recorded in the hashed review input; reviewed working-tree changes follow the source commit."
+  },
+  "correctionReview": {
+    "at": "2026-10-15T22:36:01.249596+00:00",
+    "sourceCommit": "0a6c7913dbd7bd43cf057ba1272177962a49141a",
+    "inputSha256": "51bad8ef29bba45bc090110b3be1f411f31ea83ff771643ba399f91eaf0c89e2",
+    "outputSha256": "525f099635f5b4abfef400421d986c0c0cce1d261418e9657a26a8b846265345",
+    "success": true,
+    "models": [
+      "claude-opus-5-5"
+    ],
+    "scope": "Source excerpts and evidence recorded in the hashed review input; reviewed working-tree changes follow the source commit."
+  },
+  "reviewCorrections": [
+    "Separate worktree/diff reader accounting; ordinary inspection does not block synchronization.",
+    "Bound temporary file descriptors; reject unsafe Git metadata and file handles.",
+    "Optional worktree capability does not block core readiness on compatible older runners.",
+    "Distinguish rejection before session reservation from uncertain delivered starts; retain sessions after transient failures.",
+    "Namespace-scoped repository link cleanup and index.",
+    "Preserve verified memory deduplication, source hash compatibility and CRLF/emoji excerpts.",
+    "Harden browser fixture files and use authoritative profile-switch assertions.",
+    "File memory intake reserves the repository against managed clone/pull until ledger completion; six concurrency/error regressions. Native workspace writers remain outside this reservation."
+  ],
+  "codeql": {
+    "sourceCommit": "e3dc8bde72e8c5b9fd2339c1693ddc75f97eebcf",
+    "analysisId": 1963652145,
+    "sarifSha256": "88f0d367ba6287a036393bc6f3a2962ac7c8e25bf94373dec51f210998da74b7",
+    "openAlerts": 0,
+    "alert65": "Individually dismissed as false positive: URL is exclusively operator-configured, request data is POST body. No rule or path exclusion.",
+    "alerts748through757": "Resolved by source corrections in the successful rerun, without dismissals."
+  },
+  "limitations": [
+    "Conservative source filtering may hide harmless paths.",
+    "Git metadata traversal and strict local configuration policy may reject very large or unusual repositories.",
+    "Submodule working trees are not inspected.",
+    "Native read-only/planning modes do not create OS isolation.",
+    "Existing dependency alerts remain open and are not claimed fixed by this milestone.",
+    "Deployment acceptance is recorded separately; these source tests do not prove a running version."
+  ],
+  "additionalReview": {
+    "at": "2026-10-15T22:58:49.886698+00:00",
+    "sourceCommit": "e3dc8bde72e8c5b9fd2339c1693ddc75f97eebcf",
+    "inputSha256": "f1f203f3bf461f1857b82ce25c8940fdd84177d3bab5d0882257efaf9999a529",
+    "outputSha256": "320b85f9adef12803fedbbb8cd017c732d3f0eb8187977c5388c467ef861ede5",
+    "success": true,
+    "models": [
+      "claude-opus-5-5"
+    ],
+    "scope": "Narrow correction following PR review: file memory intake now holds the existing project read reservation through file I/O, grant revalidation and completed ledger write.",
+    "result": "No remaining blocker; fresh CI required on the new commit."
+  }
+}

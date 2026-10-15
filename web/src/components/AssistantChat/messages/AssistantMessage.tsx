@@ -96,6 +96,7 @@ export function HappyAssistantMessage() {
                 showFork={showForkCurrent}
                 historyActionPending={ctx.historyActionPending}
                 onFork={showForkCurrent ? () => ctx.onForkConversation!() : undefined}
+                memorySourceIds={!toolOnly && !isCliOutput && copyText ? sourceMessageIds : undefined}
             />
         </MessagePrimitive.Root>
     )

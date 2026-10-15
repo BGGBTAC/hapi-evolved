@@ -1,3 +1,4 @@
+import { createRepositoryWorkflow } from './repositoryWorkflow'
 import { randomUUID } from 'node:crypto'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
@@ -18,13 +19,13 @@ const statusSchema = z.array(z.object({ id: repositoryId, local: localSchema }).
 const syncSchema = z.object({ action: z.enum(['clone', 'pull']), requestId: z.string().uuid() }).strict()
 type Repository = z.infer<typeof repository> & { cloneUrl: string; path: string }
 type Job = { id: string; project_id: string; user_id: string; request_id: string; repository_id: string; action: 'clone' | 'pull'; state: 'running' | 'succeeded' | 'failed'; message: string | null; created_at: number }
-type Engine = Pick<SyncEngine, 'getOnlineMachinesByNamespace' | 'evolvedRepositories'>
+type Engine = Pick<SyncEngine, 'getOnlineMachinesByNamespace' | 'evolvedRepositories'> & Partial<Pick<SyncEngine, 'getSessionByNamespace'>>
 const unknownLocal = () => ({ state: 'unknown' as const, branch: null, dirty: null })
 const publicJob = (job: Job) => ({ id: job.id, requestId: job.request_id, repositoryId: job.repository_id, action: job.action, state: job.state, ...(job.message ? { message: job.message } : {}) })
 const accessChanged = () => new EvolvedError('repository_access_changed', 'Die Projekt- oder Repositoryfreigabe wurde geändert. Bitte den Status aktualisieren.', 403)
 
 /** Repository metadata is useful without a session or checkout. Execution stays in the unprivileged runner. */
-export function createRepositoryRoutes(config: { store: EvolvedStore; vault: VaultClient; origin: string; getEngine: () => Engine | null }) {
+export function createRepositoryRoutes(config: { store: EvolvedStore; vault: VaultClient; origin: string; getEngine: () => Engine | null; queryCodegraph?: (project: EvolvedProject, operation: string, params: Record<string, unknown>) => Promise<{ status: number; result: Record<string, unknown> }>; intakeFile?: (request: Request, projectId: string, relativePath: string, recheck: () => Promise<void>) => Promise<unknown> }) {
     const { store, vault } = config, app = new Hono()
     let closed = false
     store.db.exec(`CREATE TABLE IF NOT EXISTS evolved_repository_jobs (
@@ -40,7 +41,7 @@ export function createRepositoryRoutes(config: { store: EvolvedStore; vault: Vau
     const inspections = new Map<string, Inspection>()
     let inspecting = 0
     app.use('*', createEvolvedRequestGuard(config.origin))
-    app.use('*', bodyLimit({ maxSize: 4096 }))
+    app.use('/projects/:id/repositories/:repositoryId/sync', bodyLimit({ maxSize: 4096 }))
 
     async function access(request: Request, id: string, write = false) {
         if (closed) throw accessChanged()
@@ -126,7 +127,7 @@ export function createRepositoryRoutes(config: { store: EvolvedStore; vault: Vau
         if (!repoId.success) throw new EvolvedError('invalid_repository', 'Ungültiges Repository.', 400)
         const initial = await access(c.req.raw, id, true)
         // Serialize catalog I/O as well as job insertion. A lost POST response is safe to reconcile by request ID.
-        if (preparing.has(id)) throw new EvolvedError('repository_busy', 'Für dieses Projekt wird bereits eine Git-Aktion vorbereitet.', 409)
+        if (preparing.has(id) || workflow.isReading(id)) throw new EvolvedError('repository_busy', 'Für dieses Projekt läuft bereits eine Repositoryabfrage oder Git-Aktion. Bitte kurz warten.', 409)
         preparing.add(id)
         try {
             const { project, principal, connected, repositories } = await catalog(c.req.raw, id, true)
@@ -138,7 +139,7 @@ export function createRepositoryRoutes(config: { store: EvolvedStore; vault: Vau
                 if (previous.repository_id !== repo.id || previous.action !== body.action) throw new EvolvedError('idempotency_conflict', 'Diese Anfragekennung gehört zu einer anderen Aktion.', 409)
                 return c.json({ job: publicJob(previous) }, 202)
             }
-            if ([...running.values()].some(job => job.projectId === id)) throw new EvolvedError('repository_busy', 'In diesem Projekt läuft bereits eine Git-Aktion. Bitte deren Abschluss abwarten.', 409)
+            if (workflow.isReading(id) || [...running.values()].some(job => job.projectId === id)) throw new EvolvedError('repository_busy', 'In diesem Projekt läuft bereits eine Repositoryabfrage oder Git-Aktion. Bitte deren Abschluss abwarten.', 409)
             if (running.size >= 4) throw new EvolvedError('repository_busy', 'Es laufen bereits mehrere Git-Aktionen. Bitte kurz warten.', 429)
             const target = runner(project)
             if (target.status !== 'ready') throw new EvolvedError(`runner_${target.status}`, target.status === 'upgrade_required' ? 'Der Projektdienst benötigt ein Update für Repositoryaktionen.' : target.status === 'ambiguous' ? 'Mehrere Projektdienste sind für diesen Ordner verbunden. Bitte nur einen verwenden.' : 'Der Projektdienst ist nicht verbunden. Bitte unter Anbieter & Abos verbinden.', 409)
@@ -190,11 +191,13 @@ export function createRepositoryRoutes(config: { store: EvolvedStore; vault: Vau
         await access(c.req.raw, project.id, true)
         return c.json({ authorized: true, machineId: entry.machineId, rootPath: project.rootPath, repository: repo })
     })
-    return { routes: app, async discovery(request: Request, projectId: string) {
+    const workflow = createRepositoryWorkflow({ ...config, busy: id => preparing.has(id) || [...running.values()].some(job => job.projectId === id) })
+    app.route('/', workflow.routes)
+    return { routes: app, resolveStart: workflow.resolveStart, reviewContext: workflow.reviewContext, onSessionRemoved: workflow.onSessionRemoved, async discovery(request: Request, projectId: string) {
         const { project, principal, repositories, connected } = await catalog(request, projectId)
         const pushEligible = connected && project.role !== 'viewer' && project.profile !== 'restricted' && (!principal.capability || principal.capability.scopes.includes('git:write'))
         return { repositories: repositories.map(repo => ({ ...repo, canPush: pushEligible && repo.permission === 'write' })), git: { connected, rootPath: project.rootPath,
             canPush: pushEligible && repositories.some(repo => repo.permission === 'write'), gitHubPermissionsVerified: false,
             instructions: 'Use the exact fullName and cloneUrl of a granted repository; never guess its owner. Git HTTPS uses the project broker without gh, SSH keys or tokens. The path field is the project checkout directory. Discover and clone/update through evolved_repositories / evolved_repository_sync or hapi evolved repositories / hapi evolved sync. Native git fetch, pull and push use the same project grants. canPush describes project authorization only; GitHub still checks token permissions and branch rules during each push.' } }
-    }, close() { closed = true; running.clear(); inspections.clear() } }
+    }, close() { closed = true; workflow.close(); running.clear(); inspections.clear() } }
 }

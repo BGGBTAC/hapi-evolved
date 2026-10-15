@@ -2663,7 +2663,8 @@ export class SyncEngine {
         // Required for fresh machine spawns so the runner stamps the HAPI id on
         // argv before the first webhook (#1911 Major: unreapable window).
         namespace?: string,
-        approvedNewDirectoryCreation?: boolean
+        approvedNewDirectoryCreation?: boolean,
+        onReserved?: (sessionId: string) => void
     ): ReturnType<RpcGateway['spawnSession']> {
         // Fresh machine spawns historically omitted existingSessionId, so
         // buildCliArgs could not stamp --hapi-session-id / --existing-session-id.
@@ -2694,6 +2695,15 @@ export class SyncEngine {
                 allocatedSessionId
             )
             preallocated = true
+        }
+
+        // Bind server-owned context before any child can exist. A failed binding never dispatches.
+        if (onReserved) {
+            if (!preallocated || !allocatedSessionId) throw new Error('Repository context requires a fresh reserved session')
+            try { onReserved(allocatedSessionId) } catch (error) {
+                await this.deleteSession(allocatedSessionId)
+                throw error
+            }
         }
 
         let result: Awaited<ReturnType<RpcGateway['spawnSession']>>

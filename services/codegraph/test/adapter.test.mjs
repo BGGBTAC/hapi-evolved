@@ -52,6 +52,13 @@ test('real Codegraph indexes calls, excludes secret source, and updates incremen
         const graph = await call('impact', { nodeId: node.id });
         assert.ok(graph.nodes.some(node => node.name === 'calculate'));
         assert.ok(graph.edges.length > 0);
+        const affected = await call('affected', { files: ['deleted.ts', 'secrets/hidden.ts', 'example.ts'] });
+        assert.ok(affected.nodes.some(node => node.name === 'square'));
+        assert.deepEqual(affected.files, ['example.ts']);
+        assert.deepEqual(affected.skipped.map(item => item.file), ['deleted.ts', 'secrets/hidden.ts']);
+        const onlyMissing = await call('affected', { files: ['deleted.ts'] });
+        assert.equal(onlyMissing.nodes.length, 0);
+        assert.equal(onlyMissing.skipped.length, 1);
         const secret = await call('search', { q: 'privateCredentialSymbol' });
         assert.equal(secret.nodes.length, 0);
         const preview = await call('node', { nodeId: node.id });

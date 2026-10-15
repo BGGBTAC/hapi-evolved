@@ -1,9 +1,12 @@
 import { Hono, type Context } from 'hono'
 import { z } from 'zod'
+import { extractSearchableMessageText } from '@hapi/protocol/messages'
 import { EvolvedError, EvolvedStore, type EvolvedPrincipal } from './store'
 import { authenticateEvolvedRequest, requireScope } from './security'
 import { MemoryError, memoryHash, type MemorySource } from './memoryStore'
 import { containsCredential, excludedMemoryPath, HttpMemoryBackend, MemoryService, readMemorySource } from './memoryService'
+
+export type MemoryMessageResolver = (namespace: string, sessionId: string, messageId: string) => { content: unknown } | null
 
 type MemoryEnv = { Variables: { principal: EvolvedPrincipal } }
 const sourceSchema = z.object({ projectId: z.string().max(80).optional(), kind: z.enum(['manual', 'chat', 'code', 'attachment']),
@@ -12,7 +15,31 @@ const sourceSchema = z.object({ projectId: z.string().max(80).optional(), kind: 
 const createSchema = z.object({ title: z.string().min(1).max(200), body: z.string().min(1).max(50_000), sources: z.array(sourceSchema).max(20).optional() })
 const settingsSchema = z.object({ enabled: z.boolean().optional(), cloudAllowed: z.boolean().optional(), monthlyBudgetMicros: z.number().int().min(0).max(1_000_000_000).optional(), jobBudgetMicros: z.number().int().min(0).max(1_000_000_000).optional() }).strict()
 
-export function createMemoryRoutes(options: { store: EvolvedStore; service?: MemoryService; backendUrl?: string; serviceToken?: string; origin?: string }) {
+/** Repository intake shares the existing file reader and rechecks its additional grant after I/O. */
+export async function proposeMemoryFile(options: {
+    store: EvolvedStore; service: MemoryService; request: Request; projectId: string; path: string
+    recheck: () => Promise<void>
+}) {
+    try {
+        const principal = await authenticateEvolvedRequest(options.request, options.store)
+        if (!principal || principal.capability) throw new MemoryError('A person must select the repository source', 403)
+        const project = options.store.requireProject(principal.user.id, options.projectId, 'member')
+        const body = await readMemorySource(project.rootPath, options.path)
+        await options.recheck()
+        const live = await authenticateEvolvedRequest(options.request, options.store)
+        if (!live || live.user.id !== principal.user.id) throw new MemoryError('Authentication expired', 401)
+        const current = options.store.requireProject(live.user.id, project.id, 'member')
+        if (current.rootPath !== project.rootPath || current.profile !== project.profile || current.namespace !== project.namespace) throw new MemoryError('Project changed during intake', 409)
+        const item = options.service.ledger.create(project.id, principal.user.id, options.path.slice(0, 200), body, [{ projectId: project.id, kind: 'code', path: options.path, hash: memoryHash(body) }])
+        options.store.audit(principal.user.id, project.id, 'memory.intake', item.id)
+        return { item }
+    } catch (error) {
+        if (error instanceof MemoryError) throw new EvolvedError('memory_source_rejected', error.message, error.status)
+        throw error
+    }
+}
+
+export function createMemoryRoutes(options: { store: EvolvedStore; service?: MemoryService; backendUrl?: string; serviceToken?: string; origin?: string; resolveMessage?: MemoryMessageResolver }) {
     const app = new Hono<MemoryEnv>()
     const service = options.service ?? new MemoryService(options.store, new HttpMemoryBackend(options.backendUrl, options.serviceToken))
     const ledger = service.ledger
@@ -71,6 +98,49 @@ export function createMemoryRoutes(options: { store: EvolvedStore; service?: Mem
         await revalidate(c, [projectId], true)
         const item = ledger.create(projectId, principal.user.id, parsed.data.path.slice(0, 200), body, [{ ...parsed.data, projectId, hash: memoryHash(body) }])
         options.store.audit(principal.user.id, projectId, 'memory.intake', item.id)
+        return c.json({ item }, 201)
+    })
+    // Source bodies are read from the Hub ledger; client text never proves provenance.
+    const messageSource = (projectId: string, principal: EvolvedPrincipal, sessionId: string, messageId: string) => {
+        const project = authorized(principal, projectId, true)
+        if (principal.capability) throw new MemoryError('Only a person may select a conversation source', 403)
+        const message = options.resolveMessage?.(project.namespace, sessionId, messageId)
+        if (!message) throw new MemoryError('Message source is unavailable in this project', 404)
+        const raw = JSON.stringify(message.content)
+        if (!raw || raw.length > 1_048_576) throw new MemoryError('Message source exceeds the size limit', 413)
+        const projected = extractSearchableMessageText(message.content, { maxSourceCharacters: 50_001 })
+        if (!projected?.text.trim()) throw new MemoryError('This message has no supported visible text', 422)
+        if (projected.truncated || projected.text.length > 50_000) throw new MemoryError('Message text exceeds the memory size limit', 413)
+        if (containsCredential(raw) || containsCredential(projected.text)) throw new MemoryError('Credentials must remain in the vault', 422)
+        return { body: projected.text, hash: memoryHash(raw), project }
+    }
+    const messageIds = z.object({ sessionId: z.string().min(1).max(200), messageId: z.string().min(1).max(200) }).strict()
+    app.get('/projects/:id/memory/message-source', async c => {
+        const parsed = messageIds.safeParse(c.req.query())
+        if (!parsed.success) return c.json({ error: 'Invalid message source' }, 400)
+        const source = messageSource(c.req.param('id'), c.get('principal'), parsed.data.sessionId, parsed.data.messageId)
+        c.header('Cache-Control', 'private, no-store')
+        return c.json({ ...parsed.data, body: source.body, sourceHash: source.hash, title: 'Erkenntnis aus einer Sitzung' })
+    })
+    app.post('/projects/:id/memory/from-message', async c => {
+        const parsed = messageIds.extend({ title: z.string().trim().min(1).max(200), excerpt: z.object({ start: z.number().int().nonnegative(), end: z.number().int().positive() }).strict().optional(), expectedSourceHash: z.string().regex(/^[a-f0-9]{64}$/) }).strict().safeParse(await c.req.json().catch(() => null))
+        if (!parsed.success) return c.json({ error: 'Invalid message proposal' }, 400)
+        const projectId = c.req.param('id'), principal = c.get('principal'), body = parsed.data
+        const source = messageSource(projectId, principal, body.sessionId, body.messageId)
+        if (source.hash !== body.expectedSourceHash) throw new MemoryError('Message source changed; reload it before proposing knowledge', 409)
+        if (containsCredential(body.title)) throw new MemoryError('Credentials must remain in the vault', 422)
+        const characters = Array.from(source.body)
+        if (body.excerpt && (body.excerpt.end <= body.excerpt.start || body.excerpt.end > characters.length || body.excerpt.end - body.excerpt.start > 20_000)) throw new MemoryError('Invalid message excerpt', 400)
+        const proposedBody = body.excerpt
+            ? `[Auszug, nicht automatisch verifiziert]\n\n${characters.slice(body.excerpt.start, body.excerpt.end).join('')}`
+            : source.body
+        // Reauthentication may await: resolve the source again afterwards to catch deletion or replacement.
+        await revalidate(c, [projectId], true)
+        const live = messageSource(projectId, principal, body.sessionId, body.messageId)
+        if (live.project.namespace !== source.project.namespace || live.project.rootPath !== source.project.rootPath || live.project.profile !== source.project.profile || live.hash !== source.hash) throw new MemoryError('Message source or project changed; reload before proposing knowledge', 409)
+        const item = ledger.create(projectId, principal.user.id, body.title, proposedBody, [{ projectId, kind: 'chat', sessionId: body.sessionId, messageId: body.messageId, hash: source.hash, origin: `hub:session:${body.sessionId}` }])
+        options.store.audit(principal.user.id, projectId, 'memory.from_message', item.id)
+        c.header('Cache-Control', 'private, no-store')
         return c.json({ item }, 201)
     })
     app.patch('/projects/:id/memory/settings', async c => {

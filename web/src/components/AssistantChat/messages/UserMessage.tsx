@@ -134,6 +134,7 @@ export function HappyUserMessage() {
             <MessageActions
                 align="end"
                 copyText={hasText ? text : undefined}
+                memorySourceIds={hasText && (!status || status === 'sent') ? sourceMessageIds : undefined}
                 messageElementId={elementId}
                 showFork={showFork}
                 showRewind={showRewind}

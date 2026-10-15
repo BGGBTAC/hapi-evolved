@@ -11,6 +11,8 @@ proposals in this repository's issues before implementation.
 - Dynamic native model catalogs, reusable specialist agents and GitHub extensions.
 - Automatic project folders, direct GitHub workflows and local credential management.
 - Persistent memory, Codegraph and project-scoped workflow tools.
+- Integrated readiness, repository session context, local diffs, impact review and
+  source-linked knowledge proposals. See the [Fable/Opus project workflow plan](docs/evolved/PROJECT_WORKFLOW.md).
 - Responsive desktop/PWA navigation, usage visibility and selectable color profiles.
 
 See the [changelog](CHANGELOG.md) for details and [validation](docs/evolved/VALIDATION.md)

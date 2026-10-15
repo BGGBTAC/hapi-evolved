@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
 import { lstat, mkdir, open, readdir, realpath, type FileHandle } from 'node:fs/promises'
 import { isAbsolute, join, normalize } from 'node:path'
+import { containsCredential, excludedSourcePath, isSafeSourcePath } from '@hapi/protocol/evolvedSourcePolicy'
+import { RepoDiffRequestSchema, type RepoDiff, type RepoDiffRequest, type RepoFileStatus, type RepoWorktree } from '@hapi/protocol/evolvedWorkspace'
 
 export type WorkspaceRepository = { id: string; owner: string; name: string; fullName: string; cloneUrl: string; path: string }
 export type RepositoryLocal = { state: 'missing' | 'ready' | 'blocked' | 'unknown'; branch: string | null; dirty: boolean | null; message?: string }
@@ -42,20 +44,25 @@ const safeError = (error: unknown) => error instanceof RepositoryWorkspaceError 
 type Anchor = { handle: FileHandle; path: string; dev: number; ino: number }
 class Paths {
     readonly anchors: Anchor[] = []
+    // Stat-only worktree ancestors retain their identities, not an open FD for
+    // every changed directory. Fixed project/repository anchors stay pinned.
+    readonly directories = new Map<string, Omit<Anchor, 'handle'>>()
     target?: Anchor
     git?: Anchor
     deadline = Date.now() + 240_000
     constructor(readonly root: string, readonly repository: WorkspaceRepository) {}
     async open(path: string, source = path): Promise<Anchor> {
         const handle = await open(source, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
-        const stat = await handle.stat()
-        const anchor = { handle, path, dev: stat.dev, ino: stat.ino }
-        this.anchors.push(anchor)
-        return anchor
+        try {
+            const stat = await handle.stat()
+            const anchor = { handle, path, dev: stat.dev, ino: stat.ino }
+            this.anchors.push(anchor)
+            return anchor
+        } catch (error) { await handle.close(); throw error }
     }
     async check() {
         this.remaining()
-        for (const anchor of this.anchors) {
+        for (const anchor of [...this.anchors, ...this.directories.values()]) {
             const stat = await lstat(anchor.path).catch(() => fail('unsafe_path'))
             if (!stat.isDirectory() || stat.isSymbolicLink() || stat.dev !== anchor.dev || stat.ino !== anchor.ino) fail('unsafe_path')
         }
@@ -107,13 +114,19 @@ export function createRepositoryWorkspace(options: { proxyOrigin?: string; comma
     const origin = new URL(options.proxyOrigin ?? 'http://runner-proxy:3010')
     if (origin.protocol !== 'http:' || !['runner-proxy', '127.0.0.1', '[::1]'].includes(origin.hostname)
         || origin.username || origin.password || origin.pathname !== '/' || origin.search || origin.hash) fail('invalid_repository')
-    const running = new Set<string>()
+    const writing = new Set<string>()
+    const readers = new Map<string, number>()
+    const beginRead = (root: string) => { readers.set(root, (readers.get(root) ?? 0) + 1) }
+    const endRead = (root: string) => {
+        const remaining = (readers.get(root) ?? 1) - 1
+        if (remaining > 0) readers.set(root, remaining); else readers.delete(root)
+    }
     const environment: NodeJS.ProcessEnv = {
         PATH: '/usr/bin:/bin', HOME: '/nonexistent', LANG: 'C', LC_ALL: 'C',
         GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_ATTR_NOSYSTEM: '1',
         GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '/bin/false', SSH_ASKPASS: '/bin/false', GIT_SSH_COMMAND: '/bin/false',
         GIT_ALLOW_PROTOCOL: 'http', GIT_PROTOCOL_FROM_USER: '0', GIT_NO_REPLACE_OBJECTS: '1', GIT_LFS_SKIP_SMUDGE: '1',
-        GIT_OPTIONAL_LOCKS: '0', GIT_CEILING_DIRECTORIES: '/',
+        GIT_OPTIONAL_LOCKS: '0', GIT_CEILING_DIRECTORIES: '/', GIT_LITERAL_PATHSPECS: '1',
     }
     const config = ['core.hooksPath=/dev/null', 'core.fsmonitor=false', 'core.untrackedCache=false',
         'core.attributesFile=/dev/null', 'credential.helper=', 'http.extraHeader=', 'http.proxy=', 'http.followRedirects=false',
@@ -125,17 +138,17 @@ export function createRepositoryWorkspace(options: { proxyOrigin?: string; comma
         try { await Promise.race([authorize(), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error()), 10_000) })]) }
         catch { fail('revoked') } finally { clearTimeout(timer) }
     }
-    async function git(args: string[], settings: { paths?: Paths; input?: Buffer; authorize?: () => Promise<void>; timeout?: number; allowedFailure?: boolean } = {}) {
+    async function git(args: string[], settings: { paths?: Paths; input?: Buffer; authorize?: () => Promise<void>; timeout?: number; allowedFailure?: boolean; readOnly?: boolean; maxOutput?: number } = {}) {
         if (process.getuid?.() === 0) fail('unavailable')
         await permission(settings.authorize)
         await settings.paths?.check()
         const paths = settings.paths
-        const prefix = config.flatMap(value => ['-c', value])
+        const prefix = ['--literal-pathspecs', ...config.flatMap(value => ['-c', value])]
         if (paths?.git && paths.target) prefix.push(`--git-dir=${fdPath(paths.git.handle)}`, `--work-tree=${fdPath(paths.target.handle)}`)
         const maxTime = settings.timeout ?? options.commandTimeoutMs ?? 120_000
         const timeout = paths ? paths.remaining(maxTime) : maxTime
         const child = spawn('/usr/bin/git', [...prefix, ...args], {
-            cwd: paths?.target ? fdPath(paths.target.handle) : '/', env: environment, detached: true, stdio: ['pipe', 'pipe', 'pipe'],
+            cwd: paths?.target ? fdPath(paths.target.handle) : '/', env: settings.readOnly ? { ...environment, GIT_ALLOW_PROTOCOL: '' } : environment, detached: true, stdio: ['pipe', 'pipe', 'pipe'],
         })
         const buffers: Buffer[] = []
         let size = 0, failure: RepositoryWorkspaceError | undefined, checking = false, finished = false
@@ -153,7 +166,7 @@ export function createRepositoryWorkspace(options: { proxyOrigin?: string; comma
             checking = true
             void permission(settings.authorize).catch(error => stop(safeError(error))).finally(() => { checking = false })
         }, 1000) : undefined
-        child.stdout.on('data', (data: Buffer) => { size += data.length; if (size > 1_048_576) stop(new RepositoryWorkspaceError('limit')); else buffers.push(data) })
+        child.stdout.on('data', (data: Buffer) => { size += data.length; if (size > (settings.maxOutput ?? 1_048_576)) stop(new RepositoryWorkspaceError('limit')); else buffers.push(data) })
         child.stderr.on('data', (data: Buffer) => { size += data.length; if (size > 1_048_576) stop(new RepositoryWorkspaceError('limit')) })
         child.stdin.on('error', () => { /* A rejected command can close stdin early. */ })
         child.stdin.end(settings.input)
@@ -162,11 +175,12 @@ export function createRepositoryWorkspace(options: { proxyOrigin?: string; comma
             if (failure) throw failure
             if (code !== 0 && !settings.allowedFailure) fail('git_failed')
             await settings.paths?.check()
-            return { code, output: Buffer.concat(buffers).toString('utf8') }
+            const raw = Buffer.concat(buffers)
+            return { code, output: raw.toString('utf8'), raw }
         } finally { finished = true; clearTimeout(deadline); clearTimeout(escalation); clearInterval(heartbeat); kill() }
     }
     async function file(path: string, maxBytes: number): Promise<Buffer> {
-        const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW).catch(() => fail('configuration'))
+        const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK).catch(() => fail('configuration'))
         try {
             const stat = await handle.stat()
             if (!stat.isFile() || stat.nlink !== 1 || stat.size > maxBytes) fail('configuration')
@@ -215,23 +229,223 @@ export function createRepositoryWorkspace(options: { proxyOrigin?: string; comma
     async function verify(paths: Paths, expected: string) {
         if (await configuration(paths) !== expected) fail('changed')
     }
-    async function state(paths: Paths, authorize?: () => Promise<void>) {
+    async function state(paths: Paths, authorize?: () => Promise<void>, allowDetached = false) {
         const snapshot = await configuration(paths)
         const branchReply = await git(['symbolic-ref', '--quiet', '--short', 'HEAD'], { paths, authorize, allowedFailure: true, timeout: 3000 })
         const branch = branchReply.output.trim()
-        if (branchReply.code !== 0 || !safeBranch(branch)) fail('detached')
+        const detached = branchReply.code === 1
+        if (!(allowDetached && detached) && (branchReply.code !== 0 || !safeBranch(branch))) fail('detached')
         await verify(paths, snapshot)
         const headReply = await git(['rev-parse', '--verify', 'HEAD'], { paths, authorize, allowedFailure: true, timeout: 3000 })
         const head = headReply.code === 0 ? headReply.output.trim() : null
         if (head !== null && !/^[0-9a-f]{40}$/.test(head)) fail('configuration')
+        if (detached && head === null) fail('configuration')
         if (head === null && (await git(['for-each-ref', '--count=1', '--format=%(objectname)'], { paths, authorize, timeout: 3000 })).output.trim()) fail('configuration')
         await verify(paths, snapshot)
         const status = await git(['status', '--porcelain=v1', '-z', '--untracked-files=normal', '--ignore-submodules=all'], { paths, authorize, timeout: 5000 })
         await verify(paths, snapshot)
-        return { snapshot, head, branch: head === null ? null : branch, dirty: status.output.length > 0 }
+        return { snapshot, head, branch: head === null || detached ? null : branch, dirty: status.output.length > 0 }
+    }
+
+    const decoder = new TextDecoder('utf-8', { fatal: true })
+    const text = (bytes: Buffer): string | null => { try { return decoder.decode(bytes) } catch { return null } }
+    const statuses = new Set(['M', 'A', 'D', 'R', 'C', 'U', '?', ' ', 'T', '!'])
+    const readStatus = (value: string): RepoFileStatus['index'] => {
+        const status = value === '.' ? ' ' : value
+        if (!statuses.has(status)) fail('configuration')
+        return status as RepoFileStatus['index']
+    }
+    function takeFields(record: Buffer, count: number) {
+        let offset = 0
+        const fields: string[] = []
+        for (let i = 0; i < count; i++) {
+            const end = record.indexOf(32, offset)
+            if (end < 0) fail('configuration')
+            fields.push(record.subarray(offset, end).toString('ascii')); offset = end + 1
+        }
+        return { fields, path: record.subarray(offset) }
+    }
+    function fileStatus(pathBytes: Buffer, oldBytes: Buffer | undefined, index: string, worktree: string, modes: string[]): RepoFileStatus {
+        const path = text(pathBytes), oldPath = oldBytes ? text(oldBytes) : undefined
+        const unrepresentable = path === null || !isSafeSourcePath(path) || Buffer.byteLength(path) > 1024 || containsCredential(path)
+            || oldBytes !== undefined && (oldPath == null || !isSafeSourcePath(oldPath) || Buffer.byteLength(oldPath) > 1024 || containsCredential(oldPath))
+        const kind: RepoFileStatus['kind'] = modes.includes('160000') ? 'submodule' : modes.includes('120000') ? 'symlink' : 'file'
+        if (unrepresentable) return { path: '', display: '[nicht anzeigbarer Pfad]', pathRef: digest(Buffer.concat([pathBytes, Buffer.from([0]), oldBytes ?? Buffer.alloc(0)])), index: readStatus(index), worktree: readStatus(worktree), kind: 'unknown', excluded: 'unrepresentable' }
+        const sensitive = excludedSourcePath(path!) || oldPath !== undefined && excludedSourcePath(oldPath!)
+        return { path: path!, ...(oldPath ? { oldPath } : {}), index: readStatus(index), worktree: readStatus(worktree), kind, ...(sensitive ? { excluded: 'sensitive_path' as const } : {}) }
+    }
+    /** Stat only. Every parent is checked before traversal; symlink destinations are never opened. */
+    async function pathIdentity(paths: Paths, path: string) {
+        if (!paths.target || !isSafeSourcePath(path)) fail('unsafe_path')
+        const segments = path.split('/')
+        let parent = paths.target
+        let temporary: FileHandle | undefined
+        try {
+            for (const segment of segments.slice(0, -1)) {
+                paths.remaining()
+                const canonical = join(parent.path, segment)
+                let handle: FileHandle
+                try { handle = await open(join(fdPath(parent.handle), segment), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW) }
+                catch (error) { if (errorCode(error) === 'ENOENT') return null; fail('unsafe_path') }
+                let next: Anchor
+                try {
+                    const info = await handle.stat()
+                    const previous = paths.directories.get(canonical)
+                    if (previous && (previous.dev !== info.dev || previous.ino !== info.ino)) fail('unsafe_path')
+                    next = { handle, path: canonical, dev: info.dev, ino: info.ino }
+                    paths.directories.set(canonical, { path: canonical, dev: info.dev, ino: info.ino })
+                } catch (error) { await handle.close(); throw error }
+                await temporary?.close()
+                temporary = handle
+                parent = next
+            }
+            const info = await lstat(join(fdPath(parent.handle), segments.at(-1)!), { bigint: true })
+            if (!info.isFile() && !info.isSymbolicLink() && !info.isDirectory()) fail('unsafe_path')
+            if (info.isFile() && info.nlink !== 1n) fail('unsafe_path')
+            return { stamp: [info.dev, info.ino, info.mode, info.size, info.mtimeNs, info.ctimeNs].map(String), kind: info.isSymbolicLink() ? 'symlink' as const : info.isDirectory() ? 'unknown' as const : 'file' as const }
+        } catch (error) { if (errorCode(error) === 'ENOENT') return null; throw error }
+        finally { await temporary?.close() }
+    }
+    async function indexIdentity(paths: Paths) {
+        if (!paths.git) fail('configuration')
+        let handle: FileHandle
+        try { handle = await open(join(fdPath(paths.git.handle), 'index'), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK) }
+        catch (error) { if (errorCode(error) === 'ENOENT') return null; fail('configuration') }
+        try {
+            const info = await handle.stat({ bigint: true })
+            if (!info.isFile() || info.nlink !== 1n) fail('configuration')
+            return [info.dev, info.ino, info.size, info.mtimeNs, info.ctimeNs].map(String)
+        } finally { await handle.close() }
+    }
+    async function readState(paths: Paths): Promise<RepoWorktree> {
+        const configHash = await configuration(paths), indexBefore = await indexIdentity(paths)
+        const reply = await git(['status', '--porcelain=v2', '-z', '--branch', '--ahead-behind', '--untracked-files=all', '--ignore-submodules=all', '--renames'], { paths, readOnly: true, timeout: 5000 })
+        const records: Buffer[] = []
+        let offset = 0
+        while (offset < reply.raw.length) {
+            const end = reply.raw.indexOf(0, offset)
+            if (end < 0) fail('configuration')
+            records.push(reply.raw.subarray(offset, end)); offset = end + 1
+        }
+        let branch: string | null = null, head: string | null = null, detached = false, upstreamName: string | null = null
+        let ahead = 0, behind = 0, totalFiles = 0, bytes = 0
+        const files: RepoFileStatus[] = []
+        for (let i = 0; i < records.length; i++) {
+            const record = records[i]!
+            if (record[0] === 35) {
+                const header = text(record)
+                if (!header) fail('configuration')
+                if (header.startsWith('# branch.oid ')) {
+                    const value = header.slice(13)
+                    if (value !== '(initial)' && !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value)) fail('configuration')
+                    head = value === '(initial)' ? null : value
+                } else if (header.startsWith('# branch.head ')) {
+                    const value = header.slice(14); detached = value === '(detached)'
+                    branch = !detached && safeBranch(value) && !containsCredential(value) ? value : null
+                } else if (header.startsWith('# branch.upstream ')) {
+                    const value = header.slice(18)
+                    upstreamName = safeBranch(value) && !containsCredential(value) ? value : null
+                } else if (header.startsWith('# branch.ab ')) {
+                    const match = /^# branch\.ab \+(\d+) -(\d+)$/.exec(header)
+                    if (!match) fail('configuration')
+                    ahead = Number(match[1]); behind = Number(match[2])
+                    if (!Number.isSafeInteger(ahead) || !Number.isSafeInteger(behind)) fail('configuration')
+                }
+                continue
+            }
+            let file: RepoFileStatus
+            if (record[0] === 63 || record[0] === 33) {
+                if (record[1] !== 32) fail('configuration')
+                file = fileStatus(record.subarray(2), undefined, String.fromCharCode(record[0]), ' ', [])
+            } else if (record[0] === 49 || record[0] === 50 || record[0] === 117) {
+                const count = record[0] === 49 ? 8 : record[0] === 50 ? 9 : 10
+                const parsed = takeFields(record, count), xy = parsed.fields[1]!
+                if (xy.length !== 2) fail('configuration')
+                const old = record[0] === 50 ? records[++i] : undefined
+                if (record[0] === 50 && !old) fail('configuration')
+                file = fileStatus(parsed.path, old, xy[0]!, xy[1]!, parsed.fields.slice(3, record[0] === 117 ? 7 : 6))
+            } else fail('configuration')
+            totalFiles++
+            const size = Buffer.byteLength(JSON.stringify(file))
+            if (files.length < 2000 && bytes + size <= 524288) { files.push(file); bytes += size }
+        }
+        const identities: unknown[] = []
+        for (const file of files) {
+            paths.remaining()
+            if (file.excluded === 'unrepresentable') continue
+            for (const path of [file.path, ...(file.oldPath ? [file.oldPath] : [])]) {
+                const identity = await pathIdentity(paths, path)
+                identities.push([path, identity?.stamp ?? null])
+                if (path === file.path && identity && file.kind !== 'submodule') file.kind = identity.kind
+            }
+        }
+        await verify(paths, configHash)
+        const indexAfter = await indexIdentity(paths)
+        if (JSON.stringify(indexBefore) !== JSON.stringify(indexAfter)) fail('changed')
+        // A bounded observation, not a frozen worktree. Subsequent diff re-observes both sides.
+        const snapshotId = digest(Buffer.concat([Buffer.from(JSON.stringify([configHash, head, branch, indexAfter, identities])), reply.raw]))
+        return { repositoryId: paths.repository.id, state: 'ready', branch, detached, head, upstream: upstreamName ? { name: upstreamName, ahead, behind } : null,
+            snapshotId, observedAt: Date.now(), files, truncated: totalFiles > files.length, totalFiles }
+    }
+    async function readRepositoryWorktree(root: string, repository: WorkspaceRepository): Promise<RepoWorktree> {
+        const empty = (state: RepoWorktree['state'], message: string): RepoWorktree => ({ repositoryId: repository.id, state, message, branch: null, detached: false, head: null, snapshotId: null, observedAt: Date.now(), files: [], truncated: false })
+        if (writing.has(root)) return empty('syncing', messages.busy)
+        beginRead(root)
+        const paths = new Paths(root, repository); paths.deadline = Date.now() + 10_000
+        try {
+            if (!await paths.initialize(false)) return empty('missing', messages.missing)
+            await paths.openGit()
+            return await readState(paths)
+        } catch (error) {
+            const safe = safeError(error)
+            return empty(['unavailable', 'timeout', 'changed'].includes(safe.code) ? 'unknown' : 'blocked', safe.message)
+        } finally { try { await paths.close() } finally { endRead(root) } }
+    }
+    async function readRepositoryDiff(root: string, repository: WorkspaceRepository, raw: RepoDiffRequest): Promise<RepoDiff> {
+        const request = RepoDiffRequestSchema.parse(raw)
+        if (!isSafeSourcePath(request.path) || Buffer.byteLength(request.path) > 1024 || containsCredential(request.path)) fail('invalid_repository')
+        if (writing.has(root)) fail('busy')
+        beginRead(root)
+        const paths = new Paths(root, repository); paths.deadline = Date.now() + 8000
+        const result: RepoDiff = { path: request.path, side: request.side, patch: null, binary: false, truncated: false, observedAt: Date.now() }
+        try {
+            if (!await paths.initialize(false)) fail('missing')
+            await paths.openGit()
+            const before = await readState(paths)
+            if (before.snapshotId !== request.snapshotId) fail('changed')
+            const file = before.files.find(file => file.path === request.path && !file.excluded?.includes('unrepresentable'))
+            if (!file) fail('changed')
+            if (file.oldPath) result.oldPath = file.oldPath
+            if (file.excluded || excludedSourcePath(file.path) || file.oldPath && excludedSourcePath(file.oldPath)) return { ...result, withheld: 'sensitive_path' }
+            if (file.index === '?' || file.worktree === '?') return { ...result, withheld: 'untracked' }
+            if (file.kind === 'submodule' || file.kind === 'unknown' || file.index === 'U' || file.worktree === 'U') return { ...result, withheld: 'unsupported' }
+            const selected = [file.path, ...(file.oldPath ? [file.oldPath] : [])]
+            const common = ['diff', ...(request.side === 'staged' ? ['--cached'] : []), '--no-ext-diff', '--no-textconv', '--no-color', '-M', '--ignore-submodules=all']
+            let patch: Buffer | null = null
+            try {
+                const stat = await git([...common, '--numstat', '-z', '--', ...selected], { paths, readOnly: true, timeout: 3000 })
+                if (stat.output.split('\0').some(record => record.startsWith('-\t-\t'))) result.binary = true
+                else patch = (await git([...common, '--unified=3', '--src-prefix=a/', '--dst-prefix=b/', '--', ...selected], { paths, readOnly: true, maxOutput: 262144 })).raw
+            } catch (error) { if (error instanceof RepositoryWorkspaceError && error.code === 'limit') result.truncated = true; else throw error }
+            const after = await readState(paths)
+            if (after.snapshotId !== before.snapshotId) fail('changed')
+            if (patch) {
+                const decoded = text(patch)
+                if (decoded === null || patch.includes(0)) result.binary = true
+                else if (containsCredential(decoded)) result.withheld = 'credential_pattern'
+                else result.patch = decoded
+            }
+            result.observedAt = Date.now()
+            return result
+        } catch (error) { throw safeError(error) }
+        finally { try { await paths.close() } finally { endRead(root) } }
     }
     async function inspectRepositories(root: string, repositories: WorkspaceRepository[]) {
-        if (running.has(root)) return repositories.map(repository => ({ id: repository.id, local: { state: 'unknown' as const, branch: null, dirty: null, message: messages.busy } }))
+        if (writing.has(root)) return repositories.map(repository => ({ id: repository.id, local: { state: 'unknown' as const, branch: null, dirty: null, message: messages.busy } }))
+        // Catalog inspection is a best-effort observation, not a protected diff
+        // snapshot. It never reserves the project against a user-requested sync.
+        // Git optional index writes remain disabled, and path/config checks fail
+        // closed if concurrent activity invalidates this observation.
         const deadline = Date.now() + 10_000, results: Array<{ id: string; local: RepositoryLocal }> = []
         for (const repository of repositories) {
             const paths = new Paths(root, repository)
@@ -240,7 +454,7 @@ export function createRepositoryWorkspace(options: { proxyOrigin?: string; comma
                 paths.remaining()
                 if (!await paths.initialize(false)) { results.push({ id: repository.id, local: missing() }); continue }
                 await paths.openGit()
-                const info = await state(paths)
+                const info = await state(paths, undefined, true)
                 results.push({ id: repository.id, local: { state: 'ready', branch: info.branch, dirty: info.dirty } })
             } catch (error) {
                 const safe = safeError(error)
@@ -250,8 +464,8 @@ export function createRepositoryWorkspace(options: { proxyOrigin?: string; comma
         return results
     }
     async function syncRepository(root: string, repository: WorkspaceRepository, action: 'clone' | 'pull', authorize: () => Promise<void>): Promise<RepositoryLocal> {
-        if (running.has(root)) fail('busy')
-        running.add(root)
+        if (writing.has(root) || readers.has(root)) fail('busy')
+        writing.add(root)
         const paths = new Paths(root, repository)
         try {
             if (!['clone', 'pull'].includes(action)) fail('invalid_repository')
@@ -311,11 +525,13 @@ export function createRepositoryWorkspace(options: { proxyOrigin?: string; comma
             return { state: 'ready', branch: after.branch, dirty: after.dirty }
         } catch (error) {
             throw error instanceof RepositoryWorkspaceError ? error : new RepositoryWorkspaceError('git_failed')
-        } finally { await paths.close(); running.delete(root) }
+        } finally { try { await paths.close() } finally { writing.delete(root) } }
     }
-    return { inspectRepositories, syncRepository }
+    return { inspectRepositories, syncRepository, readRepositoryWorktree, readRepositoryDiff }
 }
 
 const workspace = createRepositoryWorkspace()
 export const inspectRepositories = workspace.inspectRepositories
 export const syncRepository = workspace.syncRepository
+export const readRepositoryWorktree = workspace.readRepositoryWorktree
+export const readRepositoryDiff = workspace.readRepositoryDiff

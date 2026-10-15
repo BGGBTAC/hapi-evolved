@@ -8,6 +8,15 @@ or container image.
 
 ### Added
 
+- Integrated project readiness with a live runner RPC probe, distinct partial
+  failures and browser subscription setup as the normal onboarding path.
+- Explicit repository selection for ordinary sessions and specialists, with
+  server-owned session links and no implicit directory fallback.
+- Repository worktree/diff views without a running session, bounded sensitive
+  content filtering, Codegraph change impact and read-mode review specialists.
+- Knowledge proposals from stored conversation text or a selected source file;
+  source provenance is supplied by the Hub and proposals remain unverified.
+
 - A coherent HAPI-eVolved project identity across GitHub, documentation and the
   web interface, with explicit upstream fork attribution and a separate roadmap.
 
@@ -40,6 +49,10 @@ or container image.
 - A dedicated logo, community documentation and source-preview packaging.
 
 ### Fixed
+
+- Source-file intake rejects FIFO replacements without blocking filesystem
+  workers. Expanded intake exclusions preserve unchanged legacy knowledge.
+- Specialist starts do not create a missing project or checkout directory.
 
 - Runner RPC registrations are restored after Hub reconnects and capability
   renewal without disconnecting the native client. Delayed acknowledgements

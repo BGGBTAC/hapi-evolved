@@ -15,6 +15,8 @@
         "./modes": "./src/modes.ts",
         "./rpcMethods": "./src/rpcMethods.ts",
         "./runnerCapabilities": "./src/runnerCapabilities.ts",
+        "./evolvedSourcePolicy": "./src/evolvedSourcePolicy.ts",
+        "./evolvedWorkspace": "./src/evolvedWorkspace.ts",
         "./schemas": "./src/schemas.ts",
         "./sessionCitation": "./src/sessionCitation.ts",
         "./sessionExport": "./src/sessionExport.ts",

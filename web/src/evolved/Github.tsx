@@ -1,9 +1,12 @@
+import { Link } from '@tanstack/react-router'
+import { useProjectWorkflow } from './ProjectWorkflowContext'
 import { useEffect, useRef, useState } from 'react'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEvolved } from './auth'
 import { canWriteProject, EvolvedApiError, isProjectAdmin, projectPath } from './api'
 import { ActionStatus, ConfirmButton, Empty, ErrorNotice, Field, Loading, Panel, submit, useAction } from './ui'
 import { WorkspaceLink } from './workspaceNavigation'
+import { RepositoryWorktreePanel } from './RepositoryWorktree'
 
 type GithubRepository = { id: string; owner: string; name: string; fullName: string; permission: 'read' | 'write' }
 type GithubStatus = { connected: boolean; account?: { id: number; login: string }; repositories: GithubRepository[] }
@@ -143,14 +146,15 @@ function useRepositoryWorkspace(enabled: boolean) {
         busy: !!posting || latest.some(job => job.state === 'running'), refresh, sync }
 }
 
-export function GithubPanel() {
+export function GithubPanel(props: { initialRepositoryId?: string; onRepositorySelect?: (id: string | undefined) => void } = {}) {
     const { api, me, project } = useEvolved()
     if (!project) return <Panel title="GitHub"><Empty>Wähle zuerst ein Projekt.</Empty></Panel>
-    return <GithubForProject key={`${api.baseUrl}:${me.user.id}:${project.id}:${project.role}:${project.profile}`} />
+    return <GithubForProject key={`${api.baseUrl}:${me.user.id}:${project.id}:${project.role}:${project.profile}`} {...props} />
 }
 
-function GithubForProject() {
+function GithubForProject({ initialRepositoryId, onRepositorySelect }: { initialRepositoryId?: string; onRepositorySelect?: (id: string | undefined) => void }) {
     const { api, me, project, refresh } = useEvolved()
+    const workflow = useProjectWorkflow()
     const queryClient = useQueryClient()
     const path = `${projectPath(project!.id)}/github`
     const queryKey = ['evolved', 'github', api.baseUrl, me.user.id, project!.id]
@@ -161,6 +165,9 @@ function GithubForProject() {
     const [token, setToken] = useState('')
     const [replaceConfirmed, setReplaceConfirmed] = useState(false)
     const [repository, setRepository] = useState('')
+    const [openedRepository, setOpenedRepository] = useState(initialRepositoryId)
+    useEffect(() => setOpenedRepository(initialRepositoryId), [initialRepositoryId])
+    const openRepository = (id: string | undefined) => { setOpenedRepository(id); onRepositorySelect?.(id) }
     const [permission, setPermission] = useState<'read' | 'write'>('read')
     const [profileNeedsRefresh, setProfileNeedsRefresh] = useState(false)
     const action = useAction()
@@ -218,6 +225,11 @@ function GithubForProject() {
         setReplaceConfirmed(false)
         run(() => mutate('POST', '', { token: submittedToken }), 'GitHub-Verbindung gespeichert. Gib jetzt die gewünschten Repositorys für dieses Projekt frei.')
     }
+    if (openedRepository) {
+        const chosen = connection?.repositories.find(item => item.id === openedRepository)
+        return chosen ? <RepositoryWorktreePanel repositoryId={chosen.id} name={chosen.fullName} onClose={() => openRepository(undefined)} />
+            : <Panel title="Repository-Arbeitsstand"><ErrorNotice error={status.error} />{status.isPending ? <Loading /> : <p>Dieses Repository ist für das aktuelle Projekt nicht verfügbar.</p>}<button onClick={() => openRepository(undefined)}>Zurück zu den Repositorys</button></Panel>
+    }
     return <div className="ev-stack">
         <Panel title="GitHub für dieses Projekt" description="Verbinde ein GitHub-Konto und gib einzelne Repositorys frei. Die Agenten dieses Projekts verwenden Git über ihren Runner.">
             <ErrorNotice error={status.error} />
@@ -262,6 +274,11 @@ function GithubForProject() {
                     {job?.state === 'failed' && job.message && <small>{job.message}</small>}
                     {!running && workspace.notices[repo.id] && <p role="status" className="ev-repository-progress">{workspace.notices[repo.id]}</p>}
                 </div>
+                <button onClick={() => openRepository(repo.id)} aria-label={`Änderungen ansehen: ${repo.fullName}`}>Änderungen ansehen</button>
+                {canWriteProject(project!.role) && local?.local?.state === 'ready' && !running && workspace.current?.runner.status === 'ready' && <>
+                    <Link to="/sessions/new" search={{ projectId: project!.id, repositoryId: repo.id }}>Sitzung in diesem Repo starten</Link>
+                    {workflow && <WorkspaceLink tab="agents" projectId={project!.id} onClick={() => { workflow.setReview(null); workflow.setRepositoryId(repo.id) }}>Spezialist für dieses Repo</WorkspaceLink>}
+                </>}
                 {unresolved && !running && <><p className="ev-repository-hint">Die Annahme des letzten Auftrags ist unklar. Prüfe den Status oder ordne denselben Auftrag erneut zu; es wird keine neue Auftragsnummer erzeugt.</p>
                     <button className="ev-primary" disabled={busy || workspace.busy || workspace.status.isFetching || !allowed}
                         aria-label={`Auftrag erneut zuordnen: ${repo.fullName}`} onClick={() => void workspace.sync(repo.id, unresolved.action)}>Auftrag erneut zuordnen</button></>}

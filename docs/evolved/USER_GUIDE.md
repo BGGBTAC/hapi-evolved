@@ -11,6 +11,49 @@ Zurück/Vorwärts behalten den Projektkontext; siehe [DESIGN.md](DESIGN.md). Die
 kann über die Installationsfunktion des Browsers zum Startbildschirm hinzugefügt
 werden; Anmeldung und aktuelle Projektdaten benötigen eine Verbindung zum Hub.
 
+## Vom Repository zur nächsten Sitzung
+
+Die Übersicht zeigt die **Projektbereitschaft**: Ordner, Projektdienst,
+Antwortfähigkeit, Agenten, Anmeldung, Checkouts, Codegraph und Wissen werden
+getrennt geprüft. Ein verbundener Dienst allein gilt nicht als bestätigte
+Arbeitsverbindung. Der Status kann bis zu zehn Sekunden zwischengespeichert
+sein; der Prüfzeitpunkt bleibt sichtbar. Den nativen Anmeldestatus sehen
+Projektadministratoren. Der normale Einrichtungsweg ist **Abos verbinden**.
+
+Unter **GitHub** kannst du ein freigegebenes Repository ins Projekt klonen.
+Beim Start einer normalen Sitzung oder eines Spezialisten wählst du optional
+dieses Repository. Ohne Auswahl bleibt der gespeicherte Projektordner das Ziel.
+Ein nicht vorhandener Checkout wird beim Sitzungsstart nicht still angelegt;
+eine entfernte Freigabe führt zu einer verständlichen Ablehnung.
+
+**Arbeitsstand** zeigt die lokalen Änderungen eines Repositorys, auch ohne
+laufende Sitzung. Index-Diff und Arbeitskopie-Diff sind getrennt. Die Anzeige
+führt keinen Fetch aus; Voraus-/Zurück-Zähler beziehen sich auf die lokal
+bekannten Referenzen. Neue, noch nicht von Git erfasste Dateien werden ohne
+Inhaltsvorschau aufgelistet. Sensible, binäre oder zu große Inhalte werden
+zurückgehalten. Ändert sich der Arbeitsstand, aktualisiere die Liste und wähle
+die Dateien erneut aus.
+
+Wähle Dateien und öffne **Auswirkungen prüfen**, um Beziehungen im Codegraph
+zu sehen. Höchstens 20 Dateien werden pro Anfrage ausgewertet; ausgelassene
+Dateien erscheinen ausdrücklich. Testkandidaten sind Hinweise aus Dateinamen
+und Beziehungen, kein Nachweis von Testabdeckung oder bestandenen Tests.
+**Review vorbereiten** übergibt den Kontext an den vorhandenen Spezialisten.
+Der Start erfolgt erst über das Startformular, mit Anbieter und Modell deiner
+Wahl. Der Reviewmodus beschränkt den Agenten; er ist keine eigene OS-Sandbox.
+
+Über **Als Wissen vorschlagen** übernimmst du eine gespeicherte Nachricht oder
+eine aktuelle Quelldatei. Bei einer zusammengefassten Nachrichtenkarte wählst
+du die konkrete Quellnachricht. Der Titel ist bearbeitbar; als Nachrichtentext
+wird das Original oder ein markierter Ausschnitt übernommen. Eigene
+Zusammenfassungen gehören in das manuelle Vorschlagsformular. Quellenangaben
+und Prüfsummen setzt der Server. Der Eintrag bleibt **vorgeschlagen** und muss
+inhaltlich geprüft werden. Eine später geänderte oder entfernte Dateiquelle
+entfernt den davon abgeleiteten Eintrag gemäß der bestehenden Quellenregel.
+Cloudverarbeitung und Budget werden durch diese Aktionen nicht eingeschaltet.
+
+Plan und Grenzen: [Integrierter Projektablauf](PROJECT_WORKFLOW.md).
+
 ## Erstes Konto und Wiederherstellung
 
 1. Trage deinen Benutzernamen und den Einrichtungscode des Betreibers ein.

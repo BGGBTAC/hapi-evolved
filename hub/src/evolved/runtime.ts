@@ -6,8 +6,9 @@ import { EvolvedError, EvolvedStore, privateFile } from './store'
 import { createEvolvedRoutes } from './api'
 import { RemoteVaultClient } from './vault'
 import { createSessionTokenRoutes } from './bridge'
-import { createCodegraphRoutes, startCodegraphSync, enqueueCodegraphDeletion } from './codegraph'
-import { createMemoryRoutes } from './memory'
+import { createCodegraphRoutes, startCodegraphSync, enqueueCodegraphDeletion, queryCodegraph, type CodegraphStatusSnapshot } from './codegraph'
+import { createReadinessRoutes } from './readiness'
+import { createMemoryRoutes, proposeMemoryFile, type MemoryMessageResolver } from './memory'
 import { HttpMemoryBackend, MemoryService } from './memoryService'
 import { createEvolvedRequestGuard } from './security'
 import { createPreviewRoutes } from './previews'
@@ -28,6 +29,7 @@ import type { SyncEngine } from '../sync/syncEngine'
 export type EvolvedRuntime = ReturnType<typeof createEvolvedRuntime>
 export function createEvolvedRuntime(dataDir: string, secret: Uint8Array) {
     let getSyncEngine: () => SyncEngine | null = () => null
+    let resolveMessage: MemoryMessageResolver = () => null
     const originValue = process.env.EVOLVED_ORIGIN
     if (!originValue) throw new Error('EVOLVED_ORIGIN is required in Evolved mode')
     const url = new URL(originValue)
@@ -54,7 +56,8 @@ export function createEvolvedRuntime(dataDir: string, secret: Uint8Array) {
     const vault = new RemoteVaultClient({ url: vaultUrl, signingKeyFile })
     const serviceToken = process.env.EVOLVED_SERVICE_TOKEN_FILE ? privateFile(process.env.EVOLVED_SERVICE_TOKEN_FILE).toString('utf8').trim() : undefined
     const memory = new MemoryService(store, new HttpMemoryBackend(process.env.EVOLVED_MEMORY_URL, serviceToken))
-    const graphOptions = { store, origin, adapterUrl: process.env.EVOLVED_CODEGRAPH_URL, serviceToken }
+    const graphStatus = new Map<string, CodegraphStatusSnapshot>()
+    const graphOptions = { store, origin, adapterUrl: process.env.EVOLVED_CODEGRAPH_URL, serviceToken, statusCache: graphStatus }
     const routes = new Hono()
     routes.use('*', createEvolvedRequestGuard(origin))
     const gitTransport = createGithubGitTransport({ store, vault, origin })
@@ -68,8 +71,19 @@ export function createEvolvedRuntime(dataDir: string, secret: Uint8Array) {
     routes.route('/', createPeerRoutes(store, () => getSyncEngine()))
     routes.route('/', createGithubPrRunnerRoutes(store, () => getSyncEngine(), dataDir))
     routes.route('/', createGithubRoutes({ store, vault, origin }))
-    const repositories = createRepositoryRoutes({ store, vault, origin, getEngine: () => getSyncEngine() })
+    const repositories = createRepositoryRoutes({ store, vault, origin, getEngine: () => getSyncEngine(),
+        queryCodegraph: (project, operation, params) => queryCodegraph(graphOptions, project, operation, params),
+        intakeFile: (request, projectId, path, recheck) => proposeMemoryFile({ store, service: memory, request, projectId, path, recheck })
+    })
     routes.route('/', repositories.routes)
+    routes.route('/', createReadinessRoutes({ store, origin, getEngine: () => getSyncEngine(),
+        graphConfigured: !!graphOptions.adapterUrl && !!serviceToken, graphStatus: id => graphStatus.get(id), memoryAvailable: () => memory.backend.available(),
+        readResource: async (request, projectId, resource) => {
+            // Only fixed internal diagnostic routes. No caller-supplied URL or mutation method.
+            const response = await routes.request(new Request(`${origin}/projects/${encodeURIComponent(projectId)}/${resource}`, { headers: request.headers }))
+            return { status: response.status, body: await response.json().catch(() => null) }
+        }
+    }))
     routes.route('/', createCapacityRoutes(store, () => getSyncEngine(), origin))
     const controlSocket = process.env.EVOLVED_RUNNER_CONTROL_SOCKET
     const controlKeyFile = process.env.EVOLVED_RUNNER_CONTROL_KEY_FILE
@@ -78,19 +92,19 @@ export function createEvolvedRuntime(dataDir: string, secret: Uint8Array) {
     routes.route('/', createProviderRoutes(store, { key: controlKey, control: controlSocket && controlKey ? new UnixProviderControl(controlSocket, controlKey) : undefined }))
     const plugins = new PluginService(store)
     routes.route('/', createPluginRoutes(plugins, origin))
-    routes.route('/', createAgentCatalogRoutes({ store, plugins, origin, getSyncEngine: () => getSyncEngine() }))
+    routes.route('/', createAgentCatalogRoutes({ store, plugins, origin, getSyncEngine: () => getSyncEngine(), repositoryStart: repositories.resolveStart, repositoryReview: repositories.reviewContext }))
     routes.route('/', createSidechannelRoutes(new SidechannelService(store, sidechannelConfig()), () => getSyncEngine(), origin))
     const schedules = new ScheduleService(store, () => getSyncEngine())
     routes.route('/', createScheduleRoutes(schedules, () => getSyncEngine()))
     routes.route('/', createEvolvedRoutes({ store, vault, origin, allowedWorkspaceRoots: roots as string[], repositoryDiscovery: repositories.discovery,
         onProjectDelete: projectId => { memory.forgetProject(projectId); enqueueCodegraphDeletion(store, projectId) } }))
-    routes.route('/', createMemoryRoutes({ store, service: memory, origin }))
+    routes.route('/', createMemoryRoutes({ store, service: memory, origin, resolveMessage: (...args) => resolveMessage(...args) }))
     routes.route('/', createCodegraphRoutes(graphOptions))
     const stopMemory = memory.start()
     const stopGraph = startCodegraphSync(graphOptions)
     const stopSchedules = schedules.start()
     let stopReports: (() => void) | undefined
-    return { store, origin, routes, memory, setSyncEngineProvider(provider: () => SyncEngine | null) {
+    return { store, origin, routes, memory, repositoryStart: repositories.resolveStart, onSessionRemoved: repositories.onSessionRemoved, setMemoryMessageResolver(resolver: MemoryMessageResolver) { resolveMessage = resolver }, setSyncEngineProvider(provider: () => SyncEngine | null) {
         getSyncEngine = provider; stopReports?.()
         const engine = provider()
         stopReports = engine ? new PeerCompletionReporter(store, engine).start() : undefined
