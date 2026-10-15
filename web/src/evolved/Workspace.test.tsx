@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EvolvedMe, EvolvedProject } from './api'
 import EvolvedWorkspace from './Workspace'
-import { parseWorkspaceSearch, readWorkspaceTab, workspaceStorageKey } from './workspaceNavigation'
+import { parseWorkspaceSearch, repositorySearchId, readWorkspaceTab, workspaceStorageKey } from './workspaceNavigation'
 
 const state = vi.hoisted(() => ({ version: 0, listeners: new Set<() => void>(), value: { api: { baseUrl: 'https://hub.example' }, me: { user: { id: 'user-1', displayName: 'Test User', isAdmin: false }, accessibleProjects: [] } as EvolvedMe, project: null as EvolvedProject | null, selectProject: vi.fn(), logout: vi.fn() } }))
 vi.mock('./auth', async () => {
@@ -135,4 +135,10 @@ describe('workspace navigation', () => {
         expect(screen.getByText(/Wähle zuerst ein Projekt/)).toBeInTheDocument()
         expect(router.state.location.search.tab).toBe('providers')
     })
+})
+
+it('accepts unquoted numeric repository links only without numeric precision loss or path syntax', () => {
+    expect(parseWorkspaceSearch({ tab: 'github', project: 'project-1', repository: 101 })).toEqual({ tab: 'github', project: 'project-1', repository: '101' })
+    expect(repositorySearchId('18446744073709551615')).toBe('18446744073709551615')
+    for (const value of [9007199254740992, -1, 1.5, 0, '../101', '01', {}, ['101']]) expect(repositorySearchId(value)).toBeUndefined()
 })

@@ -22,7 +22,7 @@ import { App } from '@/App'
 import EvolvedPage from '@/routes/evolved'
 import { useOptionalEvolved } from '@/evolved/auth'
 import { EvolvedBrand, EvolvedMark } from '@/evolved/Brand'
-import { parseWorkspaceSearch } from '@/evolved/workspaceNavigation'
+import { parseWorkspaceSearch, repositorySearchId } from '@/evolved/workspaceNavigation'
 import { SessionChat } from '@/components/SessionChat'
 import { SessionList } from '@/components/SessionList'
 import { NewSession } from '@/components/NewSession'
@@ -1272,8 +1272,9 @@ const newSessionRoute = createRoute({
     path: 'new',
     validateSearch: (search: Record<string, unknown>): NewSessionSearch => {
         const result: NewSessionSearch = {}
-        if (typeof search.repositoryId === 'string' && /^[1-9][0-9]{0,19}$/.test(search.repositoryId)) {
-            result.repositoryId = search.repositoryId
+        const repositoryId = repositorySearchId(search.repositoryId)
+        if (repositoryId) {
+            result.repositoryId = repositoryId
             if (typeof search.projectId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(search.projectId)) result.projectId = search.projectId
         }
         if (typeof search.directory === 'string' && search.directory) {

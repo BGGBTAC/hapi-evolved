@@ -144,3 +144,38 @@ describe('verified message source proposal', () => {
         expect(screen.queryByLabelText('Titel')).not.toBeInTheDocument()
     })
 })
+
+it('accepts an existing verified deduplicated receipt without retrying or changing its status', async () => {
+    request.mockImplementation(async (path: string) => path.includes('message-source') ? source : { item: { projectId: 'project-a', status: 'verified' } })
+    mount(); fireEvent.click(screen.getByRole('button', { name: 'Propose' }))
+    await screen.findByLabelText('Gespeicherter Nachrichtentext (nur lesen)')
+    fireEvent.click(screen.getByRole('button', { name: 'Vorschlag speichern' }))
+    expect(await screen.findByText(/bereits verifiziert im Projektgedächtnis vorhanden/)).toBeInTheDocument()
+    expect(screen.queryByText(/Speicherstatus ist unklar/)).not.toBeInTheDocument()
+    expect(request.mock.calls.filter(([, options]) => options.method === 'POST')).toHaveLength(1)
+})
+
+it('maps normalized CRLF textarea selection plus emoji back to original source codepoints', async () => {
+    const original = 'First\r\n😀Second\r\nThird'
+    expect(codePointSelection(original, 6, 8)).toEqual({ start: 7, end: 8 })
+    request.mockImplementation(async (path: string) => path.includes('message-source') ? { ...source, body: original } : { item: { projectId: 'project-a', status: 'proposed' } })
+    mount(); fireEvent.click(screen.getByRole('button', { name: 'Propose' }))
+    const input = await screen.findByLabelText('Gespeicherter Nachrichtentext (nur lesen)') as HTMLTextAreaElement
+    expect(input.value).toBe('First\n😀Second\nThird')
+    input.setSelectionRange(6, 8); fireEvent.select(input)
+    fireEvent.click(screen.getByRole('button', { name: 'Markierten Ausschnitt übernehmen' }))
+    expect(screen.getByLabelText('Ausgewählter Ausschnitt')).toHaveTextContent('😀')
+    fireEvent.click(screen.getByRole('button', { name: 'Vorschlag speichern' }))
+    await screen.findByText(/Vorschlag gespeichert/)
+    expect(request.mock.calls.find(([, options]) => options.method === 'POST')?.[1].body.excerpt).toEqual({ start: 7, end: 8 })
+})
+
+it('explains and prevents an excerpt beyond 20000 codepoints while allowing the complete source', async () => {
+    request.mockImplementation(async (path: string) => path.includes('message-source') ? { ...source, body: 'x'.repeat(20001) } : { item: { projectId: 'project-a', status: 'proposed' } })
+    mount(); fireEvent.click(screen.getByRole('button', { name: 'Propose' }))
+    const input = await screen.findByLabelText('Gespeicherter Nachrichtentext (nur lesen)') as HTMLTextAreaElement
+    input.setSelectionRange(0, 20001); fireEvent.select(input)
+    expect(screen.getByText(/Ein Ausschnitt darf höchstens 20.000 Zeichen umfassen/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Markierten Ausschnitt übernehmen' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Vorschlag speichern' })).toBeEnabled()
+})

@@ -61,9 +61,9 @@ function RepositoryWorktreeForScope({ repositoryId, name, onClose }: { repositor
         const controller = new AbortController(); memoryRequest.current = controller
         setMemoryBusy(true); setMemoryError(null); setMemoryNotice('')
         try {
-            await api.request(`${base}/memory-intake`, { method: 'POST', body: { path }, signal: controller.signal })
+            const result = await api.request<{ item: { status: 'proposed' | 'verified' } }>(`${base}/memory-intake`, { method: 'POST', body: { path }, signal: controller.signal })
             if (controller.signal.aborted) return
-            setMemoryNotice('Die aktuelle Datei wurde als Wissensvorschlag übernommen. Noch nicht inhaltlich verifiziert.')
+            setMemoryNotice(result.item.status === 'verified' ? 'Dieser Dateiinhalt ist bereits verifiziert im Projektgedächtnis vorhanden. Sein Status wurde nicht verändert.' : 'Die aktuelle Datei wurde als Wissensvorschlag übernommen. Noch nicht inhaltlich verifiziert.')
             void client.invalidateQueries({ queryKey: ['evolved', 'memory'] })
         } catch (failure) { if (!controller.signal.aborted) setMemoryError(failure) }
         finally { if (!controller.signal.aborted) setMemoryBusy(false); if (memoryRequest.current === controller) memoryRequest.current = null }

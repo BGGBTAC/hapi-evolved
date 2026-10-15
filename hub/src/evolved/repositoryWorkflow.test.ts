@@ -29,13 +29,13 @@ function setup() {
     const cookies = Object.fromEntries(['admin', 'member', 'viewer'].map(id => [id, store.createSession(id)]))
     let granted = true, connected = true, machineId = 'machine', capable = true
     const messages = new Map<string, any[]>(), archived: string[] = []
-    let afterSpawn: (() => void) | undefined
+    let afterSpawn: (() => void) | undefined, afterAssignment: (() => void) | undefined
     const calls: any[] = [], starts: Parameters<SyncEngine['spawnSession']>[] = [], graphCalls: any[] = [], liveSessions = new Set<string>()
     let run: (params: any) => Promise<unknown> = async params => params.action === 'worktree' ? listing() : { path: params.path, side: params.side, patch: '@@ -1 +1 @@\n-old\n+new', binary: false, truncated: false, observedAt: 101 }
     let grantRead: (() => void) | undefined
     const engine = {
         getMachineByNamespace: (id: string, namespace: string) => id === machineId && namespace === project.namespace ? { id, active: true, metadata: { capabilities: [MACHINE_CAPABILITIES.AgentAvailability] } } : undefined,
-        sendMessage: async (id: string, body: any) => { messages.set(id, [body]) },
+        sendMessage: async (id: string, body: any) => { messages.set(id, [body]); afterAssignment?.() },
         getMessagesPage: (id: string) => ({ messages: messages.get(id) ?? [] }),
         archiveSession: async (id: string) => { archived.push(id) },
         getMachine: () => ({ namespace: project.namespace, metadata: { capabilities: [MACHINE_CAPABILITIES.AgentAvailability] } }),
@@ -50,6 +50,7 @@ function setup() {
     const app = new Hono<WebAppEnv>()
     app.onError((error, c) => error instanceof EvolvedError ? c.json({ code: error.code, error: error.message }, error.status as 400) : c.json({ code: 'internal' }, 500))
     app.route('/api/evolved', routes.routes)
+    app.get('/api/evolved/unrelated', c => c.json({ ok: true }))
     app.route('/api/evolved', createAgentCatalogRoutes({ store, origin, plugins: new PluginService(store), getSyncEngine: () => engine, repositoryStart: routes.resolveStart, repositoryReview: routes.reviewContext }))
     app.route('/api/evolved', createSessionTokenRoutes(store, secret, origin))
     app.use('/api/*', createProjectAuthMiddleware(store, secret, origin))
@@ -60,8 +61,9 @@ function setup() {
     const token = async (user = 'member') => { const res = await app.request(`/api/evolved/session-token?projectId=${project.id}`, { headers: { cookie: `__Host-hapi-evolved=${cookies[user]}` } }); return (await res.json() as any).token as string }
     const spawn = async (body: unknown) => app.request('/api/machines/machine/spawn', { method: 'POST', headers: { authorization: `Bearer ${await token()}`, origin, 'content-type': 'application/json' }, body: JSON.stringify(body) })
     cleanups.push(() => { routes.close(); store.close() })
-    return { store, project, second, checkout, cookies, routes, request, load, diff, token, spawn, starts, calls, graphCalls, liveSessions, secret, messages, archived,
+    return { store, project, second, checkout, cookies, routes, request, load, diff, token, spawn, starts, calls, graphCalls, liveSessions, secret, messages, archived, app,
         afterSpawn: (fn: () => void) => { afterSpawn = fn },
+        afterAssignment: (fn: () => void) => { afterAssignment = fn },
         setRun: (value: typeof run) => { run = value }, revoke: () => { granted = false }, disconnect: () => { connected = false }, switchMachine: () => { machineId = 'replacement' }, downgrade: () => { capable = false }, onGrant: (fn: () => void) => { grantRead = fn } }
 }
 describe('repository workflow boundary', () => {
@@ -152,6 +154,71 @@ describe('repository workflow boundary', () => {
         const t = setup(); t.afterSpawn(() => t.revoke())
         expect((await t.request('/agent-catalog/builtin:review/start', { operationId: randomUUID(), machineId: 'machine', task: 'Review', repositoryId: repo.id })).status).toBe(403)
         expect(t.messages.size).toBe(0); expect(t.archived).toEqual(['reserved-session'])
+    })
+    test.each(['spawn', 'assignment'] as const)('a transient Vault failure after %s never archives the known child', async phase => {
+        const t = setup(), body = { operationId: randomUUID(), machineId: 'machine', task: 'Review', repositoryId: repo.id }
+        const fail = () => t.onGrant(() => { throw new EvolvedError('vault_unavailable', 'Temporary vault failure.', 502) })
+        if (phase === 'spawn') t.afterSpawn(fail); else t.afterAssignment(fail)
+        const response = await t.request('/agent-catalog/builtin:review/start', body)
+        expect(response.status).toBe(409)
+        expect(await response.json()).toMatchObject({ code: 'agent_start_indeterminate', reserved: true })
+        expect(t.archived).toEqual([])
+        expect(t.messages.size).toBe(phase === 'assignment' ? 1 : 0)
+        expect(t.store.db.query('SELECT state,session_id FROM evolved_agent_starts WHERE operation_id=?').get(body.operationId)).toEqual({ state: 'indeterminate', session_id: 'reserved-session' })
+        expect((await t.request('/agent-catalog/builtin:review/start', body)).status).toBe(409)
+        expect(t.starts).toHaveLength(1)
+    })
+    test('specialist preparation errors prove no reservation; known reservations never do', async () => {
+        const t = setup(), body = { operationId: randomUUID(), machineId: 'other', task: 'Review', repositoryId: repo.id }
+        let response = await t.request('/agent-catalog/builtin:review/start', body)
+        expect(await response.json()).toMatchObject({ code: 'runner_unavailable', reserved: false })
+        expect(t.store.db.query('SELECT COUNT(*) AS n FROM evolved_agent_starts').get()).toEqual({ n: 0 })
+        body.machineId = 'machine'; t.afterSpawn(() => t.revoke())
+        response = await t.request('/agent-catalog/builtin:review/start', body)
+        expect(await response.json()).toMatchObject({ code: 'repository_access_changed', reserved: true })
+    })
+    test('concurrent specialist preparation cannot mislabel another reservation as editable', async () => {
+        const t = setup(), body = { operationId: randomUUID(), machineId: 'machine', task: 'Review', repositoryId: repo.id }
+        const responses = await Promise.all([t.request('/agent-catalog/builtin:review/start', body), t.request('/agent-catalog/builtin:review/start', body)])
+        expect(t.starts).toHaveLength(1)
+        const conflict = responses.find(response => response.status === 409)
+        expect(conflict).toBeDefined()
+        expect(await conflict!.json()).toMatchObject({ code: 'agent_start_indeterminate', reserved: true })
+    })
+    test('a live diff rejects sync before inserting a job', async () => {
+        const t = setup(); t.store.setProfile('admin', t.project.id, 'workspace'); await t.load()
+        let release!: () => void
+        t.setRun(async params => { await new Promise<void>(resolve => { release = resolve }); return { path: params.path, side: params.side, patch: null, binary: false, truncated: false, observedAt: 101 } })
+        const diff = t.diff()
+        for (let i = 0; !release && i < 50; i++) await new Promise(resolve => setTimeout(resolve, 1))
+        try {
+            const response = await t.request(`/repositories/${repo.id}/sync`, { action: 'pull', requestId: randomUUID() })
+            expect(response.status).toBe(409); expect(await response.json()).toMatchObject({ code: 'repository_busy' })
+            expect(t.store.db.query('SELECT COUNT(*) AS n FROM evolved_repository_jobs').get()).toEqual({ n: 0 })
+            expect(t.calls.map(call => call.action)).toEqual(['worktree', 'diff'])
+        } finally { release() }
+        expect((await diff).status).toBe(200)
+    })
+    test('session deletion removes only the matching namespace link and the project listing is indexed', async () => {
+        const t = setup(); await t.spawn({ repositoryId: repo.id, agent: 'claude' })
+        t.routes.onSessionRemoved('reserved-session', t.second.namespace)
+        expect(t.store.db.query('SELECT COUNT(*) AS n FROM evolved_session_repository_links').get()).toEqual({ n: 1 })
+        t.routes.onSessionRemoved('reserved-session', t.project.namespace)
+        expect(t.store.db.query('SELECT COUNT(*) AS n FROM evolved_session_repository_links').get()).toEqual({ n: 0 })
+        const plan = t.store.db.query('EXPLAIN QUERY PLAN SELECT session_id FROM evolved_session_repository_links WHERE project_id=? AND repository_id=? ORDER BY created_at DESC LIMIT 100').all(t.project.id, repo.id)
+        expect(JSON.stringify(plan)).toContain('evolved_session_repository_links_project')
+    })
+    test('workflow cache headers stay on workflow routes', async () => {
+        const t = setup()
+        expect((await t.load()).headers.get('cache-control')).toContain('no-store')
+        // The repository router's pre-existing generic guard supplies no-store;
+        // the workflow-specific "private" policy must not leak to siblings.
+        expect((await t.app.request('/api/evolved/unrelated')).headers.get('cache-control')).toBe('no-store')
+    })
+    test.each(['bad\u202ename', 'main\nspoof', '-option', 'bad..name', 'branch.lock'])('hub clears unsafe branch/upstream names: %j', async value => {
+        const t = setup(); t.setRun(async () => ({ ...listing(), branch: value, upstream: { name: value, ahead: 0, behind: 0 } }))
+        const response = await t.load(), body = await response.json() as any
+        expect(response.status).toBe(200); expect(body.branch).toBeNull(); expect(body.upstream).toBeNull()
     })
     test('one read per project prevents concurrent worktree and review reads', async () => {
         const t = setup(); let release!: () => void

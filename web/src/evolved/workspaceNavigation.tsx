@@ -22,11 +22,17 @@ export const workspaceGroups = ['Arbeitsplatz', 'Projektwerkzeuge', 'Verwaltung'
 export function isWorkspaceTab(value: unknown): value is WorkspaceTab {
     return typeof value === 'string' && workspacePages.some(page => page.id === value)
 }
+// TanStack decodes unquoted numeric query values as numbers. Accept only exact
+// safe integers; larger repository IDs must remain strings to avoid rounding.
+export function repositorySearchId(value: unknown): string | undefined {
+    const id = typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? String(value) : value
+    return typeof id === 'string' && /^[1-9][0-9]{0,19}$/.test(id) ? id : undefined
+}
 export function parseWorkspaceSearch(search: Record<string, unknown>): WorkspaceSearch {
     return {
         ...(isWorkspaceTab(search.tab) ? { tab: search.tab } : {}),
         ...(typeof search.project === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(search.project) ? { project: search.project } : {}),
-        ...(search.tab === 'github' && typeof search.repository === 'string' && /^[1-9][0-9]{0,19}$/.test(search.repository) ? { repository: search.repository } : {}),
+        ...(search.tab === 'github' && repositorySearchId(search.repository) ? { repository: repositorySearchId(search.repository) } : {}),
     }
 }
 export function requiresProject(tab: WorkspaceTab) { return !['overview', 'projects', 'team', 'providers', 'agents'].includes(tab) }

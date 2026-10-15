@@ -41,7 +41,7 @@ export type CodeStatus = {
 export type CodeDetail = { node: CodeNode; source: string; callers: CodeNode[]; callees: CodeNode[] }
 
 export class EvolvedApiError extends Error {
-    constructor(message: string, public readonly status: number, public readonly code?: string) {
+    constructor(message: string, public readonly status: number, public readonly code?: string, public readonly reserved?: boolean) {
         super(message)
         this.name = 'EvolvedApiError'
     }
@@ -84,6 +84,7 @@ export class EvolvedApi {
                 typeof payload.error === 'string' ? payload.error : `Anfrage fehlgeschlagen (${response.status}).`,
                 response.status,
                 typeof payload.code === 'string' ? payload.code : undefined,
+                typeof payload.reserved === 'boolean' ? payload.reserved : undefined,
             )
         }
         return body as T

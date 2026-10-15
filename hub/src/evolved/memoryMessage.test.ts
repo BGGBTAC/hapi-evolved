@@ -4,6 +4,10 @@ import { createMemoryRoutes } from './memory'
 import { MemoryService } from './memoryService'
 import { memoryHash, type MemoryItem } from './memoryStore'
 import { EvolvedStore } from './store'
+import { Store } from '../store'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 const stores: EvolvedStore[] = []
 afterEach(() => { for (const store of stores.splice(0)) store.close() })
@@ -29,6 +33,30 @@ function setup() {
 }
 const sourceQuery = 'message-source?sessionId=session&messageId=message'
 describe('explicit memory from stored conversation', () => {
+    test('real persisted Hub message roundtrip retains the event source hash during later automatic ingestion', async () => {
+        const f = setup(), directory = mkdtempSync(join(tmpdir(), 'memory-source-roundtrip-'))
+        let hub = new Store(join(directory, 'hub.db'))
+        try {
+            const session = hub.sessions.getOrCreateSession('memory-source', {}, null, f.project.namespace)
+            const eventMessage = hub.messages.addMessage(session.id, { role: 'user', content: { type: 'text', text: 'Stored source 😀\r\n'.repeat(1000) } })
+            const eventBody = JSON.stringify(eventMessage.content)
+            hub.close(); hub = new Store(join(directory, 'hub.db'))
+            const app = new Hono().route('/api/evolved', createMemoryRoutes({ store: f.store, service: f.service, origin: 'https://hapi.test', resolveMessage: (namespace, sessionId, messageId) => {
+                if (hub.sessions.getSession(sessionId)?.namespace !== namespace) return null
+                return hub.messages.getMessageById(sessionId, messageId)
+            } }))
+            const token = f.store.createSession('alice'), base = `https://hapi.test/api/evolved/projects/${f.project.id}/memory`
+            const headers = { cookie: `__Host-hapi-evolved=${token}`, origin: 'https://hapi.test', 'content-type': 'application/json' }
+            const source = await (await app.request(`${base}/message-source?sessionId=${session.id}&messageId=${eventMessage.id}`, { headers })).json() as { sourceHash: string }
+            expect(source.sourceHash).toBe(memoryHash(eventBody))
+            const response = await app.request(`${base}/from-message`, { method: 'POST', headers, body: JSON.stringify({ sessionId: session.id, messageId: eventMessage.id, expectedSourceHash: source.sourceHash, title: 'Persisted message', excerpt: { start: 0, end: 12 } }) })
+            expect(response.status).toBe(201)
+            const { item } = await response.json() as { item: MemoryItem }
+            f.service.ledger.configure(f.project.id, { enabled: true, cloudAllowed: true, monthlyBudgetMicros: 100, jobBudgetMicros: 20 }, 'alice')
+            f.service.ingestHubEvent({ namespace: f.project.namespace, sessionId: session.id, messageId: eventMessage.id, body: eventBody })
+            expect(f.service.ledger.get(f.project.id, item.id)).not.toBeNull()
+        } finally { hub.close(); rmSync(directory, { recursive: true, force: true }) }
+    })
     test('projects visible text, binds the raw Hub source hash, preserves proposed status and deduplicates', async () => {
         const f = setup(), source = await f.request(sourceQuery)
         expect(source.status).toBe(200); expect(source.headers.get('cache-control')).toBe('private, no-store')

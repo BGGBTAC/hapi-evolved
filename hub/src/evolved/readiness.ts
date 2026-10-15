@@ -50,9 +50,11 @@ export function createReadinessRoutes(options: {
             const cached = cache.get(cacheKey)
             if (cached) { c.header('Cache-Control', 'private, no-store'); return c.json(cached.value) }
             const capabilities = machine?.metadata?.capabilities ?? []
-            const capable = capabilities.includes(MACHINE_CAPABILITIES.EvolvedRepositories) && capabilities.includes(MACHINE_CAPABILITIES.EvolvedRepositoryWorktree)
+            const capable = capabilities.includes(MACHINE_CAPABILITIES.EvolvedRepositories)
             const runnerState: ReadinessState = !candidates.length ? 'missing' : !machine || !capable ? 'stale' : 'ok'
             add('runner', 'Projektdienst', runnerState, !candidates.length ? 'runner_offline' : !machine ? 'runner_ambiguous' : !capable ? 'runner_upgrade_required' : 'runner_connected', !candidates.length ? 'Noch kein Projektdienst verbunden.' : !machine ? 'Mehrere Projektdienste sind für diesen Ordner verbunden.' : !capable ? 'Der Projektdienst benötigt ein Update.' : 'Der Projektdienst ist verbunden.', providerAction)
+            const worktreeState: ReadinessState = runnerState !== 'ok' ? runnerState : capabilities.includes(MACHINE_CAPABILITIES.EvolvedRepositoryWorktree) ? 'ok' : 'stale'
+            add('worktree', 'Änderungsansicht', worktreeState, worktreeState === 'ok' ? 'worktree_ready' : 'runner_upgrade_required', worktreeState === 'ok' ? 'Der Projektdienst unterstützt die lokale Änderungsansicht.' : 'Für die Änderungsansicht ist ein erreichbarer, aktueller Projektdienst nötig. Bestehende Sitzungsfunktionen bleiben unabhängig davon.', providerAction)
             const settled = await Promise.allSettled([
                 machine && capable && engine ? engine.evolvedRepositories(machine.id, { action: 'status', projectId: project.id, repositories: [] }, 3000) : Promise.reject(new Error('unavailable')),
                 machine && engine && project.role !== 'viewer' && capabilities.includes(MACHINE_CAPABILITIES.AgentAvailability) ? engine.getAgentAvailability(machine.id) : Promise.reject(new Error('unavailable')),
@@ -90,7 +92,7 @@ export function createReadinessRoutes(options: {
             if (current.role !== project.role || current.profile !== project.profile || current.rootPath !== project.rootPath || current.namespace !== project.namespace) throw new EvolvedError('project_changed', 'Der Projektzugriff wurde geändert. Bitte neu laden.', 403)
             const nowMachines = options.getEngine()?.getOnlineMachinesByNamespace(project.namespace).filter(item => item.metadata?.workspaceRoots?.length === 1 && item.metadata.workspaceRoots[0] === project.rootPath) ?? []
             if (nowMachines.length !== candidates.length || nowMachines[0]?.id !== machine?.id) {
-                for (const item of items) if (['runner', 'rpc', 'agents', 'providers', 'repositories'].includes(item.key)) { item.state = 'stale'; item.reasonCode = 'runner_changed'; item.detail = 'Der Projektdienst hat sich während der Prüfung geändert.' }
+                for (const item of items) if (['runner', 'worktree', 'rpc', 'agents', 'providers', 'repositories'].includes(item.key)) { item.state = 'stale'; item.reasonCode = 'runner_changed'; item.detail = 'Der Projektdienst hat sich während der Prüfung geändert.' }
             }
             const states = (keys: string[]) => items.filter(item => keys.includes(item.key)).map(item => item.state)
             const plan = folded(states(['workspace', 'runner', 'rpc', 'agents', ...(providerState === 'denied' ? [] : ['providers'])]))

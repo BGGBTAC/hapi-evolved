@@ -44,20 +44,25 @@ const safeError = (error: unknown) => error instanceof RepositoryWorkspaceError 
 type Anchor = { handle: FileHandle; path: string; dev: number; ino: number }
 class Paths {
     readonly anchors: Anchor[] = []
+    // Stat-only worktree ancestors retain their identities, not an open FD for
+    // every changed directory. Fixed project/repository anchors stay pinned.
+    readonly directories = new Map<string, Omit<Anchor, 'handle'>>()
     target?: Anchor
     git?: Anchor
     deadline = Date.now() + 240_000
     constructor(readonly root: string, readonly repository: WorkspaceRepository) {}
     async open(path: string, source = path): Promise<Anchor> {
         const handle = await open(source, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
-        const stat = await handle.stat()
-        const anchor = { handle, path, dev: stat.dev, ino: stat.ino }
-        this.anchors.push(anchor)
-        return anchor
+        try {
+            const stat = await handle.stat()
+            const anchor = { handle, path, dev: stat.dev, ino: stat.ino }
+            this.anchors.push(anchor)
+            return anchor
+        } catch (error) { await handle.close(); throw error }
     }
     async check() {
         this.remaining()
-        for (const anchor of this.anchors) {
+        for (const anchor of [...this.anchors, ...this.directories.values()]) {
             const stat = await lstat(anchor.path).catch(() => fail('unsafe_path'))
             if (!stat.isDirectory() || stat.isSymbolicLink() || stat.dev !== anchor.dev || stat.ino !== anchor.ino) fail('unsafe_path')
         }
@@ -109,7 +114,13 @@ export function createRepositoryWorkspace(options: { proxyOrigin?: string; comma
     const origin = new URL(options.proxyOrigin ?? 'http://runner-proxy:3010')
     if (origin.protocol !== 'http:' || !['runner-proxy', '127.0.0.1', '[::1]'].includes(origin.hostname)
         || origin.username || origin.password || origin.pathname !== '/' || origin.search || origin.hash) fail('invalid_repository')
-    const running = new Set<string>()
+    const writing = new Set<string>()
+    const readers = new Map<string, number>()
+    const beginRead = (root: string) => { readers.set(root, (readers.get(root) ?? 0) + 1) }
+    const endRead = (root: string) => {
+        const remaining = (readers.get(root) ?? 1) - 1
+        if (remaining > 0) readers.set(root, remaining); else readers.delete(root)
+    }
     const environment: NodeJS.ProcessEnv = {
         PATH: '/usr/bin:/bin', HOME: '/nonexistent', LANG: 'C', LC_ALL: 'C',
         GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_ATTR_NOSYSTEM: '1',
@@ -268,21 +279,32 @@ export function createRepositoryWorkspace(options: { proxyOrigin?: string; comma
         if (!paths.target || !isSafeSourcePath(path)) fail('unsafe_path')
         const segments = path.split('/')
         let parent = paths.target
-        for (const segment of segments.slice(0, -1)) {
-            const canonical = join(parent.path, segment)
-            let next = paths.anchors.find(anchor => anchor.path === canonical)
-            if (!next) {
-                try { next = await paths.open(canonical, join(fdPath(parent.handle), segment)) }
-                catch (error) { if (errorCode(error) === 'ENOENT') return null; fail('unsafe_path') }
-            }
-            parent = next
-        }
+        let temporary: FileHandle | undefined
         try {
+            for (const segment of segments.slice(0, -1)) {
+                paths.remaining()
+                const canonical = join(parent.path, segment)
+                let handle: FileHandle
+                try { handle = await open(join(fdPath(parent.handle), segment), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW) }
+                catch (error) { if (errorCode(error) === 'ENOENT') return null; fail('unsafe_path') }
+                let next: Anchor
+                try {
+                    const info = await handle.stat()
+                    const previous = paths.directories.get(canonical)
+                    if (previous && (previous.dev !== info.dev || previous.ino !== info.ino)) fail('unsafe_path')
+                    next = { handle, path: canonical, dev: info.dev, ino: info.ino }
+                    paths.directories.set(canonical, { path: canonical, dev: info.dev, ino: info.ino })
+                } catch (error) { await handle.close(); throw error }
+                await temporary?.close()
+                temporary = handle
+                parent = next
+            }
             const info = await lstat(join(fdPath(parent.handle), segments.at(-1)!), { bigint: true })
             if (!info.isFile() && !info.isSymbolicLink() && !info.isDirectory()) fail('unsafe_path')
             if (info.isFile() && info.nlink !== 1n) fail('unsafe_path')
             return { stamp: [info.dev, info.ino, info.mode, info.size, info.mtimeNs, info.ctimeNs].map(String), kind: info.isSymbolicLink() ? 'symlink' as const : info.isDirectory() ? 'unknown' as const : 'file' as const }
         } catch (error) { if (errorCode(error) === 'ENOENT') return null; throw error }
+        finally { await temporary?.close() }
     }
     async function indexIdentity(paths: Paths) {
         if (!paths.git) fail('configuration')
@@ -367,8 +389,8 @@ export function createRepositoryWorkspace(options: { proxyOrigin?: string; comma
     }
     async function readRepositoryWorktree(root: string, repository: WorkspaceRepository): Promise<RepoWorktree> {
         const empty = (state: RepoWorktree['state'], message: string): RepoWorktree => ({ repositoryId: repository.id, state, message, branch: null, detached: false, head: null, snapshotId: null, observedAt: Date.now(), files: [], truncated: false })
-        if (running.has(root)) return empty('syncing', messages.busy)
-        running.add(root)
+        if (writing.has(root)) return empty('syncing', messages.busy)
+        beginRead(root)
         const paths = new Paths(root, repository); paths.deadline = Date.now() + 10_000
         try {
             if (!await paths.initialize(false)) return empty('missing', messages.missing)
@@ -377,13 +399,13 @@ export function createRepositoryWorkspace(options: { proxyOrigin?: string; comma
         } catch (error) {
             const safe = safeError(error)
             return empty(['unavailable', 'timeout', 'changed'].includes(safe.code) ? 'unknown' : 'blocked', safe.message)
-        } finally { await paths.close(); running.delete(root) }
+        } finally { try { await paths.close() } finally { endRead(root) } }
     }
     async function readRepositoryDiff(root: string, repository: WorkspaceRepository, raw: RepoDiffRequest): Promise<RepoDiff> {
         const request = RepoDiffRequestSchema.parse(raw)
         if (!isSafeSourcePath(request.path) || Buffer.byteLength(request.path) > 1024 || containsCredential(request.path)) fail('invalid_repository')
-        if (running.has(root)) fail('busy')
-        running.add(root)
+        if (writing.has(root)) fail('busy')
+        beginRead(root)
         const paths = new Paths(root, repository); paths.deadline = Date.now() + 8000
         const result: RepoDiff = { path: request.path, side: request.side, patch: null, binary: false, truncated: false, observedAt: Date.now() }
         try {
@@ -416,10 +438,14 @@ export function createRepositoryWorkspace(options: { proxyOrigin?: string; comma
             result.observedAt = Date.now()
             return result
         } catch (error) { throw safeError(error) }
-        finally { await paths.close(); running.delete(root) }
+        finally { try { await paths.close() } finally { endRead(root) } }
     }
     async function inspectRepositories(root: string, repositories: WorkspaceRepository[]) {
-        if (running.has(root)) return repositories.map(repository => ({ id: repository.id, local: { state: 'unknown' as const, branch: null, dirty: null, message: messages.busy } }))
+        if (writing.has(root)) return repositories.map(repository => ({ id: repository.id, local: { state: 'unknown' as const, branch: null, dirty: null, message: messages.busy } }))
+        // Catalog inspection is a best-effort observation, not a protected diff
+        // snapshot. It never reserves the project against a user-requested sync.
+        // Git optional index writes remain disabled, and path/config checks fail
+        // closed if concurrent activity invalidates this observation.
         const deadline = Date.now() + 10_000, results: Array<{ id: string; local: RepositoryLocal }> = []
         for (const repository of repositories) {
             const paths = new Paths(root, repository)
@@ -438,8 +464,8 @@ export function createRepositoryWorkspace(options: { proxyOrigin?: string; comma
         return results
     }
     async function syncRepository(root: string, repository: WorkspaceRepository, action: 'clone' | 'pull', authorize: () => Promise<void>): Promise<RepositoryLocal> {
-        if (running.has(root)) fail('busy')
-        running.add(root)
+        if (writing.has(root) || readers.has(root)) fail('busy')
+        writing.add(root)
         const paths = new Paths(root, repository)
         try {
             if (!['clone', 'pull'].includes(action)) fail('invalid_repository')
@@ -499,7 +525,7 @@ export function createRepositoryWorkspace(options: { proxyOrigin?: string; comma
             return { state: 'ready', branch: after.branch, dirty: after.dirty }
         } catch (error) {
             throw error instanceof RepositoryWorkspaceError ? error : new RepositoryWorkspaceError('git_failed')
-        } finally { await paths.close(); running.delete(root) }
+        } finally { try { await paths.close() } finally { writing.delete(root) } }
     }
     return { inspectRepositories, syncRepository, readRepositoryWorktree, readRepositoryDiff }
 }

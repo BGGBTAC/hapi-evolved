@@ -121,7 +121,7 @@ it('uncertain start retains exact operation ID and payload; confirmed replay ope
 
 it('preflight rejection allows correcting a task without trapping the user in uncertain-start recovery', async () => {
     context.api.request.mockImplementation(async (path: string) => {
-        if (path.endsWith('/start')) throw new EvolvedApiError('Auftrag ist zu lang', 400, 'agent_prompt_limit')
+        if (path.endsWith('/start')) throw new EvolvedApiError('Auftrag ist zu lang', 400, 'agent_prompt_limit', false)
         return path === '/plugins' ? { plugins } : catalog()
     })
     mount()
@@ -140,7 +140,7 @@ it('a later preflight error cannot unlock an already uncertain operation or repl
         if (path.endsWith('/start')) {
             starts.push(options.body!)
             if (starts.length === 1) throw new Error('Antwort verloren')
-            throw new EvolvedApiError('Runner nicht erreichbar', 409, 'runner_unavailable')
+            throw new EvolvedApiError('Runner nicht erreichbar', 409, 'runner_unavailable', false)
         }
         return path === '/plugins' ? { plugins } : catalog()
     })
@@ -278,4 +278,32 @@ it('review context prefills only the builtin reviewer and requires explicit star
     expect(context.api.request.mock.calls.some(([path]) => path.endsWith('/start'))).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: 'Jetzt starten' }))
     await waitFor(() => expect(context.api.request).toHaveBeenCalledWith('/projects/project-1/agent-catalog/builtin%3Areview/start', expect.objectContaining({ body: expect.objectContaining({ repositoryId: '101', review: { snapshotId: 'b'.repeat(64), paths: ['src/a,b.ts'] } }) })))
+})
+
+it('shows a scoped repository start intent before selecting a specialist without automatically starting', async () => {
+    repositoryChoices.items = [{ id: '101', fullName: 'example/app', local: { state: 'ready' } }]
+    function Trigger() { const workflow = useProjectWorkflow()!; return <><button onClick={() => workflow.setRepositoryId('101')}>Repo intent</button><AgentsPluginsPanel /></> }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><ProjectWorkflowProvider><Trigger /></ProjectWorkflowProvider></QueryClientProvider>)
+    await screen.findByText('Prüfer'); fireEvent.click(screen.getByRole('button', { name: 'Repo intent' }))
+    expect(screen.getByText(/Repository-ID 101 ist für den nächsten Start vorausgewählt/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Repo-Vorauswahl verwerfen' }))
+    expect(screen.queryByText(/Repository-ID 101 ist für den nächsten Start vorausgewählt/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Repo intent' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Aufgabe starten' }))
+    expect(screen.getByLabelText(/^Arbeitsort/)).toHaveValue('101')
+    expect(context.api.request.mock.calls.some(([path]) => path.endsWith('/start'))).toBe(false)
+})
+
+it.each([['repository_read_busy', false, false], ['repository_checkout_unavailable', false, false], ['repository_access_changed', false, false], ['repository_access_changed', true, true], ['worktree_changed', undefined, true]])('uses the explicit reservation marker for %s rather than guessing from the code', async (code, reserved, uncertain) => {
+    context.api.request.mockImplementation(async (path: string) => {
+        if (path.endsWith('/start')) throw new EvolvedApiError('Repository check failed', 409, code as string, reserved as boolean | undefined)
+        return path === '/plugins' ? { plugins } : catalog()
+    })
+    mount(); fireEvent.click(await screen.findByRole('button', { name: 'Aufgabe starten' }))
+    fireEvent.change(screen.getByLabelText('Aufgabe'), { target: { value: 'Check repository' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Jetzt starten' }))
+    await screen.findByText('Repository check failed')
+    expect((screen.getByLabelText('Aufgabe') as HTMLTextAreaElement).disabled).toBe(uncertain)
+    expect(Boolean(screen.queryByText(/Die Startbestätigung fehlt/))).toBe(uncertain)
 })

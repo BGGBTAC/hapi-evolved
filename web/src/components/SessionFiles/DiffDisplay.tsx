@@ -32,4 +32,3 @@ export function DiffDisplay(props: { diffContent: string }) {
         </div>
     )
 }
-

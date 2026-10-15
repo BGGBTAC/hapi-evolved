@@ -112,3 +112,12 @@ it('session repository links are project scoped and disappear after access error
     expect(await screen.findByRole('button', { name: /Zuordnung erneut prüfen/ })).toBeInTheDocument()
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
 })
+
+it('reports an already verified file-memory deduplication without claiming a new unverified item', async () => {
+    const original = context.api.request.getMockImplementation()!
+    context.api.request.mockImplementation(async (path, options) => path.endsWith('/memory-intake') ? { item: { status: 'verified' } } : original(path, options))
+    mount(); fireEvent.click(await screen.findByRole('button', { name: 'Als Wissen vorschlagen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Bestätigen' }))
+    expect(await screen.findByText(/Dieser Dateiinhalt ist bereits verifiziert/)).toBeInTheDocument()
+    expect(context.api.request.mock.calls.filter(([, options]) => options.method === 'PATCH')).toHaveLength(0)
+})

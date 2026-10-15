@@ -104,7 +104,7 @@ export function createEvolvedRuntime(dataDir: string, secret: Uint8Array) {
     const stopGraph = startCodegraphSync(graphOptions)
     const stopSchedules = schedules.start()
     let stopReports: (() => void) | undefined
-    return { store, origin, routes, memory, repositoryStart: repositories.resolveStart, setMemoryMessageResolver(resolver: MemoryMessageResolver) { resolveMessage = resolver }, setSyncEngineProvider(provider: () => SyncEngine | null) {
+    return { store, origin, routes, memory, repositoryStart: repositories.resolveStart, onSessionRemoved: repositories.onSessionRemoved, setMemoryMessageResolver(resolver: MemoryMessageResolver) { resolveMessage = resolver }, setSyncEngineProvider(provider: () => SyncEngine | null) {
         getSyncEngine = provider; stopReports?.()
         const engine = provider()
         stopReports = engine ? new PeerCompletionReporter(store, engine).start() : undefined

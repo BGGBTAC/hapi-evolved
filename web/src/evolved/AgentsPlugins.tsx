@@ -96,14 +96,10 @@ function AgentsPluginsForContext() {
                 if (result.operationId !== saved.operationId || result.acknowledged !== 'persisted' || typeof result.sessionId !== 'string') throw new Error('Startbestätigung konnte nicht geprüft werden.')
                 if (mounted.current) { setSessionId(result.sessionId); setStart(null); setStartUncertain(false); setNotice('Aufgabe wurde dauerhaft an die Sitzung übergeben.') }
             } catch (failure) {
-                // These errors occur before the backend reserves/spawns a start.
-                // A previously uncertain operation stays uncertain even if a later
-                // retry cannot reach its runner. Generic 403 can also occur after spawn.
-                const safeToEdit = !startUncertain && failure instanceof EvolvedApiError && [
-                    'invalid_body', 'agent_prompt_limit', 'runner_unavailable', 'runner_upgrade_required',
-                    'project_root_unavailable', 'agent_start_rate_limited',
-                    'worktree_changed', 'invalid_review_context', 'repository_unavailable',
-                ].includes(failure.code ?? '')
+                // Codes can recur after a child has started. Only the explicit
+                // server reservation marker proves a new attempt is safe to edit.
+                // A previously uncertain operation never loses that protection.
+                const safeToEdit = !startUncertain && failure instanceof EvolvedApiError && failure.reserved === false
                 if (mounted.current && !signal.aborted) setStartUncertain(!safeToEdit)
                 throw failure
             }
@@ -125,7 +121,7 @@ function AgentsPluginsForContext() {
         }, true)
     }
 
-    return <div className="ev-agent-layout"><ErrorNotice error={error || catalog.error || plugins.error} />{notice && <p className="ev-success" role="status">{notice}</p>}{sessionId && <Link to="/sessions/$sessionId" params={{ sessionId }} className="ev-primary">Sitzung öffnen</Link>}
+    return <div className="ev-agent-layout">{workflow?.repositoryId && !start && <p className="ev-callout">Repository-ID {workflow.repositoryId} ist für den nächsten Start vorausgewählt. Wähle einen Spezialisten; Freigabe und lokaler Ordner werden vor dem Start erneut geprüft. <button type="button" onClick={() => workflow.setRepositoryId(null)}>Repo-Vorauswahl verwerfen</button></p>}<ErrorNotice error={error || catalog.error || plugins.error} />{notice && <p className="ev-success" role="status">{notice}</p>}{sessionId && <Link to="/sessions/$sessionId" params={{ sessionId }} className="ev-primary">Sitzung öffnen</Link>}
         <Panel title="Agenten für alle Projekte" description="Wiederverwendbare Rollen, Anweisungen und Fähigkeiten. Jeder Start übernimmt die Berechtigungen und den Ordner des gewählten Projekts.">
             <div className="ev-agent-toolbar"><input aria-label="Agenten durchsuchen" placeholder="Agenten durchsuchen …" value={search} onChange={event => setSearch(event.target.value)} />{canManage && <button disabled={busy} onClick={() => setEditor(emptyDefinition())}>Agent erstellen</button>}<button disabled={busy || catalog.isFetching} onClick={() => void catalog.refetch()}>Aktualisieren</button></div>
             {!project && <p className="ev-callout">Wähle oben ein Projekt, um einen Agenten darin zu starten. Der Katalog gilt für alle Projekte.</p>}

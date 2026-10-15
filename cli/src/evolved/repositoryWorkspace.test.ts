@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { execFileSync, spawn } from 'node:child_process'
+import { constants } from 'node:fs'
 import { createServer, type Server } from 'node:http'
-import { chmod, lstat, mkdir, mkdtemp, readFile, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { chmod, link, lstat, mkdir, mkdtemp, open, readFile, readdir, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createRepositoryWorkspace, RepositoryWorkspaceError, type WorkspaceRepository } from './repositoryWorkspace'
@@ -13,6 +14,14 @@ let directory: string, root: string, source: string, bare: string, server: Serve
 let workspace: ReturnType<typeof createRepositoryWorkspace>, origin: string
 let requests: string[], beforeResponse: (() => Promise<void>) | undefined
 const authorize = async () => {}
+async function observeIndex(path: string) {
+    const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+    try {
+        const info = await handle.stat({ bigint: true })
+        expect(info.isFile()).toBe(true)
+        return { bytes: await handle.readFile(), identity: [info.dev, info.ino, info.mtimeNs] }
+    } finally { await handle.close() }
+}
 
 beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), 'evolved-repository-'))
@@ -66,13 +75,12 @@ describe('read-only project worktree and diff', () => {
     it('observes a clean checkout without changing the index, HEAD, config or contacting a remote', async () => {
         await clone(); requests.length = 0
         const index = join(repo.path, '.git/index'), config = join(repo.path, '.git/config')
-        const before = { index: await readFile(index), stat: await stat(index, { bigint: true }), config: await readFile(config), head: git(repo.path, 'rev-parse', 'HEAD') }
+        const before = { index: await observeIndex(index), config: await readFile(config), head: git(repo.path, 'rev-parse', 'HEAD') }
         const first = await observe(), second = await observe()
         expect(RepoWorktreeSchema.safeParse(first).success).toBe(true)
         expect(first).toMatchObject({ state: 'ready', branch: 'main', detached: false, head: before.head, files: [], truncated: false, upstream: { name: 'origin/main', ahead: 0, behind: 0 } })
         expect(second.snapshotId).toBe(first.snapshotId)
-        expect(await readFile(index)).toEqual(before.index)
-        expect((await stat(index, { bigint: true })).mtimeNs).toBe(before.stat.mtimeNs)
+        expect(await observeIndex(index)).toEqual(before.index)
         expect(await readFile(config)).toEqual(before.config)
         expect(git(repo.path, 'rev-parse', 'HEAD')).toBe(before.head); expect(requests).toHaveLength(0)
     })
@@ -80,15 +88,49 @@ describe('read-only project worktree and diff', () => {
         await clone(); requests.length = 0
         await writeFile(join(repo.path, 'README.md'), 'staged change\n'); git(repo.path, 'add', '--', 'README.md')
         await writeFile(join(repo.path, 'README.md'), 'unstaged change\n')
-        const index = join(repo.path, '.git/index'), original = await readFile(index), timestamp = (await stat(index, { bigint: true })).mtimeNs
+        const index = join(repo.path, '.git/index'), original = await observeIndex(index)
         const worktree = await observe()
         expect(worktree.files).toEqual([{ path: 'README.md', index: 'M', worktree: 'M', kind: 'file' }])
         const staged = await diff('README.md', 'staged', worktree.snapshotId!)
         expect(staged.patch).toContain('-initial\n+staged change'); expect(staged.patch).not.toContain('unstaged change')
         const unstaged = await diff('README.md', 'unstaged', worktree.snapshotId!)
         expect(unstaged.patch).toContain('-staged change\n+unstaged change')
-        expect(await readFile(index)).toEqual(original); expect((await stat(index, { bigint: true })).mtimeNs).toBe(timestamp)
+        expect(await observeIndex(index)).toEqual(original)
         expect(requests).toHaveLength(0)
+    })
+    it('keeps inspection ready during concurrent reads and rejects mutation until all readers finish', async () => {
+        await clone(); await writeFile(join(repo.path, 'README.md'), 'concurrent read fixture\n')
+        const snapshot = (await observe()).snapshotId!
+        const pendingDiff = workspace.readRepositoryDiff(root, repo, { path: 'README.md', side: 'unstaged', snapshotId: snapshot })
+        const pendingInspection = workspace.inspectRepositories(root, [repo])
+        const pendingRead = observe()
+        // A fast missing-repository read must release only its own reader count.
+        const missingRepo = { ...repo, id: '124', name: 'missing', fullName: `${repo.owner}/missing`, cloneUrl: `https://github.com/${repo.owner}/missing.git`, path: join(root, 'repositories', repo.owner, 'missing') }
+        expect(await workspace.readRepositoryWorktree(root, missingRepo)).toMatchObject({ state: 'missing' })
+        await expect(pull()).rejects.toMatchObject({ code: 'busy' })
+        expect((await pendingDiff).patch).toContain('+concurrent read fixture')
+        expect((await pendingInspection)[0]?.local).toMatchObject({ state: 'ready', dirty: true })
+        expect(await pendingRead).toMatchObject({ state: 'ready' })
+        // The read guards are now all released; Git's dirty-worktree check applies.
+        await expect(pull()).rejects.toMatchObject({ code: 'dirty' })
+    })
+    it('does not leak a reader reservation after a failed diff', async () => {
+        await clone(); await writeFile(join(repo.path, 'README.md'), 'change\n')
+        await expect(diff('README.md', 'unstaged', 'a'.repeat(64))).rejects.toMatchObject({ code: 'changed' })
+        const invalid = { ...repo, path: `${repo.path}/invalid` }
+        expect((await workspace.inspectRepositories(root, [invalid]))[0]?.local.state).toBe('blocked')
+        await expect(pull()).rejects.toMatchObject({ code: 'dirty' })
+    })
+    it('allows actual fast-forward sync while a catalog inspection is still pending', async () => {
+        await clone(); await upstream()
+        let completed = false
+        const inspection = workspace.inspectRepositories(root, [repo, repo, repo]).finally(() => { completed = true })
+        expect(completed).toBe(false)
+        const result = await pull()
+        expect(result).toMatchObject({ state: 'ready', branch: 'main', dirty: false })
+        expect(git(repo.path, 'rev-parse', 'HEAD')).toBe(git(source, 'rev-parse', 'HEAD'))
+        expect(await inspection).toHaveLength(3)
+        expect((await workspace.inspectRepositories(root, [repo]))[0]?.local).toMatchObject({ state: 'ready', dirty: false })
     })
     it('reads detached and unborn worktrees while keeping mutation restrictions separate', async () => {
         await clone(); git(repo.path, 'checkout', '--detach')
@@ -213,6 +255,38 @@ describe('read-only project worktree and diff', () => {
         expect(Buffer.byteLength(JSON.stringify(state))).toBeLessThan(1_048_576)
         expect(RepoWorktreeSchema.safeParse(state).success).toBe(true)
         await expect(diff('untracked-2000.txt', 'unstaged', state.snapshotId!)).rejects.toMatchObject({ code: 'changed' })
+    })
+    it('bounds open descriptors when changed files span more than a thousand directories', async () => {
+        await clone()
+        for (let i = 0; i < 1100; i++) {
+            const parent = join(repo.path, `directory-${i}`, 'nested')
+            await mkdir(parent, { recursive: true }); await writeFile(join(parent, 'file.txt'), 'fixture')
+        }
+        const initial = (await readdir('/proc/self/fd')).length
+        let peak = initial, sampling = false
+        const timer = setInterval(() => {
+            if (sampling) return
+            sampling = true
+            void readdir('/proc/self/fd').then(files => { peak = Math.max(peak, files.length) }).finally(() => { sampling = false })
+        }, 2)
+        try {
+            const state = await observe()
+            expect(state).toMatchObject({ state: 'ready', totalFiles: 1100, truncated: false })
+            expect(peak - initial).toBeLessThan(32)
+        } finally { clearInterval(timer) }
+        expect((await readdir('/proc/self/fd')).length).toBeLessThan(initial + 4)
+    }, 20_000)
+    it.each(['symlink', 'hardlink', 'fifo'] as const)('rejects a %s hidden inside a loose-object directory before Git reads it', async kind => {
+        await clone()
+        const outside = join(directory, 'outside-object')
+        await writeFile(outside, 'synthetic external object fixture')
+        const object = join(repo.path, '.git/objects/aa', 'b'.repeat(38))
+        await mkdir(dirname(object), { recursive: true })
+        if (kind === 'symlink') await symlink(outside, object)
+        else if (kind === 'hardlink') await link(outside, object)
+        else execFileSync('/usr/bin/mkfifo', [object])
+        expect(await observe()).toMatchObject({ state: 'blocked', snapshotId: null })
+        expect(await readFile(outside, 'utf8')).toBe('synthetic external object fixture')
     })
     it('represents unmerged files without generating a combined conflict patch', async () => {
         await clone(); git(repo.path, 'checkout', '-b', 'side')

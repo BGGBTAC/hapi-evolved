@@ -10,9 +10,17 @@ import { WorkspaceLink } from './workspaceNavigation'
 
 type MessageSource = { sessionId: string; messageId: string; body: string; sourceHash: string; title: string }
 export function codePointSelection(text: string, start: number, end: number) {
-    const middle = (index: number) => index > 0 && /[\uD800-\uDBFF]/.test(text[index - 1] ?? '') && /[\uDC00-\uDFFF]/.test(text[index] ?? '')
+    // Textarea offsets use UTF-16 and normalize CRLF/CR to LF. The server
+    // extracts from the unchanged original text using Unicode codepoints.
+    const normalized = text.replace(/\r\n?/g, '\n')
+    const middle = (index: number) => index > 0 && /[\uD800-\uDBFF]/.test(normalized[index - 1] ?? '') && /[\uDC00-\uDFFF]/.test(normalized[index] ?? '')
     const from = middle(start) ? start - 1 : start, to = middle(end) ? end + 1 : end
-    return { start: Array.from(text.slice(0, from)).length, end: Array.from(text.slice(0, to)).length }
+    const original = Array.from(text), boundaries = [0]
+    for (let index = 0; index < original.length; index++) {
+        if (original[index] === '\r' && original[index + 1] === '\n') index++
+        boundaries.push(index + 1)
+    }
+    return { start: boundaries[Array.from(normalized.slice(0, from)).length]!, end: boundaries[Array.from(normalized.slice(0, to)).length]! }
 }
 
 function sourceError(error: unknown): string {
@@ -63,7 +71,7 @@ function MessageMemoryDialog({ evolved, sessionId, sourceIds, onClose, onReturnF
     const [marked, setMarked] = useState<{ start: number; end: number } | null>(null)
     const [excerpt, setExcerpt] = useState<{ start: number; end: number } | null>(null)
     const [loading, setLoading] = useState(false), [saving, setSaving] = useState(false)
-    const [error, setError] = useState<string | null>(null), [saved, setSaved] = useState(false)
+    const [error, setError] = useState<string | null>(null), [saved, setSaved] = useState<'proposed' | 'verified' | null>(null)
     const [uncertain, setUncertain] = useState(false), [reload, setReload] = useState(0)
     const mounted = useRef(false), pending = useRef<AbortController | null>(null)
     useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false; pending.current?.abort() } }, [])
@@ -91,8 +99,8 @@ function MessageMemoryDialog({ evolved, sessionId, sourceIds, onClose, onReturnF
             const response = await api.request<{ item: MemoryItem }>(`${path}/from-message`, { method: 'POST', signal: controller.signal,
                 body: { sessionId, messageId: source.messageId, expectedSourceHash: source.sourceHash, title: title.trim(), ...(excerpt ? { excerpt } : {}) } })
             if (controller.signal.aborted || !mounted.current) return
-            if (response.item?.projectId !== project!.id || response.item?.status !== 'proposed') throw new Error('Invalid memory receipt')
-            setSaved(true); setSource(null); setTitle(''); setBody(''); setUncertain(false)
+            if (response.item?.projectId !== project!.id || !['proposed', 'verified'].includes(response.item?.status)) throw new Error('Invalid memory receipt')
+            setSaved(response.item.status as 'proposed' | 'verified'); setSource(null); setTitle(''); setBody(''); setUncertain(false)
             void client.invalidateQueries({ queryKey: ['evolved', 'memory'] })
             void client.invalidateQueries({ queryKey: ['evolved', 'memory-search'] })
         } catch (failure) {
@@ -113,7 +121,7 @@ function MessageMemoryDialog({ evolved, sessionId, sourceIds, onClose, onReturnF
         <DialogContent className="evolved max-h-[85dvh] overflow-y-auto" onCloseAutoFocus={event => { event.preventDefault(); onReturnFocus() }}>
             <DialogHeader><DialogTitle>Als Wissen vorschlagen</DialogTitle><DialogDescription>Projekt: {project!.name}. Die gespeicherte Nachricht belegt die Quelle. Ihr Inhalt bleibt bis zur menschlichen Prüfung ein Vorschlag.</DialogDescription></DialogHeader>
             <div className="ev-stack mt-4">
-                {saved ? <><p className="ev-success" role="status">Vorschlag gespeichert. Der Inhalt wurde noch nicht verifiziert.</p><WorkspaceLink tab="memory" projectId={project!.id} onClick={onClose}>Im Projektgedächtnis ansehen</WorkspaceLink></> : <>
+                {saved ? <><p className="ev-success" role="status">{saved === 'verified' ? 'Dieser Inhalt ist bereits verifiziert im Projektgedächtnis vorhanden. Sein Status wurde nicht verändert.' : 'Vorschlag gespeichert. Der Inhalt wurde noch nicht verifiziert.'}</p><WorkspaceLink tab="memory" projectId={project!.id} onClick={onClose}>Im Projektgedächtnis ansehen</WorkspaceLink></> : <>
                     {sourceIds.length > 1 && <Field label="Gespeicherte Nachricht" hint="Diese Karte umfasst mehrere Nachrichten. Wähle die konkrete Textquelle."><select value={messageId} disabled={saving || uncertain} onChange={event => setMessageId(event.target.value)}><option value="">Nachricht auswählen</option>{sourceIds.map((id, index) => <option value={id} key={id}>Nachricht {index + 1} · {id}</option>)}</select></Field>}
                     <ErrorNotice error={error} />
                     {loading && <Loading />}

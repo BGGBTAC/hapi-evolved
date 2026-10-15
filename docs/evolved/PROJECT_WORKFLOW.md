@@ -64,6 +64,38 @@ These consultations inform the implementation; they are not a security certifica
 - Readiness consumes local checks, an empty RPC probe, existing diagnostic routes,
   and the background Codegraph status snapshot. It never provisions a service or
   starts a model prompt. Provider login diagnostics remain administrator-only.
+  The optional worktree capability is reported separately: an older compatible
+  runner can still be ready for sessions without supporting the new diff view.
+
+## Review corrections and operational limits
+
+The adversarial implementation review identified unnecessary interference between
+Git reads and synchronization. Runner readers now have a separate counter; status
+inspection remains available during reads, and the Hub rejects a conflicting sync
+before creating a job. Directory traversal closes temporary file descriptors as it
+advances; a regression covers 1,100 changed directories. Session starts explicitly
+distinguish rejection before reservation from an uncertain result after reservation.
+Transient service failures do not archive an otherwise delivered specialist session.
+
+Repository links have an index and are removed by the matching namespace/session
+deletion event. Browser fixes cover direct numeric repository links, CRLF and emoji
+selection in message excerpts, and repeated proposals that were already verified.
+Existing verification status is preserved. The temporary repository selection is
+visible and can be discarded before choosing a specialist; it never starts a model.
+
+The conservative source filter can also exclude harmless names containing sensitive
+terms, including project-relative paths through a repository named `vault` or `sops`.
+This remains an explicit limitation pending a separately tested file/directory
+policy. The Git metadata walk and strict configuration allowlist also remain in
+place: unusually large object stores or unsupported local settings may prevent
+inspection. Skipping object directories would allow unchecked symlinks, hardlinks
+or FIFOs to reach Git; the regression suite covers these cases. Grant reads are
+kept fresh rather than caching revoked authority for faster navigation.
+
+The new browser acceptance runs in GitHub CI using isolated Hub, Vault, WebAuthn,
+Socket.IO, Git and Codegraph components. GitHub provider responses and native agent
+availability, directory probes and execution use controlled fixture responses. The
+tests do not use personal provider accounts or perform remote Git transfers.
 
 ## Subsequent candidates
 

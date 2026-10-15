@@ -117,79 +117,93 @@ export function createAgentCatalogRoutes(config: { store: EvolvedStore; plugins:
     })
     const startSchema = z.object({ operationId: z.string().uuid(), machineId: z.string().min(1).max(200), task: z.string().trim().min(1).max(24_576), provider: z.enum(['claude', 'codex']).optional(), model: modelPreferenceSchema.optional(), repositoryId: RepositoryIdSchema.optional(), review: RepoImpactRequestSchema.optional() }).strict()
     app.post('/projects/:id/agent-catalog/:agentId/start', async c => {
-        const principal = await extensionHuman(c, store), body = await parseBody(c, startSchema), projectId = c.req.param('id'), agentId = c.req.param('agentId'), sessionHash = extensionSessionHash(c)
-        const current = () => {
-            const live = store.getSessionByHash(sessionHash)
-            if (!live || live.user.id !== principal.user.id) throw new EvolvedError('unauthorized', 'Session expired or was revoked.', 401)
-            return store.requireProject(live.user.id, projectId, 'member')
-        }
-        if (body.review && (agentId !== 'builtin:review' || !body.repositoryId)) throw new EvolvedError('invalid_review_context', 'Review context requires a repository and the review specialist.', 400)
-        const project = current(), engine = config.getSyncEngine()
-        if (!engine) throw new EvolvedError('runner_unavailable', 'Project runner is unavailable.', 409)
-        const requestHash = hash({ agentId, ...body }), keys = [principal.user.id, projectId, body.operationId] as const
-        type Operation = { request_hash: string; snapshot_hash: string; state: string; session_id: string | null }
-        const previous = store.db.query('SELECT * FROM evolved_agent_starts WHERE user_id=? AND project_id=? AND operation_id=?').get(...keys) as Operation | null
-        if (previous) {
-            if (previous.request_hash !== requestHash) throw new EvolvedError('agent_operation_conflict', 'This operation identifier belongs to a different request.', 409)
-            if (previous.state === 'done' && previous.session_id && engine.getSessionByNamespace(previous.session_id, project.namespace)) return c.json({ sessionId: previous.session_id, operationId: body.operationId, acknowledged: 'persisted' })
-            throw new EvolvedError('agent_start_indeterminate', 'Inspect existing project sessions before starting again. This start cannot be repeated safely.', 409)
-        }
-        const snapshot = catalog.snapshot(agentId), provider = body.provider ?? (snapshot.agent.providerPreference === 'either' ? 'claude' : snapshot.agent.providerPreference)
-        const model = body.model ?? (snapshot.agent.providerPreference !== 'either' && (!body.provider || snapshot.agent.providerPreference === body.provider) ? snapshot.agent.model : undefined)
-        let root: string
-        try { root = realpathSync(project.rootPath) } catch { throw new EvolvedError('project_root_unavailable', 'Project directory is unavailable.', 409) }
-        if (root !== project.rootPath || !withinProject(project, root)) throw new EvolvedError('project_root_unavailable', 'Project directory changed.', 409)
-        const machine = engine.getMachineByNamespace(body.machineId, project.namespace)
-        if (!machine?.active) throw new EvolvedError('runner_unavailable', 'Choose an online runner in this project.', 409)
-        if (!machine.metadata?.capabilities?.includes(MACHINE_CAPABILITIES.AgentAvailability)) throw new EvolvedError('runner_upgrade_required', 'Upgrade this runner before starting an agent.', 409)
-        const authority: RepositoryAuthority = { principal, project, valid: () => { try { current(); return true } catch { return false } } }
-        if (body.repositoryId && !config.repositoryStart) throw new EvolvedError('repository_unavailable', 'Repository starts are unavailable.', 409)
-        const repository = body.repositoryId ? await config.repositoryStart!(authority, body.repositoryId, body.machineId) : undefined
-        let context = ''
-        if (body.review) {
-            if (!config.repositoryReview) throw new EvolvedError('review_unavailable', 'Review context is unavailable.', 409)
-            context = await config.repositoryReview(authority, body.repositoryId!, body.machineId, body.review)
-        }
-        const prompt = agentAssignment(snapshot.agent, snapshot.skills, body.task) + context
-        if (Buffer.byteLength(prompt) > MAX_AGENT_PROMPT_BYTES) throw new EvolvedError('agent_prompt_limit', 'Agent instructions, skills and task exceed 64 KiB.', 400)
-        store.db.transaction(() => {
-            current()
-            if (store.db.query('SELECT 1 FROM evolved_agent_starts WHERE user_id=? AND project_id=? AND operation_id=?').get(...keys)) throw new EvolvedError('agent_start_indeterminate', 'This operation has already started. Inspect project sessions before retrying.', 409)
-            const recent = store.db.query('SELECT COUNT(*) AS n FROM evolved_agent_starts WHERE project_id=? AND created_at>?').get(projectId, store.now() - 60_000) as { n: number }
-            if (recent.n >= 8) throw new EvolvedError('agent_start_rate_limited', 'At most eight specialist starts per project per minute.', 429)
-            store.db.prepare('INSERT INTO evolved_agent_starts VALUES(?,?,?,?,?,?,NULL,?)').run(...keys, requestHash, snapshot.hash, 'pending', store.now())
-        }).immediate()
-        const stillAllowed = () => {
-            const live = current()
-            if (live.profile !== project.profile || live.rootPath !== project.rootPath || live.namespace !== project.namespace || catalog.snapshot(agentId).hash !== snapshot.hash) throw new EvolvedError('agent_start_changed', 'Project or agent definition changed during start.', 409)
-            return live
-        }
-        let childId: string | undefined
+        let reserved = false
         try {
-            stillAllowed()
-            if (repository) { await repository.recheck(); stillAllowed() }
-            const spawned = await engine.spawnSession(body.machineId, repository?.directory ?? root, provider, model, undefined, false, 'simple', undefined, undefined, undefined,
-                projectPermissionMode(project, provider, agentId === 'builtin:review' ? provider === 'codex' ? 'read-only' : 'plan' : undefined), undefined, undefined, undefined, undefined, 'remote', project.namespace, false, repository?.onReserved)
-            if (spawned.type !== 'success') throw new EvolvedError('agent_start_indeterminate', 'Runner did not confirm the start. Inspect project sessions before trying again.', 409)
-            childId = spawned.sessionId; stillAllowed()
-            if (repository) { await repository.recheck(); stillAllowed() }
-            if (!engine.getSessionByNamespace(childId, project.namespace)) throw new EvolvedError('agent_start_indeterminate', 'Started session could not be verified in this project.', 409)
-            const localId = `catalog:${body.operationId}`
-            await engine.sendMessage(childId, { text: prompt, localId, sentFrom: 'webapp' })
-            stillAllowed()
-            if (repository) { await repository.recheck(); stillAllowed() }
-            if (!engine.getMessagesPage(childId, { limit: 50 }).messages.some(message => message.localId === localId)) throw new EvolvedError('agent_start_indeterminate', 'Initial assignment could not be verified.', 409)
+            const principal = await extensionHuman(c, store), body = await parseBody(c, startSchema), projectId = c.req.param('id'), agentId = c.req.param('agentId'), sessionHash = extensionSessionHash(c)
+            const current = () => {
+                const live = store.getSessionByHash(sessionHash)
+                if (!live || live.user.id !== principal.user.id) throw new EvolvedError('unauthorized', 'Session expired or was revoked.', 401)
+                return store.requireProject(live.user.id, projectId, 'member')
+            }
+            if (body.review && (agentId !== 'builtin:review' || !body.repositoryId)) throw new EvolvedError('invalid_review_context', 'Review context requires a repository and the review specialist.', 400)
+            const project = current(), engine = config.getSyncEngine()
+            if (!engine) throw new EvolvedError('runner_unavailable', 'Project runner is unavailable.', 409)
+            const requestHash = hash({ agentId, ...body }), keys = [principal.user.id, projectId, body.operationId] as const
+            type Operation = { request_hash: string; snapshot_hash: string; state: string; session_id: string | null }
+            const previous = store.db.query('SELECT * FROM evolved_agent_starts WHERE user_id=? AND project_id=? AND operation_id=?').get(...keys) as Operation | null
+            if (previous) {
+                reserved = true
+                if (previous.request_hash !== requestHash) throw new EvolvedError('agent_operation_conflict', 'This operation identifier belongs to a different request.', 409)
+                if (previous.state === 'done' && previous.session_id && engine.getSessionByNamespace(previous.session_id, project.namespace)) return c.json({ sessionId: previous.session_id, operationId: body.operationId, acknowledged: 'persisted' })
+                throw new EvolvedError('agent_start_indeterminate', 'Inspect existing project sessions before starting again. This start cannot be repeated safely.', 409)
+            }
+            const snapshot = catalog.snapshot(agentId), provider = body.provider ?? (snapshot.agent.providerPreference === 'either' ? 'claude' : snapshot.agent.providerPreference)
+            const model = body.model ?? (snapshot.agent.providerPreference !== 'either' && (!body.provider || snapshot.agent.providerPreference === body.provider) ? snapshot.agent.model : undefined)
+            let root: string
+            try { root = realpathSync(project.rootPath) } catch { throw new EvolvedError('project_root_unavailable', 'Project directory is unavailable.', 409) }
+            if (root !== project.rootPath || !withinProject(project, root)) throw new EvolvedError('project_root_unavailable', 'Project directory changed.', 409)
+            const machine = engine.getMachineByNamespace(body.machineId, project.namespace)
+            if (!machine?.active) throw new EvolvedError('runner_unavailable', 'Choose an online runner in this project.', 409)
+            if (!machine.metadata?.capabilities?.includes(MACHINE_CAPABILITIES.AgentAvailability)) throw new EvolvedError('runner_upgrade_required', 'Upgrade this runner before starting an agent.', 409)
+            const authority: RepositoryAuthority = { principal, project, valid: () => { try { current(); return true } catch { return false } } }
+            if (body.repositoryId && !config.repositoryStart) throw new EvolvedError('repository_unavailable', 'Repository starts are unavailable.', 409)
+            const repository = body.repositoryId ? await config.repositoryStart!(authority, body.repositoryId, body.machineId) : undefined
+            let context = ''
+            if (body.review) {
+                if (!config.repositoryReview) throw new EvolvedError('review_unavailable', 'Review context is unavailable.', 409)
+                context = await config.repositoryReview(authority, body.repositoryId!, body.machineId, body.review)
+            }
+            const prompt = agentAssignment(snapshot.agent, snapshot.skills, body.task) + context
+            if (Buffer.byteLength(prompt) > MAX_AGENT_PROMPT_BYTES) throw new EvolvedError('agent_prompt_limit', 'Agent instructions, skills and task exceed 64 KiB.', 400)
             store.db.transaction(() => {
-                stillAllowed()
-                store.db.prepare("UPDATE evolved_agent_starts SET state='done',session_id=? WHERE user_id=? AND project_id=? AND operation_id=?").run(childId!, ...keys)
-                store.audit(principal.user.id, projectId, 'agent_template.started', `${agentId}@${snapshot.hash}`)
+                current()
+                if (store.db.query('SELECT 1 FROM evolved_agent_starts WHERE user_id=? AND project_id=? AND operation_id=?').get(...keys)) {
+                    reserved = true
+                    throw new EvolvedError('agent_start_indeterminate', 'This operation has already started. Inspect project sessions before retrying.', 409)
+                }
+                const recent = store.db.query('SELECT COUNT(*) AS n FROM evolved_agent_starts WHERE project_id=? AND created_at>?').get(projectId, store.now() - 60_000) as { n: number }
+                if (recent.n >= 8) throw new EvolvedError('agent_start_rate_limited', 'At most eight specialist starts per project per minute.', 429)
+                store.db.prepare('INSERT INTO evolved_agent_starts VALUES(?,?,?,?,?,?,NULL,?)').run(...keys, requestHash, snapshot.hash, 'pending', store.now())
             }).immediate()
-            return c.json({ sessionId: childId, operationId: body.operationId, acknowledged: 'persisted' }, 201)
+            reserved = true
+            const stillAllowed = () => {
+                const live = current()
+                if (live.profile !== project.profile || live.rootPath !== project.rootPath || live.namespace !== project.namespace || catalog.snapshot(agentId).hash !== snapshot.hash) throw new EvolvedError('agent_start_changed', 'Project or agent definition changed during start.', 409)
+                return live
+            }
+            let childId: string | undefined
+            try {
+                stillAllowed()
+                if (repository) { await repository.recheck(); stillAllowed() }
+                const spawned = await engine.spawnSession(body.machineId, repository?.directory ?? root, provider, model, undefined, false, 'simple', undefined, undefined, undefined,
+                    projectPermissionMode(project, provider, agentId === 'builtin:review' ? provider === 'codex' ? 'read-only' : 'plan' : undefined), undefined, undefined, undefined, undefined, 'remote', project.namespace, false, repository?.onReserved)
+                if (spawned.type !== 'success') throw new EvolvedError('agent_start_indeterminate', 'Runner did not confirm the start. Inspect project sessions before trying again.', 409)
+                childId = spawned.sessionId; stillAllowed()
+                if (repository) { await repository.recheck(); stillAllowed() }
+                if (!engine.getSessionByNamespace(childId, project.namespace)) throw new EvolvedError('agent_start_indeterminate', 'Started session could not be verified in this project.', 409)
+                const localId = `catalog:${body.operationId}`
+                await engine.sendMessage(childId, { text: prompt, localId, sentFrom: 'webapp' })
+                stillAllowed()
+                if (repository) { await repository.recheck(); stillAllowed() }
+                if (!engine.getMessagesPage(childId, { limit: 50 }).messages.some(message => message.localId === localId)) throw new EvolvedError('agent_start_indeterminate', 'Initial assignment could not be verified.', 409)
+                store.db.transaction(() => {
+                    stillAllowed()
+                    store.db.prepare("UPDATE evolved_agent_starts SET state='done',session_id=? WHERE user_id=? AND project_id=? AND operation_id=?").run(childId!, ...keys)
+                    store.audit(principal.user.id, projectId, 'agent_template.started', `${agentId}@${snapshot.hash}`)
+                }).immediate()
+                return c.json({ sessionId: childId, operationId: body.operationId, acknowledged: 'persisted' }, 201)
+            } catch (error) {
+                store.db.prepare("UPDATE evolved_agent_starts SET state='indeterminate',session_id=? WHERE user_id=? AND project_id=? AND operation_id=?").run(childId ?? null, ...keys)
+                // A temporary Vault/RPC outage is not proof that authority changed.
+                // Keep a possibly running assignment visible; never stop it on ambiguity.
+                const revoked = error instanceof EvolvedError && ['unauthorized', 'forbidden', 'repository_access_changed', 'agent_start_changed', 'agent_skill_unavailable', 'agent_not_found'].includes(error.code)
+                if (revoked && childId && engine.getSessionByNamespace(childId, project.namespace)) try { await engine.archiveSession(childId) } catch { /* Existing session remains visible for manual diagnosis. */ }
+                if (revoked) throw error
+                throw new EvolvedError('agent_start_indeterminate', 'Start outcome is uncertain. Inspect project sessions before starting again.', 409)
+            }
         } catch (error) {
-            store.db.prepare("UPDATE evolved_agent_starts SET state='indeterminate',session_id=? WHERE user_id=? AND project_id=? AND operation_id=?").run(childId ?? null, ...keys)
-            if (childId && engine.getSessionByNamespace(childId, project.namespace)) try { await engine.archiveSession(childId) } catch { /* Existing session remains visible for manual diagnosis. */ }
-            if (error instanceof EvolvedError) throw error
-            throw new EvolvedError('agent_start_indeterminate', 'Start outcome is uncertain. Inspect project sessions before starting again.', 409)
+            if (error instanceof EvolvedError) return c.json({ error: error.message, code: error.code, reserved }, error.status as 400)
+            return c.json({ error: reserved ? 'Start outcome is uncertain. Inspect project sessions before starting again.' : 'The specialist could not be prepared. No start was reserved.', code: reserved ? 'agent_start_indeterminate' : 'agent_start_unavailable', reserved }, reserved ? 409 : 503)
         }
     })
     return app

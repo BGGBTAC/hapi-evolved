@@ -212,8 +212,16 @@ export async function checkGithub(page) {
     await page.getByText('Noch kein GitHub-Konto verbunden.', { exact: true }).waitFor();
 
     await workspaceArea(page, 'Projekte');
+    const restrictedResponse = page.waitForResponse(response =>
+        new URL(response.url()).pathname === `/api/evolved/projects/${project.id}/profile`
+        && response.request().method() === 'PUT' && response.status() === 200);
     await page.getByRole('button', { name: /^Eingeschränkt Schreib/ }).click();
-    await page.getByText('Profil gespeichert.', { exact: true }).waitFor();
+    const restrictedResult = await (await restrictedResponse).json();
+    if (restrictedResult.project.id !== project.id || restrictedResult.project.profile !== 'restricted') throw Error('Restricted profile response did not match the selected project');
+    // A profile change intentionally remounts all scoped workflow state. Verify
+    // the refreshed authoritative selection, not a notice in the old component.
+    await page.locator('button.ev-profile[aria-pressed="true"]:disabled').filter({ hasText: 'Eingeschränkt' }).waitFor();
+    if (!(await inspectLease(workspaceLease)).revokedAt) throw Error('Restricted profile change did not revoke the workspace runner lease');
     console.log('PASS real project-scoped GitHub Hub/Vault broker: synthetic provider connect, restricted-project new and existing read/write grants, persistence/isolation, explicit profile activation/cancel and lease revocation, new default push scope, project-scoped runner setup, rotation, revoke/disconnect; no browser token persistence');
     } finally { page.off('request', recordProfileChange); }
 }

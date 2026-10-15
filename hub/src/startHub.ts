@@ -231,6 +231,7 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubInstan
                 messageId: event.message.id, body: JSON.stringify(event.message.content) })
         } else if (event.type === 'session-removed' || event.type === 'messages-invalidated') {
             evolved.memory.forgetSession(event.namespace, event.sessionId)
+            if (event.type === 'session-removed') evolved.onSessionRemoved(event.sessionId, event.namespace)
         } else if (event.type === 'message-cancelled' && event.messageId) {
             evolved.memory.forgetMessage(event.namespace, event.sessionId, event.messageId)
         }

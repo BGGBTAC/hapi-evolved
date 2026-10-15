@@ -4,6 +4,45 @@ Dieser datierte Bericht belegt den damaligen Quellstand, nicht automatisch die
 aktuelle Veröffentlichung. Einstieg und heutiger Umfang: [Quickstart](QUICKSTART.md)
 und [Projekt](PROJECT.md).
 
+## Integrierter Projektablauf am 15.10.2026
+
+Der Ausbau auf `feat/integrated-project-workflow` verbindet Bereitschaftsprüfung,
+explizite Repository-Sitzungen, lokale Git-Diffs, Codegraph-Auswirkungen und
+quellengebundene Wissensvorschläge. Claude Fable 5.1 priorisierte diese Ausbaustufe;
+tatsächliche Aufrufe von Claude Opus 5.5 prüften Design, Gesamtumsetzung und
+Korrekturen. Plan, Grenzen und Prüfsummen stehen im
+[Projektablauf](PROJECT_WORKFLOW.md) und im
+[Reviewbeleg](reviews/project-workflow-2026-10-15.json).
+
+Der vollständige lokale Paketlauf bestand 9.783 Tests: CLI 3.252, Hub 1.871,
+Web 3.956, Shared 470, Relay 118, Runner-Proxy 50, Deployment 11,
+Runner-Auth 34 und Runner-Control 21. Zwölf bedingte CLI-Tests und drei
+Hub-Integrationstests wurden übersprungen. Alle sieben Paket-Typechecks bestanden.
+Nachfolgende kleine Reviewkorrekturen erhalten zusätzlich gezielte Regressionen;
+der finale PR-Stand muss die erforderlichen CI-Prüfungen erneut bestehen.
+
+Der neue isolierte Browsertest bestand acht Prüfgruppen bei 1.440, 390 und 320
+Pixeln: echte WebAuthn-Anmeldung, Hub, Vault, Socket.IO, Git-Arbeitsstand und
+Codegraph. GitHub-Providerantworten sowie native Agentverfügbarkeit, Verzeichnis-
+prüfungen und Ausführung sind kontrollierte Fixtureantworten. Geprüft werden
+Repositoryordner und Hub-Sitzungszuordnung, ausdrücklicher Spezialistenstart,
+Index-/Arbeitskopie-Diff, ausgeschlossene Inhalte, Review-Übergabe, Datei- und
+Nachrichtenwissen sowie Projektwechsel ohne übernommene Fremddaten. Es gibt keine
+kostenpflichtigen Provideraufrufe oder entfernten Git-Transfers.
+
+Die Berichte enthalten keine React-/Seitenfehler oder horizontalen Überläufe.
+Bewusst blockierte Serviceworker, bei vollständiger Seitennavigation abgebrochene
+Statusanfragen und genau benannte nicht verfügbare Fixture-/Legacy-Endpunkte
+werden separat protokolliert; andere Konsolen- und HTTP-Fehler lassen den Test
+scheitern. Auch der bestehende umfassende Evolved-Browsertest bestand. Seine
+Profilwechselprüfung bestätigt nun die Serverantwort, den neu geladenen Profil-
+zustand und den Widerruf der vorherigen Lease statt einer durch den notwendigen
+Berechtigungswechsel verworfenen flüchtigen Erfolgsmeldung.
+
+Diese Quell- und Fixtureprüfungen sind kein Beleg einer bereits aktualisierten
+Testinstallation. Der private Betriebsbeleg dokumentiert den tatsächlich
+ausgerollten Commit, die Imagekennungen, Sicherung und Datenerhalt getrennt.
+
 ## Wiederverwendete Runner-Kennungen am 15.10.2026
 
 Bei der Testinstallation wurde ein zweiter Startfehler reproduziert: Nach dem

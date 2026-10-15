@@ -127,7 +127,7 @@ export function createRepositoryRoutes(config: { store: EvolvedStore; vault: Vau
         if (!repoId.success) throw new EvolvedError('invalid_repository', 'Ungültiges Repository.', 400)
         const initial = await access(c.req.raw, id, true)
         // Serialize catalog I/O as well as job insertion. A lost POST response is safe to reconcile by request ID.
-        if (preparing.has(id)) throw new EvolvedError('repository_busy', 'Für dieses Projekt wird bereits eine Git-Aktion vorbereitet.', 409)
+        if (preparing.has(id) || workflow.isReading(id)) throw new EvolvedError('repository_busy', 'Für dieses Projekt läuft bereits eine Repositoryabfrage oder Git-Aktion. Bitte kurz warten.', 409)
         preparing.add(id)
         try {
             const { project, principal, connected, repositories } = await catalog(c.req.raw, id, true)
@@ -139,7 +139,7 @@ export function createRepositoryRoutes(config: { store: EvolvedStore; vault: Vau
                 if (previous.repository_id !== repo.id || previous.action !== body.action) throw new EvolvedError('idempotency_conflict', 'Diese Anfragekennung gehört zu einer anderen Aktion.', 409)
                 return c.json({ job: publicJob(previous) }, 202)
             }
-            if ([...running.values()].some(job => job.projectId === id)) throw new EvolvedError('repository_busy', 'In diesem Projekt läuft bereits eine Git-Aktion. Bitte deren Abschluss abwarten.', 409)
+            if (workflow.isReading(id) || [...running.values()].some(job => job.projectId === id)) throw new EvolvedError('repository_busy', 'In diesem Projekt läuft bereits eine Repositoryabfrage oder Git-Aktion. Bitte deren Abschluss abwarten.', 409)
             if (running.size >= 4) throw new EvolvedError('repository_busy', 'Es laufen bereits mehrere Git-Aktionen. Bitte kurz warten.', 429)
             const target = runner(project)
             if (target.status !== 'ready') throw new EvolvedError(`runner_${target.status}`, target.status === 'upgrade_required' ? 'Der Projektdienst benötigt ein Update für Repositoryaktionen.' : target.status === 'ambiguous' ? 'Mehrere Projektdienste sind für diesen Ordner verbunden. Bitte nur einen verwenden.' : 'Der Projektdienst ist nicht verbunden. Bitte unter Anbieter & Abos verbinden.', 409)
@@ -193,7 +193,7 @@ export function createRepositoryRoutes(config: { store: EvolvedStore; vault: Vau
     })
     const workflow = createRepositoryWorkflow({ ...config, busy: id => preparing.has(id) || [...running.values()].some(job => job.projectId === id) })
     app.route('/', workflow.routes)
-    return { routes: app, resolveStart: workflow.resolveStart, reviewContext: workflow.reviewContext, async discovery(request: Request, projectId: string) {
+    return { routes: app, resolveStart: workflow.resolveStart, reviewContext: workflow.reviewContext, onSessionRemoved: workflow.onSessionRemoved, async discovery(request: Request, projectId: string) {
         const { project, principal, repositories, connected } = await catalog(request, projectId)
         const pushEligible = connected && project.role !== 'viewer' && project.profile !== 'restricted' && (!principal.capability || principal.capability.scopes.includes('git:write'))
         return { repositories: repositories.map(repo => ({ ...repo, canPush: pushEligible && repo.permission === 'write' })), git: { connected, rootPath: project.rootPath,
