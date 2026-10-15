@@ -321,6 +321,32 @@ describe('SessionHeader', () => {
         expect(screen.getByTestId('session-header-age')).toHaveTextContent(/5m ago|5分钟前/)
     })
 
+    it('shows the project label from the worktree base path separately from its branch', () => {
+        renderHeader(baseSession({
+            metadata: {
+                flavor: 'cursor',
+                path: '/home/user/coding/hapi-worktrees/fix-resume',
+                host: 'machine',
+                worktree: {
+                    basePath: '/home/user/coding/hapi',
+                    branch: 'fix/resume',
+                    name: 'fix-resume',
+                    worktreePath: '/home/user/coding/hapi-worktrees/fix-resume'
+                }
+            }
+        }))
+
+        expect(screen.getByTestId('session-header-project')).toHaveTextContent('project: coding/hapi')
+        expect(screen.getByText('worktree: fix/resume')).toBeInTheDocument()
+    })
+
+    it('hides the project label when its display setting is disabled', () => {
+        localStorage.setItem('hapi-session-header-metadata', JSON.stringify({ project: false }))
+        renderHeader(baseSession({ metadata: { flavor: 'cursor', path: '/home/user/coding/hapi', host: 'machine' } }))
+
+        expect(screen.queryByTestId('session-header-project')).not.toBeInTheDocument()
+    })
+
     it('advances relative age on the minute tick without a session prop change', () => {
         vi.useFakeTimers()
         const now = new Date('2026-07-29T16:00:00.000Z')
@@ -412,6 +438,31 @@ describe('SessionHeader', () => {
         fireEvent.click(screen.getByRole('menuitem', { name: 'Pin globally' }))
 
         await waitFor(() => expect(setSessionPinMode).toHaveBeenCalledWith('session-pin', 'global'))
+    })
+
+    it('shows in-conversation search when a jump handler is provided', () => {
+        const api = {
+            getMachines: vi.fn().mockResolvedValue({ machines: [] }),
+            getScratchlist: vi.fn().mockResolvedValue({ entries: [] }),
+            searchSessionContentMatches: vi.fn().mockResolvedValue({ matches: [], total: 0 }),
+        } as unknown as ApiClient
+
+        render(
+            <QueryClientProvider client={new QueryClient()}>
+                <ToastProvider>
+                    <I18nProvider>
+                        <SessionHeader
+                            session={baseSession()}
+                            onBack={vi.fn()}
+                            api={api}
+                            onSearchMessage={vi.fn()}
+                        />
+                    </I18nProvider>
+                </ToastProvider>
+            </QueryClientProvider>
+        )
+
+        expect(screen.getByTestId('session-in-chat-search-toggle')).toBeInTheDocument()
     })
 
     it('shows an error toast when toggling the pin fails', async () => {

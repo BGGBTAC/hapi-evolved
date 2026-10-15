@@ -55,10 +55,12 @@ object PermissionModes {
     )
 
     /** `CODEX_PERMISSION_MODES` (gemini/kimi/copilot share the same list). */
-    val CODEX = listOf(
+    val LEGACY_CODEX = listOf(
         PermissionMode.Default, PermissionMode.ReadOnly,
         PermissionMode.SafeYolo, PermissionMode.Yolo,
     )
+
+    val CODEX = listOf(PermissionMode.Default, PermissionMode.AutoReview, PermissionMode.ReadOnly, PermissionMode.SafeYolo, PermissionMode.Yolo)
 
     /** `GROK_PERMISSION_MODES`. */
     val GROK = listOf(
@@ -82,9 +84,9 @@ object PermissionModes {
      */
     fun forFlavor(flavor: String?): List<PermissionMode> = when (flavor) {
         "codex" -> CODEX
-        "gemini" -> CODEX
-        "kimi" -> CODEX
-        "copilot" -> CODEX
+        "gemini" -> LEGACY_CODEX
+        "kimi" -> LEGACY_CODEX
+        "copilot" -> LEGACY_CODEX
         "grok" -> GROK
         "opencode" -> OPENCODE
         "dsh" -> emptyList()

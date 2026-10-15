@@ -101,6 +101,7 @@ function getTranscriptionConfig(provider: TranscriptionProvider): {
                 ? { apiKey: env.TRANSCRIPTION_API_KEY?.trim(), baseUrl: trimTrailingSlash(baseUrl), model }
                 : null
         }
+        case 'browser-cloud':
         case 'browser-local':
             return null
     }

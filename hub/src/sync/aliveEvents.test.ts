@@ -16,6 +16,50 @@ function createPublisher(events: SyncEvent[]): EventPublisher {
 }
 
 describe('alive incremental events', () => {
+    it('emits only one inactive transition across repeated expiry sweeps and end events', () => {
+        const store = new Store(':memory:')
+        const events: SyncEvent[] = []
+        const publisher = createPublisher(events)
+        const machines = new MachineCache(store, publisher)
+        const sessions = new SessionCache(store, publisher)
+        const machine = machines.getOrCreateMachine('expiry-once', { host: 'test', platform: 'linux', happyCliVersion: '1' }, null, 'default')
+        const session = sessions.getOrCreateSession('expiry-once', { path: '/tmp', host: 'test' }, null, 'default')
+        machines.handleMachineAlive({ machineId: machine.id, time: Date.now() })
+        sessions.handleSessionAlive({ sid: session.id, time: Date.now() })
+        events.length = 0
+        const future = Date.now() + 50_000
+        for (let i = 0; i < 10; i++) { machines.expireInactive(future + i); sessions.expireInactive(future + i) }
+        expect(events.filter(event => event.type === 'machine-updated' && event.data?.active === false)).toHaveLength(1)
+        expect(events.filter(event => event.type === 'session-updated' && event.data?.active === false)).toHaveLength(1)
+        store.close()
+    })
+
+    it('uses hub receipt time for live machines and sessions despite runner clock skew', () => {
+        const store = new Store(':memory:')
+        const events: SyncEvent[] = []
+        const publisher = createPublisher(events)
+        const machines = new MachineCache(store, publisher)
+        const sessions = new SessionCache(store, publisher)
+        const machine = machines.getOrCreateMachine('skewed', { host: 'localhost', platform: 'linux', happyCliVersion: '1' }, null, 'default')
+        const session = sessions.getOrCreateSession('skewed', { path: '/tmp', host: 'localhost' }, null, 'default')
+        const receivedAt = Date.now()
+        machines.handleMachineAlive({ machineId: machine.id, time: receivedAt - 43_000 })
+        sessions.handleSessionAlive({ sid: session.id, time: receivedAt - 43_000 })
+        events.length = 0
+        machines.expireInactive(receivedAt + 20_000)
+        sessions.expireInactive(receivedAt + 20_000)
+        machines.refreshMachine(machine.id)
+        sessions.refreshSession(session.id)
+        expect(machines.getMachine(machine.id)?.active).toBe(true)
+        expect(sessions.getSession(session.id)?.active).toBe(true)
+        expect(events.some(event => (event.type === 'machine-updated' || event.type === 'session-updated') && event.data?.active === false)).toBe(false)
+        machines.expireInactive(receivedAt + 46_000)
+        sessions.expireInactive(receivedAt + 46_000)
+        expect(machines.getMachine(machine.id)?.active).toBe(false)
+        expect(sessions.getSession(session.id)?.active).toBe(false)
+        store.close()
+    })
+
     it('replays durable immediate prompts on every attach until consumed', () => {
         const store = new Store(':memory:')
         const emitted: Array<{ body?: { t?: string; message?: { localId?: string | null } } }> = []

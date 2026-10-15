@@ -18,6 +18,7 @@ import { createAuthRoutes } from './routes/auth'
 import { createBindRoutes } from './routes/bind'
 import { createEventsRoutes } from './routes/events'
 import { createSessionsRoutes } from './routes/sessions'
+import { createExternalRefsRoutes } from './routes/externalRefs'
 import { createMessagesRoutes } from './routes/messages'
 import { createPermissionsRoutes } from './routes/permissions'
 import { createMachinesRoutes } from './routes/machines'
@@ -256,7 +257,7 @@ function createWebApp(options: {
     app.get('/health', (c) => c.json({
         status: 'ok',
         protocolVersion: PROTOCOL_VERSION,
-        evolved: { enabled: Boolean(options.evolved) },
+        evolved: { enabled: Boolean(options.evolved), browserCloudSttEnabled: process.env.EVOLVED_BROWSER_CLOUD_STT_ENABLED === '1' },
         capabilities: {
             workGraph: true,
             titleSuggestion: readTitleProviderConfig() !== null
@@ -287,6 +288,7 @@ function createWebApp(options: {
     app.route('/cli', createCliRoutes(options.getSyncEngine, options.evolved?.store))
 
     if (options.evolved) {
+        options.evolved.setSyncEngineProvider(options.getSyncEngine)
         app.route('/api/evolved', options.evolved.routes)
         app.use('/api/*', createProjectAuthMiddleware(options.evolved.store, options.jwtSecret, options.evolved.origin))
     } else {
@@ -295,6 +297,7 @@ function createWebApp(options: {
         app.use('/api/*', createAuthMiddleware(options.jwtSecret))
     }
     app.route('/api', createEventsRoutes(options.getSseManager, options.getSyncEngine, options.getVisibilityTracker))
+    app.route('/api', createExternalRefsRoutes(options.getSyncEngine, getConfiguration().dataDir))
     app.route('/api', createSessionsRoutes(options.getSyncEngine))
     app.route('/api', createMessagesRoutes(options.getSyncEngine))
     app.route('/api', createPermissionsRoutes(options.getSyncEngine))

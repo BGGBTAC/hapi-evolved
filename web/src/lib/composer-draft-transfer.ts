@@ -90,7 +90,7 @@ export function updateComposerDraftTextSnapshot(sessionId: string, text: string)
 /** Stable membership/metadata key for attachment-only persist effects. */
 export function attachmentDraftRevision(attachments: readonly AttachmentDraftInput[]): string {
     return attachments
-        .map(({ id, path, uploadSessionId }) => `${id}:${path ?? ''}:${uploadSessionId ?? ''}`)
+        .map(({ id, path, attachmentId, uploadSessionId }) => `${id}:${path ?? ''}:${attachmentId ?? ''}:${uploadSessionId ?? ''}`)
         .join('\0')
 }
 
@@ -117,10 +117,14 @@ export function forgetComposerDraftHandoff(sessionId: string): void {
     completedHandoffs.delete(sessionId)
 }
 
-function stripSessionScopedUploadFields(attachment: AttachmentDraftInput): AttachmentDraftInput {
+function stripSessionScopedUploadFields(
+    attachment: AttachmentDraftInput,
+    targetSessionId: string,
+): AttachmentDraftInput {
     return {
         ...attachment,
         path: undefined,
+        attachmentId: undefined,
         previewUrl: undefined,
         uploadSessionId: undefined,
     }
@@ -150,6 +154,7 @@ async function loadPersistedAttachments(
             id: metadata?.id ?? `transferred-${index}-${file.name}`,
             file,
             path: metadata?.path,
+            attachmentId: metadata?.attachmentId,
             previewUrl: metadata?.previewUrl,
             uploadSessionId: metadata?.uploadSessionId,
         }
@@ -286,18 +291,21 @@ async function awaitInactivePersist(sessionId: string): Promise<void> {
 }
 
 export type TransferComposerDraftOptions = {
+    preserveTargetAttachments?: boolean
     /**
-     * Immutable text captured at send/resume time. Prefer this over drafts that
-     * may already have been cleared by assistant-ui while resume was in flight.
+     * Text captured at send/resume time, or a resolver sampled before saving.
+     * The resolver can preserve destination edits made during attachment transfer.
      */
-    textOverride?: string
+    textOverride?: string | ((sampled: string) => string)
 }
 
 function resolveTransferredText(
     sampled: string,
     options?: TransferComposerDraftOptions,
 ): string {
-    return options?.textOverride !== undefined ? options.textOverride : sampled
+    return typeof options?.textOverride === 'function'
+        ? options.textOverride(sampled)
+        : options?.textOverride ?? sampled
 }
 
 /** Copy a draft to the new id returned by resume/reopen before navigating. */
@@ -311,12 +319,13 @@ export async function transferComposerDraft(
         // Same-id resume often no-ops attachments, but Send still needs the
         // submitted text restored after assistant-ui cleared the composer.
         if (options?.textOverride !== undefined) {
-            saveDraft(targetSessionId, options.textOverride)
+            const text = resolveTransferredText(getDraft(sourceSessionId), options)
+            saveDraft(targetSessionId, text)
             const existing = liveSnapshots.get(targetSessionId)
             if (existing) {
                 liveSnapshots.set(targetSessionId, {
                     ...existing,
-                    text: options.textOverride,
+                    text,
                 })
             }
         }
@@ -362,6 +371,17 @@ export async function transferComposerDraft(
             }
         }
 
+        let targetAttachments: AttachmentDraftInput[] = []
+        if (options?.preserveTargetAttachments) {
+            try {
+                await awaitInactivePersist(targetSessionId)
+                targetAttachments = await loadPersistedAttachments(targetSessionId, { throwOnError: true })
+            } catch (error) {
+                saveDraft(targetSessionId, resolveTransferredText(text, options))
+                throw error
+            }
+        }
+
         const buildTransferredAttachments = (): AttachmentDraftInput[] => {
             // Sample cancellation at write time (after any awaited IDB drain inside
             // moveDraftAttachments) so a remove() during the wait still drops the file.
@@ -383,18 +403,17 @@ export async function transferComposerDraft(
             const normalizedBase = (
                 sourceSessionId === targetSessionId
                     ? currentBase
-                    : currentBase.map(stripSessionScopedUploadFields)
+                    : currentBase.map((item) => stripSessionScopedUploadFields(item, targetSessionId))
             ).filter((item) => !cancelledIds.has(item.id))
             const normalizedPending = pendingAttachments
                 .filter((item) => !cancelledIds.has(item.id))
-                .map((attachment) => ({
-                    id: attachment.id,
-                    file: attachment.file,
-                    previewUrl: attachment.previewUrl,
-                    path: undefined,
-                    uploadSessionId: undefined,
-                }))
-            return mergeAttachmentsById(normalizedBase, normalizedPending)
+                .map((attachment) => sourceSessionId === targetSessionId
+                    ? attachment
+                    : { ...stripSessionScopedUploadFields(attachment, targetSessionId), previewUrl: attachment.previewUrl })
+            const moved = mergeAttachmentsById(normalizedBase, normalizedPending)
+            return options?.preserveTargetAttachments
+                ? mergeAttachmentsById(liveSnapshots.get(targetSessionId)?.attachments ?? targetAttachments, moved)
+                : moved
         }
 
         let attachments: AttachmentDraftInput[]
@@ -423,6 +442,7 @@ export async function transferComposerDraft(
                     const latest = pendingState?.latest
                     const textMarker = pendingState?.latestText
                     const cancelMarker = cancellationRevision()
+                    const targetSnapshot = liveSnapshots.get(targetSessionId)
                     transferredText = samplePendingTransferText(
                         sourceSessionId,
                         getDraft(sourceSessionId),
@@ -438,6 +458,7 @@ export async function transferComposerDraft(
                         after?.latest === latest
                         && after?.latestText === textMarker
                         && cancellationRevision() === cancelMarker
+                        && (!options?.preserveTargetAttachments || liveSnapshots.get(targetSessionId) === targetSnapshot)
                     ) {
                         break
                     }

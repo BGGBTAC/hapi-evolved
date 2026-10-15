@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode, type SyntheticEvent, type WheelEvent } from 'react'
 import { CloseIcon } from '@/components/icons'
 
@@ -13,6 +14,7 @@ function clampImageScale(value: number): number {
 type ImagePoint = { x: number; y: number }
 
 type PreviewImage = {
+    allowOpenInNewTab?: boolean
     src: string
     fileName: string
     label: string
@@ -38,6 +40,7 @@ export function ImagePreview(props: {
     imageStyle?: CSSProperties
     caption?: ReactNode
     galleryId?: string
+    allowOpenInNewTab?: boolean
     onTriggerPointerDown?: (event: PointerEvent<HTMLButtonElement>) => void
     onTriggerContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void
     onTriggerClick?: (event: MouseEvent<HTMLButtonElement>) => void
@@ -69,6 +72,7 @@ export function ImagePreview(props: {
             if (!image) return []
             return [{
                 src: image.getAttribute('src') ?? image.src,
+                allowOpenInNewTab: trigger.dataset.imagePreviewOpenTab === 'true',
                 fileName: trigger.dataset.imagePreviewFileName ?? image.alt,
                 label: trigger.dataset.imagePreviewLabel ?? image.alt
             }]
@@ -264,6 +268,7 @@ export function ImagePreview(props: {
 
     const activePreview = previewImages[previewIndex] ?? {
         src: props.src,
+        allowOpenInNewTab: props.allowOpenInNewTab,
         fileName: props.fileName,
         label: props.label
     }
@@ -279,6 +284,7 @@ export function ImagePreview(props: {
                 onContextMenu={props.onTriggerContextMenu}
                 onClick={handleTriggerClick}
                 data-image-preview-trigger=""
+                data-image-preview-open-tab={props.allowOpenInNewTab ? 'true' : undefined}
                 data-image-preview-file-name={props.fileName}
                 data-image-preview-label={props.label}
                 data-image-preview-gallery={props.galleryId ?? ''}
@@ -296,7 +302,7 @@ export function ImagePreview(props: {
                 <span className="sr-only">{props.fileName}</span>
             </button>
 
-            {viewerOpen ? (
+            {viewerOpen ? createPortal(
                 <div
                     className="fixed inset-0 z-50 flex flex-col bg-black/90 text-white"
                     role="dialog"
@@ -358,6 +364,7 @@ export function ImagePreview(props: {
                         >
                             +
                         </button>
+                        {activePreview.allowOpenInNewTab ? <a href={activePreview.src} target="_blank" rel="noopener noreferrer" className="rounded bg-white/10 px-3 py-1 text-sm">Open in new tab</a> : null}
                         <button
                             type="button"
                             onClick={closeViewer}
@@ -387,7 +394,7 @@ export function ImagePreview(props: {
                             }}
                         />
                     </div>
-                </div>
+                </div>, document.body
             ) : null}
         </>
     )

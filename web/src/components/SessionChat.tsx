@@ -73,6 +73,7 @@ import {
     finalizeMigratedScratchlistParkCleanup,
     prepareScratchlistParkAttachments,
     rehydrateScratchlistAttachmentsToComposer,
+    sendStagedComposeAttachments,
     stageScratchlistAttachmentsForComposeSend,
     type PendingParkAttachment,
     type ScratchlistParkResult,
@@ -86,6 +87,7 @@ import { useTranslation } from '@/lib/use-translation'
 import type { SendMessageAcceptance, SendMessageSettlement } from '@/hooks/mutations/useSendMessage'
 import { handoffComposerDraft, transferComposerDraftThenNavigate } from '@/lib/composer-draft-transfer'
 import { SessionHeader } from '@/components/SessionHeader'
+import { ModelErrorBanner } from '@/components/ModelErrorBanner'
 import { CursorMigrationBanner } from '@/components/CursorMigrationBanner'
 import { TeamPanel } from '@/components/TeamPanel'
 import { SessionStatusPanel } from '@/components/SessionStatusPanel'
@@ -124,6 +126,7 @@ import { AgentTerminalView } from '@/components/AgentTerminal/AgentTerminalView'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { VoiceBackendSession, registerSessionStore, registerVoiceHooksStore, voiceHooks } from '@/realtime'
 import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
+import { buildComposerMessageHistory } from '@/lib/composerMessageHistory'
 
 type SessionModelSelection = { provider: string; modelId: string } | string | null
 
@@ -380,7 +383,7 @@ export function shouldRouteToScratchlist(
     // Only park when every attachment is already hub-resident. Composer
     // uploads made before scratchlist mode was enabled still have normal
     // CLI paths; the hub rejects those as scratchlist metadata.
-    return (attachments ?? []).every((att) => isHubScratchlistAttachmentPath(att.path))
+    return (attachments ?? []).every((att) => Boolean(att.path && isHubScratchlistAttachmentPath(att.path)))
 }
 
 export function mergeStagedAttachmentsInOrder(
@@ -465,11 +468,14 @@ export function ScratchlistDrawerHost(props: {
         deliveryMode?: MessageDeliveryMode,
     ) => Promise<boolean | SendMessageAcceptance>
     onExitScratchlistMode: () => void
+    /** Invalidates composer history before restoring scratchlist text externally. */
+    onExternalComposerEdit?: () => void
     disabled?: boolean
 }) {
     const assistantApi = useAui()
     const handlePromoteToComposer = useCallback(async (entry: ScratchlistEntry) => {
         if (props.disabled) return
+        props.onExternalComposerEdit?.()
         assistantApi.composer().setText(entry.text)
         // Exit scratchlist mode before rehydrating attachments so addAttachment
         // uses the normal chat upload adapter (not the scratchlist hub adapter).
@@ -484,7 +490,7 @@ export function ScratchlistDrawerHost(props: {
                 assistantApi.composer()
             )
         }
-    }, [assistantApi, props.api, props.disabled, props.onExitScratchlistMode, props.sessionId])
+    }, [assistantApi, props.api, props.disabled, props.onExternalComposerEdit, props.onExitScratchlistMode, props.sessionId])
     const handlePromoteToQueue = useCallback(async (entry: ScratchlistEntry) => {
         if (props.disabled) return false
         let attachments: AttachmentMetadata[] | undefined
@@ -497,7 +503,12 @@ export function ScratchlistDrawerHost(props: {
         }
         // This action is explicitly labelled “Send to queue”. It must retain
         // that contract even when the Pi session is actively thinking.
-        const accepted = await props.onSend(entry.text, attachments, undefined, 'queue')
+        const accepted = await sendStagedComposeAttachments(
+            props.api,
+            props.sessionId,
+            attachments ?? [],
+            () => props.onSend(entry.text, attachments, undefined, 'queue'),
+        )
         if (accepted) {
             props.onExitScratchlistMode()
         }
@@ -595,7 +606,10 @@ type SessionChatProps = {
     ) => Promise<SendMessageAcceptance | false>
     resolveSessionIdForUpload?: (sessionId: string) => Promise<string>
     onUploadSessionResolved?: (sessionId: string) => void
+    resolveSessionIdForVoice?: (sessionId: string) => Promise<{ sessionId: string; resumed: boolean }>
+    onVoiceSessionResolved?: (sessionId: string) => void
     onViewModeChange: (mode: 'tail' | 'history') => void
+    onJumpToTail: () => void
     onRetryMessage?: (localId: string) => void
     autocompleteSuggestions?: (query: string) => Promise<Suggestion[]>
     availableSlashCommands?: readonly SlashCommand[]
@@ -608,6 +622,13 @@ type SessionChatProps = {
     onSuppressSendErrorRestore?: (id: number) => void
     initialOutlineOpen?: boolean
     onInitialOutlineConsumed?: () => void
+    initialTargetMessageId?: string
+    initialTargetMessageQuery?: string
+    searchRequestId?: number
+    onLoadMessageContext?: (messageId: string) => Promise<boolean>
+    onInitialTargetConsumed?: () => void
+    onSearchTargetDismissed?: () => void
+    onSearchMessage?: (messageId: string, query: string) => void
     // Called when an `abort-restore` event arrives and the composer is not empty,
     // so the caller can surface the aborted text via the existing sendError path.
     onAbortRestore?: (text: string) => void
@@ -698,6 +719,10 @@ function SessionChatInner(props: SessionChatProps) {
         props.session.metadata?.startingMode === 'pty' && props.session.active
     const normalizedCacheRef = useRef<Map<string, { source: DecryptedMessage; normalized: NormalizedMessage | null }>>(new Map())
     const focusComposerRef = useRef<(() => void) | null>(null)
+    const historyNavigationInvalidationRef = useRef<(() => void) | null>(null)
+    const invalidateComposerHistory = useCallback(() => {
+        historyNavigationInvalidationRef.current?.()
+    }, [])
     const blocksByIdRef = useRef<Map<string, ChatBlock>>(new Map())
     const visibleGroupsRef = useRef<ToolGroupBlock[]>([])
     const [rememberedTailBoundary, setRememberedTailBoundary] = useState<{
@@ -943,7 +968,7 @@ function SessionChatInner(props: SessionChatProps) {
             // it off before send, pending items still carry hub paths. Stage
             // those through the normal CLI upload dir before chat send.
             const list = attachments ?? []
-            const hubItems = list.filter((att) => isHubScratchlistAttachmentPath(att.path))
+            const hubItems = list.filter((att) => Boolean(att.path && isHubScratchlistAttachmentPath(att.path)))
             if (hubItems.length > 0) {
                 const staged = await stageScratchlistAttachmentsForComposeSend(
                     props.api,
@@ -951,11 +976,16 @@ function SessionChatInner(props: SessionChatProps) {
                     hubItems,
                 )
                 const ordered = mergeStagedAttachmentsInOrder(list, staged)
-                const accepted = await props.onSend(
-                    text,
-                    ordered,
-                    scheduledAt,
-                    deliveryMode,
+                const accepted = await sendStagedComposeAttachments(
+                    props.api,
+                    props.session.id,
+                    staged,
+                    () => props.onSend(
+                        text,
+                        ordered,
+                        scheduledAt,
+                        deliveryMode,
+                    ),
                 )
                 if (accepted) {
                     // Hub blobs were copied into the normal upload dir; drop the
@@ -999,6 +1029,7 @@ function SessionChatInner(props: SessionChatProps) {
         api: props.api,
         sessionId: props.session.id,
         machineId: props.session.metadata?.machineId ?? null,
+        preferSession: props.session.metadata?.capabilities?.concurrentClients === true,
         enabled: agentFlavor === 'codex' && props.session.active && !controlledByUser
     })
     const effectiveCodexServiceTier = agentFlavor === 'codex'
@@ -1429,6 +1460,11 @@ function SessionChatInner(props: SessionChatProps) {
         }
         return normalized
     }, [visibleMessages])
+
+    const messageHistory = useMemo(
+        () => buildComposerMessageHistory(normalizedMessages),
+        [normalizedMessages]
+    )
 
     const goalStateSourceMessages = useMemo(
         () => buildGoalStateMessages(props.messages),
@@ -1888,6 +1924,7 @@ function SessionChatInner(props: SessionChatProps) {
     return (
         <div className="flex h-full min-h-0 flex-col">
             <SessionHeader
+                onSearchMessage={props.onSearchMessage}
                 session={props.session}
                 serviceTier={effectiveCodexServiceTier}
                 onBack={props.onBack}
@@ -1918,6 +1955,7 @@ function SessionChatInner(props: SessionChatProps) {
             />
 
             <CursorMigrationBanner metadata={props.session.metadata} />
+            <ModelErrorBanner api={props.api} session={props.session} />
 
             {sessionStatus ? <SessionStatusPanel data={sessionStatus} /> : null}
 
@@ -1969,6 +2007,7 @@ function SessionChatInner(props: SessionChatProps) {
                         onRewindConversation={controlledByUser ? undefined : onRewindConversation}
                         isLatestCompletedBoundary={isLatestCompletedBoundary}
                         onViewModeChange={props.onViewModeChange}
+                        onJumpToTail={props.onJumpToTail}
                         isSyncingTail={props.isSyncingTail}
                         messagesWarning={props.messagesWarning}
                         hasMoreMessages={props.hasMoreMessages}
@@ -1984,6 +2023,12 @@ function SessionChatInner(props: SessionChatProps) {
                         outlineOpen={outlineOpen}
                         outlineItems={outlineItems}
                         onOutlineOpenChange={setOutlineOpen}
+                        initialTargetMessageId={props.initialTargetMessageId}
+                        initialTargetMessageQuery={props.initialTargetMessageQuery}
+                        searchRequestId={props.searchRequestId}
+                        onLoadMessageContext={props.onLoadMessageContext}
+                        onInitialTargetConsumed={props.onInitialTargetConsumed}
+                        onSearchTargetDismissed={props.onSearchTargetDismissed}
                     />
                     </div>
 
@@ -2026,6 +2071,7 @@ function SessionChatInner(props: SessionChatProps) {
                                     onDelete={scratchlist.remove}
                                     onSend={props.onSend}
                                     onExitScratchlistMode={() => setScratchlistMode(false)}
+                                    onExternalComposerEdit={invalidateComposerHistory}
                                     disabled={props.isSending || isScratchlistParking}
                                 />
                             ) : null}
@@ -2034,6 +2080,7 @@ function SessionChatInner(props: SessionChatProps) {
                                 api={props.api}
                                 pendingSchedule={pendingSchedule}
                                 pendingScheduleRevision={pendingScheduleRevision}
+                                onExternalComposerEdit={invalidateComposerHistory}
                                 onEdit={({ pendingSchedule: restored }) => {
                                     // Restore the schedule so the clock button re-activates
                                     updatePendingSchedule(restored)
@@ -2047,7 +2094,13 @@ function SessionChatInner(props: SessionChatProps) {
                         </div>
 
                         <HappyComposer
+                        agentConfig={props.session.metadata?.agentConfig}
+                        onAgentConfigChange={async (field, value) => {
+                            await props.api.setAgentConfig(props.session.id, field, value)
+                            await queryClient.invalidateQueries({ queryKey: queryKeys.session(props.session.id) })
+                        }}
                         focusInputRef={focusComposerRef}
+                        historyNavigationInvalidationRef={historyNavigationInvalidationRef}
                         key={`composer-${props.session.id}`}
                         sessionId={props.session.id}
                         canRestoreAttachments={props.session.active}
@@ -2115,6 +2168,8 @@ function SessionChatInner(props: SessionChatProps) {
                         }
                         active={props.session.active}
                         allowSendWhenInactive
+                        resolveSessionIdForVoice={props.resolveSessionIdForVoice}
+                        onVoiceSessionResolved={props.onVoiceSessionResolved}
                         onResumeStoredDraft={() => handleSend('', undefined, null)}
                         thinking={props.session.thinking}
                         agentState={props.session.agentState}
@@ -2167,8 +2222,7 @@ function SessionChatInner(props: SessionChatProps) {
                             agentFlavor === 'codex'
                                 ? (props.session.active && !controlledByUser && !codexModelsState.error ? handleModelChange : undefined)
                                 : agentFlavor === 'cursor'
-                                    ? (props.session.active
-                                        && !controlledByUser
+                                    ? ((!props.session.active || !controlledByUser)
                                         && !cursorCatalogPending
                                         && !cursorModelsState.error
                                         && cursorPicker
@@ -2225,6 +2279,7 @@ function SessionChatInner(props: SessionChatProps) {
                         onTerminal={props.session.active && terminalSupported ? handleViewTerminal : undefined}
                         terminalUnsupported={props.session.active && !terminalSupported}
                         autocompleteSuggestions={props.autocompleteSuggestions}
+                        messageHistory={messageHistory}
                         voiceStatus={voice?.status}
                         voiceMicMuted={voice?.micMuted}
                         onVoiceToggle={voice && voiceBackendReady ? handleVoiceToggle : undefined}

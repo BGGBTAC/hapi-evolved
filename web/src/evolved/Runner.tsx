@@ -9,6 +9,7 @@ type NewLease = { id: string; token: string; expiresAt: number; projectId: strin
 const permissions = [
     ['runner:connect', 'Agenten verbinden'], ['memory:read', 'Gedächtnis lesen'],
     ['memory:write', 'Wissen vorschlagen'], ['codegraph:read', 'Codegraph lesen'],
+    ['peers:read', 'Projekt-Agenten auflisten'], ['peers:send', 'Nachrichten an Projekt-Agenten senden'], ['peers:manage', 'Projekt-Agenten starten und archivieren'],
     ['resource:execute', 'Freigegebene Ressourcenaktionen ausführen'],
 ] as const
 export function downloadOperatorFile(value: string, name: string): void {

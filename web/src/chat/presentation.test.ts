@@ -121,14 +121,14 @@ describe('getEventPresentation — api-error', () => {
             .toBe('API error: Retrying...')
     })
 
-    it('keeps the counted, exhausted and bare renderings untouched', () => {
+    it('keeps retry state and shows the reason for terminal failures', () => {
         const error = { message: 'Rate limit exceeded.' }
         expect(getEventPresentation({ type: 'api-error', retryAttempt: 2, maxRetries: 10, error }))
             .toEqual({ icon: '⏳', text: 'API error: Retrying (2/10)' })
         expect(getEventPresentation({ type: 'api-error', retryAttempt: 10, maxRetries: 10, error }))
             .toEqual({ icon: '⚠️', text: 'API error: Max retries reached' })
         expect(getEventPresentation({ type: 'api-error', retryAttempt: 0, maxRetries: 0, error }))
-            .toEqual({ icon: '⚠️', text: 'API error' })
+            .toEqual({ icon: '⚠️', text: 'API error: Rate limit exceeded.' })
     })
 })
 

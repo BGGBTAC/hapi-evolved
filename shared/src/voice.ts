@@ -248,7 +248,7 @@ export type VoiceBackendType = 'elevenlabs' | 'gemini-live' | 'qwen-realtime'
 
 export type VoiceMode = 'assistant' | 'dictation'
 export type TranscriptionMode = 'standard' | 'realtime'
-export type TranscriptionProvider = 'openai' | 'elevenlabs' | 'deepgram' | 'groq' | 'openai-compatible' | 'browser-local'
+export type TranscriptionProvider = 'openai' | 'elevenlabs' | 'deepgram' | 'groq' | 'openai-compatible' | 'browser-local' | 'browser-cloud'
 
 export const OPENAI_TRANSCRIPTION_MODEL = 'gpt-transcribe'
 export const OPENAI_REALTIME_TRANSCRIPTION_MODEL = 'gpt-live-transcribe'
@@ -269,9 +269,11 @@ const TRANSCRIPTION_PROVIDERS: Record<TranscriptionProvider, TranscriptionProvid
     deepgram: { id: 'deepgram', label: 'Deepgram', modes: ['standard', 'realtime'] },
     groq: { id: 'groq', label: 'Groq', modes: ['standard'] },
     'openai-compatible': { id: 'openai-compatible', label: 'OpenAI-compatible / local', modes: ['standard'] },
+    'browser-cloud': { id: 'browser-cloud', label: 'Browser Cloud (Audio verlässt das Gerät)', modes: ['realtime'] },
     'browser-local': { id: 'browser-local', label: 'Browser on-device', modes: ['realtime'] }
 }
 
+export const BROWSER_CLOUD_TRANSCRIPTION_PROVIDER = TRANSCRIPTION_PROVIDERS['browser-cloud']
 export const BROWSER_LOCAL_TRANSCRIPTION_PROVIDER = TRANSCRIPTION_PROVIDERS['browser-local']
 
 /** Transcription providers whose startup environment is complete. */

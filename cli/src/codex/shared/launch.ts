@@ -10,7 +10,7 @@ import type { CodexAppServerClient } from '../codexAppServerClient';
 export const SharedLaunchSchema = z.object({
     startedBy: z.enum(['runner', 'terminal']).optional(),
     codexArgs: z.array(z.string()).optional(),
-    permissionMode: z.enum(['default', 'read-only', 'safe-yolo', 'yolo']).optional(),
+    permissionMode: z.enum(['default', 'autoReview', 'read-only', 'safe-yolo', 'yolo']).optional(),
     resumeSessionId: z.string().optional(), resumeLast: z.boolean().optional(), resumeAll: z.boolean().optional(),
     existingSessionId: z.string().optional(),
     /** Hub-preallocated stub — create/adopt, not reopen. */
@@ -32,7 +32,7 @@ export function takeReservedSessionId(options: SharedLaunchOptions): string | un
 }
 
 /** Resolve once: a desktop server and a different PATH TUI are never mixed. */
-export function resolveSharedCodex(): CodexCommand {
+export function resolveSharedCodex(): CodexCommand & { supportsHistoryMode: boolean } {
     const command = resolveCodexCommand();
     const version = execFileSync(command.command, [...command.args, '--version'], {
         encoding: 'utf8', timeout: 10_000, windowsHide: true
@@ -40,7 +40,16 @@ export function resolveSharedCodex(): CodexCommand {
     if (!version || Number(version[1]) === 0 && Number(version[2]) < 154) {
         throw new Error('Shared sessions require Codex >= 0.154.0. Upgrade the Codex executable on PATH.');
     }
-    return command;
+    return { ...command, supportsHistoryMode: Number(version[1]) > 0 || Number(version[2]) >= 157 };
+}
+
+/** Codex 0.157 defaults to paginated, whose empty rollout cannot be resumed. */
+export function newSharedThreadParams(params: Record<string, unknown>, supportsHistoryMode: boolean): Record<string, unknown> {
+    if (!supportsHistoryMode) return params;
+    if (params.historyMode !== undefined && params.historyMode !== 'legacy') {
+        throw new Error('New shared threads require legacy history mode so empty threads remain reconnectable. Existing paginated threads can still be resumed.');
+    }
+    return { ...params, historyMode: 'legacy' };
 }
 
 export function sharedLaunchConfig(options: SharedLaunchOptions, cwd: string): {
@@ -128,7 +137,7 @@ export function sharedLaunchConfig(options: SharedLaunchOptions, cwd: string): {
         // initial thread, attached TUI, and later native /new threads.
         config.approval_policy = permission.approvalPolicy;
         config.sandbox_mode = permission.sandbox;
-        config.approvals_reviewer = 'user';
+        config.approvals_reviewer = permission.approvalsReviewer ?? 'user';
     }
     // The attached TUI resumes a remote task, which rejects permission flags.
     // The initial thread already has their resolved policy; inherit it there.
@@ -145,7 +154,7 @@ export function sharedLaunchConfig(options: SharedLaunchOptions, cwd: string): {
             ...(overrides.approvalPolicy ? { approvalPolicy: overrides.approvalPolicy } : {}),
             ...(overrides.sandbox ? { sandbox: overrides.sandbox } : {}),
             ...(autoReview ? { approvalPolicy: 'on-request', approvalsReviewer: 'auto_review', sandbox: 'workspace-write' } : {}),
-            ...(permission ? { approvalPolicy: permission.approvalPolicy, approvalsReviewer: 'user', sandbox: permission.sandbox } : {}),
+            ...(permission ? { approvalPolicy: permission.approvalPolicy, approvalsReviewer: permission.approvalsReviewer ?? 'user', sandbox: permission.sandbox } : {}),
             config: { ...config, ...(options.modelReasoningEffort ? { model_reasoning_effort: options.modelReasoningEffort } : {}) },
             developerInstructions: getCodexSystemPrompt()
         }

@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from 'react'
+import { isLongMessage, longMessagePreview } from '@/lib/longMessage'
 import type { MessageStatus } from '@/types/api'
 import { LazyRainbowText } from '@/components/LazyRainbowText'
 import { SparklesIcon } from '@/components/ToolCard/icons'
@@ -58,7 +60,7 @@ export function DirectiveChip(props: { value: string }) {
     )
 }
 
-export function UserBubbleContent(props: { text: string }) {
+function FullUserBubbleContent(props: { text: string }) {
     const { directives, body } = extractLeadingDirectives(props.text)
     const hasBody = body.trim().length > 0
     const shouldRenderInline = directives.length > 0 && hasBody && !/[\r\n]/.test(body)
@@ -84,4 +86,25 @@ export function UserBubbleContent(props: { text: string }) {
             {hasBody ? <LazyRainbowText text={body} preserveSingleLineBreaks /> : null}
         </div>
     )
+}
+
+
+/** Presentation only: the original text still feeds Copy, persistence and the agent. */
+export function UserBubbleContent({ text }: { text: string }) {
+    const [expanded, setExpanded] = useState(false), root = useRef<HTMLDivElement>(null)
+    const long = isLongMessage(text)
+    useEffect(() => { setExpanded(false) }, [text])
+    useEffect(() => {
+        const anchor = root.current?.closest('.happy-thread-messages > [id]')
+        if (!long || !anchor) return
+        const reveal = () => { if (anchor.getAttribute('data-hapi-source-search-match') === 'true') setExpanded(true) }
+        const observer = new MutationObserver(reveal)
+        observer.observe(anchor, { attributes: true, attributeFilter: ['data-hapi-source-search-match'] }); reveal()
+        return () => observer.disconnect()
+    }, [long])
+    if (!long) return <FullUserBubbleContent text={text} />
+    return <div ref={root} className="min-w-0">
+        <div className={expanded ? undefined : 'max-h-[15em] overflow-hidden'}><FullUserBubbleContent text={expanded ? text : longMessagePreview(text)} /></div>
+        <button type="button" className="mt-1 text-xs underline" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? 'Show less' : 'Show more'}</button>
+    </div>
 }

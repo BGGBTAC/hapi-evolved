@@ -1,8 +1,9 @@
 import { RawJSONLines, RawJSONLinesSchema } from "../types";
-import { basename, join } from "node:path";
+import { basename } from "node:path";
 import { open, stat } from "node:fs/promises";
 import { logger } from "@/ui/logger";
 import { getProjectPath } from "./path";
+import { findClaudeSessionFile } from "./claudeSessionFile";
 import { BaseSessionScanner, SessionFileScanEntry, SessionFileScanResult, SessionFileScanStats } from "@/modules/common/session/BaseSessionScanner";
 
 /**
@@ -19,11 +20,13 @@ const INTERNAL_CLAUDE_EVENT_TYPES = new Set([
 export async function createSessionScanner(opts: {
     sessionId: string | null;
     workingDirectory: string;
+    claudeConfigDir?: string;
     onMessage: (message: RawJSONLines) => void;
 }) {
     const scanner = new ClaudeSessionScanner({
         sessionId: opts.sessionId,
         workingDirectory: opts.workingDirectory,
+        claudeConfigDir: opts.claudeConfigDir,
         onMessage: opts.onMessage
     });
 
@@ -33,6 +36,7 @@ export async function createSessionScanner(opts: {
         cleanup: async () => {
             await scanner.cleanup();
         },
+        flush: () => scanner.flush(),
         onNewSession: (sessionId: string) => {
             scanner.onNewSession(sessionId);
         }
@@ -50,9 +54,9 @@ class ClaudeSessionScanner extends BaseSessionScanner<RawJSONLines> {
     private currentSessionId: string | null;
     private readonly scannedSessions = new Set<string>();
 
-    constructor(opts: { sessionId: string | null; workingDirectory: string; onMessage: (message: RawJSONLines) => void }) {
+    constructor(opts: { sessionId: string | null; workingDirectory: string; claudeConfigDir?: string; onMessage: (message: RawJSONLines) => void }) {
         super({ intervalMs: 3000 });
-        this.projectDir = getProjectPath(opts.workingDirectory);
+        this.projectDir = getProjectPath(opts.workingDirectory, opts.claudeConfigDir);
         this.onMessage = opts.onMessage;
         this.currentSessionId = opts.sessionId;
     }
@@ -82,7 +86,7 @@ class ClaudeSessionScanner extends BaseSessionScanner<RawJSONLines> {
         if (!this.currentSessionId) {
             return;
         }
-        const sessionFile = this.sessionFilePath(this.currentSessionId);
+        const sessionFile = await this.sessionFilePath(this.currentSessionId);
         const { events, nextCursor } = await readSessionLog(sessionFile, 0);
         logger.debug(`[SESSION_SCANNER] Marking ${events.length} existing messages as processed from session ${this.currentSessionId}`);
         const keys = events.map((entry) => messageKey(entry.event));
@@ -97,14 +101,12 @@ class ClaudeSessionScanner extends BaseSessionScanner<RawJSONLines> {
     protected async findSessionFiles(): Promise<string[]> {
         const files = new Set<string>();
         for (const sessionId of this.pendingSessions) {
-            files.add(this.sessionFilePath(sessionId));
+            files.add(await this.sessionFilePath(sessionId));
         }
         if (this.currentSessionId && !this.pendingSessions.has(this.currentSessionId)) {
-            files.add(this.sessionFilePath(this.currentSessionId));
+            files.add(await this.sessionFilePath(this.currentSessionId));
         }
-        for (const watched of this.getWatchedFiles()) {
-            files.add(watched);
-        }
+        this.pruneWatchers(files);
         return [...files];
     }
 
@@ -145,8 +147,8 @@ class ClaudeSessionScanner extends BaseSessionScanner<RawJSONLines> {
         }
     }
 
-    private sessionFilePath(sessionId: string): string {
-        return join(this.projectDir, `${sessionId}.jsonl`);
+    private sessionFilePath(sessionId: string): Promise<string> {
+        return findClaudeSessionFile(this.projectDir, sessionId);
     }
 }
 

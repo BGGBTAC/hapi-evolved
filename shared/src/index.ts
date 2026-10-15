@@ -27,3 +27,6 @@ export * from './utils'
 export * from './usage'
 export * from './version'
 export type * from './types'
+
+export { ExternalRefsSchema, GithubPrExternalRefSchema, parseGithubPrInput, getPrimaryGithubPrRef, agentLinkedRefs, withoutExternalRefs } from './externalRefs'
+export type { ExternalRef, GithubPrExternalRef } from './externalRefs'

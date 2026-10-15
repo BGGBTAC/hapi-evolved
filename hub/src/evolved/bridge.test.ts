@@ -27,6 +27,8 @@ function setup() {
     app.use('/api/*', createProjectAuthMiddleware(store, secret, origin))
     app.get('/api/sessions', c => c.json({ ns: c.get('namespace') }))
     app.post('/api/sessions', c => c.json({ ok: true }))
+    app.post('/api/sessions/content-search', c => c.json({ results: [] }))
+    app.get('/api/claude/sessions', c => c.json({ shouldNeverExposeHostHome: true }))
     app.post('/api/machines/:id/list-directory', c => c.json({ ok: true }))
     app.post('/api/machines/:id/paths/exists', c => c.json({ ok: true }))
     app.post('/api/sessions/:id/codex/plan/implement', c => c.json({ ok: true }))
@@ -41,6 +43,26 @@ function setup() {
     return { store, team, project, second, cookie, secret, origin, app, mint }
 }
 describe('Evolved project boundary', () => {
+    test('restricted and workspace profiles reject Codex autoReview explicitly', () => {
+        const t = setup()
+        expect(permissionAllowed(t.project, 'autoReview')).toBe(false)
+        expect(permissionAllowed({ ...t.project, profile: 'workspace' }, 'autoReview')).toBe(false)
+        expect(permissionAllowed({ ...t.project, profile: 'extended' }, 'autoReview')).toBe(true)
+    })
+    test('native import cannot expose Hub HOME and Cursor cannot be spawned even by an admin', async () => {
+        const t = setup(), { body } = await t.mint()
+        const headers = { authorization: `Bearer ${body.token}`, origin: t.origin, 'content-type': 'application/json' }
+        for (const path of ['/api/claude/sessions', '/api/cursor/sessions', '/api/codex/sessions', '/api/machines/m/claude-discover']) {
+            expect((await t.app.request(path, { headers })).status).toBe(403)
+        }
+        expect((await t.app.request('/api/machines/m/spawn', { method: 'POST', headers, body: JSON.stringify({ agent: 'cursor', directory: t.project.rootPath }) })).status).toBe(400)
+    })
+    test('viewer can use exact POST content-search without acquiring mutation rights', async () => {
+        const t = setup(), { body } = await t.mint(t.store.createSession('charlie'))
+        const headers = { authorization: `Bearer ${body.token}`, origin: t.origin, 'content-type': 'application/json' }
+        expect((await t.app.request('/api/sessions/content-search', { method: 'POST', headers, body: '{}' })).status).toBe(200)
+        expect((await t.app.request('/api/sessions', { method: 'POST', headers, body: '{}' })).status).toBe(401)
+    })
     test('derives namespace from current membership and rejects project substitution', async () => {
         const t = setup(), { body } = await t.mint()
         const access = await verifyProjectToken(body.token, t.secret, t.store)

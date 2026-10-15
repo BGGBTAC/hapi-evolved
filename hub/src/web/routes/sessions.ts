@@ -1,3 +1,7 @@
+import { agentConfigField, getRuntimeAgentConfigDescriptor, isAgentConfigFieldAvailable, type AgentConfigFieldId } from '@hapi/protocol'
+import { attachmentResponseBody, readAttachmentForDownload } from '../attachmentDownload'
+import { attachmentContentDisposition } from '../attachmentHeaders'
+import { RpcTargetMissingError } from '../../sync/rpcGateway'
 import {
     CursorMigrateToAcpRequestSchema,
     DeleteUploadRequestSchema,
@@ -26,18 +30,23 @@ import {
     toSessionSummary,
     UploadFileRequestSchema
 } from '@hapi/protocol'
-import { RPC_METHODS } from '@hapi/protocol/rpcMethods'
+import { RPC_METHODS, RPC_TARGET_MISSING_ERROR_CODE } from '@hapi/protocol/rpcMethods'
 import type { SlashCommand } from '@hapi/protocol/apiTypes'
 import { Hono, type Context } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
+import { MAX_CONTENT_SEARCH_SESSION_SCOPE_BYTES, serializeContentSearchSessionIds } from '../../store/messageContentSearch'
 import type { SyncEngine, Session } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
 import { loadScratchlistAttachmentLimitsFromEnv } from '../../config/scratchlistAttachmentLimits'
 import { validateScratchlistAttachmentsForWrite, scratchlistSessionBytesBeforeForPut } from '../../scratchlistAttachments/validate'
 import { TitleSuggestionError } from '../../sync/titleSuggestion'
 import { requireSessionFromParam, requireSyncEngine } from './guards'
+import { normalizeSessionSearchQuery, scoreSessionSearchMatch } from './sessionSearchMatch'
 import { permissionAllowed, projectPermissionMode, withinProject } from '../../evolved/bridge'
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+const MAX_CONTENT_SEARCH_REQUEST_BYTES = MAX_CONTENT_SEARCH_SESSION_SCOPE_BYTES + 4 * 1024
+const MAX_CONTENT_SEARCH_QUERY_CHARACTERS = 200
 
 function commandsFromMetadataSlashCommands(names: readonly string[] | undefined): SlashCommand[] {
     if (!names?.length) {
@@ -129,6 +138,231 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
         })
 
         return c.json({ sessions })
+    })
+
+    // Keyword inventory search — not recency-bounded like list_peers / GET ?limit=.
+    // Must be registered before /sessions/:id so "search" is not treated as an id.
+    app.get('/sessions/search', (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const qRaw = c.req.query('q') ?? ''
+        if (qRaw.length > 200) return c.json({ error: 'Query too long', code: 'bad_args' }, 400)
+        const normalizedQuery = normalizeSessionSearchQuery(qRaw)
+        if (!normalizedQuery) {
+            return c.json({ error: 'query parameter q is required', code: 'bad_args' }, 400)
+        }
+
+        const limitRaw = c.req.query('limit')
+        const parsedLimit = limitRaw === undefined ? 30 : Number(limitRaw)
+        // Cap matches GET /sessions (500). MCP/CLI public page stays ≤100; clients
+        // request peerListFetchLimit (= page + caller/overflow pad, e.g. 102) so
+        // hasMore stays honest after excluding the caller.
+        const limit = Number.isFinite(parsedLimit)
+            ? Math.min(500, Math.max(1, Math.floor(parsedLimit)))
+            : 30
+
+        const namespace = c.get('namespace')
+        const ranked = engine.getSessionsByNamespace(namespace)
+            .map((session) => ({
+                session,
+                score: scoreSessionSearchMatch(session, normalizedQuery)
+            }))
+            .filter((row) => row.score > 0)
+            .sort((a, b) => {
+                if (b.score !== a.score) {
+                    return b.score - a.score
+                }
+                return b.session.updatedAt - a.session.updatedAt
+            })
+            .slice(0, limit)
+            .map((row) => row.session)
+
+        const scheduledCounts = engine.getFutureScheduledMessageCounts(ranked.map((session) => session.id))
+        const nextScheduledAt = engine.getNextScheduledAtBySessionIds(ranked.map((session) => session.id))
+        const sessions = ranked.map((session) => {
+            const summary = toSessionSummary(session)
+            return {
+                ...summary,
+                futureScheduledMessageCount: scheduledCounts.get(session.id) ?? 0,
+                nextScheduledAt: nextScheduledAt.get(session.id) ?? null
+            }
+        })
+
+        return c.json({ sessions, q: normalizedQuery })
+    })
+
+    const respondToSessionContentSearch = (
+        c: Context<WebAppEnv>,
+        engine: SyncEngine,
+        query: string,
+        limit: number,
+        sessionIds?: readonly string[]
+    ) => {
+        if (!query) return c.json({ results: [], hasPotentiallyIncompleteResults: false })
+        if (Array.from(query).length > MAX_CONTENT_SEARCH_QUERY_CHARACTERS) {
+            return c.json({ error: 'Content search query too long' }, 400)
+        }
+
+        const namespace = c.get('namespace')
+        const sessionsById = new Map(
+            engine.getSessionsByNamespace(namespace).map((session) => [session.id, session])
+        )
+        const normalizedSessionIds = sessionIds === undefined
+            ? undefined
+            : [...new Set(sessionIds.map((sessionId) => sessionId.trim()).filter(Boolean))]
+        const scopedSessionIds = normalizedSessionIds?.filter((sessionId) => sessionsById.has(sessionId))
+        if (scopedSessionIds && serializeContentSearchSessionIds(scopedSessionIds) === null) {
+            return c.json({ error: 'sessionIds too large' }, 400)
+        }
+        const matches = engine.searchSessionContent(query, namespace, limit, scopedSessionIds)
+        const hasPotentiallyIncompleteResults = engine.hasPotentiallyIncompleteSessionContent(
+            namespace,
+            query,
+            scopedSessionIds
+        )
+        const matchedSessionIds = matches.map((match) => match.sessionId)
+        const scheduledCounts = engine.getFutureScheduledMessageCounts(matchedSessionIds)
+        const nextScheduledAt = engine.getNextScheduledAtBySessionIds(matchedSessionIds)
+        const results = matches
+            .flatMap((match) => {
+                const session = sessionsById.get(match.sessionId)
+                if (!session) return []
+                const summary = toSessionSummary(session)
+                return [{
+                    session: {
+                        ...summary,
+                        futureScheduledMessageCount: scheduledCounts.get(session.id) ?? 0,
+                        nextScheduledAt: nextScheduledAt.get(session.id) ?? null
+                    },
+                    match: {
+                        messageId: match.messageId,
+                        role: match.role,
+                        seq: match.seq,
+                        createdAt: match.createdAt,
+                        snippet: match.snippet,
+                        truncated: match.truncated
+                    }
+                }]
+            })
+
+        return c.json({ results, hasPotentiallyIncompleteResults })
+    }
+
+    app.get('/sessions/content-search', (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const query = c.req.query('query')?.trim() ?? ''
+        const limitRaw = Number(c.req.query('limit'))
+        const limit = Number.isFinite(limitRaw)
+            ? Math.min(100, Math.max(1, Math.floor(limitRaw)))
+            : 50
+        const searchUrl = new URL(c.req.url)
+        const requestedSessionIds = searchUrl.searchParams.getAll('sessionId')
+            .map((sessionId) => sessionId.trim())
+            .filter(Boolean)
+        const sessionIds = searchUrl.searchParams.has('sessionId')
+            ? [...new Set(requestedSessionIds)]
+            : undefined
+        return respondToSessionContentSearch(c, engine, query, limit, sessionIds)
+    })
+
+    app.post(
+        '/sessions/content-search',
+        bodyLimit({
+            maxSize: MAX_CONTENT_SEARCH_REQUEST_BYTES,
+            onError: (c) => c.json({ error: 'Content search request too large' }, 413)
+        }),
+        async (c) => {
+            const engine = requireSyncEngine(c, getSyncEngine)
+            if (engine instanceof Response) {
+                return engine
+            }
+
+            let body: {
+                query?: unknown
+                limit?: unknown
+                sessionIds?: unknown
+            } | null
+            try {
+                body = await c.req.json() as {
+                    query?: unknown
+                    limit?: unknown
+                    sessionIds?: unknown
+                }
+            } catch (error) {
+                if (error instanceof Error && error.name === 'BodyLimitError') {
+                    return c.json({ error: 'Content search request too large' }, 413)
+                }
+                body = null
+            }
+            if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+                return c.json({ error: 'Invalid body' }, 400)
+            }
+            if (body.query !== undefined && typeof body.query !== 'string') {
+                return c.json({ error: 'Invalid query' }, 400)
+            }
+            if (body.sessionIds !== undefined && (
+                !Array.isArray(body.sessionIds)
+                || body.sessionIds.some((sessionId) => typeof sessionId !== 'string')
+            )) {
+                return c.json({ error: 'Invalid sessionIds' }, 400)
+            }
+
+            const query = typeof body.query === 'string' ? body.query.trim() : ''
+            const limitRaw = Number(body.limit)
+            const limit = Number.isFinite(limitRaw)
+                ? Math.min(100, Math.max(1, Math.floor(limitRaw)))
+                : 50
+            const sessionIds = body.sessionIds === undefined
+                ? undefined
+                : [...new Set(
+                    (body.sessionIds as string[])
+                        .map((sessionId) => sessionId.trim())
+                        .filter(Boolean)
+                )]
+            return respondToSessionContentSearch(c, engine, query, limit, sessionIds)
+        }
+    )
+
+    app.get('/sessions/:id/content-search', (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+
+        const query = c.req.query('query')?.trim() ?? ''
+        if (!query) return c.json({ matches: [], total: 0, hasPotentiallyIncompleteResults: false })
+        if (Array.from(query).length > MAX_CONTENT_SEARCH_QUERY_CHARACTERS) {
+            return c.json({ error: 'Content search query too long' }, 400)
+        }
+
+        const limitRaw = Number(c.req.query('limit'))
+        const limit = Number.isFinite(limitRaw)
+            ? Math.min(1000, Math.max(1, Math.floor(limitRaw)))
+            : 500
+        const result = engine.searchSessionContentMatches(
+            query,
+            c.get('namespace'),
+            sessionResult.session.id,
+            limit
+        )
+
+        return c.json({
+            matches: result.matches.map(({ sessionId: _sessionId, ...match }) => match),
+            total: result.total,
+            hasPotentiallyIncompleteResults: result.hasPotentiallyIncompleteResults
+        })
     })
 
     app.get('/sessions/:id/export', (c) => {
@@ -301,7 +535,7 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
             return engine
         }
 
-        const sessionResult = requireSessionFromParam(c, engine, { requireActive: true })
+        const sessionResult = requireSessionFromParam(c, engine, { requireActive: false })
         if (sessionResult instanceof Response) {
             return sessionResult
         }
@@ -316,10 +550,10 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
         if (estimatedBytes > MAX_UPLOAD_BYTES) {
             return c.json({ success: false, error: 'File too large (max 50MB)' }, 413)
         }
-
         try {
-            const result = await engine.uploadFile(
+            const result = await engine.createAttachment(
                 sessionResult.sessionId,
+                c.get('namespace'),
                 parsed.data.filename,
                 parsed.data.content,
                 parsed.data.mimeType
@@ -339,7 +573,7 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
             return engine
         }
 
-        const sessionResult = requireSessionFromParam(c, engine, { requireActive: true })
+        const sessionResult = requireSessionFromParam(c, engine, { requireActive: false })
         if (sessionResult instanceof Response) {
             return sessionResult
         }
@@ -349,9 +583,14 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
         if (!parsed.success) {
             return c.json({ error: 'Invalid body' }, 400)
         }
+        if (!parsed.data.attachmentId && !sessionResult.session.active) {
+            return c.json({ error: 'Session is inactive' }, 409)
+        }
 
         try {
-            const result = await engine.deleteUploadFile(sessionResult.sessionId, parsed.data.path)
+            const result = parsed.data.attachmentId
+                ? await engine.deleteAttachment(sessionResult.sessionId, c.get('namespace'), parsed.data.attachmentId)
+                : await engine.deleteUploadFile(sessionResult.sessionId, parsed.data.path!)
             return c.json(result)
         } catch (error) {
             return c.json({
@@ -359,6 +598,41 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
                 error: error instanceof Error ? error.message : 'Failed to delete upload'
             }, 500)
         }
+    })
+
+    app.get('/sessions/:id/attachments/:attachmentId/original', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+        const attachment = await readAttachmentForDownload(
+            engine,
+            sessionResult.sessionId,
+            c.get('namespace'),
+            c.req.param('attachmentId')
+        )
+        if (!attachment) {
+            return c.json({ error: 'Attachment not found' }, 404)
+        }
+
+        return new Response(attachmentResponseBody(attachment), {
+            headers: {
+                'Content-Type': attachment.mimeType,
+                'Content-Length': String(attachment.size),
+                'Content-Disposition': attachmentContentDisposition(attachment.attachment.filename),
+                'Content-Security-Policy': "sandbox; default-src 'none'",
+                'Cache-Control': 'private, no-store',
+                'Vary': 'Authorization',
+                'ETag': `"${attachment.sha256}"`,
+                'X-Hapi-Attachment-Sha256': attachment.sha256,
+                'X-Hapi-Attachment-Size': String(attachment.size),
+                'X-Content-Type-Options': 'nosniff'
+            }
+        })
     })
 
     app.post('/sessions/:id/abort', async (c) => {
@@ -697,13 +971,90 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
         }
     })
 
+    app.get('/sessions/:id/agent-config', c => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const result = requireSessionFromParam(c, engine)
+        if (result instanceof Response) return result
+        const flavor = result.session.metadata?.flavor
+        if (flavor !== 'claude' && flavor !== 'codex') return c.json({ error: 'Runtime descriptor unavailable' }, 409)
+        const descriptor = result.session.metadata?.agentConfig ?? getRuntimeAgentConfigDescriptor(flavor)
+        const project = c.get('evolvedAccess')?.project
+        return c.json({ descriptor: { ...descriptor, fields: descriptor.fields.map(field => ({ ...field,
+            ...(field.id === 'permission' && project ? { options: field.options?.filter(option => typeof option.value === 'string' && permissionAllowed(project, option.value as Session['permissionMode'])) } : {})
+        })) } })
+    })
+
+    app.post('/sessions/:id/agent-config', async c => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const result = requireSessionFromParam(c, engine, { requireActive: true })
+        if (result instanceof Response) return result
+        const session = result.session
+        const flavor = session.metadata?.flavor
+        if (flavor !== 'claude' && flavor !== 'codex') return c.json({ error: 'Runtime descriptor unavailable' }, 409)
+        const body = await c.req.json().catch(() => null)
+        const descriptor = session.metadata?.agentConfig ?? getRuntimeAgentConfigDescriptor(flavor)
+        const fieldId = body?.field as AgentConfigFieldId
+        if (!isAgentConfigFieldAvailable(descriptor, fieldId)) return c.json({ error: 'Configuration field unavailable' }, 400)
+        if (flavor === 'codex' && session.agentState?.controlledByUser && !session.metadata?.capabilities?.concurrentClients) return c.json({ error: 'Shared or remote runtime required' }, 409)
+        const field = agentConfigField(descriptor, fieldId)!
+        // Dispatch only known wire keys; a runtime-supplied descriptor is not authority.
+        let config: Parameters<SyncEngine['applySessionConfig']>[1]
+        if (fieldId === 'permission') {
+            const parsed = SessionPermissionModeRequestSchema.safeParse({ mode: body.value })
+            if (!parsed.success || !isPermissionModeAllowedForFlavor(parsed.data.mode, flavor)) return c.json({ error: 'Invalid permission mode' }, 400)
+            const project = c.get('evolvedAccess')?.project
+            if (project && !permissionAllowed(project, parsed.data.mode)) return c.json({ error: 'Permission mode exceeds project profile' }, 403)
+            if (field.options && !field.options.some(option => option.value === parsed.data.mode)) return c.json({ error: 'Permission mode unavailable' }, 400)
+            config = { permissionMode: parsed.data.mode }
+        } else if (fieldId === 'model') {
+            const parsed = SessionModelRequestSchema.safeParse({ model: body.value })
+            if (!parsed.success || typeof parsed.data.model === 'object' && parsed.data.model !== null) return c.json({ error: 'Invalid model' }, 400)
+            config = parsed.data
+        } else if (fieldId === 'effort') {
+            if (flavor === 'codex') {
+                const parsed = SessionModelReasoningEffortRequestSchema.safeParse({ modelReasoningEffort: body.value })
+                if (!parsed.success) return c.json({ error: 'Invalid reasoning effort' }, 400)
+                config = parsed.data
+            } else {
+                const parsed = SessionEffortRequestSchema.safeParse({ effort: body.value })
+                if (!parsed.success) return c.json({ error: 'Invalid effort' }, 400)
+                config = parsed.data
+            }
+        } else if (fieldId === 'serviceTier' && flavor === 'codex') {
+            const parsed = SessionServiceTierRequestSchema.safeParse({ serviceTier: body.value })
+            if (!parsed.success) return c.json({ error: 'Invalid service tier' }, 400)
+            config = parsed.data
+        } else if (fieldId === 'collaborationMode' && flavor === 'codex') {
+            const parsed = SessionCollaborationModeRequestSchema.safeParse({ mode: body.value })
+            if (!parsed.success) return c.json({ error: 'Invalid collaboration mode' }, 400)
+            config = { collaborationMode: parsed.data.mode }
+        } else return c.json({ error: 'Configuration field unavailable' }, 400)
+        try { await engine.applySessionConfig(result.sessionId, config); return c.json({ ok: true }) }
+        catch (error) { return c.json({ error: error instanceof Error ? error.message : 'Configuration failed' }, 409) }
+    })
+
+    app.post('/sessions/:id/model-error/ack', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const result = requireSessionFromParam(c, engine)
+        if (result instanceof Response) return result
+        const body = await c.req.json().catch(() => null)
+        if (!body || typeof body.at !== 'number' || !Number.isFinite(body.at)) return c.json({ error: 'Invalid body' }, 400)
+        try {
+            engine.acknowledgeModelError(result.sessionId, c.get('namespace'), body.at)
+            return c.json({ ok: true })
+        } catch (error) { return c.json({ error: error instanceof Error ? error.message : 'Failed to acknowledge' }, 409) }
+    })
+
     app.post('/sessions/:id/model', async (c) => {
         const engine = requireSyncEngine(c, getSyncEngine)
         if (engine instanceof Response) {
             return engine
         }
 
-        const sessionResult = requireSessionFromParam(c, engine, { requireActive: true })
+        const sessionResult = requireSessionFromParam(c, engine)
         if (sessionResult instanceof Response) {
             return sessionResult
         }
@@ -715,10 +1066,13 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
         }
 
         const flavor = sessionResult.session.metadata?.flavor ?? 'claude'
+        if (!sessionResult.session.active && flavor !== 'cursor') {
+            return c.json({ error: 'Session is inactive' }, 409)
+        }
         if (!supportsModelChange(flavor)) {
             return c.json({ error: 'Model selection is not supported for this session' }, 400)
         }
-        if (sessionResult.session.agentState?.controlledByUser === true && !sessionResult.session.metadata?.capabilities?.concurrentClients) {
+        if (sessionResult.session.active && sessionResult.session.agentState?.controlledByUser === true && !sessionResult.session.metadata?.capabilities?.concurrentClients) {
             if (flavor === 'codex') {
                 return c.json({ error: 'Model selection can only be changed for remote Codex sessions' }, 409)
             }
@@ -1405,6 +1759,9 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
             const result = await engine.listCodexModelsForSession(sessionResult.sessionId)
             return c.json(result)
         } catch (error) {
+            if (error instanceof RpcTargetMissingError) {
+                return c.json({ success: false, error: error.message, code: RPC_TARGET_MISSING_ERROR_CODE }, 503)
+            }
             return c.json({
                 success: false,
                 error: error instanceof Error ? error.message : 'Failed to list Codex models'

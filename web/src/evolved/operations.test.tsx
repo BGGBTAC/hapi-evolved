@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { AutomationPanel } from './Automation'
 import { RunnerPanel } from './Runner'
 import { PreviewsPanel } from './Previews'
 import { ProjectsPanel } from './ProjectsTeam'
@@ -86,5 +87,27 @@ describe('Preview access', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Bestätigen' }))
         await waitFor(() => expect(screen.queryByLabelText('Einmaliger Freigabelink')).not.toBeInTheDocument())
         expect(context.api.request).toHaveBeenCalledWith('/projects/project-1/previews/preview-1/shares/share-1', { method: 'DELETE' })
+    })
+})
+
+describe('project automation controls', () => {
+    it('requires admin and distinguishes queued schedule runs from successful work', async () => {
+        context.project.role = 'viewer'; const view = mount(<AutomationPanel />)
+        expect(context.api.request).not.toHaveBeenCalled(); expect(screen.getByText(/Projektadministratoren verwaltet/)).toBeInTheDocument()
+        view.clear()
+    })
+    it('creates exact UTC cron prompts and toggles the explicit peer policy', async () => {
+        context.api.request.mockImplementation(async (path, options) => {
+            if (options?.method) return { id: 'schedule' }
+            return path.endsWith('peer-policy') ? { enabled: false } : { schedules: [], timezone: 'UTC' }
+        })
+        mount(<AutomationPanel />)
+        fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Morning check' } })
+        fireEvent.change(screen.getByLabelText('Session-ID'), { target: { value: 'session-1' } })
+        fireEvent.change(screen.getByLabelText('Prompt'), { target: { value: 'Check only' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Zeitplan erstellen' }))
+        await waitFor(() => expect(context.api.request).toHaveBeenCalledWith('/projects/project-1/schedules', { method: 'POST', body: { name: 'Morning check', sessionId: 'session-1', prompt: 'Check only', cron: '0 9 * * 1-5' } }))
+        fireEvent.click(screen.getByLabelText('Projekt-Agenten dürfen miteinander kommunizieren'))
+        await waitFor(() => expect(context.api.request).toHaveBeenCalledWith('/projects/project-1/peer-policy', { method: 'PUT', body: { enabled: true } }))
     })
 })

@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createSessionScanner, readSessionLog } from './sessionScanner'
 import { RawJSONLines } from '../types'
-import { mkdir, writeFile, appendFile, rm, readFile } from 'node:fs/promises'
+import { mkdir, writeFile, appendFile, rm, readFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir, homedir } from 'node:os'
 import { existsSync } from 'node:fs'
@@ -17,6 +17,8 @@ describe('sessionScanner', () => {
     testDir = join(tmpdir(), `scanner-test-${Date.now()}`)
     await mkdir(testDir, { recursive: true })
     
+    // Every locator probe stays inside this synthetic config home.
+    vi.stubEnv('CLAUDE_CONFIG_DIR', join(testDir, 'claude-config'))
     projectDir = getProjectPath(testDir)
     await mkdir(projectDir, { recursive: true })
     
@@ -30,6 +32,7 @@ describe('sessionScanner', () => {
       scanner = null
     }
     
+    vi.unstubAllEnvs()
     if (existsSync(testDir)) {
       await rm(testDir, { recursive: true, force: true })
     }
@@ -143,6 +146,24 @@ describe('sessionScanner', () => {
       expect(content).toContain('0-say-lol-session.jsonl')
       expect(content).toContain('readme.md')
     }
+  })
+
+  it('follows a relocated worktree transcript without replaying old UUIDs', async () => {
+    const sessionId = 'native-relocated'
+    const original = join(projectDir, `${sessionId}.jsonl`)
+    const line = (uuid: string) => JSON.stringify({ type: 'user', uuid, message: { content: uuid } }) + '\n'
+    await writeFile(original, line('old'))
+    scanner = await createSessionScanner({ sessionId, workingDirectory: testDir, onMessage: msg => collectedMessages.push(msg) })
+    const movedDir = getProjectPath(join(testDir, 'worktree'))
+    await mkdir(movedDir, { recursive: true })
+    const moved = join(movedDir, `${sessionId}.jsonl`)
+    await rename(original, moved)
+    await appendFile(moved, line('new'))
+    await scanner.flush()
+    expect(collectedMessages.map(msg => msg.type === 'user' ? msg.uuid : '')).toEqual(['new'])
+    await appendFile(moved, line('later'))
+    await scanner.flush()
+    expect(collectedMessages.map(msg => msg.type === 'user' ? msg.uuid : '')).toEqual(['new', 'later'])
   })
 
   it('reads only new bytes on a subsequent scan (incremental, no reparse of prior region)', async () => {

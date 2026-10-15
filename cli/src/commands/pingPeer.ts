@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import chalk from 'chalk'
+import { isEvolvedPeerMode } from '@/modules/pingPeer/evolvedPeer'
 import { initializeToken } from '@/ui/tokenInit'
 import {
     PingPeerError,
@@ -18,6 +19,8 @@ type ParsedPingPeerArgs = {
     message?: string
     messageFile?: string
     waitActiveSecs?: number
+    deliveryId?: string
+    replyTo?: string
 }
 
 function showHelp(): void {
@@ -29,8 +32,10 @@ ${chalk.bold('Usage:')}
   hapi ping-peer <session-id-prefix> --message-file <path>
   hapi ping-peer <session-id-prefix> --message-file -   # read message from stdin
   hapi ping-peer --list
+  hapi ping-peer <session-id-prefix> <message-text> --delivery-id ID [--reply-to ID]
 
 ${chalk.bold('Notes:')}
+  Evolved sends require a stable --delivery-id; reuse it with unchanged arguments on retries.
   Do not reinvent JWT + curl for peer handoffs. Prefer this command or MCP ping_peer / list_peers.
   Resolves by id prefix (8 chars OK). Same hub token/namespace as this CLI.
   Inactive sessions are resumed via POST /api/sessions/:id/resume, then messaged.
@@ -55,6 +60,13 @@ export function parsePingPeerArgs(args: string[]): ParsedPingPeerArgs {
         const arg = args[i]!
         if (arg === '--help' || arg === '-h') {
             result.help = true
+            continue
+        }
+        if (arg === '--delivery-id' || arg === '--reply-to') {
+            const value = args[++i]
+            if (!value || value.startsWith('--')) throw new PingPeerError('bad_args', `${arg} requires an ID`)
+            if (arg === '--delivery-id') result.deliveryId = value
+            else result.replyTo = value
             continue
         }
         if (arg === '--list') {
@@ -157,7 +169,7 @@ export async function handlePingPeerCommand(args: string[]): Promise<void> {
         return
     }
 
-    await initializeToken()
+    if (!isEvolvedPeerMode()) await initializeToken()
 
     if (parsed.list) {
         await handleList()
@@ -179,7 +191,7 @@ export async function handlePingPeerCommand(args: string[]): Promise<void> {
 
     const result = await pingPeer({
         sessionIdPrefix: parsed.sessionIdPrefix,
-        message,
+        message, deliveryId: parsed.deliveryId, replyTo: parsed.replyTo,
         waitActiveSecs: parsed.waitActiveSecs ?? envWaitActiveSecs(),
         onProgress: (line) => console.log(`hapi ping-peer: ${line}`)
     })

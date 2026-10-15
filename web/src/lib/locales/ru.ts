@@ -1,4 +1,8 @@
 export default {
+    'session.modelError.title': 'Ошибка хода модели',
+    'session.modelError.description': 'Проверьте незавершённые вызовы инструментов. Отправьте новую инструкцию для продолжения.',
+    'session.modelError.acknowledge': 'Подтвердить',
+
   // Состояния загрузки
   'loading': 'Загрузка…',
   'authorizing': 'Авторизация…',
@@ -179,6 +183,7 @@ export default {
   'session.item.path': 'путь',
   'session.item.agent': 'агент',
   'session.item.model': 'модель',
+  'session.item.project': 'Проект',
   'session.item.machine': 'машина',
   'session.modelChange.pending': 'Изменение…',
   'session.modelChange.cursorAutoRestart': 'Авто (для переключения обратно нужен перезапуск)',
@@ -463,6 +468,10 @@ export default {
   'terminal.paste.fallbackTitle': 'Вставить ввод',
   'terminal.paste.fallbackDescription': 'Чтение из буфера обмена недоступно. Вставьте текст ниже.',
   'terminal.paste.placeholder': 'Вставьте ввод терминала сюда…',
+  'terminal.toAgent.buffer': 'Агенту',
+  'terminal.toAgent.selection': 'Выделение агенту',
+  'terminal.toAgent.fueTitle': 'Отправить терминал агенту',
+  'terminal.toAgent.fueBody': 'Откройте терминал сессии и нажмите «Агенту», чтобы положить весь scrollback в поле ввода — или сначала выделите текст, и кнопка станет «Выделение агенту». При желании добавьте заметку и отправьте.',
 
   // Блок кода
   'code.copy': 'Копировать',
@@ -892,6 +901,7 @@ export default {
   'settings.display.sessionHeader.model': 'Модель',
   'settings.display.sessionHeader.reasoning': 'Уровень рассуждений',
   'settings.display.sessionHeader.fastMode': 'Быстрый режим',
+  'settings.display.sessionHeader.project': 'Проект',
   'settings.display.sessionHeader.machine': 'Машина',
   'settings.display.sessionHeader.lastActive': 'Время активности',
   'settings.display.sessionHeader.createdAt': 'Время создания',

@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook } from '@testing-library/react'
 import { createElement, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { queryKeys } from '@/lib/query-keys'
 import type { SessionSummary } from '@/types/api'
 import type { Session } from '@/types/api'
 import {
@@ -49,14 +50,14 @@ function renderUseSSE(options?: { onDisconnect?: (reason: string) => void }) {
     const queryClient = new QueryClient()
     const wrapper = ({ children }: { children: ReactNode }) =>
         createElement(QueryClientProvider, { client: queryClient }, children)
-    return renderHook(() => useSSE({
+    return { queryClient, ...renderHook(() => useSSE({
         enabled: true,
         token: 'test-token',
         baseUrl: 'http://hub.test',
         subscription: { all: true },
         onEvent: () => {},
         onDisconnect: options?.onDisconnect
-    }), { wrapper })
+    }), { wrapper }) }
 }
 
 describe('useSSE connection liveness (mobile suspend/resume)', () => {
@@ -69,6 +70,23 @@ describe('useSSE connection liveness (mobile suspend/resume)', () => {
     afterEach(() => {
         vi.unstubAllGlobals()
         vi.useRealTimers()
+    })
+
+    it('applies live conversation clocks and blocked status to both caches, including clearing and deletion', () => {
+        const { queryClient, unmount } = renderUseSSE()
+        const summary = makeSummary({ lastMessageAt: 800, lastAssistantMessageAt: 700, notifyStatus: 'blocked' })
+        queryClient.setQueryData(queryKeys.sessions, { sessions: [summary] })
+        queryClient.setQueryData(queryKeys.session(summary.id), { session: summary })
+        const patch = { lastMessageAt: 500, lastAssistantMessageAt: 400, notifyStatus: null }
+        act(() => { FakeEventSource.instances[0]?.simulateMessage({ type: 'session-updated', sessionId: summary.id, data: patch }) })
+        expect(queryClient.getQueryData(queryKeys.sessions)).toMatchObject({ sessions: [{ ...patch, updatedAt: 2000 }] })
+        expect(queryClient.getQueryData(queryKeys.session(summary.id))).toMatchObject({ session: { ...patch, updatedAt: 2000 } })
+        act(() => { FakeEventSource.instances[0]?.simulateMessage({ type: 'session-updated', sessionId: summary.id, data: { notifyStatus: 'blocked', lastMessageAt: 1000 } }) })
+        expect(queryClient.getQueryData(queryKeys.sessions)).toMatchObject({ sessions: [{ notifyStatus: 'blocked', lastMessageAt: 1000 }] })
+        act(() => { FakeEventSource.instances[0]?.simulateMessage({ type: 'session-updated', sessionId: summary.id, data: { lastMessageAt: null, lastAssistantMessageAt: null } }) })
+        expect(queryClient.getQueryData(queryKeys.sessions)).toMatchObject({ sessions: [{ lastMessageAt: null, lastAssistantMessageAt: null }] })
+        expect(queryClient.getQueryData(queryKeys.session(summary.id))).toMatchObject({ session: { lastMessageAt: null, lastAssistantMessageAt: null } })
+        unmount()
     })
 
     it('reconnects on visibility resume when a heartbeat interval was missed', () => {
@@ -300,6 +318,9 @@ describe('isRenderIrrelevantPatch', () => {
         ['active', { active: false }],
         ['thinking', { thinking: true }],
         ['updatedAt', { updatedAt: 9_999 }],
+        ['lastMessageAt', { lastMessageAt: 9_999 }],
+        ['lastAssistantMessageAt', { lastAssistantMessageAt: 9_999 }],
+        ['notifyStatus', { notifyStatus: 'blocked' }],
         ['backgroundTaskCount', { backgroundTaskCount: 3 }],
         ['model', { model: 'opus' }],
         ['modelReasoningEffort', { modelReasoningEffort: 'high' }],
@@ -430,5 +451,15 @@ describe('applySessionDetailPatch (PR #897 review, Copilot keep-alive)', () => {
             activeAt: 11_000,
             copilotAgentMode: 'interactive'
         })).toBeNull()
+    })
+})
+
+
+describe('conversation activity patches', () => {
+    it('clears blocked status and accepts decreasing clocks after message deletion', () => {
+        const session = { id: 's', activeAt: 100, updatedAt: 900, lastMessageAt: 800, lastAssistantMessageAt: 700, notifyStatus: 'blocked' } as Session
+        const patch = { lastMessageAt: 500, lastAssistantMessageAt: 400, notifyStatus: null }
+        expect(applySessionDetailPatch(session, patch)).toMatchObject({ ...patch, updatedAt: 900 })
+        expect(isRenderIrrelevantPatch(makeSummary({ notifyStatus: 'blocked' }), makeSummary({ notifyStatus: null }))).toBe(false)
     })
 })

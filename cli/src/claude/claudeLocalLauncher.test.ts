@@ -6,6 +6,11 @@ const harness = vi.hoisted(() => ({
     scannerOnMessage: null as ((message: Record<string, unknown>) => void) | null
 }))
 
+vi.mock('./utils/localContextWindow', async importOriginal => ({
+    ...await importOriginal<typeof import('./utils/localContextWindow')>(),
+    resolveLocalClaudeModel: async (options: { model?: string }) => options.model
+}));
+
 vi.mock('./claudeLocal', () => ({
     claudeLocal: async (opts: Record<string, unknown>) => {
         harness.launches.push(opts)

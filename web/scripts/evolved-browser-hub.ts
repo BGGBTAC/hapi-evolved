@@ -26,7 +26,17 @@ const {publicKey}=createVaultSigningKey(signingKeyFile)
 const vault=new EvolvedVault({dbPath:join(tmp,'vault.db'),masterKeyFile:join(tmp,'master.key')})
 const vaultServer=Bun.serve({hostname:'127.0.0.1',port:Number(vaultPort),fetch:createVaultServer({vault,hubPublicKey:publicKey}).fetch})
 Object.assign(process.env,{HAPI_HOME:tmp,DB_PATH:join(tmp,'hapi.db'),HAPI_EVOLVED_ENABLED:'1',HAPI_LISTEN_HOST:'127.0.0.1',HAPI_LISTEN_PORT:hubPort,HAPI_PUBLIC_URL:origin,EVOLVED_ORIGIN:origin,EVOLVED_CODE_ROOTS:JSON.stringify([workspace]),EVOLVED_DB_PATH:join(tmp,'evolved.db'),EVOLVED_BOOTSTRAP_FILE:join(tmp,'bootstrap.token'),EVOLVED_VAULT_URL:`http://127.0.0.1:${vaultPort}`,EVOLVED_VAULT_SIGNING_KEY_FILE:signingKeyFile,CLI_API_TOKEN:randomBytes(32).toString('base64url'),HAPI_IOS_PUSH:'off',HAPI_ANDROID_PUSH:'off',TELEGRAM_BOT_TOKEN:'',SERVERCHAN_SENDKEY:'',EVOLVED_MEMORY_URL:'',EVOLVED_CODEGRAPH_URL:'',EVOLVED_SERVICE_TOKEN_FILE:''})
+const sideKey = join(tmp, 'side-provider.key')
+writeFileSync(sideKey, 'synthetic-side-provider-key', { mode: 0o600 })
+let sideRequests = 0
+const sideProvider = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(request) {
+    if (request.method !== 'POST' || request.headers.get('authorization') !== 'Bearer synthetic-side-provider-key') return new Response('denied', { status: 403 })
+    const body = await request.json()
+    writeFileSync(join(tmp, 'side-request.json'), JSON.stringify({ count: ++sideRequests, body }), { mode: 0o600 })
+    return Response.json({ choices: [{ message: { content: 'SYNTHETIC_SIDE_REPLY: separate text-only answer' } }], usage: { total_tokens: 42 } })
+} })
+Object.assign(process.env, { EVOLVED_SIDECHANNEL_ADAPTER: 'openai-chat-completions-v1', EVOLVED_SIDECHANNEL_URL: `http://127.0.0.1:${sideProvider.port}/completions`, EVOLVED_SIDECHANNEL_ALLOW_LOOPBACK_HTTP: '1', EVOLVED_SIDECHANNEL_MODEL: 'synthetic-side-model', EVOLVED_SIDECHANNEL_DAILY_TOKENS: '40000', EVOLVED_SIDECHANNEL_KEY_FILE: sideKey })
 const hub=await startHub({args:['--no-relay']})
-const stop=async()=>{await hub.stop();vaultServer.stop(true);vault.close();process.exit(0)}
+const stop=async()=>{await hub.stop();vaultServer.stop(true);sideProvider.stop(true);vault.close();process.exit(0)}
 process.on('SIGINT',stop);process.on('SIGTERM',stop)
 console.log('Synthetic Evolved browser fixture ready')

@@ -13,6 +13,7 @@ import type {
     CopilotAgentMode,
     FileSearchResponse,
     MachinesResponse,
+    MessageContextResponse,
     MessagesResponse,
     PermissionMode,
     PiImportSessionsResponse,
@@ -27,8 +28,10 @@ import type {
     HapiSessionExportResponse,
     HubHealthResponse,
     SessionResponse,
+    SessionContentMatchesResponse,
     SessionTitleSuggestionResponse,
-    SessionsResponse
+    SessionsResponse,
+    SessionContentSearchResponse
 } from '@/types/api'
 import type {
     AgyModelsResponse,
@@ -113,12 +116,65 @@ export interface TranscriptionCredentialsUpdate {
     qwenRealtime?: string | null
 }
 
+// Keep scoped content-search bodies comfortably below the Hub's 256 KiB
+// request limit. The remaining space covers the query, limit, and JSON body
+// framing; callers still get one merged result set for large visible scopes.
+const CONTENT_SEARCH_SCOPE_CHUNK_BYTES = 192 * 1024
+
+function chunkContentSearchSessionIds(sessionIds: readonly string[]): string[][] {
+    if (sessionIds.length === 0) return []
+
+    const encoder = new TextEncoder()
+    const chunks: string[][] = []
+    let current: string[] = []
+    let currentBytes = 2 // []
+
+    for (const sessionId of sessionIds) {
+        const itemBytes = encoder.encode(JSON.stringify(sessionId)).byteLength
+        const separatorBytes = current.length > 0 ? 1 : 0
+        if (
+            current.length > 0
+            && currentBytes + separatorBytes + itemBytes > CONTENT_SEARCH_SCOPE_CHUNK_BYTES
+        ) {
+            chunks.push(current)
+            current = []
+            currentBytes = 2
+        }
+
+        current.push(sessionId)
+        currentBytes += (current.length > 1 ? 1 : 0) + itemBytes
+    }
+
+    if (current.length > 0) chunks.push(current)
+    return chunks
+}
+
+function mergeContentSearchResponses(
+    responses: SessionContentSearchResponse[],
+    limit: number
+): SessionContentSearchResponse {
+    const results = responses
+        .flatMap(response => response.results)
+        .sort((a, b) => (
+            b.session.updatedAt - a.session.updatedAt
+            || b.match.seq - a.match.seq
+            || b.match.createdAt - a.match.createdAt
+            || a.session.id.localeCompare(b.session.id)
+        ))
+
+    return {
+        results: results.slice(0, limit),
+        hasPotentiallyIncompleteResults: responses.some(response => response.hasPotentiallyIncompleteResults)
+    }
+}
+
 type ApiClientOptions = {
     baseUrl?: string
     getToken?: () => string | null
     getProjectId?: () => string | null
     credentials?: RequestCredentials
     onUnauthorized?: () => Promise<string | null>
+    isAuthorityCurrent?: () => boolean
 }
 
 type ErrorPayload = {
@@ -152,6 +208,7 @@ export class ApiError extends Error {
 }
 
 export class ApiClient {
+    private readonly isAuthorityCurrent: (() => boolean) | undefined
     private token: string
     private readonly baseUrl: string | null
     private readonly getToken: (() => string | null) | null
@@ -160,6 +217,7 @@ export class ApiClient {
     private readonly onUnauthorized: (() => Promise<string | null>) | null
 
     constructor(token: string, options?: ApiClientOptions) {
+        this.isAuthorityCurrent = options?.isAuthorityCurrent
         this.token = token
         this.baseUrl = options?.baseUrl ?? null
         this.getToken = options?.getToken ?? null
@@ -185,6 +243,7 @@ export class ApiClient {
         attempt: number = 0,
         overrideToken?: string | null
     ): Promise<T> {
+        if (this.isAuthorityCurrent && !this.isAuthorityCurrent()) throw new Error('Account or project changed; return to the source session to retry')
         const headers = new Headers(init?.headers)
         const projectId = this.getProjectId?.()
         if (projectId) headers.set('x-hapi-project-id', projectId)
@@ -264,12 +323,81 @@ export class ApiClient {
         return await res.json() as AuthResponse
     }
 
+    async setAgentConfig(sessionId: string, field: import('@hapi/protocol').AgentConfigFieldId, value: string | null): Promise<void> {
+        await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/agent-config`, { method: 'POST', body: JSON.stringify({ field, value }) })
+    }
+
+    async acknowledgeModelError(sessionId: string, at: number): Promise<void> {
+        await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/model-error/ack`, {
+            method: 'POST', body: JSON.stringify({ at })
+        })
+    }
+
     async getSessions(): Promise<SessionsResponse> {
         return await this.request<SessionsResponse>('/api/sessions')
     }
 
     async getHealth(): Promise<HubHealthResponse> {
         return await this.request<HubHealthResponse>('/health')
+    }
+
+    async searchSessionContent(
+        query: string,
+        limit: number = 50,
+        signal?: AbortSignal,
+        sessionIds?: readonly string[]
+    ): Promise<SessionContentSearchResponse> {
+        const normalizedQuery = query.trim()
+        if (sessionIds !== undefined) {
+            const normalizedSessionIds = [...new Set(sessionIds.map((sessionId) => sessionId.trim()).filter(Boolean))]
+            const chunks = chunkContentSearchSessionIds(normalizedSessionIds)
+            if (chunks.length <= 1) {
+                return await this.request<SessionContentSearchResponse>(
+                    '/api/sessions/content-search',
+                    {
+                        method: 'POST',
+                        signal,
+                        body: JSON.stringify({
+                            query: normalizedQuery,
+                            limit,
+                            sessionIds: normalizedSessionIds
+                        })
+                    }
+                )
+            }
+
+            const responses = await Promise.all(chunks.map((chunk) => this.request<SessionContentSearchResponse>(
+                '/api/sessions/content-search',
+                {
+                    method: 'POST',
+                    signal,
+                    body: JSON.stringify({
+                        query: normalizedQuery,
+                        limit,
+                        sessionIds: chunk
+                    })
+                }
+            )))
+            return mergeContentSearchResponses(responses, limit)
+        }
+        const params = new URLSearchParams({ query: normalizedQuery, limit: String(limit) })
+        return await this.request<SessionContentSearchResponse>(
+            `/api/sessions/content-search?${params.toString()}`,
+            { signal }
+        )
+    }
+
+    async searchSessionContentMatches(
+        sessionId: string,
+        query: string,
+        limit: number = 500,
+        signal?: AbortSignal
+    ): Promise<SessionContentMatchesResponse> {
+        const params = new URLSearchParams({ query: query.trim(), limit: String(limit) })
+        return await this.request<SessionContentMatchesResponse>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/content-search?${params.toString()}`,
+            { signal }
+        )
     }
 
     async getPushVapidPublicKey(): Promise<PushVapidPublicKeyResponse> {
@@ -420,6 +548,12 @@ export class ApiClient {
         return await this.request<MessagesResponse>(url)
     }
 
+    async getMessageContext(sessionId: string, messageId: string): Promise<MessageContextResponse | null> {
+        return await this.request<MessageContextResponse | null>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}/context`
+        )
+    }
+
     async getGitStatus(sessionId: string): Promise<GitCommandResponse> {
         return await this.request<GitCommandResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/git-status`)
     }
@@ -452,7 +586,10 @@ export class ApiClient {
     }
 
     async getGeneratedImageBlob(sessionId: string, imageId: string, attempt: number = 0, overrideToken?: string | null): Promise<Blob> {
+        if (this.isAuthorityCurrent && !this.isAuthorityCurrent()) throw new ApiError('Account or project changed; return to the original session to retry.', 409, 'authority_changed')
         const headers = new Headers()
+        const projectId = this.getProjectId?.()
+        if (projectId) headers.set('x-hapi-project-id', projectId)
         const liveToken = this.getToken ? this.getToken() : null
         const authToken = overrideToken !== undefined
             ? (overrideToken ?? (liveToken ?? this.token))
@@ -461,11 +598,11 @@ export class ApiClient {
             headers.set('authorization', `Bearer ${authToken}`)
         }
         const url = this.buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}/generated-images/${encodeURIComponent(imageId)}`)
-        let res = await fetch(url, { headers })
+        let res = await fetch(url, { headers, credentials: this.credentials, ...(projectId ? { cache: 'no-store' as const } : {}) })
         // Hub returns ETag + immutable Cache-Control (#927). Default fetch cache stores 200
         // responses so remounts avoid RPC; on 304 the body is empty — read from cache.
         if (res.status === 304) {
-            res = await fetch(url, { headers, cache: 'force-cache' })
+            res = await fetch(url, { headers, credentials: this.credentials, cache: projectId ? 'no-store' : 'force-cache' })
         }
         if (res.status === 401 && attempt === 0 && this.onUnauthorized) {
             const refreshed = await this.onUnauthorized()
@@ -477,6 +614,7 @@ export class ApiClient {
         if (!res.ok) {
             throw new ApiError(`HTTP ${res.status}`, res.status, undefined, await res.text().catch(() => undefined))
         }
+        if (this.isAuthorityCurrent && !this.isAuthorityCurrent()) throw new ApiError('Account or project changed; return to the original session to retry.', 409, 'authority_changed')
         return await res.blob()
     }
 
@@ -503,6 +641,45 @@ export class ApiClient {
             method: 'POST',
             body: JSON.stringify({ filename, content, mimeType })
         })
+    }
+
+    async deleteAttachment(sessionId: string, attachmentId: string): Promise<DeleteUploadResponse> {
+        return await this.request<DeleteUploadResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/upload/delete`, {
+            method: 'POST',
+            body: JSON.stringify({ attachmentId })
+        })
+    }
+
+    async fetchAttachmentBlob(
+        sessionId: string,
+        attachmentId: string,
+        attempt: number = 0,
+        overrideToken?: string | null
+    ): Promise<Blob> {
+        if (this.isAuthorityCurrent && !this.isAuthorityCurrent()) throw new Error('Account or project changed; return to the source session to retry')
+        const headers = new Headers()
+        const projectId = this.getProjectId?.()
+        if (projectId) headers.set('x-hapi-project-id', projectId)
+        const liveToken = this.getToken ? this.getToken() : null
+        const authToken = overrideToken !== undefined
+            ? (overrideToken ?? (liveToken ?? this.token))
+            : (liveToken ?? this.token)
+        if (authToken) headers.set('authorization', `Bearer ${authToken}`)
+        const url = this.buildUrl(
+            `/api/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(attachmentId)}/original`
+        )
+        const res = await fetch(url, { headers, cache: 'no-store', ...(this.credentials ? { credentials: this.credentials } : {}) })
+        if (res.status === 401 && attempt === 0 && this.onUnauthorized) {
+            const refreshed = await this.onUnauthorized()
+            if (refreshed) {
+                this.token = refreshed
+                return await this.fetchAttachmentBlob(sessionId, attachmentId, attempt + 1, refreshed)
+            }
+        }
+        if (!res.ok) {
+            throw new ApiError(`HTTP ${res.status}`, res.status, undefined, await res.text().catch(() => undefined))
+        }
+        return await res.blob()
     }
 
     async deleteUploadFile(sessionId: string, path: string): Promise<DeleteUploadResponse> {
@@ -650,13 +827,16 @@ export class ApiClient {
     async migrateCursorSessionToAcp(sessionId: string, body: CursorMigrateToAcpRequest = {}): Promise<CursorMigrateOutcome> {
         const path = `/api/sessions/${encodeURIComponent(sessionId)}/migrate-to-acp`
         const tryOnce = async (overrideToken: string | null): Promise<Response> => {
+            if (this.isAuthorityCurrent && !this.isAuthorityCurrent()) throw new ApiError('Account or project changed; return to the original session to retry.', 409, 'authority_changed')
             const headers = new Headers({ 'content-type': 'application/json' })
+            const projectId = this.getProjectId?.()
+            if (projectId) headers.set('x-hapi-project-id', projectId)
             const liveToken = this.getToken ? this.getToken() : null
             const authToken = overrideToken ?? liveToken ?? this.token
             if (authToken) {
                 headers.set('authorization', `Bearer ${authToken}`)
             }
-            return fetch(this.buildUrl(path), { method: 'POST', headers, body: JSON.stringify(body) })
+            return fetch(this.buildUrl(path), { method: 'POST', headers, credentials: this.credentials, body: JSON.stringify(body) })
         }
 
         let res = await tryOnce(null)
@@ -778,6 +958,18 @@ export class ApiClient {
 
     async getSqliteStorageUsage(): Promise<SqliteStorageUsageResponse> {
         return await this.request<SqliteStorageUsageResponse>('/api/storage/sqlite')
+    }
+
+    async getFeatures(): Promise<{ githubPrAwareness: { enabled: boolean; source: 'env' | 'file' | 'default' }; canManage: boolean }> {
+        return this.request('/api/features')
+    }
+
+    async updateFeatures(githubPrAwareness: boolean): ReturnType<ApiClient['getFeatures']> {
+        return this.request('/api/features', { method: 'PATCH', body: JSON.stringify({ githubPrAwareness }) })
+    }
+
+    async setSessionExternalRefs(sessionId: string, externalRefs: import('@hapi/protocol').ExternalRef[]): Promise<{ externalRefs: import('@hapi/protocol').ExternalRef[] }> {
+        return this.request(`/api/sessions/${encodeURIComponent(sessionId)}/external-refs`, { method: 'PUT', body: JSON.stringify({ externalRefs }) })
     }
 
     async getHubSettings(): Promise<HubSettingsResponse> {
@@ -1089,7 +1281,10 @@ export class ApiClient {
     }
 
     async fetchScratchlistAttachmentBlob(sessionId: string, attachmentId: string): Promise<Blob> {
+        if (this.isAuthorityCurrent && !this.isAuthorityCurrent()) throw new ApiError('Account or project changed; return to the original session to retry.', 409, 'authority_changed')
         const headers = new Headers()
+        const projectId = this.getProjectId?.()
+        if (projectId) headers.set('x-hapi-project-id', projectId)
         const liveToken = this.getToken ? this.getToken() : null
         const authToken = liveToken ?? this.token
         if (authToken) {
@@ -1099,11 +1294,12 @@ export class ApiClient {
             this.buildUrl(
                 `/api/sessions/${encodeURIComponent(sessionId)}/scratchlist/attachments/${encodeURIComponent(attachmentId)}`
             ),
-            { headers }
+            { headers, credentials: this.credentials, cache: 'no-store' }
         )
         if (!response.ok) {
             throw new ApiError(`Failed to fetch scratchlist attachment (${response.status})`, response.status)
         }
+        if (this.isAuthorityCurrent && !this.isAuthorityCurrent()) throw new ApiError('Account or project changed; return to the original session to retry.', 409, 'authority_changed')
         return await response.blob()
     }
 

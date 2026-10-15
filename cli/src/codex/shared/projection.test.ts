@@ -77,6 +77,28 @@ describe('shared history projection', () => {
         const events = send.mock.calls.map(([body]) => body).filter(body => body.type === 'token_count');
         expect(events.map(body => body.model)).toEqual(['model-a', 'model-c']);
     });
+    it('reports only the final same-turn assistant text with a durable completion id', async () => {
+        const send = vi.fn(); const session = { getMetadata: () => ({}), sendAgentMessage: send } as unknown as ApiSessionClient;
+        const projection = new SharedCodexProjection(session, 'root', async () => {});
+        await projection.notification('item/completed', { threadId: 'root', turnId: 'old', item: { type: 'agentMessage', id: 'old', text: 'Wrong turn' } });
+        await projection.notification('item/completed', { threadId: 'root', turnId: 'current', item: { type: 'agentMessage', id: 'answer', text: 'Final answer' } });
+        await projection.notification('turn/completed', { threadId: 'root', turn: { id: 'current', status: 'completed' } });
+        await projection.notification('turn/completed', { threadId: 'root', turn: { id: 'current', status: 'completed' } });
+        const events = send.mock.calls.filter(([body]) => body.type === 'hapi-turn-completed');
+        expect(events).toEqual([[expect.objectContaining({ turnId: 'current', status: 'completed', finalText: 'Final answer' }), 'codex:root:current:hapi-turn-completed']]);
+    });
+    it('persists child identity separately without inventing execution settings from history', async () => {
+        const send = vi.fn(); const session = { getMetadata: () => ({}), sendAgentMessage: send } as unknown as ApiSessionClient;
+        const projection = new SharedCodexProjection(session, 'child', async () => {}, 'root');
+        const child = { id: 'child', taskName: 'Review', agentNickname: 'Astra', agentRole: 'reviewer', agentPath: '/root/review', model: 'unconfirmed-parent-model', reasoningEffort: 'high', turns: [] };
+        await projection.history(child); projection.reset(); await projection.history(child);
+        const first = send.mock.calls[0];
+        expect(first[0]).toMatchObject({ type: 'agent-run-metadata', agentId: 'child', taskName: 'Review', nickname: 'Astra', agentRole: 'reviewer' });
+        expect(first[0]).not.toHaveProperty('model'); expect(first[0]).not.toHaveProperty('reasoningEffort');
+        expect(send.mock.calls[1]).toEqual(first);
+        projection.childIdentity({ ...child, id: 'sibling', taskName: 'Wrong' });
+        expect(send).toHaveBeenCalledTimes(2);
+    });
     it('keeps image-only native inputs visible without embedding data URLs', () => {
         expect(inputText([{ type: 'image', url: 'data:image/png;base64,large' }])).toBe('[Image]');
         expect(inputText([{ type: 'localImage', path: '/tmp/image.png' }])).toBe('[Image: /tmp/image.png]');
@@ -87,6 +109,16 @@ describe('shared history projection', () => {
         const snapshot = { turns: [{ id: 'turn', status: 'completed', items: [{ id: 'item', type: 'agentMessage', text: 'complete' }] }] };
         await projection.history(snapshot); projection.reset(); await projection.history(snapshot);
         expect(send).toHaveBeenCalledTimes(2); expect(send.mock.calls[0]).toEqual(send.mock.calls[1]);
+    });
+    it('maps native historical fork turn boundaries to HAPI message local IDs', async () => {
+        const session = { getMetadata: () => {}, sendAgentMessage: vi.fn(), sendUserMessage: vi.fn(), updateMetadata: vi.fn() } as unknown as ApiSessionClient;
+        const projection = new SharedCodexProjection(session, 'thread', async () => {});
+        await projection.history({ turns: [
+            { id: 'turn-1', status: 'completed', items: [{ id: 'user-1', type: 'userMessage', clientId: 'local-1', content: [{ type: 'text', text: 'one' }] }] },
+            { id: 'turn-2', status: 'completed', items: [{ id: 'user-2', type: 'userMessage', clientId: 'local-2', content: [{ type: 'text', text: 'two' }] }] }
+        ] });
+        expect(projection.firstMessageLocalIdForTurn('turn-1')).toBe('local-1');
+        expect(projection.firstMessageLocalIdAfterTurn('turn-1')).toBe('local-2');
     });
     it('does not settle an active snapshot under the final message id', async () => {
         const send = vi.fn();

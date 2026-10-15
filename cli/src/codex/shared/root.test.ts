@@ -61,6 +61,7 @@ async function fixture(opts?: { hubArchived?: boolean; end?: RootHost['end'] }) 
     const updateState = vi.fn((fn: (value: AgentState) => AgentState) => { state = fn(state); });
     const rpc = new Map<string, (raw: unknown) => Promise<unknown>>();
     const send = vi.fn();
+    const create = vi.fn<RootHost['create']>(async () => { throw new Error('Unexpected root creation'); });
     const hubArchivedListeners: Array<() => void> = [];
     const session = {
         sessionId: 'sid', getMetadata: () => metadata,
@@ -80,7 +81,7 @@ async function fixture(opts?: { hubArchived?: boolean; end?: RootHost['end'] }) 
     const end = opts?.end ?? (async () => { throw new Error('Unexpected root archive'); });
     const root = new SharedCodexRoot({ session, workingDirectory: directory } as SessionBootstrapResult, {
         directory, generation: 'test', endpoint: 'mock', settingsFor: () => undefined,
-        create: async () => { throw new Error('Unexpected root creation'); },
+        create,
         end
     } satisfies RootHost);
     cleanups.push(async () => { await root.close(false); await rm(directory, { recursive: true, force: true }); });
@@ -88,13 +89,14 @@ async function fixture(opts?: { hubArchived?: boolean; end?: RootHost['end'] }) 
     await root.bind('thread', { model: 'mock', thread: { turns: [] } }, false);
     const native = root.client as unknown as {
         initialized: boolean;
+        settings: Record<string, unknown>;
         thread: { id: string; turns: NativeTurn[] };
         queue: Array<{ id: string; clientUserMessageId: string; input: unknown }>;
         notify(method: string, params: unknown): void;
         abandoned(): void;
     };
     return {
-        root, native, rpc, send, metadata: () => metadata, state: () => state, updateState,
+        root, native, rpc, send, create, metadata: () => metadata, state: () => state, updateState,
         reconnect: () => reconnect?.(),
         emitHubArchived: () => { for (const listener of hubArchivedListeners) listener(); },
         hubArchivedListenerCount: () => hubArchivedListeners.length,
@@ -114,6 +116,145 @@ async function completePlan(f: Awaited<ReturnType<typeof fixture>>, status = 'co
     await vi.waitFor(() => expect(f.send).toHaveBeenCalledWith(expect.objectContaining({ name: 'ExitPlanMode' }), expect.any(String)));
     return codexPlanProposalId('thread', turn.id, 'plan-item');
 }
+
+describe('shared startup permissions', () => {
+    it('serializes a later default behind an in-flight YOLO update', async () => {
+        const f = await fixture();
+        await f.root.applySettings({ permissionMode: 'default' });
+        const original = f.root.client.request.bind(f.root.client);
+        let release!: () => void;
+        const gate = new Promise<void>(resolve => { release = resolve; });
+        const requests: unknown[] = [];
+        vi.spyOn(f.root.client, 'request').mockImplementation(async (method, params) => {
+            if (method === 'thread/settings/update') {
+                requests.push(params);
+                if (requests.length === 1) await gate;
+            }
+            return original(method, params);
+        });
+        const yolo = f.root.applySettings({ permissionMode: 'yolo' });
+        await vi.waitFor(() => expect(requests).toHaveLength(1));
+        let defaultDone = false;
+        const defaults = f.root.applySettings({ permissionMode: 'default' }).then(value => { defaultDone = true; return value; });
+        await Promise.resolve();
+        expect(defaultDone).toBe(false);
+        release();
+        await yolo; await defaults;
+        expect(requests).toHaveLength(2);
+        expect(f.native.settings).toMatchObject({ approvalPolicy: 'on-request', sandboxPolicy: { type: 'workspaceWrite' } });
+    });
+
+    it('tolerates absent rollout only for a proven brand-new root before its first turn', async () => {
+        const f = await fixture();
+        const original = f.root.client.request.bind(f.root.client);
+        vi.spyOn(f.root.client, 'request').mockImplementation(async (method, params) => {
+            if (method === 'thread/read') return { thread: { id: 'thread', historyMode: 'paginated' } };
+            if (method === 'thread/turns/list') throw new Error('invalid paginated history lineage: missing source rollout');
+            return original(method, params);
+        });
+        await expect(f.root.bind('thread', {}, false, true)).resolves.toBeUndefined();
+        f.native.notify('turn/started', { threadId: 'thread', turn: { id: 'turn' } });
+        await expect(f.root.readThread()).rejects.toThrow('missing source rollout');
+        await expect(f.root.bind('thread', {}, false)).rejects.toThrow('missing source rollout');
+    });
+
+    it.each([
+        ['default', 'on-request', 'workspaceWrite'],
+        ['read-only', 'never', 'readOnly'],
+        ['yolo', 'never', 'dangerFullAccess']
+    ] as const)('restores explicit %s after native resume subscriptions reset the launch policy', async (permissionMode, approvalPolicy, sandboxType) => {
+        const f = await fixture();
+        // Initial thread/start or cold thread/resume may accept YOLO, while
+        // a later subscription-only resume reports the native default again.
+        f.native.settings = { model: 'mock', approvalPolicy: permissionMode === 'default' ? 'never' : 'on-request',
+            sandboxPolicy: { type: permissionMode === 'default' ? 'dangerFullAccess' : 'workspaceWrite', writableRoots: [], networkAccess: false,
+                excludeTmpdirEnvVar: false, excludeSlashTmp: false },
+            collaborationMode: { mode: 'default' } };
+        f.native.notify('thread/settings/updated', { threadId: 'thread', threadSettings: f.native.settings });
+        const request = vi.spyOn(f.root.client, 'request');
+        const ready = vi.spyOn(f.root.session, 'emitSessionReady');
+
+        await f.root.activate({ permissionMode });
+
+        expect(request).toHaveBeenCalledWith('thread/settings/update', {
+            threadId: 'thread', approvalPolicy, approvalsReviewer: 'user', sandboxPolicy: { type: sandboxType }
+        });
+        expect(f.native.settings).toMatchObject({ approvalPolicy, sandboxPolicy: { type: sandboxType } });
+        expect(ready).toHaveBeenCalledOnce();
+    });
+
+    it.each(['sandbox', 'sandboxPolicy'] as const)('accepts an already observed YOLO policy from %s without waiting for a nonexistent notification', async (key) => {
+        const f = await fixture();
+        f.root.acceptSettings({ model: 'mock', approvalPolicy: 'never', approvalsReviewer: 'user', [key]: { type: 'dangerFullAccess' } });
+        const request = vi.spyOn(f.root.client, 'request');
+        const ready = vi.spyOn(f.root.session, 'emitSessionReady');
+        await f.root.activate({ permissionMode: 'yolo' });
+        expect(request).not.toHaveBeenCalledWith('thread/settings/update', expect.anything());
+        expect(ready).toHaveBeenCalledOnce();
+    });
+
+    it('uses the latest resume sandbox instead of a stale notification policy', async () => {
+        const f = await fixture();
+        f.root.acceptSettings({ model: 'mock', approvalPolicy: 'never', sandboxPolicy: { type: 'dangerFullAccess' } });
+        f.root.acceptSettings({ model: 'mock', approvalPolicy: 'on-request', sandbox: { type: 'workspaceWrite' } });
+        const request = vi.spyOn(f.root.client, 'request');
+        await f.root.activate({ permissionMode: 'yolo' });
+        expect(request).toHaveBeenCalledWith('thread/settings/update', {
+            threadId: 'thread', approvalPolicy: 'never', approvalsReviewer: 'user', sandboxPolicy: { type: 'dangerFullAccess' }
+        });
+    });
+
+    it('switches automatic approval review off explicitly when returning to default', async () => {
+        const f = await fixture();
+        await f.root.applySettings({ permissionMode: 'autoReview' });
+        expect(f.native.settings).toMatchObject({ approvalPolicy: 'on-request', approvalsReviewer: 'auto_review', sandboxPolicy: { type: 'workspaceWrite' } });
+        await f.root.applySettings({ permissionMode: 'default' });
+        expect(f.native.settings).toMatchObject({ approvalPolicy: 'on-request', approvalsReviewer: 'user', sandboxPolicy: { type: 'workspaceWrite' } });
+    });
+
+    it('does not expose restored input controls until the requested launch policy is confirmed', async () => {
+        const f = await fixture();
+        const controlCount = f.rpc.size;
+        const request = f.root.client.request.bind(f.root.client);
+        let pending: Record<string, unknown> | undefined;
+        vi.spyOn(f.root.client, 'request').mockImplementation(async (method, params) => {
+            if (method === 'thread/settings/update') {
+                pending = params as Record<string, unknown>;
+                return {}; // Native only acknowledged queueing; no confirmation yet.
+            }
+            return request(method, params);
+        });
+        const ready = vi.spyOn(f.root.session, 'emitSessionReady');
+        const activation = f.root.activate({ permissionMode: 'yolo', collaborationMode: 'plan' });
+        await vi.waitFor(() => expect(pending).toBeDefined());
+        const readyBeforeConfirmation = ready.mock.calls.length;
+        const controlsBeforeConfirmation = f.rpc.size;
+        f.native.settings = { ...f.native.settings, ...pending };
+        f.native.notify('thread/settings/updated', { threadId: 'thread', threadSettings: f.native.settings });
+        await activation;
+
+        expect(readyBeforeConfirmation).toBe(0);
+        expect(controlsBeforeConfirmation).toBe(controlCount);
+        expect(pending).toMatchObject({ approvalPolicy: 'never', sandboxPolicy: { type: 'dangerFullAccess' },
+            collaborationMode: { mode: 'plan' } });
+        expect(ready).toHaveBeenCalledOnce();
+    });
+
+    it('fails startup when native policy refuses the requested permission mode', async () => {
+        const f = await fixture();
+        const controlCount = f.rpc.size;
+        const request = f.root.client.request.bind(f.root.client);
+        vi.spyOn(f.root.client, 'request').mockImplementation(async (method, params) => {
+            if (method === 'thread/settings/update') throw new Error('permission mode rejected by native policy');
+            return request(method, params);
+        });
+        const ready = vi.spyOn(f.root.session, 'emitSessionReady');
+
+        await expect(f.root.activate({ permissionMode: 'yolo' })).rejects.toThrow('permission mode rejected by native policy');
+        expect(ready).not.toHaveBeenCalled();
+        expect(f.rpc.size).toBe(controlCount);
+    });
+});
 
 describe('shared plan actions', () => {
     it('applies remote change_title as metadata.name then lets native terminal rename win', async () => {
@@ -164,6 +305,37 @@ describe('shared plan actions', () => {
         expect(f.state().codexPlanProposalId).toBeNull();
         f.native.notify('item/completed', { threadId: 'child', turnId: 'child-turn', item: { id: 'p', type: 'plan', text: 'child' } });
         expect(f.state().codexPlanProposalId).toBeNull();
+    });
+
+    it('records the current root message as the inclusive shared fork boundary', async () => {
+        const f = await fixture();
+        const child = { threadId: 'child-thread', session: { sessionId: 'child-sid' }, initialSettings: vi.fn(async () => {}) };
+        f.create.mockResolvedValueOnce(child as never);
+        await f.root.activate();
+        f.native.thread.turns.push({ id: 'turn', status: 'completed', items: [
+            { id: 'item', type: 'userMessage', clientId: 'user-1', content: [{ type: 'text', text: 'hello' }] },
+            { id: 'answer', type: 'agentMessage', text: 'answer' }
+        ] });
+        await f.root.refresh();
+
+        await expect(f.rpc.get(RPC_METHODS.ForkConversation)!({})).resolves.toEqual({
+            nativeSessionId: 'child-thread', sessionId: 'child-sid'
+        });
+        expect(f.create).toHaveBeenCalledWith('thread/fork', expect.objectContaining({
+            hapiForkThroughMessageLocalId: 'codex:thread:turn:answer:agent_message'
+        }), f.root);
+        expect(f.create.mock.calls[0][1]).not.toHaveProperty('hapiForkMessageLocalId');
+    });
+
+    it('maps final native lastTurnId forks to an inclusive HAPI boundary', async () => {
+        const f = await fixture();
+        f.native.thread.turns.push({ id: 'turn-1', status: 'completed', items: [
+            { id: 'user-1', type: 'userMessage', clientId: 'local-1', content: [{ type: 'text', text: 'hello' }] }
+        ] });
+        await f.root.refresh();
+        expect(f.root.historicalForkBoundary({ lastTurnId: 'turn-1' })).toEqual({
+            kind: 'through', localId: 'local-1'
+        });
     });
 
     it('switches mode and submits once across repeated Web actions and lost replies', async () => {
@@ -342,4 +514,31 @@ describe('bounded resume response', () => {
         });
         await expect(f.root.bind('thread', { thread: { id: 'thread' } }, true)).rejects.toThrow('no rollout found');
     });
+});
+
+
+describe('archive failure isolation', () => {
+    it('contains rejection from plain host.end without an unhandled rejection', async () => {
+        // Deliberately not vi.fn: its settlement handler would hide this defect.
+        const end: RootHost['end'] = async () => { throw new Error('native archive unavailable'); };
+        const f = await fixture({ end });
+        await f.root.activate();
+        f.emitHubArchived();
+        await new Promise(resolve => setImmediate(resolve));
+        // Vitest fails the test run on any unhandledRejection. A second root
+        // can still operate after this first root's asynchronous archive failed.
+        const sibling = await fixture();
+        await sibling.root.activate();
+        expect(sibling.root.client.isInitialized()).toBe(true);
+    });
+});
+
+it('rejects a web/scheduled slash permission escalation before contacting Codex', async () => {
+    const f = await fixture();
+    vi.stubEnv('EVOLVED_PROJECT_ID', 'project'); vi.stubEnv('EVOLVED_RUNNER_PROFILE', 'restricted');
+    try {
+        const request = vi.spyOn(f.root.client, 'request');
+        await expect((f.root as unknown as { command(text: string): Promise<unknown> }).command('/permissions yolo')).rejects.toThrow('profile');
+        expect(request.mock.calls.some(([method]) => method === 'thread/settings/update')).toBe(false);
+    } finally { vi.unstubAllEnvs(); }
 });

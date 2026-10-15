@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { imageUploadPreference, setImageUploadPreference } from '@/lib/imageUpload'
 import { useTranslation } from '@/lib/use-translation'
 import { getComposerEnterBehaviorOptions, useComposerEnterBehavior } from '@/hooks/useComposerEnterBehavior'
 import { getTerminalToolDisplayModeOptions, useTerminalToolDisplayMode } from '@/hooks/useTerminalToolDisplayMode'
@@ -47,6 +49,7 @@ function ChatSurfaceColorControl(props: {
 }
 
 export default function SettingsChatPage() {
+    const [imageUploads, setImageUploads] = useState(imageUploadPreference)
     const { t } = useTranslation()
     const { composerEnterBehavior, setComposerEnterBehavior } = useComposerEnterBehavior()
     const { terminalToolDisplayMode, setTerminalToolDisplayMode } = useTerminalToolDisplayMode()
@@ -62,6 +65,7 @@ export default function SettingsChatPage() {
                     options={getComposerEnterBehaviorOptions().map((option) => ({ value: option.value, label: t(option.labelKey) }))}
                     onChange={setComposerEnterBehavior}
                 />
+                <SettingsChoiceGroup label="Bild-Uploads" value={imageUploads} options={[{ value: 'auto', label: 'Automatisch komprimieren' }, { value: 'original', label: 'Immer Originale senden' }]} onChange={value => { setImageUploads(value); setImageUploadPreference(value) }} />
                 <ComposerToolbarLayoutControl />
             </SettingsSection>
             <SettingsSection title={t('settings.chat.tools')}>

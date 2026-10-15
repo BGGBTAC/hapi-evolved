@@ -24,6 +24,8 @@ describe('buildHookSettings local approvals', () => {
         expect(settings.hooks.PostToolUse).toBeDefined()
         expect(settings.hooks.PostToolUseFailure).toBeDefined()
         expect(settings.hooks.SessionEnd).toBeDefined()
+        expect(settings.hooks.Stop?.[0].hooks[0].command).toBe('forward-cmd')
+        expect(buildHookSettings('remote').hooks.Stop).toBeUndefined()
         expect(settings.hooks.PermissionRequest?.[0].hooks[0]).toEqual({
             type: 'command',
             command: 'forward-cmd',

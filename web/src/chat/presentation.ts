@@ -221,7 +221,8 @@ export function getEventPresentation(event: AgentEvent): EventPresentation {
             const detail = apiErrorDetail((event as { error?: unknown }).error)
             return { icon: '⏳', text: detail ? `API error: Retrying... ${detail}` : 'API error: Retrying...' }
         }
-        return { icon: '⚠️', text: 'API error' }
+        const detail = apiErrorDetail(event.error)
+        return { icon: '⚠️', text: detail ? `API error: ${detail}` : 'API error' }
     }
     if (event.type === 'switch') {
         const mode = event.mode === 'local' ? 'local' : 'remote'

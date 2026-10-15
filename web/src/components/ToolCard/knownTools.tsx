@@ -274,6 +274,8 @@ export const knownTools: Record<string, {
     CodexAgent: {
         icon: () => <RocketIcon className={DEFAULT_ICON_CLASS} />,
         title: (opts) => {
+            const identity = getInputStringAny(opts.input, ['taskName', 'nickname'])
+            if (identity) return `Agent: ${identity}`
             const summary = getCodexAgentSummary(opts.input)
             if (summary) return `Agent: ${summary}`
             return 'Agent'

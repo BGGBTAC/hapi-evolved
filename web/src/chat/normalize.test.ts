@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { normalizeDecryptedMessage } from './normalize'
+import { reduceChatBlocks } from './reducer'
+import { getEventPresentation } from './presentation'
 import type { DecryptedMessage } from '@/types/api'
 
 function makeMessage(content: unknown): DecryptedMessage {
@@ -13,6 +15,19 @@ function makeMessage(content: unknown): DecryptedMessage {
 }
 
 describe('normalizeDecryptedMessage', () => {
+    it('surfaces synthetic Claude API errors without clearing real context usage', () => {
+        const wrap = (data: unknown) => makeMessage({ role: 'agent', content: { type: 'output', data } })
+        const normal = normalizeDecryptedMessage(wrap({ type: 'assistant', uuid: 'normal',
+            message: { model: 'claude-opus-5', content: [{ type: 'text', text: 'Working' }], usage: { input_tokens: 900000, output_tokens: 20 } } }))!
+        const error = normalizeDecryptedMessage({ ...wrap({ type: 'assistant', uuid: 'error', isApiErrorMessage: true, error: 'invalid_request',
+            message: { model: '<synthetic>', content: [{ type: 'text', text: 'Prompt is too long' }], usage: { input_tokens: 0, output_tokens: 0, service_tier: null } } }), id: 'error', createdAt: normal.createdAt + 1 })!
+        expect(error).toMatchObject({ role: 'event', content: { type: 'api-error', error: 'Prompt is too long' } })
+        expect(error.usage).toBeUndefined()
+        const reduced = reduceChatBlocks([normal, error], null)
+        expect(reduced.latestUsage?.contextSize).toBe(900000)
+        if (error.role !== 'event') throw new Error('expected event')
+        expect(getEventPresentation(error.content).text).toContain('Prompt is too long')
+    })
     it('drops unsupported Claude system output records', () => {
         const message = makeMessage({
             role: 'agent',

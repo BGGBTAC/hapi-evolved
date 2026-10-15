@@ -16,7 +16,7 @@ export const UsageSchema = z.object({
   cache_creation_input_tokens: z.number().int().nonnegative().optional(),
   cache_read_input_tokens: z.number().int().nonnegative().optional(),
   output_tokens: z.number().int().nonnegative(),
-  service_tier: z.string().optional(),
+  service_tier: z.string().nullish(),
 }).passthrough();
 
 // `passthrough` keeps fields the SDK adds going forward (e.g. `model`, future
@@ -68,6 +68,8 @@ export const RawJSONLinesSchema = z.discriminatedUnion("type", [
     type: z.literal("assistant"),
     message: RawMessageSchema.optional(),
     requestId: z.string().optional(),
+    isApiErrorMessage: z.boolean().optional(),
+    error: z.unknown().optional(),
   }),
 
   // Summary message - validates summary and leafUuid

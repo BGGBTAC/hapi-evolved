@@ -121,6 +121,28 @@ export type AuthResponse = {
 }
 
 export type SessionsResponse = { sessions: SessionSummary[] }
+export type SessionContentMatch = {
+    messageId: string
+    role: 'user' | 'assistant'
+    seq: number
+    createdAt: number
+    snippet: string
+    truncated: boolean
+}
+export type SessionContentSearchResponse = {
+    results: Array<{
+        session: SessionSummary
+        match: SessionContentMatch
+    }>
+    /** True when this query may miss content omitted by an indexing optimization. */
+    hasPotentiallyIncompleteResults: boolean
+}
+export type SessionContentMatchesResponse = {
+    matches: SessionContentMatch[]
+    total: number
+    /** True when this query may miss content omitted by an indexing optimization. */
+    hasPotentiallyIncompleteResults: boolean
+}
 export type SessionResponse = { session: Session }
 export type MessagesResponse = {
     messages: DecryptedMessage[]
@@ -133,6 +155,20 @@ export type MessagesResponse = {
         nextBeforeAt: number | null
         nextAfterSeq: number | null
         nextAfterAt: number | null
+        snapshotHeadSeq: number | null
+        snapshotHeadAt: number | null
+        hasMore: boolean
+    }
+}
+
+/** A bounded history window centered on a message selected from search results. */
+export type MessageContextResponse = {
+    messages: DecryptedMessage[]
+    targetMessageId: string
+    page: {
+        epoch: number
+        nextBeforeSeq: number | null
+        nextBeforeAt: number | null
         snapshotHeadSeq: number | null
         snapshotHeadAt: number | null
         hasMore: boolean
@@ -488,13 +524,20 @@ export type CursorMigrateRefusalReason =
 export const UploadFileRequestSchema = z.object({
     filename: z.string().min(1).max(255),
     content: z.string().min(1),
-    mimeType: z.string().min(1).max(255)
+    mimeType: z.string()
+        .trim()
+        .min(1)
+        .max(255)
+        .regex(/^[\x21-\x7E]+(?: [\x21-\x7E]+)*$/, 'Invalid MIME type')
 })
 
 export type UploadFileRequest = z.infer<typeof UploadFileRequestSchema>
 
 export const DeleteUploadRequestSchema = z.object({
-    path: z.string().min(1)
+    path: z.string().min(1).optional(),
+    attachmentId: z.string().min(1).optional()
+}).refine((value) => Boolean(value.path || value.attachmentId), {
+    message: 'Delete request must include either path or attachmentId'
 })
 
 export type DeleteUploadRequest = z.infer<typeof DeleteUploadRequestSchema>
@@ -698,6 +741,7 @@ export type CommandResponse = {
     stderr?: string
     exitCode?: number
     error?: string
+    code?: string
 }
 
 export type GitCommandResponse = CommandResponse
@@ -708,6 +752,7 @@ export type FileReadResponse = {
     size?: number
     modified?: number
     error?: string
+    code?: string
 }
 
 export type GeneratedImageResponse = {
@@ -721,6 +766,10 @@ export type GeneratedImageResponse = {
 export type UploadFileResponse = {
     success: boolean
     path?: string
+    attachmentId?: string
+    filename?: string
+    mimeType?: string
+    size?: number
     error?: string
 }
 

@@ -241,3 +241,19 @@ describe('traceMessages — parentToolUseId direct grouping (broken subagent cas
         expect(result.find(m => m.id === 'sc-grandchild')!.sidechainId).toBe('msg-mid')
     })
 })
+
+
+describe('unresolved child activity', () => {
+    it('retains orphans in input order without inventing a parent, then groups on the next page', () => {
+        const child = makeSidechainChildMsg('child', 'tc-parent', 'missing-uuid');
+        const root = makeAgentMsg({ id: 'root', content: [{ type: 'text', text: 'Root answer', uuid: 'r', parentUUID: null }] });
+        const isolated = traceMessages([child, root]);
+        expect(isolated.map(message => message.id)).toEqual(['child', 'root']);
+        expect(isolated[0]).toMatchObject({ isSidechain: true });
+        expect(isolated[0].sidechainId).toBeUndefined();
+        const parent = makeToolCallMsg('parent', 'Agent', 'Task');
+        const complete = traceMessages([parent, child, root]);
+        expect(complete.filter(message => message.id === 'child')).toHaveLength(1);
+        expect(complete.find(message => message.id === 'child')?.sidechainId).toBe('parent');
+    });
+});

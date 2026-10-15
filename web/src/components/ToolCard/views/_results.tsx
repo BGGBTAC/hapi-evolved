@@ -1,3 +1,4 @@
+import { withToolImages } from './ToolResultImages'
 import type { ToolViewComponent, ToolViewProps } from '@/components/ToolCard/views/_all'
 import type { ReactNode } from 'react'
 import { isObject, safeStringify } from '@hapi/protocol'
@@ -1079,9 +1080,9 @@ const GoalResultView: ToolViewComponent = (props) => {
 }
 
 export function getToolResultViewComponent(toolName: string): ToolViewComponent {
-    if (isGoalToolName(toolName)) return GoalResultView
+    if (isGoalToolName(toolName)) return withToolImages(GoalResultView)
     if (toolName.startsWith('mcp__')) {
-        return GenericResultView
+        return withToolImages(GenericResultView)
     }
-    return toolResultViewRegistry[toolName] ?? GenericResultView
+    return withToolImages(toolResultViewRegistry[toolName] ?? GenericResultView)
 }

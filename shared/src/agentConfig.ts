@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { AGENT_FLAVORS, type AgentFlavor, type PermissionMode } from './modes'
+import { AGENT_FLAVORS, getPermissionModesForFlavor, getPermissionModeLabel, type AgentFlavor, type PermissionMode } from './modes'
 
 export const AgentConfigFieldIdSchema = z.enum([
     'model',
@@ -28,13 +28,18 @@ export const AgentConfigFieldDescriptorSchema = z.object({
     kind: AgentConfigFieldKindSchema,
     optionSource: AgentConfigOptionSourceSchema.optional(),
     availability: AgentConfigAvailabilitySchema,
-    unavailableReason: z.string().optional()
+    unavailableReason: z.string().optional(),
+    nativeKey: z.string().optional(),
+    dependsOn: z.array(AgentConfigFieldIdSchema).optional(),
+    applyTiming: z.enum(['immediate', 'next-turn', 'restart']).optional(),
+    options: z.array(z.object({ value: z.string().nullable(), label: z.string(), group: z.string().optional() })).optional()
 })
 export type AgentConfigFieldDescriptor = z.infer<typeof AgentConfigFieldDescriptorSchema>
 
 export const AgentConfigDescriptorSchema = z.object({
     flavor: z.string().min(1),
-    fields: z.array(AgentConfigFieldDescriptorSchema)
+    fields: z.array(AgentConfigFieldDescriptorSchema),
+    policyAliases: z.record(z.string(), z.string()).optional()
 })
 export type AgentConfigDescriptor = z.infer<typeof AgentConfigDescriptorSchema>
 
@@ -89,7 +94,14 @@ const BUILTIN_DESCRIPTORS: Record<AgentFlavor, AgentConfigFieldDescriptor[]> = {
 }
 
 export function getAgentConfigDescriptor(flavor: AgentFlavor): AgentConfigDescriptor {
-    return { flavor, fields: BUILTIN_DESCRIPTORS[flavor] }
+    const yolo = resolveHapiYoloPermissionMode(flavor)
+    return { flavor, policyAliases: yolo ? { yolo } : {}, fields: BUILTIN_DESCRIPTORS[flavor].map(field => ({
+        ...field,
+        nativeKey: field.id === 'permission' ? 'permissionMode' : field.id === 'effort' && flavor === 'codex' ? 'modelReasoningEffort' : field.id,
+        ...(field.optionSource === 'model' ? { dependsOn: ['model' as const] } : {}),
+        ...(field.id === 'permission' && field.kind !== 'status' ? { options: getPermissionModesForFlavor(flavor).filter(mode => flavor !== 'codex' || mode !== 'safe-yolo').map(mode => ({ value: mode, label: getPermissionModeLabel(mode) })) } : {})
+    })) }
+
 }
 
 export function getBuiltinAgentConfigDescriptors(): AgentConfigDescriptor[] {
@@ -114,4 +126,21 @@ export function resolveHapiYoloPermissionMode(flavor: AgentFlavor): PermissionMo
         case 'pi':
             return null
     }
+}
+
+/** Current Evolved engines publish this descriptor, including when changes apply. */
+export function getRuntimeAgentConfigDescriptor(flavor: 'claude' | 'codex'): AgentConfigDescriptor {
+    const descriptor = getAgentConfigDescriptor(flavor)
+    return { ...descriptor, fields: descriptor.fields.map(field => ({ ...field,
+        optionSource: flavor === 'codex' && field.id === 'model' ? 'session' : field.optionSource,
+        applyTiming: 'next-turn'
+    })) }
+}
+
+export function agentConfigField(descriptor: AgentConfigDescriptor | undefined | null, fieldId: AgentConfigFieldId): AgentConfigFieldDescriptor | undefined {
+    return descriptor?.fields.find(field => field.id === fieldId && field.availability !== 'create')
+}
+export function isAgentConfigFieldAvailable(descriptor: AgentConfigDescriptor | undefined | null, fieldId: AgentConfigFieldId): boolean {
+    const field = agentConfigField(descriptor, fieldId)
+    return Boolean(field && field.availability !== 'managed' && field.kind !== 'status' && !field.unavailableReason)
 }

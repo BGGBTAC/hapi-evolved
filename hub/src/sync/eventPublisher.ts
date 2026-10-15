@@ -8,7 +8,8 @@ export class EventPublisher {
 
     constructor(
         private readonly sseManager: SSEManager,
-        private readonly resolveNamespace: (event: SyncEvent) => string | undefined
+        private readonly resolveNamespace: (event: SyncEvent) => string | undefined,
+        private readonly messageCursor?: (namespace: string, messageId: string) => string | undefined
     ) {
     }
 
@@ -19,7 +20,9 @@ export class EventPublisher {
 
     emit(event: SyncEvent): void {
         const namespace = this.resolveNamespace(event)
-        const enrichedEvent = namespace ? { ...event, namespace } : event
+        const notificationCursor = namespace && event.type === 'message-received'
+            ? this.messageCursor?.(namespace, event.message.id) : undefined
+        const enrichedEvent = namespace ? { ...event, namespace, ...(notificationCursor ? { notificationCursor } : {}) } : event
 
         for (const listener of this.listeners) {
             try {

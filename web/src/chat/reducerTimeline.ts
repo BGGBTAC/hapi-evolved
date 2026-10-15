@@ -146,6 +146,10 @@ function getAgentRunDisplayPatch(event: Record<string, unknown>): Record<string,
     const activity = getEventString(event, 'activity')
     const activityKind = getEventString(event, 'activityKind') ?? getEventString(event, 'activity_kind')
 
+    for (const key of ['taskName', 'nickname', 'agentPath', 'agentRole']) {
+        const value = getEventString(event, key)
+        if (value) patch[key] = value
+    }
     if (summary) patch.summary = summary
     if (activity) patch.activity = activity
     if (activityKind) patch.activityKind = activityKind
@@ -592,7 +596,8 @@ export function reduceTimeline(
             }
 
             if (
-                msg.content.type === 'agent-run-start'
+                msg.content.type === 'agent-run-metadata'
+                || msg.content.type === 'agent-run-start'
                 || msg.content.type === 'agent-run-update'
                 || msg.content.type === 'agent-run-trace'
             ) {
@@ -649,6 +654,11 @@ export function reduceTimeline(
                 }
                 if (agentId) {
                     agentRunCardByAgentId.set(agentId, cardId)
+                }
+
+                if (msg.content.type === 'agent-run-metadata') {
+                    patchAgentRunInput(block, { agentId, ...getAgentRunDisplayPatch(event) })
+                    continue
                 }
 
                 if (msg.content.type === 'agent-run-start') {
@@ -864,6 +874,10 @@ export function reduceTimeline(
                     if (streamId) {
                         const existing = textBlocksByStreamId.get(streamId)
                         if (existing) {
+                            existing.sourceMessageIds ??= []
+                            if (!existing.sourceMessageIds.includes(msg.id)) {
+                                existing.sourceMessageIds.push(msg.id)
+                            }
                             existing.text = c.text
                             existing.usage = msg.usage
                             existing.model = msg.model
@@ -875,13 +889,11 @@ export function reduceTimeline(
 
                     const block: AgentTextBlock = {
                         kind: 'agent-text',
-                        // Streamed snapshots under one stream id arrive as
-                        // separate message rows that the window keeps swapping
-                        // for newer rows. Deriving the id from the stream id
-                        // (unique per stream) keeps the block identity stable
-                        // across snapshots so the rendered component is
-                        // updated in place instead of being remounted.
+                        // Stream-stable identity keeps the rendered component
+                        // mounted while retaining every raw message ID for
+                        // content-search navigation.
                         id: streamId ?? `${msg.id}:${idx}`,
+                        sourceMessageIds: [msg.id],
                         localId: msg.localId,
                         createdAt: msg.createdAt,
                         invokedAt: msg.invokedAt,
@@ -918,6 +930,10 @@ export function reduceTimeline(
                     if (streamId) {
                         const existing = reasoningBlocksByStreamId.get(streamId)
                         if (existing) {
+                            existing.sourceMessageIds ??= []
+                            if (!existing.sourceMessageIds.includes(msg.id)) {
+                                existing.sourceMessageIds.push(msg.id)
+                            }
                             existing.text = c.text
                             existing.usage = msg.usage
                             existing.model = msg.model
@@ -929,11 +945,10 @@ export function reduceTimeline(
 
                     const block: AgentReasoningBlock = {
                         kind: 'agent-reasoning',
-                        // Same as agent-text above: a stream-stable id keeps
-                        // the reasoning panel mounted while its snapshots
-                        // arrive, so the smooth streaming continues from the
-                        // previous text instead of replaying from a remount.
+                        // Keep the reasoning panel mounted across snapshots,
+                        // while preserving every source row for search jumps.
                         id: streamId ?? `${msg.id}:${idx}`,
+                        sourceMessageIds: [msg.id],
                         localId: msg.localId,
                         createdAt: msg.createdAt,
                         invokedAt: msg.invokedAt,

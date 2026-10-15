@@ -842,31 +842,31 @@ function Td(props: ComponentPropsWithoutRef<'td'>) {
 }
 
 function H1(props: ComponentPropsWithoutRef<'h1'>) {
-    return <h1 {...props} className={cn('aui-md-h1 mt-4 text-[1.05rem] font-semibold tracking-[-0.01em] first:mt-0', props.className)} />
+    return <h1 {...props} className={cn('aui-md-h1 mt-4 text-[1.5em] font-bold tracking-[-0.01em] first:mt-0', props.className)} />
 }
 
 function H2(props: ComponentPropsWithoutRef<'h2'>) {
-    return <h2 {...props} className={cn('aui-md-h2 mt-4 text-base font-semibold tracking-[-0.01em] first:mt-0', props.className)} />
+    return <h2 {...props} className={cn('aui-md-h2 mt-4 text-[1.3em] font-bold tracking-[-0.01em] first:mt-0', props.className)} />
 }
 
 function H3(props: ComponentPropsWithoutRef<'h3'>) {
-    return <h3 {...props} className={cn('aui-md-h3 mt-3 text-[0.95rem] font-semibold first:mt-0', props.className)} />
+    return <h3 {...props} className={cn('aui-md-h3 mt-3 text-[1.15em] font-bold first:mt-0', props.className)} />
 }
 
 function H4(props: ComponentPropsWithoutRef<'h4'>) {
-    return <h4 {...props} className={cn('aui-md-h4 mt-3 text-[0.92rem] font-semibold first:mt-0', props.className)} />
+    return <h4 {...props} className={cn('aui-md-h4 mt-3 text-[1.05em] font-bold first:mt-0', props.className)} />
 }
 
 function H5(props: ComponentPropsWithoutRef<'h5'>) {
-    return <h5 {...props} className={cn('aui-md-h5 mt-2.5 text-[0.9rem] font-semibold first:mt-0', props.className)} />
+    return <h5 {...props} className={cn('aui-md-h5 mt-2.5 text-[1em] font-bold first:mt-0', props.className)} />
 }
 
 function H6(props: ComponentPropsWithoutRef<'h6'>) {
-    return <h6 {...props} className={cn('aui-md-h6 mt-2.5 text-[0.88rem] font-semibold first:mt-0', props.className)} />
+    return <h6 {...props} className={cn('aui-md-h6 mt-2.5 text-[1em] font-bold first:mt-0', props.className)} />
 }
 
 function Strong(props: ComponentPropsWithoutRef<'strong'>) {
-    return <strong {...props} className={cn('aui-md-strong font-semibold text-[var(--app-fg)]', props.className)} />
+    return <strong {...props} className={cn('aui-md-strong font-bold text-[var(--app-fg)]', props.className)} />
 }
 
 function Em(props: ComponentPropsWithoutRef<'em'>) {

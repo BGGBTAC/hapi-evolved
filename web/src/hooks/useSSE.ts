@@ -158,6 +158,9 @@ export function isRenderIrrelevantPatch(current: SessionSummary, next: SessionSu
     return current.active === next.active
         && current.thinking === next.thinking
         && current.updatedAt === next.updatedAt
+        && current.lastMessageAt === next.lastMessageAt
+        && current.lastAssistantMessageAt === next.lastAssistantMessageAt
+        && current.notifyStatus === next.notifyStatus
         && current.backgroundTaskCount === next.backgroundTaskCount
         && current.model === next.model
         && current.modelReasoningEffort === next.modelReasoningEffort
@@ -524,6 +527,10 @@ export function useSSE(options: {
                     active: patch.active ?? current.active,
                     thinking: patch.thinking ?? current.thinking,
                     activeAt: patch.activeAt ?? current.activeAt,
+                    // Conversation clocks can decrease when a message is deleted.
+                    lastMessageAt: patch.lastMessageAt !== undefined ? patch.lastMessageAt : current.lastMessageAt,
+                    lastAssistantMessageAt: patch.lastAssistantMessageAt !== undefined ? patch.lastAssistantMessageAt : current.lastAssistantMessageAt,
+                    notifyStatus: patch.notifyStatus !== undefined ? patch.notifyStatus : current.notifyStatus,
                     // Monotonic: stale versioned-patch replays can carry an
                     // older updatedAt; never move the list clock backward.
                     updatedAt: patch.updatedAt !== undefined

@@ -60,7 +60,7 @@ export class ApiClient {
                 id: opts.id,
                 ...(opts.adopt === true ? { adopt: true } : {}),
                 tag: opts.tag,
-                metadata: opts.metadata,
+                metadata: { ...opts.metadata, capabilities: { ...opts.metadata.capabilities, durableAttachments: true } },
                 agentState: opts.state,
                 model: opts.model,
                 modelReasoningEffort: opts.modelReasoningEffort,

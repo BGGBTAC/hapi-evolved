@@ -205,7 +205,9 @@ export class MachineCache {
         const wasActive = machine.active
         const previousHealth = machine.health ?? null
         machine.active = true
-        machine.activeAt = Math.max(machine.activeAt, t)
+        // Liveness is measured by receipt on the hub's clock. A healthy runner
+        // with a clock 40 seconds behind must not expire three seconds later.
+        machine.activeAt = Date.now()
 
         if (payload.health !== undefined) {
             machine.health = parseMachineHealth(payload.health)

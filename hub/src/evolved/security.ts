@@ -1,6 +1,6 @@
 import { generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse, type AuthenticationResponseJSON, type RegistrationResponseJSON, type AuthenticatorTransport } from '@simplewebauthn/server'
 import { setCookie, deleteCookie } from 'hono/cookie'
-import { Hono, type Context } from 'hono'
+import { Hono, type Context, type MiddlewareHandler } from 'hono'
 import { z } from 'zod'
 import { EvolvedError, EvolvedStore, hashToken, randomToken, type EvolvedPrincipal } from './store'
 
@@ -51,6 +51,16 @@ export async function parseBody<T>(c: Context, schema: z.ZodType<T>): Promise<T>
 }
 export function assertOrigin(req: Request, origin: string): void {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.headers.get('origin') !== origin) throw new EvolvedError('origin_denied', 'Request origin is not allowed.', 403)
+}
+/** Shared outer boundary for every Evolved router, including capability APIs. */
+export function createEvolvedRequestGuard(origin: string): MiddlewareHandler {
+    return async (c, next) => {
+        c.header('Cache-Control', 'no-store')
+        c.header('X-Content-Type-Options', 'nosniff')
+        // Ambient cookies never bypass CSRF through a simultaneous Bearer header.
+        if (c.req.path.includes('/auth/') || c.req.header('cookie') || !c.req.header('authorization') || c.req.header('origin')) assertOrigin(c.req.raw, origin)
+        await next()
+    }
 }
 export function createAuthRoutes(config: { store: EvolvedStore; origin: string; rpName?: string }): Hono<EvolvedEnv> {
     const app = new Hono<EvolvedEnv>(), { store, origin } = config

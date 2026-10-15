@@ -1,3 +1,4 @@
+import { BROWSER_CLOUD_CONSENT_KEY } from '@/hooks/browserCloudSpeech'
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { VOICE_BACKEND_LABELS } from '@hapi/protocol/voicePickerCatalog'
@@ -17,10 +18,11 @@ export default function SettingsVoicePage() {
     const navigate = useNavigate()
     const voice = useVoiceSettings()
     const [opening, setOpening] = useState<'greet' | 'brief'>(() => localStorage.getItem('hapi-voice-proactive') === 'true' ? 'brief' : 'greet')
+    const [cloudConsent, setCloudConsent] = useState(() => localStorage.getItem(BROWSER_CLOUD_CONSENT_KEY) === 'true')
     const [showCredentials, setShowCredentials] = useState(false)
     const selectedLanguage = voice.voiceLanguages.find((language) => language.code === voice.voiceLanguage)
     const selectedVoice = voice.voices.find((option) => option.id === voice.voiceId)
-    const hubProviders = voice.providers.filter((provider) => provider.id !== 'browser-local')
+    const hubProviders = voice.providers.filter((provider) => provider.id !== 'browser-local' && provider.id !== 'browser-cloud')
     const canManageCredentials = getNamespaceFromToken(token) === 'default'
     const needsDictationOnboard = voice.voiceMode === 'dictation' && hubProviders.length === 0
     const needsAssistantOnboard = voice.voiceMode === 'assistant' && voice.configuredBackends.length === 0
@@ -56,6 +58,7 @@ export default function SettingsVoicePage() {
                 />
             </SettingsSection>
 
+            {voice.providers.some(provider => provider.id === 'browser-cloud') && <SettingsSection title="Browser-Cloud-Spracherkennung" description="Optional: Audio wird direkt vom Browser an dessen Spracherkennungsanbieter übertragen. HAPI erhält nur den Text. Keine lokale Verarbeitungsgarantie."><label className="flex gap-2 p-3 text-sm"><input type="checkbox" checked={cloudConsent} onChange={event => { const accepted = event.target.checked; setCloudConsent(accepted); if (accepted) localStorage.setItem(BROWSER_CLOUD_CONSENT_KEY, 'true'); else localStorage.removeItem(BROWSER_CLOUD_CONSENT_KEY); window.dispatchEvent(new Event('hapi-cloud-speech-consent')) }} />Ich erlaube die Audioübertragung an den Browseranbieter.</label></SettingsSection>}
             <SettingsSection title={t('settings.voice.connection.title')} description={t('settings.voice.group.hint')}>
                 {voice.voiceMode === 'assistant' && voice.configuredBackends.length > 1 && voice.backend ? (
                     <SettingsChoiceGroup
@@ -74,7 +77,7 @@ export default function SettingsVoicePage() {
                     <SettingsChoiceGroup
                         label={t('settings.voice.transcriptionProvider')}
                         value={voice.provider}
-                        options={voice.providers.map((provider) => ({ value: provider.id, label: provider.label }))}
+                        options={voice.providers.filter(provider => provider.id !== 'browser-cloud' || cloudConsent).map((provider) => ({ value: provider.id, label: provider.label }))}
                         onChange={voice.setProvider}
                     />
                 ) : null}

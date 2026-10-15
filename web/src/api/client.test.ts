@@ -15,6 +15,36 @@ describe('ApiClient error mapping', () => {
         globalThis.fetch = originalFetch
     })
 
+    it('refuses a delayed source-session send after its authority is invalidated', async () => {
+        let current = true;
+        const api = new ApiClient('source-token', { getProjectId: () => 'source-project', isAuthorityCurrent: () => current });
+        fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+        await api.sendMessage('source-session', 'First explicit send');
+        const headers = fetchMock.mock.calls[0][1].headers as Headers;
+        expect(headers.get('x-hapi-project-id')).toBe('source-project');
+        current = false;
+        await expect(api.sendMessage('source-session', 'Delayed voice send')).rejects.toThrow('Account or project changed');
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('scopes direct image/attachment fetches and cursor migration to the issuing authority', async () => {
+        let current = true
+        const api = new ApiClient('token', { credentials: 'include', getProjectId: () => 'project-a', isAuthorityCurrent: () => current })
+        fetchMock.mockImplementation(async () => new Response('bytes'))
+        await api.getGeneratedImageBlob('session-a', 'image-a')
+        await api.fetchScratchlistAttachmentBlob('session-a', 'attachment-a')
+        for (const [, options] of fetchMock.mock.calls) {
+            expect((options.headers as Headers).get('x-hapi-project-id')).toBe('project-a')
+            expect(options.credentials).toBe('include')
+            expect(options.cache).toBe('no-store')
+        }
+        current = false
+        await expect(api.getGeneratedImageBlob('session-a', 'image-a')).rejects.toThrow('Account or project changed')
+        await expect(api.fetchScratchlistAttachmentBlob('session-a', 'attachment-a')).rejects.toThrow('Account or project changed')
+        await expect(api.migrateCursorSessionToAcp('session-a')).rejects.toThrow('Account or project changed')
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+    })
+
     it('prefers the stable `code` field over the human-readable `error` message in ApiError.code', async () => {
         // Match the shape /sessions/:id/reopen actually returns on a 503.
         fetchMock.mockResolvedValueOnce(
@@ -327,6 +357,100 @@ describe('ApiClient error mapping', () => {
         expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/voice/transcription/credentials')
         expect(init?.method).toBe('PUT')
         expect(init?.body).toBe(JSON.stringify({ openai: 'sk-test' }))
+    })
+})
+
+describe('ApiClient session content search', () => {
+    it('uses the opt-in content-search endpoint with encoded query, limit, and session scope', async () => {
+        const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+            new Response(JSON.stringify({ results: [] }), { status: 200 })
+        )
+        try {
+            const api = new ApiClient('test-token')
+            await api.searchSessionContent(' cache search ', 12, undefined, ['session /?#', 'session /?#', 'other'])
+            const request = fetchMock.mock.calls[0]?.[0]
+            const init = fetchMock.mock.calls[0]?.[1]
+            expect(String(request)).toBe('/api/sessions/content-search')
+            expect(init?.method).toBe('POST')
+            expect(init?.body).toBe(JSON.stringify({
+                query: 'cache search',
+                limit: 12,
+                sessionIds: ['session /?#', 'other']
+            }))
+        } finally {
+            fetchMock.mockRestore()
+        }
+    })
+
+    it('chunks oversized session scopes and merges results before applying the limit', async () => {
+        const requests: string[][] = []
+        const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+            const body = JSON.parse(String(init?.body)) as { sessionIds: string[] }
+            requests.push(body.sessionIds)
+            const resultSessionId = body.sessionIds.at(-1) ?? ''
+            const index = Number(resultSessionId.match(/session-(\d+)/)?.[1] ?? 0)
+            return new Response(JSON.stringify({
+                results: [{
+                    session: { id: resultSessionId, updatedAt: index },
+                    match: { messageId: `message-${index}`, role: 'user', seq: index, createdAt: index, snippet: `hit-${index}`, truncated: false }
+                }],
+                hasPotentiallyIncompleteResults: body.sessionIds.some(id => id.startsWith('session-0-'))
+            }), { status: 200 })
+        })
+
+        try {
+            const sessionIds = Array.from({ length: 7_000 }, (_, index) =>
+                `session-${index}-${'x'.repeat(32)}`
+            )
+            const api = new ApiClient('test-token')
+            const response = await api.searchSessionContent('cache', 2, undefined, sessionIds)
+
+            expect(requests.length).toBeGreaterThan(1)
+            expect(requests.flat()).toHaveLength(sessionIds.length)
+            expect(Math.max(...requests.map(chunk => new TextEncoder().encode(JSON.stringify(chunk)).byteLength)))
+                .toBeLessThan(192 * 1024)
+            const expectedTopIds = requests
+                .map(chunk => Number(chunk.at(-1)?.match(/session-(\d+)/)?.[1] ?? 0))
+                .sort((a, b) => b - a)
+                .slice(0, 2)
+            expect(response.results.map(result => result.match.messageId)).toEqual([
+                ...expectedTopIds.map(index => `message-${index}`)
+            ])
+            expect(response.hasPotentiallyIncompleteResults).toBe(true)
+        } finally {
+            fetchMock.mockRestore()
+        }
+    })
+
+    it('requests an encoded message context endpoint', async () => {
+        const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+            new Response(JSON.stringify(null), { status: 200 })
+        )
+        try {
+            const api = new ApiClient('test-token')
+            await expect(api.getMessageContext('session /?#', 'message /?#')).resolves.toBeNull()
+            expect(fetchMock.mock.calls[0]?.[0]).toBe(
+                '/api/sessions/session%20%2F%3F%23/messages/message%20%2F%3F%23/context'
+            )
+        } finally {
+            fetchMock.mockRestore()
+        }
+    })
+
+    it('loads all matching messages for an opened session', async () => {
+        const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+            new Response(JSON.stringify({ matches: [], total: 0 }), { status: 200 })
+        )
+        try {
+            const api = new ApiClient('test-token')
+            await api.searchSessionContentMatches('session /?#', ' cache search ', 42)
+            const request = fetchMock.mock.calls[0]?.[0]
+            expect(String(request)).toContain(
+                '/api/sessions/session%20%2F%3F%23/content-search?query=cache+search&limit=42'
+            )
+        } finally {
+            fetchMock.mockRestore()
+        }
     })
 })
 

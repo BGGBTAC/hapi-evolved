@@ -43,6 +43,20 @@ export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         }))
     })
 
+    app.get('/sessions/:id/messages/:messageId/context', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) {
+            return engine
+        }
+
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) {
+            return sessionResult
+        }
+
+        return c.json(engine.getMessageContext(sessionResult.sessionId, c.req.param('messageId')))
+    })
+
     app.delete('/sessions/:id/messages/:messageId', async (c) => {
         const engine = requireSyncEngine(c, getSyncEngine)
         if (engine instanceof Response) {
@@ -139,6 +153,21 @@ export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         // Require text or attachments
         if (!parsed.data.text && (!parsed.data.attachments || parsed.data.attachments.length === 0)) {
             return c.json({ error: 'Message requires text or attachments' }, 400)
+        }
+
+        const namespace = c.get('namespace')
+        if (c.get('evolvedAccess') && parsed.data.attachments?.some(attachment => !attachment.attachmentId)) {
+            return c.json({ error: 'Evolved messages require a Hub attachment ID. Upload the file again.' }, 400)
+        }
+        if (parsed.data.attachments?.some(attachment => attachment.attachmentId) && sessionResult.session.metadata?.capabilities?.durableAttachments !== true) {
+            return c.json({ error: 'Update and restart this session’s HAPI CLI before sending durable attachments. Your message has not been sent.', code: 'runner_upgrade_required' }, 409)
+        }
+        const invalidAttachment = parsed.data.attachments?.find(
+            (attachment) => attachment.attachmentId
+                && !engine.hasAttachment(sessionId, namespace, attachment.attachmentId)
+        )
+        if (invalidAttachment) {
+            return c.json({ error: 'Attachment not found or not owned by this session' }, 400)
         }
 
         await engine.sendMessage(sessionId, {

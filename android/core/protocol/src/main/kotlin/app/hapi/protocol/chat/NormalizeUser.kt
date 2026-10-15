@@ -15,7 +15,9 @@ private fun parseAttachments(raw: JsonElement?): List<ChatAttachment>? {
         val filename = asString(record["filename"]) ?: continue
         val mimeType = asString(record["mimeType"]) ?: continue
         val size = asNumber(record["size"]) ?: continue
-        val path = asString(record["path"]) ?: continue
+        val path = asString(record["path"])
+        val attachmentId = asString(record["attachmentId"])
+        if (path == null && attachmentId == null) continue
         attachments.add(
             ChatAttachment(
                 id = id,
@@ -24,6 +26,7 @@ private fun parseAttachments(raw: JsonElement?): List<ChatAttachment>? {
                 size = size,
                 path = path,
                 previewUrl = asString(record["previewUrl"]),
+                attachmentId = attachmentId,
             )
         )
     }

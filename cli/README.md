@@ -42,7 +42,8 @@ Choose a supported coding agent from your terminal and control its sessions remo
 - `hapi dsh` - Start DeepSeek Harness through ACP. See `src/dsh/runDsh.ts`.
   DSH is remote-only and its ACP server must be configured separately.
 - `hapi resume [sessionId]` - List resumable sessions for this machine or resume one locally.
-- `hapi ping-peer <session-id-prefix> <message>` - Resume (if needed) and message another session. Prefer this or MCP `ping_peer` / `list_peers` over reinventing JWT+curl. Also `--message-file` / `--list`.
+- `hapi ping-peer <session-id-prefix> <message>` - Resume (if needed) and message another session. Prefer this or MCP `ping_peer` / `list_peers` / `search_peers` over reinventing JWT+curl. Also `--message-file` / `--list`.
+- `hapi search-peers <query>` - Keyword search for sessions (name/path/agentSessionId) beyond `list_peers` recency. Prefer MCP `search_peers` in-session.
 - `hapi inspect-peer <session-id-or-prefix>` - Read-only peer metadata + recent message text (no resume). Prefer this or MCP `inspect_peer` when a user cites `[title](/sessions/<id>)` or Copy-reference `See session "…" (/sessions/<id>) for context`. `/sessions/<id>` is a hub path, not a local file. Optional `--limit`.
 
 The picker lists agents alphabetically by command name. Use Up/Down and Enter
@@ -178,11 +179,12 @@ export HAPI_DSH_ACP_COMMAND=pnpm
 export HAPI_DSH_ACP_ARGS_JSON='["--dir", "/path/to/deepseek-harness", "run", "demo:acp"]'
 ```
 
-The official ACP demo is fresh-session-only and does not support native resume,
-model switching, MCP injection, or live tool/reasoning telemetry. HAPI uses the
-standard chat and pending one-shot permission surfaces; the ACP composition
-owns the overall permission policy and HAPI does not advertise resume or model
-controls for DSH.
+The current DSH ACP profile supports native persistence through its
+`session/resume` method. HAPI stores the native DSH session id and keeps the Hub
+message history as the transcript source; `session/resume` restores model
+context but does not replay historical updates. The legacy ACP demo may be
+fresh-session-only, in which case HAPI reports the failed resume and preserves the original native session id. DSH owns model switching, MCP injection, live tool/reasoning
+telemetry, and the overall permission policy.
 
 ### Required
 
@@ -240,6 +242,14 @@ When changing agent bootstrap, handoff, or shared-session plumbing:
 - Handoff-capable integrations use `local` (terminal) and `remote` (web-controlled) ownership modes. Codex instead supports concurrent clients without ownership switching; see [Codex shared sessions](../docs/guide/codex-shared-sessions.md).
 - Ordinary wrappers export `HAPI_SESSION_ID` after bootstrap. Shared Codex uses a per-root MCP bridge and `shell_environment_policy.set.HAPI_SESSION_ID`; never put one root's ID into the shared app-server environment. Implementation: `src/codex/shared/root.ts`, `src/codex/shared/runtime.ts`.
 - Gemini remains a historical wire flavor, not a launchable integration. Use the [supported-agent guide](../docs/guide/agents.md) for the launchable set.
+
+Codex shared runtimes require Codex >= 0.154. With Codex >= 0.157, new shared
+threads explicitly use `historyMode: legacy`: the upstream default paginated
+history cannot resume an empty thread before its first turn. An explicit
+paginated start is rejected with an explanation. Existing paginated threads
+retain their paginated reader; HAPI never inserts a synthetic prompt to create
+history. Real-provider validation is separate from the isolated native test,
+which exercises the installed Codex binary against a local mock model endpoint.
 
 ## Storage
 

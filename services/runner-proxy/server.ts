@@ -24,6 +24,8 @@ export function queuedPacketBytes(value: unknown, depth = 0): number {
 export function allowedProxyPath(path: string): boolean {
     // No browser authentication, vault administration or lease issuance through the proxy.
     return path === '/health' || /^\/cli\//.test(path)
+        || /^\/api\/evolved\/peers(?:\/[a-zA-Z0-9_-]+)?$/.test(path)
+        || /^\/api\/evolved\/github-pr\/(?:features|link)$/.test(path)
         || /^\/api\/evolved\/(memory\/search|projects\/[^/]+\/(memory(?:\/.*)?|codegraph\/[^/]+|resources(?:\/.*)?))$/.test(path)
 }
 export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; projectId: string; host?: string; port?: number }) {

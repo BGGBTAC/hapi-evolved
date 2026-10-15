@@ -20,11 +20,11 @@ export class EvolvedClient {
             return token
         } finally { closeSync(fd) }
     }
-    async request(path: string, method = 'GET', body?: unknown, headers: Record<string, string> = {}): Promise<unknown> {
+    async request(path: string, method = 'GET', body?: unknown, headers: Record<string, string> = {}, options?: { timeoutMs?: number }): Promise<unknown> {
         if (!path.startsWith('/') || path.startsWith('//') || path.includes('..')) throw new Error('Invalid Evolved API path')
         const response = await this.fetcher(new URL(`/api/evolved${path}`, this.base), {
             method, headers: { ...headers, authorization: `Bearer ${this.token()}`, 'content-type': 'application/json' },
-            body: body === undefined ? undefined : JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(70_000)
+            body: body === undefined ? undefined : JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(options?.timeoutMs ?? 70_000)
         })
         const payload = await response.json() as { error?: string }
         if (!response.ok) throw new Error(payload.error ?? `Evolved request failed (${response.status})`)

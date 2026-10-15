@@ -27,6 +27,7 @@ type SortableComposerAttachmentProps = {
     attachment: Attachment
     index: number
     isDragging: boolean
+    allowImageVersionChange?: boolean
     disabled: boolean
     onPointerDown: (event: ReactPointerEvent<Element>, id: string, surface: boolean) => void
     onKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>, id: string) => void
@@ -100,8 +101,8 @@ function SortableComposerAttachment(props: SortableComposerAttachmentProps) {
         [attachment.name, disabled, handleKeyDown, handlePointerDown],
     )
     const AttachmentWithHandle = useCallback(
-        () => <AttachmentItem dragHandleProps={dragHandleProps} />,
-        [dragHandleProps],
+        () => <AttachmentItem dragHandleProps={dragHandleProps} allowImageVersionChange={props.allowImageVersionChange} />,
+        [dragHandleProps, props.allowImageVersionChange],
     )
 
     return (
@@ -122,6 +123,7 @@ export function SortableComposerAttachments(props: {
     attachments: readonly Attachment[]
     orderedAttachmentIds: readonly string[]
     disabled?: boolean
+    allowImageVersionChange?: boolean
     onReorder: (activeId: string, targetId: string, position: AttachmentDropPosition) => void
 }) {
     const { attachments, orderedAttachmentIds, onReorder, disabled = false } = props
@@ -262,6 +264,7 @@ export function SortableComposerAttachments(props: {
                         attachment={attachment}
                         index={index}
                         isDragging={draggingId === id}
+                        allowImageVersionChange={props.allowImageVersionChange}
                         disabled={disabled}
                         onPointerDown={handlePointerDown}
                         onKeyDown={handleKeyDown}
