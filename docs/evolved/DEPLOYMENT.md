@@ -157,6 +157,15 @@ Freigabe. Widerruf, Profiländerung, Ablauf oder Nichterreichbarkeit beendet den
 nach dem nächsten Prüfzyklus (eine Sekunde plus höchstens zwei Sekunden Anfrage-Timeout).
 Es gibt keine Docker-Socket-, Host-Netz- oder fremden Projekt-Mounts.
 
+Der Container hält einen Kernel-Lock für sein dediziertes Runner-Home. Nach einem Wechsel
+des Linux-Boots oder PID-Namespace bereinigt sein Startprozess ausschließlich die veralteten
+Runner-State-/PID-Lockdateien; Maschinen-ID, Einstellungen und Resume-Daten bleiben erhalten.
+Beim Upgrade einer älteren Runner-Version den alten Projektcontainer zuerst vollständig stoppen,
+bevor die neue Version dasselbe Home verwendet: Ein alter Prozess ohne diesen Kernel-Lock wird
+durch den neuen Lock nicht nachträglich ausgeschlossen. Ein Runner-Home nie parallel zwischen
+alten und neuen Containern teilen. Der neue Start folgt keinen Symlinks und verweigert unklare
+Metadaten, statt private Dateien pauschal zu löschen.
+
 MCP-Werkzeuge für Codegraph, Memory und Ressourcen werden in Claude/Codex automatisch ergänzt.
 Im Runner ist auch `bun /app/cli/src/index.ts evolved --help` verfügbar.
 
@@ -181,7 +190,9 @@ bei Bedarf verwendet das Skript `sudo -n docker`.
 
 Die Abnahme prüft aktive Hubregistrierung, unprivilegierte Runnerprozesse ohne Linux-Capabilities,
 einen tatsächlich schreibgeschützten Workspace, getrennte Netze und Mounts ohne Docker-Socket
-oder Lease im Runner sowie gesperrte private Egressziele und Verwaltungs-API. Der Bericht enthält
+oder Lease im Runner sowie gesperrte private Egressziele und Verwaltungs-API. Vor der ersten
+aktiven Runnerprobe muss die Container-Generation mindestens fünf Sekunden passiv beobachtet
+stabil laufen; so kann die Probe keinen PID-Wiederverwendungsfehler beim Start verdecken. Der Bericht enthält
 nur IDs und Prüfergebnisse. Providerlogin, Build, Stop und Widerruf bleiben separate Betreiberschritte;
 der Teststack bleibt zur anschließenden Widerrufsprüfung bestehen.
 Für den echten VM-Neustarttest bleibt dessen Wiederstartregel aktiv. Unmittelbar nach dem

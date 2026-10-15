@@ -2,7 +2,8 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { chmodSync, chownSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { containerProbe, inspectAcceptanceBackend, inspectProviderCredentialAbsence, inspectTestContainer, validationPlan } from './validate-runner-vm.mjs'
+// @ts-expect-error The JavaScript operator harness has no TypeScript declaration.
+import { containerProbe, inspectAcceptanceBackend, inspectProviderCredentialAbsence, inspectTestContainer, observeRunnerStart, validationPlan } from './validate-runner-vm.mjs'
 
 const directories: string[] = []
 afterEach(() => { for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true }) })
@@ -41,6 +42,30 @@ function container(plan: ReturnType<typeof validationPlan>, service: string) {
 }
 
 describe('isolated runner VM acceptance guard', () => {
+    test('never permits exec during startup or a short crash loop, even with a reused PID', () => {
+        const state = { Running: true, Restarting: false, Pid: 17, StartedAt: '2026-10-15T07:00:00Z' }
+        let result = observeRunnerStart(null, state, 0)
+        expect(result.ready).toBe(false)
+        result = observeRunnerStart(result.observation, state, 4999)
+        expect(result.ready).toBe(false)
+        expect(observeRunnerStart(result.observation, state, 5000).ready).toBe(true)
+        for (let restart = 1; restart < 10; restart++) {
+            const restarted = { ...state, StartedAt: `2026-10-15T07:00:${String(restart).padStart(2, '0')}Z` }
+            result = observeRunnerStart(result.observation, restarted, 5000 + restart * 2000)
+            expect(result.ready).toBe(false)
+            expect(observeRunnerStart(result.observation, restarted, 6999 + restart * 2000).ready).toBe(false)
+        }
+    })
+    test('resets the passive observation after stop, restarting state, invalid PID, or generation change', () => {
+        const state = { Running: true, Restarting: false, Pid: 17, StartedAt: '2026-10-15T07:00:00Z' }
+        const original = observeRunnerStart(null, state, 0).observation
+        for (const invalid of [undefined, { ...state, Running: false }, { ...state, Restarting: true }, { ...state, Pid: 0 }, { ...state, Pid: 1.5 }, { ...state, StartedAt: '' }]) {
+            const reset = observeRunnerStart(original, invalid, 6000)
+            expect(reset).toEqual({ observation: null, ready: false })
+            expect(observeRunnerStart(reset.observation, state, 6001).ready).toBe(false)
+        }
+        expect(observeRunnerStart(original, { ...state, Pid: 18 }, 6000).ready).toBe(false)
+    })
     test('requires the exact UUID marker and fixes the stack name independently of production', () => {
         const { source, plan } = fixture()
         expect(plan.stack).toBe(`hapi-evolved-validation-${plan.projectId}`)

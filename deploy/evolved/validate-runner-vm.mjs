@@ -44,6 +44,17 @@ export function inspectProviderCredentialAbsence(home) {
     }
 }
 
+/** Observe from the host before exec can consume a PID and hide startup PID reuse. */
+export function observeRunnerStart(previous, state, now) {
+    if (state?.Running !== true || state.Restarting !== false || !Number.isSafeInteger(state.Pid) || state.Pid < 1
+        || typeof state.StartedAt !== 'string' || !Number.isFinite(Date.parse(state.StartedAt))) {
+        return { observation: null, ready: false }
+    }
+    const observation = previous?.startedAt === state.StartedAt && previous.pid === state.Pid
+        ? previous : { startedAt: state.StartedAt, pid: state.Pid, observedAt: now }
+    return { observation, ready: now - observation.observedAt >= 5000 }
+}
+
 export function inspectTestContainer(container, plan, expectedService, requireRunning = true) {
     requireCheck(services.includes(expectedService), 'Unbekannter Testservice.')
     const labels = container.Config?.Labels ?? {}, host = container.HostConfig ?? {}
@@ -170,14 +181,16 @@ export async function main(args = process.argv.slice(2)) {
         } finally { rmSync(temporary, { recursive: true, force: true }) }
     }
     console.log(`Prüfe Teststack ${plan.stack}; kein Providerlogin, Stop oder Widerruf.`)
-    let runnerId, registration
+    let runnerId, registration, runnerGeneration
     const registrationDeadline = Date.now() + 60_000
     while (Date.now() < registrationDeadline) {
         containers = ids().map(inspect)
         requireCheck(containers.length <= services.length, 'Zusätzliche Container im Teststack.')
         const candidate = containers.find(c => c.Config?.Labels?.['com.docker.compose.service'] === 'runner')
         for (const c of containers) inspectTestContainer(c, plan, c.Config.Labels['com.docker.compose.service'], false)
-        if (containers.length === services.length && containers.every(c => c.State?.Running) && candidate) {
+        const observed = observeRunnerStart(runnerGeneration, candidate?.State, performance.now())
+        runnerGeneration = observed.observation
+        if (containers.length === services.length && containers.every(c => c.State?.Running) && candidate && observed.ready) {
             runnerId = candidate.Id
             const probe = run(docker[0], [...docker.slice(1), 'exec', '-i', '--user', `${plan.config.EVOLVED_UID}:${plan.config.EVOLVED_GID}`, runnerId, 'bun', '-'], { input: containerProbe(plan, true), timeout: 12_000 })
             if (probe.status === 0) { registration = JSON.parse(probe.stdout); break }
