@@ -3,7 +3,8 @@ import { Server } from 'socket.io'
 import { io as connect } from 'socket.io-client'
 import { privateFile } from '../../hub/src/evolved/store'
 import { SOCKET_MAX_HTTP_BUFFER_SIZE } from '../../hub/src/socket/socketLimits'
-import { boundedGitResponse, GIT_TIMEOUT_MS, gitPath, parseGitRequest, readGitBody } from '../../hub/src/evolved/githubProtocol'
+import { boundedGitResponse, GIT_TIMEOUT_MS, gitPath } from '../../hub/src/evolved/githubProtocol'
+import { parseRunnerGitRequest, readRunnerGitBody } from './gitRequest'
 
 type Grant = { token: string; expiresAt: number; projectId: string }
 const MAX_PENDING_BYTES = 8 * 1024 * 1024
@@ -174,9 +175,9 @@ export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; p
                 gitTransfers.add(controller)
                 const finish = () => { clearTimeout(timeout); request.signal.removeEventListener('abort', cancelled); gitTransfers.delete(controller) }
                 try {
-                    const git = parseGitRequest(request, '/evolved-git/github.com/')
+                    const parsed = parseRunnerGitRequest(request, '/evolved-git/github.com/'), { git } = parsed
                     const access = await current()
-                    const body = await readGitBody(new Request(request, { signal: controller.signal }))
+                    const body = await readRunnerGitBody(new Request(request, { signal: controller.signal }), parsed)
                     const headers = new Headers({ authorization: `Bearer ${access.token}` })
                     if (!git.advertisement) headers.set('content-type', `application/x-${git.service}-request`)
                     if (git.protocol) headers.set('git-protocol', git.protocol)

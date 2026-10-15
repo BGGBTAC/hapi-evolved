@@ -159,9 +159,14 @@ as the same project user: avoid editing the same checkout while it is being
 updated. The container/profile and repository broker remain the access boundary.
 
 Only HTTPS smart Git discovery, upload-pack and receive-pack are supported.
-Arbitrary URLs, redirects, unrelated API requests and compressed HTTP bodies are
-rejected. Native Git pack compression is supported; it is different from HTTP
-content encoding. SSH transport, Git LFS and arbitrary GitHub Enterprise hosts are
+Arbitrary URLs, redirects and unrelated API requests are rejected. The local
+Runner proxy accepts gzip only for Git fetch POST requests (`git-upload-pack`),
+as native Git uses it for larger multi-ref negotiations. Compressed and expanded
+bodies each have a 64 MiB limit; malformed or truncated streams fail before
+forwarding. Hub and Vault continue to authorize uncompressed bytes. Other HTTP
+content encodings and compressed push requests remain rejected. Native Git pack
+compression is also supported; it is separate from HTTP content encoding.
+SSH transport, Git LFS and arbitrary GitHub Enterprise hosts are
 outside this preview's broker. Submodule repositories need their own grants and
 supported HTTPS URLs.
 
