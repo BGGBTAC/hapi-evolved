@@ -22,7 +22,7 @@ export function validationPlan(source, environment = {}) {
     requireCheck(config.EVOLVED_BACKEND_NETWORK === 'hapi-evolved-acceptance_backend',
         'EVOLVED_BACKEND_NETWORK muss ausdrücklich hapi-evolved-acceptance_backend sein.')
     return { config, projectId: checked.projectId, stack: `hapi-evolved-validation-${checked.projectId}`,
-        root: `/workspaces/${config.EVOLVED_PROJECT_DIRECTORY}`, backend: config.EVOLVED_BACKEND_NETWORK }
+        root: `${config.EVOLVED_WORKSPACE_PREFIX ?? '/workspaces'}/${config.EVOLVED_PROJECT_DIRECTORY}`, backend: config.EVOLVED_BACKEND_NETWORK }
 }
 
 export function inspectAcceptanceBackend(network, plan) {
@@ -78,7 +78,8 @@ export function inspectTestContainer(container, plan, expectedService, requireRu
         : expectedService === 'runner-proxy' ? [{ source: plan.config.EVOLVED_RUNNER_LEASE_FILE, target: '/credentials/lease', rw: false }] : []
     const mounts = (container.Mounts ?? []).filter(mount => mount.Type !== 'tmpfs')
     requireCheck(mounts.length === expectedMounts.length && expectedMounts.every(expected => mounts.some(mount =>
-        mount.Type === 'bind' && mount.Source === expected.source && mount.Destination === expected.target && mount.RW === expected.rw)),
+        mount.Type === 'bind' && mount.Source === expected.source && mount.Destination === expected.target && mount.RW === expected.rw
+        && (expected.target !== plan.root || mount.Propagation === 'rprivate'))),
         'Fremder Mount, Docker-Socket, sichtbare Lease oder beschreibbarer Workspace erkannt.')
     if (requireRunning) requireCheck(container.State?.Running === true, 'Testcontainer läuft nicht.')
 }

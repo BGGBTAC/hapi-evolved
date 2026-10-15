@@ -1,15 +1,23 @@
-# HAPI evolved
+# HAPI-eVolved
 
-Private Entwicklung: https://github.com/BGGBTAC/hapi-evolved
+Projekt und Quellcode: https://github.com/BGGBTAC/hapi-evolved
 
 Ausgangspunkt: `tiann/hapi` auf `5847b034e5cb84f2617766945c994b7905c5c03e`.
 GitHub erlaubt keinen privaten Fork eines öffentlichen Repositories. Dieses
-Repository bewahrt die Upstream-Historie als eigenständiges privates Repository.
+Repository wurde deshalb als eigenständiges privates Repository angelegt und
+bewahrt die Upstream-Historie. Die Vorbereitung einer öffentlichen Preview ist
+in [RELEASING.md](https://github.com/BGGBTAC/hapi-evolved/blob/main/RELEASING.md) beschrieben; die Sichtbarkeit ist ein
+separater Betreiberschritt.
 Die AGPL-3.0-only-Lizenz und Urheberhinweise gelten weiter.
 
 ## Vereinbarter Umfang der ersten Version
 
 - Eigenständige Neuinstallation, Web/PWA, Linux, Claude Code und Codex.
+- Jedes neue Projekt erhält automatisch ein eigenes UUID-Verzeichnis im
+  verwalteten Workspacebereich. Manuelles Verknüpfen vorhandener Verzeichnisse
+  ist eine optionale Systemadmin-Aktion; Projektpfade dürfen sich nicht überlappen.
+- GitHub-Verbindungen bleiben im lokalen Vault. Projekt-Agenten verwenden Git
+  über den Proxy/Broker mit Repositoryfreigaben, Profil und widerrufbarer Lease.
 - Mehrere Benutzer, Teams und Projekte mit serverseitigen Rollen und sofortigem
   Rechteentzug. Passkeys, einmalige Recovery-Codes, erneute Authentisierung für
   sensible Änderungen. Einmaliger Bootstrap über eine private lokale Datei.
@@ -55,6 +63,9 @@ Browser → Passkey-/Projekt-API → Hub-Quellenregister und ACL.
 Hub → signierte, zeitlich begrenzte Anfragen → Vault/Broker.
 Hub → authentisierte interne Dienste → Codegraph bzw. Graphiti → Neo4j.
 Projekt-Runner → widerrufbare Projekt-Capability → Hub.
+Projekt-Git → Runner-Proxy → Hub-ACL → signierter Vault-Broker → GitHub.
+Nur der Hub kann im getrennten verwalteten Verzeichnis neue Projektordner anlegen;
+manuell verknüpfte Workspaces und Codegraph-Quellen bleiben im Compose-Stack lesend.
 
 Ein Modellname oder frei gewählter Agentenname ist kein Identitätsnachweis.
 Repository-Inhalt und abgerufene Memories sind Daten; sie erteilen weder neue

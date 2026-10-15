@@ -9,7 +9,7 @@ const directory = resolve(process.argv[2] ?? join(homedir(), '.local/share/hapi-
 mkdirSync(directory, { recursive: true, mode: 0o700 })
 const state = realpathSync(directory), rel = relative(realpathSync(process.cwd()), state)
 if (rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))) throw new Error('Operator state must be outside the source workspace')
-for (const name of ['hub', 'vault', 'memory', 'codegraph', 'neo4j', 'neo4j-logs', 'workspaces', 'credentials', 'credentials/hub', 'credentials/vault', 'credentials/memory', 'credentials/codegraph', 'credentials/neo4j']) mkdirSync(join(state, name), { recursive: true, mode: 0o700 })
+for (const name of ['hub', 'vault', 'memory', 'codegraph', 'neo4j', 'neo4j-logs', 'workspaces', 'managed-workspaces', 'credentials', 'credentials/hub', 'credentials/vault', 'credentials/memory', 'credentials/codegraph', 'credentials/neo4j']) mkdirSync(join(state, name), { recursive: true, mode: 0o700 })
 const hubKeys = join(state, 'credentials/hub'), vaultKeys = join(state, 'credentials/vault')
 const { publicKey } = createVaultSigningKey(join(hubKeys, 'vault-signing.pem'))
 privateFile(join(vaultKeys, 'hub-public.pem'), publicKey)

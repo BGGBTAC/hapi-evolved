@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process'
 import { readFileSync, realpathSync } from 'node:fs'
+import { validRunnerRoot } from './workspace'
+import { hasNestedWorkspaceMount } from '../../hub/src/evolved/workspaces'
 
 type Authority = { projectId: string; profile: string; rootPath: string; expiresAt: number }
 export function validateAuthority(value: unknown, expected: { projectId: string; profile: string; rootPath: string }, now = Date.now()): value is Authority {
@@ -16,6 +18,9 @@ export function workspaceReadOnly(root: string, mountinfo: string): boolean {
         .sort((a, b) => b[4].length - a[4].length)
     return mounts.length > 0 && mounts[0][5].split(',').includes('ro')
 }
+export function workspaceMountsSafe(root: string, mountinfo: string): boolean {
+    return mountinfo.length <= 4 * 1024 * 1024 && !hasNestedWorkspaceMount(root, mountinfo)
+}
 export function droppedPrivileges(status: string, uid: number, gid: number): boolean {
     const fields = new Map(status.split('\n').map(line => { const offset = line.indexOf(':'); return [line.slice(0, offset), line.slice(offset + 1).trim()] }))
     return fields.get('Uid')?.split(/\s+/).every(value => Number(value) === uid) === true
@@ -26,9 +31,12 @@ export function droppedPrivileges(status: string, uid: number, gid: number): boo
 async function main() {
     if (process.pid !== 1 || process.getuid?.() !== 0) throw new Error('Runner supervisor must be the container root PID 1')
     const expected = { projectId: process.env.EVOLVED_PROJECT_ID ?? '', profile: process.env.EVOLVED_RUNNER_PROFILE ?? '', rootPath: realpathSync(process.env.EVOLVED_RUNNER_ROOT ?? '/invalid') }
+    if (!validRunnerRoot(expected.rootPath, expected.projectId)) throw new Error('Canonical project mount required')
     const uid = Number(process.env.EVOLVED_RUNNER_UID), gid = Number(process.env.EVOLVED_RUNNER_GID)
     if (!Number.isSafeInteger(uid) || !Number.isSafeInteger(gid) || uid < 1 || gid < 1) throw new Error('Unprivileged runner UID/GID required')
-    if (expected.profile === 'restricted' && !workspaceReadOnly(expected.rootPath, readFileSync('/proc/self/mountinfo', 'utf8'))) throw new Error('Restricted runner requires a read-only workspace mount')
+    const mountinfo = readFileSync('/proc/self/mountinfo', 'utf8')
+    if (!workspaceMountsSafe(expected.rootPath, mountinfo)) throw new Error('Nested project mounts are not allowed in the runner namespace')
+    if (expected.profile === 'restricted' && !workspaceReadOnly(expected.rootPath, mountinfo)) throw new Error('Restricted runner requires a read-only workspace mount')
     const check = async () => {
         const response = await fetch('http://runner-proxy:3010/evolved-runner-authority', { redirect: 'error', signal: AbortSignal.timeout(2000) })
         if (!response.ok || !validateAuthority(await response.json(), expected)) throw new Error('Runner authorization missing, expired or changed')

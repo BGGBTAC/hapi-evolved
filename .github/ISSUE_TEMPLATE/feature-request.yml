@@ -1,25 +1,64 @@
-name: Feature Request
-description: Propose a new feature for HAPI
-labels:
-  - enhancement
+name: Feature request
+description: Describe a workflow improvement for HAPI-eVolved.
+title: "[Feature]: "
 body:
   - type: markdown
     attributes:
       value: |
-        Is HAPI missing a feature that you'd like to see? Feel free to propose it here.
-
-        Before you submit a feature:
-        1. Search existing issues for similar features. If you find one, 👍 it rather than opening a new one.
-        2. The HAPI team will try to balance the varying needs of the community when prioritizing or rejecting new features. Not all features will be accepted.
-
+        Search existing requests before opening another. Describe the problem and a useful outcome, not just a proposed implementation.
+        The 0.1.0 preview focuses on fresh Linux deployments, Web/PWA, and Claude Code/Codex project runners.
+        Optional scores help discussion; maintainers assess scope and feasibility independently. Scores do not promise implementation.
+        For suspected vulnerabilities, follow [the security policy](https://github.com/BGGBTAC/hapi-evolved/security/policy) instead of posting details here.
   - type: textarea
-    id: feature
+    id: problem
     attributes:
-      label: What feature would you like to see?
+      label: Workflow problem and affected users
+      description: Give a concrete example, how often it occurs and its practical impact. Use synthetic examples without private project data.
     validations:
       required: true
   - type: textarea
-    id: notes
+    id: outcome
     attributes:
-      label: Additional information
-      description: Is there anything else you think we should know?
+      label: Desired outcome
+      description: What should a user be able to do? Include an example of how we could tell the improvement works.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Current workaround and alternatives
+      description: What can users do today, and what remains difficult? Describe any simpler alternative you considered.
+  - type: input
+    id: environment
+    attributes:
+      label: Relevant version and deployment
+      description: Optional Evolved version/commit, agent/client and deployment context.
+  - type: dropdown
+    id: utility
+    attributes:
+      label: Utility estimate (optional)
+      description: Estimate the benefit to users. A security-related idea must not include a vulnerability disclosure.
+      options:
+        - "1 — Cosmetic improvement"
+        - "2 — Narrow or infrequent workflow"
+        - "3 — Useful optional capability"
+        - "4 — Substantial benefit to a repeated workflow"
+        - "5 — Core reliability or productivity"
+        - "6 — Security boundary or data integrity"
+  - type: dropdown
+    id: feasibility
+    attributes:
+      label: Implementability estimate (optional)
+      description: Higher means easier to deliver and verify. Leave blank if you do not know the codebase.
+      options:
+        - "1 — Architecture or research needed"
+        - "2 — Large change with major uncertainty"
+        - "3 — Substantial but tractable cross-layer change"
+        - "4 — Medium, understood change"
+        - "5 — Small, focused change"
+        - "6 — Trivial change or existing behavior to verify"
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Implementation evidence and tradeoffs (optional)
+      description: Explain any scores, likely affected components, operating cost or privacy/permission implications. Link relevant issues or upstream work; distinguish evidence from assumptions.

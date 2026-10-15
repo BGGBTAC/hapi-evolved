@@ -5,7 +5,7 @@ import { EvolvedError, EvolvedStore, hashToken, randomToken, type AgentProfile, 
 import { authenticateEvolvedRequest, parseBody, requireFreshPasskey, requireHuman, type EvolvedEnv } from './security'
 
 type LeaseRow = { id: string; name: string; token_hash: string; user_id: string; project_id: string; scopes: string; action_ids: string; profile: AgentProfile; created_at: number; expires_at: number; revoked_at: number | null }
-const scopeSchema = z.enum(['runner:connect', 'memory:read', 'memory:write', 'codegraph:read', 'resource:execute', 'peers:read', 'peers:send', 'peers:manage'])
+const scopeSchema = z.enum(['runner:connect', 'memory:read', 'memory:write', 'codegraph:read', 'resource:execute', 'peers:read', 'peers:send', 'peers:manage', 'git:read', 'git:write'])
 function publicLease(row: LeaseRow) { return { id: row.id, name: row.name, userId: row.user_id, projectId: row.project_id, scopes: JSON.parse(row.scopes) as string[], actionIds: JSON.parse(row.action_ids) as string[], profile: row.profile, createdAt: row.created_at, expiresAt: row.expires_at, revokedAt: row.revoked_at } }
 function currentLease(store: EvolvedStore, token: string) {
     if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw new EvolvedError('invalid_lease', 'Invalid runner lease.', 401)
@@ -62,7 +62,8 @@ export function createRunnerRoutes(store: EvolvedStore): Hono<EvolvedEnv> {
     app.post('/projects/:id/runner-leases', async c => {
         const principal = await human(c.req.raw); requireFreshPasskey(c, store, principal)
         const project = store.requireProject(principal.user.id, c.req.param('id'), 'admin')
-        const body = await parseBody(c, z.object({ name: z.string().trim().min(1).max(120), scopes: z.array(scopeSchema).min(1).max(8).default(['runner:connect']), actionIds: z.array(z.string().min(1).max(128)).max(50).default([]), expiresInSeconds: z.number().int().min(60).max(7 * 86400).default(86400) }).strict())
+        const body = await parseBody(c, z.object({ name: z.string().trim().min(1).max(120), scopes: z.array(scopeSchema).min(1).max(10).default(['runner:connect', 'git:read', ...(project.profile === 'restricted' ? [] : ['git:write'])] as z.infer<typeof scopeSchema>[]), actionIds: z.array(z.string().min(1).max(128)).max(50).default([]), expiresInSeconds: z.number().int().min(60).max(7 * 86400).default(86400) }).strict())
+        if (project.profile === 'restricted' && body.scopes.includes('git:write')) throw new EvolvedError('profile_denied', 'Restricted runners cannot receive Git push permission.', 403)
         const id = randomUUID(), token = randomToken(), now = store.now(), expiresAt = now + body.expiresInSeconds * 1000
         store.db.prepare('INSERT INTO evolved_runner_leases VALUES(?,?,?,?,?,?,?,?,?,?,NULL)').run(id, body.name, hashToken(token), principal.user.id, project.id, JSON.stringify([...new Set(body.scopes)]), JSON.stringify([...new Set(body.actionIds)]), project.profile, now, expiresAt)
         store.audit(principal.user.id, project.id, 'runner_lease.created', id)

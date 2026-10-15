@@ -124,9 +124,9 @@
       "costBenefit": "Gemeinsamer Peer-Transport hält den Aufwand begrenzt. Echter Stop statt reiner Metadaten-Archivierung; unknown-Rest bleibt offen.",
       "decision": "implement",
       "codeEvidence": [
-        "/home/benedict/work/hapi-evolved/hub/src/evolved/peers.ts:207",
-        "/home/benedict/work/hapi-evolved/cli/src/commands/peerLifecycle.ts:16",
-        "/home/benedict/work/hapi-evolved/hub/src/sync/syncEngine.ts:2169"
+        "hub/src/evolved/peers.ts:207",
+        "cli/src/commands/peerLifecycle.ts:16",
+        "hub/src/sync/syncEngine.ts:2169"
       ],
       "verification": "Peer-API-Tests verweigern primäre menschliche Sitzungen. Bestehende Archiv-/Runner-Stop-Tests bleiben maßgeblich. Kein manueller Drei-Agenten-RSS-Nachweis. Unbekannte Stop-Zustände bleiben bewusst verweigert.",
       "claudeAssessment": "Implement archive only, never delete. Do not claim parent/child or self-only authorization. All agents in a project runner share one UID, home and proxy, so the hub cannot tell which session asked. The enforceable rule is project scope plus a no-live-work guard plus an audit log. Archiving a session a human is actively using must stay refused, for example when a human message arrived within N minutes or the session is thinking. The authorization claim stays 'project-runner principal'.",
@@ -702,8 +702,8 @@
       "costBenefit": "Moderate cost, mostly in the CLI Codex event converter. It depends on #1509 and #1945 delivery. Benefit is moderate for orchestration users.",
       "decision": "implement",
       "codeEvidence": [
-        "/home/benedict/work/hapi-evolved/hub/src/evolved/peerReports.ts:11",
-        "/home/benedict/work/hapi-evolved/cli/src/codex/shared/projection.ts:143"
+        "hub/src/evolved/peerReports.ts:11",
+        "cli/src/codex/shared/projection.ts:143"
       ],
       "verification": "Vier Reporter-Regressionen: Neustart-/Prompt-Deduplizierung, neue Turn-ID kein Doppelbericht, Peer-Turn plus queued Humanprompt kein Pingpong, Widerruf und fehlende Childzuordnung blockieren.",
       "claudeAssessment": "This is a good follow-on once parent linkage exists. Do not build it on the legacy pingPeer path.",
@@ -738,8 +738,8 @@
       "costBenefit": "High cost (roughly 1,000 lines across hub, shared, CLI and web, plus a migration). It must be reimplemented, not copied from the referenced fork branch, per project policy. High benefit: it closes forged-attribution paths from web, imports, copies and rewinds, and makes peer text inert data. It is also the prerequisite for #1203, #1509, #2020, #1947 and #1488.",
       "decision": "implement",
       "codeEvidence": [
-        "/home/benedict/work/hapi-evolved/hub/src/store/messageProvenance.ts:27",
-        "/home/benedict/work/hapi-evolved/hub/src/store/messageProvenance.ts:53"
+        "hub/src/store/messageProvenance.ts:27",
+        "hub/src/store/messageProvenance.ts:53"
       ],
       "verification": "Tests strippen rohe/verschachtelte Fälschungen, verhindern LocalId-Vorbelegung und entziehen Badge nach Inhaltsänderung. WorkGraph bestätigt nur Hub-attestierte Peer-Cause; negativer Fälschungstest ergänzt.",
       "claudeAssessment": "This is partial coverage versus the RFC, and the release notes must say so. Sender attribution can only be 'attested by project runner X'. Inside a runner every agent shares one UID and proxy, and server.ts:64 passes a client-chosen sessionId, so one agent can claim to be another session in the same project. Label the field accordingly (for example peerAuthenticated:'project-runner'). Do not call it session-authenticated. Cross-project and human-versus-agent distinctions are genuinely enforced. Session-level non-forgeability needs #1535.",
@@ -957,7 +957,7 @@
       "costBenefit": "Small cost but no benefit for the product shape. It adds an authorization surface (machine selection) with no use case.",
       "decision": "reject",
       "codeEvidence": [
-        "/home/benedict/work/hapi-evolved/hub/src/evolved/peers.ts:167"
+        "hub/src/evolved/peers.ts:167"
       ],
       "verification": "Negativtest: fremde machineId ist Schemafehler. Spawn verwendet ausschließlich Parent-Runner desselben Projekts.",
       "claudeAssessment": "Reject for this release. Revisit only if multi-host projects become a goal.",
@@ -1432,8 +1432,8 @@
       "costBenefit": "Trivial cost but negative value: it would downgrade security for convenience.",
       "decision": "reject",
       "codeEvidence": [
-        "/home/benedict/work/hapi-evolved/hub/src/evolved/bridge.ts:94",
-        "/home/benedict/work/hapi-evolved/hub/src/evolved/bridge.test.ts:110"
+        "hub/src/evolved/bridge.ts:94",
+        "hub/src/evolved/bridge.test.ts:110"
       ],
       "verification": "Inverse Regressionen: Restricted-Codex-Spawn read-only; widersprüchliche Runtimeparameter verweigert. Keine Abschwächung eingeführt.",
       "claudeAssessment": "Reject. Also add the missing resume clamp. That gap is a more plausible silent-yolo path than spawn.",
@@ -1762,8 +1762,8 @@
       "costBenefit": "Low cost to verify that Claude and Codex pass MCP config per process (CLI flags or env) rather than via shared files. Implementing the Cursor fix itself has no value here.",
       "decision": "not-applicable",
       "codeEvidence": [
-        "/home/benedict/work/hapi-evolved/hub/src/evolved/bridge.test.ts:52",
-        "/home/benedict/work/hapi-evolved/hub/src/evolved/peerReports.test.ts:39"
+        "hub/src/evolved/bridge.test.ts:52",
+        "hub/src/evolved/peerReports.test.ts:39"
       ],
       "verification": "Negativtests verweigern Cursor-Spawn und bezeichnen Peer-Vertrauen ausdrücklich nur als project-runner.",
       "claudeAssessment": "Treat this as a verification of the Claude and Codex analog. Do not port the Cursor overlay code.",
@@ -1829,8 +1829,8 @@
       "costBenefit": "The proxy is high cost and high risk, with moderate benefit for UI iteration. The static path already covers reports and demos.",
       "decision": "partial",
       "codeEvidence": [
-        "/home/benedict/work/hapi-evolved/hub/src/evolved/previews.ts:23",
-        "/home/benedict/work/hapi-evolved/hub/src/evolved/previews.test.ts:38"
+        "hub/src/evolved/previews.ts:23",
+        "hub/src/evolved/previews.test.ts:38"
       ],
       "verification": "Preview-Suite ist Teil des vollen Hub-Laufs; keine vollständige Umsetzung des weitergehenden Upstream-Umfangs behauptet.",
       "claudeAssessment": "Static previews are complete for the intended scope. The dev-server proxy and agent MCP preview tools are deliberately not provided. Defer them unless a design keeps traffic on the per-project network with explicit human approval in every profile.",
@@ -2075,7 +2075,7 @@
       "costBenefit": "The full RFC is substantial (lifecycle CLI, skill packaging into the runner image, per-flavor regression tests) with moderate benefit. The #1401 slice captures most of the near-term value cheaply.",
       "decision": "defer",
       "codeEvidence": [
-        "/home/benedict/work/hapi-evolved/cli/src/claude/utils/systemPrompt.ts:37"
+        "cli/src/claude/utils/systemPrompt.ts:37"
       ],
       "verification": "Disabled-Policy entfernt Guidance und Tools in Claude und Codex; dies deckt #1401, nicht die komplette CLI-first-Strategie.",
       "claudeAssessment": "Defer the umbrella and land the exposure gate now. If skills are adopted later, bake hapi-session-control into the runner image, not into a user's HOME.",
@@ -2439,7 +2439,7 @@
       "costBenefit": "Medium cost (runner RPC for 'git worktree list --porcelain', schema and UI). Moderate benefit; there is a workaround.",
       "decision": "defer",
       "codeEvidence": [
-        "/home/benedict/work/hapi-evolved/hub/src/evolved/peers.ts:174"
+        "hub/src/evolved/peers.ts:174"
       ],
       "verification": "Keine Picker-Abnahme behauptet; Runner validiert cwd unmittelbar vor Spawn erneut.",
       "claudeAssessment": "Defer. If implemented, list only worktrees whose realpath is inside the project root, and never run 'git worktree add' or remove on behalf of this flow.",
@@ -2810,8 +2810,8 @@
       "costBenefit": "Per-session isolation would need all of the following. A root broker in the supervisor spawning each session under its own UID (the runner has no capabilities and cannot setuid). Per-session HOME. Workspace write sharing via group or ACLs, which reopens cross-session file influence anyway. A per-session proxy socket with SO_PEERCRED or a per-session listener. A hub principal model plus a route matrix. A per-session network namespace if egress matters. This is a large cross-layer and installation change with uncertain interaction with Claude and Codex state directories. Not feasible as a hardened deliverable this release; a half-version would invite false claims.",
       "decision": "defer",
       "codeEvidence": [
-        "/home/benedict/work/hapi-evolved/services/runner-proxy/server.ts:24",
-        "/home/benedict/work/hapi-evolved/hub/src/evolved/peers.ts:40"
+        "services/runner-proxy/server.ts:24",
+        "hub/src/evolved/peers.ts:40"
       ],
       "verification": "Hub-/Proxytests prüfen Projekt-ACL und Ownerroute-Sperren. Peer-Tests behaupten keine trust=session. F6/U2 bleibt offen und ausdrücklich dokumentiert.",
       "claudeAssessment": "Do NOT claim session credential isolation. Release notes should state that a project runner is one trust domain: any agent session in a project can act as any other session of that project, but not as a human owner and not across projects. Per-session UID and proxy isolation is a next-release design task (supervisor-owned spawn broker plus per-session peercred sockets), and peer authorization in #1945 should be keyed to it later.",
@@ -2877,8 +2877,8 @@
       "costBenefit": "UTC vermeidet unklaren DST-Vertrag; persistentes Journal und aktuelle ACL liefern planbare Hintergrundarbeit ohne neue Rechte.",
       "decision": "implement",
       "codeEvidence": [
-        "/home/benedict/work/hapi-evolved/hub/src/evolved/schedules.ts:22",
-        "/home/benedict/work/hapi-evolved/hub/src/evolved/schedules.ts:60"
+        "hub/src/evolved/schedules.ts:22",
+        "hub/src/evolved/schedules.ts:60"
       ],
       "verification": "Sechs Scheduler-Tests: UTC/Leapday/DOM-DOW/Sonntag7, unmögliche Termine, einmaliger Claim, Busy/Missedskip, Lease-/Profilwiderruf, Neustart indeterminate, langsames Resume kein verspäteter Versand.",
       "claudeAssessment": "Implement the MVP narrowly. Never let a schedule carry its own permission mode above the profile default. Record the cause as 'scheduler' so #1488-style provenance is honest.",
@@ -2944,8 +2944,8 @@
       "costBenefit": "Medium-high cost, largely shared with #1945. High benefit for multi-agent work, and it removes a class of 'HTTP 200 but idle worker' failures.",
       "decision": "implement",
       "codeEvidence": [
-        "/home/benedict/work/hapi-evolved/hub/src/evolved/peers.ts:167",
-        "/home/benedict/work/hapi-evolved/cli/src/commands/peerLifecycle.ts:4"
+        "hub/src/evolved/peers.ts:167",
+        "cli/src/commands/peerLifecycle.ts:4"
       ],
       "verification": "Echte Router/Stores/SyncEngine mit synthetischem Spawn-RPC: leerer Remit/fremde Machine verweigert, Auftrag vor Ack sichtbar, stabile ID startet nur einmal, Workerlimit, Persistenzfehler mit Cleanup. Kein echter Modellaufruf benötigt.",
       "claudeAssessment": "Implement without trusted parent provenance. The parent stamp is runner-attested, not cryptographic, for the same reason given in #1535. Keep spawn_peer under manual approval in non-extended profiles.",
@@ -3039,7 +3039,7 @@
       "costBenefit": "Moderate cost for a niche consumer feature.",
       "decision": "defer",
       "codeEvidence": [
-        "/home/benedict/work/hapi-evolved/hub/src/evolved/peerReports.ts:33"
+        "hub/src/evolved/peerReports.ts:33"
       ],
       "verification": "Reporter unterdrückt gewöhnliche Peer-Turns anhand Hub-dekorierter Nachrichten. Kein vollständiger Turn-Cause-Vertrag.",
       "claudeAssessment": "Defer until Cluster A lands. Keep 'unknown' as the honest default.",
@@ -3325,8 +3325,8 @@
       "costBenefit": "Small cost; it follows the existing hub-setting-to-bootstrap pattern. Immediate benefit.",
       "decision": "implement",
       "codeEvidence": [
-        "/home/benedict/work/hapi-evolved/hub/src/evolved/peers.ts:110",
-        "/home/benedict/work/hapi-evolved/cli/src/modules/pingPeer/evolvedPeer.ts:9"
+        "hub/src/evolved/peers.ts:110",
+        "cli/src/modules/pingPeer/evolvedPeer.ts:9"
       ],
       "verification": "CLI/MCP/Prompttests prüfen Default-off, Fetchfehler fail-closed, Scopes, kein Peer-Steering bei deaktivierter Policy. mediaOnly fragt keine Policies ab und enthält genau drei Displaytools.",
       "claudeAssessment": "Implement first; it is the cheapest risk reduction. Never describe it as a security boundary.",
@@ -3464,7 +3464,7 @@
       "costBenefit": "Low value to implement. Verification is cheap and important.",
       "decision": "defer",
       "codeEvidence": [
-        "/home/benedict/work/hapi-evolved/hub/src/evolved/bridge.test.ts:52"
+        "hub/src/evolved/bridge.test.ts:52"
       ],
       "verification": "Negativtest verweigert native Claude/Codex/Cursor/Pi-Discovery- und Importrouten.",
       "claudeAssessment": "Do not implement import. Verify that no hub-host transcript scanning leaks across projects.",
@@ -3493,9 +3493,9 @@
       "costBenefit": "Marginal cost on top of #1945; significant benefit for operator trust.",
       "decision": "implement",
       "codeEvidence": [
-        "/home/benedict/work/hapi-evolved/hub/src/evolved/peers.ts:146",
-        "/home/benedict/work/hapi-evolved/cli/src/claude/utils/startHappyServer.ts:134",
-        "/home/benedict/work/hapi-evolved/web/src/components/AssistantChat/messages/UserMessage.tsx:112"
+        "hub/src/evolved/peers.ts:146",
+        "cli/src/claude/utils/startHappyServer.ts:134",
+        "web/src/components/AssistantChat/messages/UserMessage.tsx:112"
       ],
       "verification": "MCP bezieht Sender aus ApiSessionClient, CLI aus HAPI_SESSION_ID. Hubprüfungen binden replyTo an vorherige Zustellung; echte Sitzungsauthentizität bleibt #1535.",
       "claudeAssessment": "Ship together with #1945. Badge copy must not say 'verified session'; it should say 'from an agent in this project'.",
@@ -3524,8 +3524,8 @@
       "costBenefit": "Medium cost across all layers for optional value.",
       "decision": "implement",
       "codeEvidence": [
-        "/home/benedict/work/hapi-evolved/hub/src/evolved/githubPr.ts:10",
-        "/home/benedict/work/hapi-evolved/cli/src/modules/githubPr.ts:37"
+        "hub/src/evolved/githubPr.ts:10",
+        "cli/src/modules/githubPr.ts:37"
       ],
       "verification": "Root bestätigt 3 Hubroute-, 3 Schema- und 1 CLI-MCP-Transporttests sowie echte Browser-Persistenz/Unlink-Abnahme und Quellenprioritätsregression.",
       "claudeAssessment": "Defer. If built, make it a per-project toggle, with writes requiring the member role and link_pr routed via /cli through the proxy.",
@@ -3561,7 +3561,7 @@
       "costBenefit": "Die strukturierten Referenzen und der PR-Chip bilden die kleine gemeinsame Grundlage von #1162. Sie werden dort mitgeliefert, wodurch derselbe Nutzen ohne eine doppelte Integration oder getrennten Pflegepfad entsteht.",
       "decision": "implement",
       "codeEvidence": [
-        "/home/benedict/work/hapi-evolved/shared/src/externalRefs.ts:3"
+        "shared/src/externalRefs.ts:3"
       ],
       "verification": "Zusammen mit #1162 durch Root geprüft.",
       "claudeAssessment": "Duplicate of #1162's foundation; defer together with it.",
@@ -3841,7 +3841,7 @@
       "costBenefit": "High cost, low value for this product shape.",
       "decision": "defer",
       "codeEvidence": [
-        "/home/benedict/work/hapi-evolved/hub/src/evolved/bridge.test.ts:52"
+        "hub/src/evolved/bridge.test.ts:52"
       ],
       "verification": "Negativtest gegen Hub-HOME-Zugriff; keine Produktivdaten importiert.",
       "claudeAssessment": "Defer. Explicitly reject Phase 3's operator meta-session until per-session principals exist.",
@@ -3902,7 +3902,7 @@
       "costBenefit": "No benefit for the supported scope.",
       "decision": "reject",
       "codeEvidence": [
-        "/home/benedict/work/hapi-evolved/hub/src/evolved/bridge.test.ts:52"
+        "hub/src/evolved/bridge.test.ts:52"
       ],
       "verification": "Negativtest verweigert Cursor-Spawn; keine Reparatur externer Importsoftware behauptet.",
       "claudeAssessment": "Reject for v1. Reconsider only if Cursor support is added.",

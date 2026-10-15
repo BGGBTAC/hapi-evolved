@@ -1,8 +1,8 @@
 import { defineConfig } from 'vitepress'
 
 export default defineConfig({
-  title: 'HAPI',
-  description: 'Control your AI agents from anywhere',
+  title: 'HAPI-eVolved',
+  description: 'Self-hosted agent workspaces, protected credentials and persistent knowledge',
   base: '/docs/',
 
   head: [
@@ -13,13 +13,25 @@ export default defineConfig({
     logo: '/logo.svg',
 
     nav: [
-      { text: 'Quick Start', link: '/guide/quick-start' },
-      { text: 'Web App', link: 'https://app.hapi.run', target: '_blank' }
+      { text: 'Evolved Quick Start', link: '/evolved/QUICKSTART' },
+      { text: 'Source', link: 'https://github.com/BGGBTAC/hapi-evolved', target: '_blank' }
     ],
 
     sidebar: [
       {
-        text: 'Get Started',
+        text: 'HAPI-eVolved preview',
+        items: [
+          { text: 'Quick start', link: '/evolved/QUICKSTART' },
+          { text: 'GitHub connection', link: '/evolved/GITHUB' },
+          { text: 'Privacy and data', link: '/evolved/DATA_HANDLING' },
+          { text: 'Deployment (DE)', link: '/evolved/DEPLOYMENT' },
+          { text: 'User guide (DE)', link: '/evolved/USER_GUIDE' },
+          { text: 'Architecture (DE)', link: '/evolved/PROJECT' },
+          { text: 'Validation (DE)', link: '/evolved/VALIDATION' }
+        ]
+      },
+      {
+        text: 'Upstream HAPI reference',
         items: [
           { text: 'Quick Start', link: '/guide/quick-start' },
           { text: 'Installation', link: '/guide/installation' },
@@ -72,11 +84,11 @@ export default defineConfig({
     ],
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/tiann/hapi' }
+      { icon: 'github', link: 'https://github.com/BGGBTAC/hapi-evolved' }
     ],
 
     footer: {
-      message: 'Released under the AGPL-3.0 License. · <a href="/docs/privacy.html">Privacy Policy</a>',
+      message: 'AGPL-3.0-only · <a href="/docs/evolved/DATA_HANDLING.html">Evolved data handling</a> · Includes upstream HAPI documentation.',
       copyright: 'Copyright © 2025-present'
     },
 

@@ -1,0 +1,39 @@
+# Changelog
+
+Changes specific to HAPI-eVolved are recorded here. Upstream history remains in
+Git. Source version numbers do not imply a published GitHub release, npm package
+or container image.
+
+## Unreleased — 0.1.0 preview
+
+### Added
+
+- Team/project roles, passkeys, one-time recovery codes and step-up authentication.
+- A separate encrypted local credential vault and constrained resource broker.
+- Persistent knowledge, source verification and local search, with an optional
+  budgeted Graphiti/Neo4j knowledge graph.
+- Local Codegraph search, source inspection, graph/impact exploration and refresh.
+- Isolated Claude Code/Codex runners with revocable leases and project profiles.
+- Automatic per-project directories and optional manual folder selection.
+- Project GitHub connections with repository grants and brokered Git operations.
+- Durable attachment originals, searchable history, saved prompts, scoped
+  automation, private previews and expiring share links.
+- A dedicated logo, community documentation and source-preview packaging.
+
+### Fixed
+
+- Replay duplication, usage-history paging and delayed client-cache updates.
+- Claude resume identity handling, reconnect behavior and process cleanup.
+- Attachment migration/restore integrity and notification epochs after restore.
+- Runner restart after a Linux boot or PID namespace change, preserving machine
+  identity and session state.
+
+### Validation and limits
+
+See [initial validation](docs/evolved/VALIDATION.md),
+[backlog validation](docs/evolved/BACKLOG_REVIEW.md) and
+[reproducible live acceptance](docs/evolved/LIVE_ACCEPTANCE.md), plus the
+[project/GitHub and publication acceptance](docs/evolved/PUBLICATION_READINESS.md).
+Dated reports apply to their named commits, not automatically to later releases.
+Native client parity, real cloud extraction quality, a complete backup restore
+drill and a public distribution release remain separate checks.

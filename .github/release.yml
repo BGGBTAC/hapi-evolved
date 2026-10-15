@@ -1,0 +1,18 @@
+# Categories for manually reviewed GitHub release notes; this does not publish a release.
+changelog:
+    exclude:
+        labels:
+            - skip-changelog
+    categories:
+        - title: Security and data integrity
+          labels: [security]
+        - title: Features
+          labels: [enhancement, feature]
+        - title: Fixes
+          labels: [bug, fix]
+        - title: Documentation
+          labels: [documentation]
+        - title: Dependencies
+          labels: [dependencies]
+        - title: Other changes
+          labels: ['*']

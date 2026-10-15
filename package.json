@@ -56,5 +56,15 @@
         "react-devtools-core": "^7.0.1",
         "vite-plugin-pwa": "^1.2.0"
     },
-    "version": "0.1.0"
+    "version": "0.1.0",
+    "description": "Self-hosted coding-agent workspace with teams, a local vault, persistent memory and code intelligence",
+    "license": "AGPL-3.0-only",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/BGGBTAC/hapi-evolved.git"
+    },
+    "bugs": {
+        "url": "https://github.com/BGGBTAC/hapi-evolved/issues"
+    },
+    "homepage": "https://github.com/BGGBTAC/hapi-evolved#readme"
 }

@@ -1,11 +1,21 @@
-## Problem und Änderung
+## Problem and change
 
-<!-- Welcher konkrete Ablauf war betroffen, und wie verhält er sich jetzt? -->
+<!-- Explain the concrete problem, previous behavior and resulting behavior. Link related BGGBTAC/hapi-evolved issues. -->
 
-## Prüfung
+## Verification
 
-<!-- Relevante Tests, Typechecks und gegebenenfalls Browser-/Integrationsprüfung. -->
+<!-- List checks you actually ran and their results. Include relevant regression tests and browser checks. State checks not run; distinguish mocked providers from live calls. Documentation-only changes need content/link and diff checks. -->
 
-## Grenzen
+## Compatibility and limits
 
-<!-- Verbleibende Einschränkungen, Migrationen oder Betriebsänderungen. Bei nicht zutreffend entfernen. -->
+<!-- Describe security/authorization impact, migration or operator actions, and remaining limitations. Write "None" if appropriate. -->
+
+## Provenance
+
+<!-- Link adapted upstream changes or third-party sources and preserve their attribution. Identify material AI assistance and explain your own review/verification. Write "None" where not applicable. -->
+
+- [ ] I reviewed the diff and removed secrets, private data and unrelated changes.
+- [ ] I updated relevant documentation and regression coverage, or explained why neither is needed.
+- [ ] I have the right to contribute this work and preserved applicable licenses and notices.
+
+<!-- Suspected vulnerabilities belong in the private process described in SECURITY.md, not in a public PR. -->

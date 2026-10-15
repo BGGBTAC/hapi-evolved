@@ -38,7 +38,8 @@ export async function sourcePath(root, file) {
 
 export async function sourceText(root, path) {
     const canonical = await sourcePath(root, path);
-    const handle = await open(canonical, constants.O_RDONLY | constants.O_NOFOLLOW);
+    // Opening a replaced FIFO must not block a worker before the descriptor type check.
+    const handle = await open(canonical, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     try {
         const opened = process.platform === 'linux' ? await realpath(`/proc/self/fd/${handle.fd}`) : await realpath(canonical);
         if (!within(root, opened) || isSensitivePath(relative(root, opened)) || !codeExtensions.has(extname(opened).toLowerCase())) throw new AdapterError('File outside project or excluded', 403);

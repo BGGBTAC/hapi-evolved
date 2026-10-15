@@ -1,78 +1,98 @@
-# Contributing to HAPI
+# Contributing to HAPI-eVolved
 
-Thank you for your interest in contributing to HAPI! We welcome bug fixes, feature suggestions, and thoughtful contributions from the community.
+HAPI-eVolved is an independent fork maintained in
+[BGGBTAC/hapi-evolved](https://github.com/BGGBTAC/hapi-evolved). Contributions and
+reports about this fork belong here. The 0.1.0 preview focuses on a fresh Linux
+deployment, Web/PWA access, and Claude Code and Codex project runners. Inherited
+upstream code does not imply support for every upstream deployment or client.
 
-## Code of Conduct
+Start with the [project scope](docs/evolved/PROJECT.md),
+[deployment guide](docs/evolved/DEPLOYMENT.md) and
+[validation notes](docs/evolved/VALIDATION.md). Some detailed operating documents
+are currently in German. See [SUPPORT.md](SUPPORT.md) for help and
+[SECURITY.md](SECURITY.md) for private vulnerability reporting.
 
-- **Be friendly and respectful** - Treat everyone with kindness and professionalism
-- **Help others** - Share knowledge and assist fellow contributors
-- **Give constructive feedback** - Focus on the code, not the person
-- **Be patient** - Remember that everyone has different experience levels
+## Propose a focused change
 
-## AI-Generated Code Policy (Vibe Coding)
+Search this repository's [issues](https://github.com/BGGBTAC/hapi-evolved/issues)
+before opening a new one. Describe the user problem, a concrete example, and the
+expected result. Discuss substantial features or changes to security boundaries
+before investing in a large implementation. Small fixes and documentation
+improvements can go directly to a pull request.
 
-If you used AI tools to generate code ("Vibe Coding"), please disclose the model in your PR description. Code is judged on merit — focused scope, tests, and the other expectations below apply equally regardless of how the code was authored.
+Work on a branch and keep each pull request focused on one reviewable outcome.
+Explain compatibility, migration or operating changes. Follow the
+[Code of Conduct](CODE_OF_CONDUCT.md) when discussing tradeoffs and reviewing work.
 
-## Pull Request Guidelines
+## Set up a development checkout
 
-### No Mega PRs
+Use **Bun 1.3.14**, as pinned in [package.json](package.json), and install from the
+repository root:
 
-We do not accept oversized pull requests that introduce large features all at once. Large PRs are:
+```sh
+bun --version
+bun install --frozen-lockfile
+```
 
-- Difficult to review thoroughly
-- More likely to introduce bugs
-- Harder to revert if issues arise
+Use this repository's source and deployment files for Evolved. The inherited
+upstream npm packages do not install this fork's complete stack. To exercise the
+Evolved services, follow the [deployment guide](docs/evolved/DEPLOYMENT.md) with
+separate local state and synthetic data. Docker Compose provides the sidecars;
+their standalone requirements are documented under [services](services).
 
-**If you want to add a significant feature, please open an issue first to discuss the approach.** We can help break it down into smaller, reviewable chunks.
+Do not point development or test commands at an existing installation's database,
+runner home, credentials or workspace. Integration tests can start processes and
+use network ports. Provider-backed tests may incur charges; use isolated test
+credentials only when you intentionally choose to run them.
 
-### PR Best Practices
+## Verify what you change
 
-- Keep PRs focused on a single concern
-- Write clear commit messages
-- Include relevant tests if applicable
-- Update documentation if needed
-- Reference related issues in your PR description
+Add regression coverage for changed behavior and run checks relevant to the
+affected packages. The root scripts include:
 
-## Bug Reports
+| Area | Checks from the repository root |
+| --- | --- |
+| CLI | `bun run typecheck:cli`, `bun run test:cli` |
+| Hub | `bun run typecheck:hub`, `bun run test:hub` |
+| Web | `bun run typecheck:web`, `bun run test:web`, `bun run build:web` |
+| Shared protocol | `bun run test:shared` and typechecks for affected consumers |
+| Relay | `bun run typecheck:relay`, `bun run test:relay` |
+| Runner proxy | `bun run typecheck:proxy`, `bun run test:proxy` |
+| Deployment helpers | `bun run test:deployment` |
 
-Bug reports are always welcome! When reporting a bug, please include:
+`bun run typecheck` runs all configured package typechecks. `bun run test` runs
+the root test suites; it does not include every browser, native-client, sidecar
+or live-provider check. CLI runner integration tests are separate:
+`bun run test:cli:integration`. Run CLI unit and integration suites sequentially;
+their test setup shares a temporary configuration path.
 
-- A clear description of the issue
-- Steps to reproduce
-- Expected vs actual behavior
-- Your environment (OS, Node/Bun version, etc.)
-- Any relevant logs or screenshots
+For Evolved browser and service acceptance, use the isolated procedure in
+[LIVE_ACCEPTANCE.md](docs/evolved/LIVE_ACCEPTANCE.md). Record which checks ran and
+which did not. A mocked provider test is not evidence of a successful live model
+call. UI changes should include a browser check of the affected workflow.
 
-## Feature Requests
+If source fixtures change, run `bun run gen:fixtures` and include the generated
+changes. For documentation-only changes, inspect the edited text, links and
+`git diff --check`; a full application test run is unnecessary. For the docs
+site, its build command is `bun run --cwd docs docs:build`.
 
-Have an idea to improve HAPI? Open an issue with:
+## Prepare the pull request
 
-- A clear description of the feature
-- The problem it solves
-- Any implementation ideas you have
+Explain the previous behavior, the new behavior, and how you verified it. Link
+related issues from this repository. When adapting an upstream patch, link the
+original issue or pull request and describe Evolved-specific changes.
 
-## Getting Started
+Preserve project authorization, revocation, runner isolation and security-profile
+checks. Include focused negative tests when changing these boundaries. Keep
+bootstrap tokens, recovery codes, cookies, API keys, private keys, real chat logs
+and private project content out of commits, screenshots and test fixtures.
 
-1. Fork and clone the repository
-2. Install Bun 1.4.0, then install dependencies from the repo root:
-   ```bash
-   bun install
-   ```
-3. Start development:
-   ```bash
-   bun run dev
-   ```
+AI-assisted contributions are welcome. Identify material AI assistance in the
+pull request, review the resulting code yourself, and provide reproducible
+verification. The contributor remains responsible for correctness, provenance
+and licensing; an assistant's claim that tests passed is not a test result.
 
-See the [README](README.md) for more build options.
-
-From the repo root, `bun typecheck` checks CLI, Hub, Web, and Relay;
-`bun run test` runs CLI/Web Vitest and Hub/Shared/Relay Bun tests. Native
-toolchains and checks are documented in [iOS](ios/README.md) and
-[Android](android/README.md).
-
-For documentation changes, run `bun run --cwd docs docs:build` and check
-affected links and anchors in the generated site.
-
-## Questions?
-
-If you have questions, feel free to open an issue. We're here to help!
+Only contribute material you have the right to share. Preserve the
+[AGPL-3.0-only license](LICENSE), existing copyright notices and third-party
+attribution. Do not add unrelated generated files, dependency upgrades or
+formatting changes to an otherwise focused patch.

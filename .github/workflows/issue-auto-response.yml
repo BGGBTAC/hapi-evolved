@@ -1,4 +1,5 @@
-name: Issue Auto Response
+# Retained for upstream history; every job is disabled outside tiann/hapi.
+name: Upstream only — issue auto response
 
 on:
   issues:
@@ -7,6 +8,9 @@ on:
 concurrency:
   group: issue-auto-response-${{ github.event.issue.number }}
   cancel-in-progress: false
+
+permissions:
+    contents: read
 
 jobs:
   auto-response:

@@ -1,0 +1,30 @@
+HAPI-eVolved
+
+An independent development of HAPI by the HAPI-eVolved contributors.
+Repository: https://github.com/BGGBTAC/hapi-evolved
+Upstream: https://github.com/tiann/hapi
+Baseline: 5847b034e5cb84f2617766945c994b7905c5c03e
+
+The project retains the GNU Affero General Public License version 3
+(SPDX: AGPL-3.0-only), supplied in LICENSE. Existing copyright and
+attribution notices remain applicable; this file does not replace them.
+
+The CLI contains code derived from happy-cli. Its original MIT license,
+copyright and directory attribution are preserved in cli/NOTICE.
+Additional bundled-tool notices include:
+- shared/tools/tunwg/LICENSE
+- cli/tools/licenses/ripgrep-LICENSE
+- cli/tools/licenses/difftastic-LICENSE
+
+Dependencies, downloaded native tools, provider CLIs and container base
+images retain their respective licenses. Manifests and lockfiles identify
+selected versions; this notice is not a complete software bill of materials
+or a redistribution license for provider services.
+
+Changes include teams/passkeys, a local vault and resource broker,
+persistent memory, Codegraph, isolated runners and workflow improvements.
+See CHANGELOG.md and Git history for modification details. Logo provenance:
+assets/brand/evolved/README.md and assets/brand/evolved/PROMPT.txt.
+
+This project does not claim endorsement by the HAPI, Happy, GitHub,
+Anthropic, OpenAI, Codegraph, Graphiti or Neo4j projects or vendors.

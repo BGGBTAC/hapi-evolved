@@ -1,4 +1,5 @@
-name: Release
+# Retained for upstream history; every job is disabled outside tiann/hapi.
+name: Upstream only — release
 
 on:
     push:
@@ -6,15 +7,19 @@ on:
             - 'v*'
 
 permissions:
-    contents: write
+    contents: read
 
 jobs:
     release:
         if: github.repository == 'tiann/hapi'
         runs-on: ubuntu-latest
+        permissions:
+            contents: write
         steps:
             - uses: actions/checkout@v4
             - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: '1.3.14'
             - run: bun install --frozen-lockfile
             - run: bun run build:single-exe:all
             - name: Package release artifacts

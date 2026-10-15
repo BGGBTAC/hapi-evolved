@@ -1,84 +1,104 @@
-# HAPI evolved
+# HAPI-eVolved
 
-Private Weiterentwicklung von [tiann/hapi](https://github.com/tiann/hapi), Version **0.1.0**.
-Teams und Passkeys, eigener lokaler Vault/Broker, persistentes Projektwissen mit
-Graphiti/Neo4j, Codegraph und isolierte Projekt-Runner. Eigenständige Neuinstallation.
+<img src="assets/brand/evolved/hapi-evolved-logo-v1.png" alt="HAPI-eVolved: a connected graph-e" width="640">
 
-- [Installation und Betrieb](docs/evolved/DEPLOYMENT.md)
-- [Bedienung](docs/evolved/USER_GUIDE.md)
-- [Umfang und Architektur](docs/evolved/PROJECT.md)
-- [Abnahme und verbleibende Grenzen](docs/evolved/VALIDATION.md)
-- [Upstream-Issue-Analyse](docs/evolved/upstream-issues-2026-10-14.csv)
+**A self-hosted workspace for coding agents, with teams, protected credentials,
+persistent memory and code intelligence.**
 
-Für diese Version den Quellcode und die Compose-Dateien dieses Repositories verwenden.
-Die nachfolgende ursprüngliche HAPI-Dokumentation beschreibt weiterhin Upstream;
-dessen npm-Pakete installieren keine Evolved-Funktionen. Die AGPL-Lizenz bleibt erhalten.
+HAPI-eVolved builds on [HAPI](https://github.com/tiann/hapi). This is an independent
+project maintained in [BGGBTAC/hapi-evolved](https://github.com/BGGBTAC/hapi-evolved).
+It preserves the upstream history, AGPL license and contributor attribution.
 
----
+**Status: 0.1.0 preview in preparation.** Use a separate installation and back up
+its state. A source version is not a published release or an external security
+audit. [Validation](docs/evolved/VALIDATION.md) records what was tested and the
+remaining limits; [release preparation](RELEASING.md) tracks publication gates.
 
-# HAPI (Upstream)
+## What it does
 
-Run official Claude Code / Codex / Cursor Agent / Grok Build / OpenCode / Kimi / Copilot / Antigravity / Pi / DeepSeek Harness sessions and control them remotely through native iOS / Android apps, Web / PWA, or Telegram Mini App.
+| Area | Capability |
+| --- | --- |
+| Agents | Claude Code and Codex in isolated, project-scoped Linux runners; web/PWA session access |
+| Teams | Passkeys, recovery codes, team/project roles, revocable runner access |
+| Projects | A dedicated folder is created automatically; administrators can optionally attach an existing allowed folder |
+| GitHub | Project repository connections and brokered Git access; credentials remain in the local vault |
+| Credentials | An encrypted local vault and constrained resource actions, administered in the browser |
+| Memory | Persistent local knowledge and search; optional Graphiti/Neo4j knowledge graph with explicit provider configuration and budgets |
+| Codegraph | Local symbol, caller, impact and affected-test exploration with automatic indexing |
+| Workflow | Durable attachments, history search, saved prompts, project-scoped automation and private previews |
 
-> **Why HAPI?** HAPI is a local-first alternative to Happy. See [Why Not Happy?](docs/guide/why-hapi.md) for the key differences.
+The vault is an integration credential store, not a browser password autofill
+product. Codegraph and the knowledge graph are separate. Cloud memory starts
+paused and requires operator configuration and an explicit project budget.
 
-## Features
+## Start here
 
-- **Seamless Handoff** - Work locally, switch to remote when needed, switch back anytime. No context loss, no session restart.
-- **Shared Codex Sessions** - Use Codex from your terminal and phone at the same time. Requires Codex 0.154.0+. [Usage and limits](docs/guide/codex-shared-sessions.md).
-- **Native First** - HAPI wraps your AI agent instead of replacing it. Same terminal, same experience, same muscle memory.
-- **AFK Without Stopping** - Step away from your desk? Approve AI requests from your phone with one tap.
-- **Your AI, Your Choice** - Claude Code, Codex, Cursor Agent, Grok Build, OpenCode, Kimi, Copilot, Antigravity, Pi, DeepSeek Harness—different agents, one unified workflow.
-- **Terminal Anywhere** - Run commands from your phone's browser or desktop web app, directly connected to the working machine.
-- **Voice Control** - Use dictation in native apps, or talk to your AI agent hands-free with the web voice assistant.
-- **Workspace Browser** - Opt-in via one or more `hapi runner start --workspace-root <path>` flags: browse scoped file trees from the web and start sessions in allowed subdirectories.
+The supported preview deployment is **Linux + Docker Compose**, built from this
+repository. Use **Bun 1.3.14** for initialization and source development. Plan for
+about **12 GiB RAM** for the stack and one runner. Choose the final HTTPS hostname
+before registering a passkey; `http://localhost:3006` is suitable for a local test.
 
-## Demo
-
-https://github.com/user-attachments/assets/38230353-94c6-4dbe-9c29-b2a2cc457546
-
-## Getting Started
-
-```bash
-npx @twsxtd/hapi hub --relay     # start hub with E2E encrypted relay
-npx @twsxtd/hapi                 # choose an agent and start a session
+```sh
+git clone https://github.com/BGGBTAC/hapi-evolved.git
+cd hapi-evolved
+bun install --frozen-lockfile
+bun deploy/evolved/init.ts "$HOME/.local/share/hapi-evolved"
 ```
 
-`hapi server` remains supported as an alias.
+Use a reviewed commit or published preview tag containing Evolved. While the
+implementation pull requests are still open, the default branch may not contain
+these features. Follow the [English quick start](docs/evolved/QUICKSTART.md) to
+set the origin, start the services and register your first passkey.
 
-Use `hapi <agent> [options]` to start an agent directly, for example `hapi claude`
-or `hapi codex`. Scripts must specify the agent explicitly. `hapi --help` shows
-HAPI's commands and supported agents.
+Upstream `@twsxtd/hapi` npm packages and upstream hosted services do **not** install
+this Evolved stack. Repository and package publication are separate: workspace
+packages intentionally retain `private: true`.
 
-The hub displays a URL and two QR codes. Open the web URL in a browser, or pair a native app using the companion QR. See [Native apps](docs/guide/native-apps.md) for build and pairing instructions.
+## Documentation
 
-> The relay uses WireGuard + TLS for end-to-end encryption. Your data is encrypted from your device to your machine.
+| Document | Purpose |
+| --- | --- |
+| [Quick start](docs/evolved/QUICKSTART.md) | First installation, initialization and account setup — English |
+| [Operator guide](docs/evolved/DEPLOYMENT.md) | Services, isolated runners, backup/restore and upgrades — German |
+| [User guide](docs/evolved/USER_GUIDE.md) | Projects, teams, vault, memory and Codegraph — German |
+| [GitHub connection](docs/evolved/GITHUB.md) | Repository grants, native Git and credential boundaries |
+| [Project architecture](docs/evolved/PROJECT.md) | Scope and trust boundaries — German |
+| [Privacy and data](docs/evolved/DATA_HANDLING.md) | Storage, providers and retention |
+| [Changelog](CHANGELOG.md) · [Roadmap](ROADMAP.md) | Changes and remaining work |
+| [Contributing](CONTRIBUTING.md) · [Support](SUPPORT.md) | Development and help |
+| [Security policy](SECURITY.md) | Private vulnerability reporting |
+| [Releasing](RELEASING.md) | Source artifacts, checks and publication procedure |
 
-For self-hosted options (Cloudflare Tunnel, Tailscale), see [Installation](docs/guide/installation.md)
+Detailed evidence is in the dated [backlog review](docs/evolved/BACKLOG_REVIEW.md).
+It is a snapshot, not a claim that every upstream issue has been fixed. Native
+apps, other inherited agent integrations and the old marketing website are in
+the tree but outside the Evolved preview's validated Linux/web/Claude/Codex scope.
 
-## Docs
+## Development
 
-- [Native apps (iOS / Android)](docs/guide/native-apps.md)
-- [Web / PWA](docs/guide/pwa.md)
-- [How it Works](docs/guide/how-it-works.md)
-- [Supported Agents](docs/guide/agents.md)
-- [Voice Assistant](docs/guide/voice-assistant.md)
-- [Why HAPI](docs/guide/why-hapi.md)
-- [FAQ](docs/guide/faq.md)
-
-## Native apps (iOS / Android)
-
-The repository includes SwiftUI/UIKit and Kotlin Compose clients with chat, approvals, session creation, files, dictation, and push notifications. See the [native app guide](docs/guide/native-apps.md) for capabilities, platform differences and pairing. Build instructions: [iOS](ios/README.md) and [Android](android/README.md). Developer protocol: [client contract](docs/api/client-contract/index.md).
-
-## Build from source
-
-Requires Bun 1.4.0.
-
-```bash
-bun install
-bun run build:single-exe
+```sh
+bun install --frozen-lockfile
+bun run typecheck
+bun run test
+bun run build:web
 ```
 
-## Credits
+Codegraph additionally uses Node 24; memory uses Python 3.12. Their pinned
+dependencies and focused checks are documented in
+[Codegraph](services/codegraph/README.md) and [memory](services/memory/README.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for Evolved development configuration.
+Do not point tests at a live installation.
 
-HAPI means "哈皮" a Chinese transliteration of [Happy](https://github.com/slopus/happy). Great credit to the original project.
+## License and credits
+
+The software is licensed under **AGPL-3.0-only**, with retained third-party
+notices. See [LICENSE](LICENSE), [NOTICE](NOTICE) and [cli/NOTICE](cli/NOTICE).
+The upstream baseline is
+[`tiann/hapi@5847b034`](https://github.com/tiann/hapi/tree/5847b034e5cb84f2617766945c994b7905c5c03e).
+Thanks to HAPI's contributors and the [Happy](https://github.com/slopus/happy)
+and happy-cli contributors acknowledged in the inherited notices.
+
+For a network deployment of a modified version, offer its users the corresponding
+source, following [section 13 of the license](LICENSE). Keep notices and build
+instructions with redistributed source. Provider CLIs, models and container
+dependencies retain their own licenses and service terms.

@@ -7,6 +7,8 @@ import { tmpdir } from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { EvolvedError, hashToken, privateFile, type AgentProfile } from './store'
+import { GithubBroker } from './githubBroker'
+import { GIT_TIMEOUT_MS, type GitCredentialRequest } from './githubProtocol'
 
 export type SecretMetadata = { id: string; projectId: string; name: string; version: number; createdAt: number; updatedAt: number }
 export type ResourceAction = {
@@ -14,8 +16,8 @@ export type ResourceAction = {
     timeoutSeconds?: number
 } & ({ type: 'http'; url: string; method: 'GET' | 'HEAD' | 'POST'; secretId?: string; header?: string; prefix?: string; expectedStatus?: number }
     | { type: 'ssh'; host: string; port?: number; user: string; command: string; secretId: string; knownHostsFile: string })
-export type VaultRequest = { userId: string; projectId: string; operation: 'list' | 'set' | 'delete' | 'resources' | 'invoke' | 'purgeProject'; payload: Record<string, unknown> }
-export interface VaultClient { request(input: VaultRequest): Promise<unknown> }
+export type VaultRequest = { userId: string; projectId: string; operation: 'list' | 'set' | 'delete' | 'resources' | 'invoke' | 'purgeProject' | 'github' | 'githubGit'; payload: Record<string, unknown> }
+export interface VaultClient { request(input: VaultRequest): Promise<unknown>; git?(input: GitCredentialRequest, body: Uint8Array, signal?: AbortSignal): Promise<Response> }
 type Envelope = VaultRequest & { expiresAt: number; nonce: string }
 type CipherRow = { id: string; project_id: string; name: string; version: number; nonce: Uint8Array; ciphertext: Uint8Array; tag: Uint8Array; created_at: number; updated_at: number }
 type BrokerResult = { status: 'succeeded' | 'failed' | 'indeterminate'; httpStatus?: number; exitCode?: number }
@@ -39,7 +41,8 @@ export class EvolvedVault implements VaultClient {
     readonly db: Database
     private readonly masterKey: Buffer
     private readonly actions: ResourceAction[]
-    constructor(options: { dbPath: string; masterKeyFile: string; workspaceRoot?: string; actions?: ResourceAction[] }) {
+    private readonly github: GithubBroker
+    constructor(options: { dbPath: string; masterKeyFile: string; workspaceRoot?: string; actions?: ResourceAction[]; githubFetcher?: typeof fetch }) {
         if (!isAbsolute(options.masterKeyFile)) throw new EvolvedError('key_path', 'Vault master key path must be absolute.', 500)
         mkdirSync(dirname(options.masterKeyFile), { recursive: true, mode: 0o700 })
         const workspace = realpathSync(options.workspaceRoot ?? process.cwd())
@@ -63,6 +66,16 @@ export class EvolvedVault implements VaultClient {
             CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,user_id TEXT NOT NULL,project_id TEXT NOT NULL,operation TEXT NOT NULL,target_id TEXT,at INTEGER NOT NULL);
         `)
         this.db.prepare("UPDATE runs SET status='indeterminate',result=? WHERE status='running'").run(JSON.stringify({ status: 'indeterminate' }))
+        this.github = new GithubBroker(this.db, {
+            encrypt: (projectId, generation, token) => {
+                const key = this.projectKey(projectId)
+                try { return encrypted(key, token, JSON.stringify(['hapi-evolved-github-v1', projectId, generation])) } finally { key.fill(0) }
+            },
+            decrypt: (projectId, generation, value) => {
+                const key = this.projectKey(projectId)
+                try { return decrypted(key, value, JSON.stringify(['hapi-evolved-github-v1', projectId, generation])) } finally { key.fill(0) }
+            },
+        }, options.githubFetcher)
         this.actions = options.actions ?? []
         const ids = new Set<string>()
         for (const action of this.actions) {
@@ -76,7 +89,7 @@ export class EvolvedVault implements VaultClient {
             } else if (!/^[a-zA-Z0-9][a-zA-Z0-9.:-]*$/.test(action.host) || !/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(action.user) || !action.command || !isAbsolute(action.knownHostsFile)) throw new EvolvedError('invalid_action', 'Invalid configured SSH action.', 500)
         }
     }
-    close(): void { this.masterKey.fill(0); this.db.close() }
+    close(): void { this.github.close(); this.masterKey.fill(0); this.db.close() }
     private projectKey(projectId: string): Buffer {
         let row = this.db.prepare('SELECT * FROM project_keys WHERE project_id=?').get(projectId) as { nonce: Uint8Array; ciphertext: Uint8Array; tag: Uint8Array } | null
         const aad = JSON.stringify(['hapi-evolved-project-key-v1', projectId])
@@ -100,12 +113,14 @@ export class EvolvedVault implements VaultClient {
             this.db.transaction(() => {
                 this.db.prepare('INSERT OR IGNORE INTO revoked_projects VALUES(?,?)').run(projectId, Date.now())
                 this.db.prepare('DELETE FROM secrets WHERE project_id=?').run(projectId)
+                this.github.purge(projectId)
                 this.db.prepare('DELETE FROM project_keys WHERE project_id=?').run(projectId)
                 this.db.prepare('INSERT INTO audit(user_id,project_id,operation,target_id,at) VALUES(?,?,?,?,?)').run(userId, projectId, 'project.purged', projectId, Date.now())
             })()
             return { ok: true }
         }
         if (this.db.prepare('SELECT 1 FROM revoked_projects WHERE project_id=?').get(projectId)) throw new EvolvedError('project_revoked', 'Project has been deleted.', 403)
+        if (operation === 'github') return this.github.request(userId, projectId, payload)
         if (operation === 'list') return { secrets: (this.db.prepare('SELECT * FROM secrets WHERE project_id=? ORDER BY name').all(projectId) as CipherRow[]).map(metadata) }
         if (operation === 'resources') return { resources: this.actions.filter(a => a.projectId === projectId).map(a => ({ id: a.id, name: a.name, type: a.type, actions: ['execute'], profiles: a.profiles })) }
         if (operation === 'set') {
@@ -132,6 +147,11 @@ export class EvolvedVault implements VaultClient {
         }
         if (operation === 'invoke') return this.invoke(input)
         throw new EvolvedError('operation_denied', 'Unsupported vault operation.', 403)
+    }
+    async git(input: GitCredentialRequest, body: Uint8Array, signal?: AbortSignal): Promise<Response> {
+        if (!input.projectId || !input.userId || input.operation !== 'githubGit') throw new EvolvedError('invalid_scope', 'Git scope is required.', 400)
+        if (this.db.prepare('SELECT 1 FROM revoked_projects WHERE project_id=?').get(input.projectId)) throw new EvolvedError('project_revoked', 'Project has been deleted.', 403)
+        return this.github.git(input, body, signal)
     }
     private async invoke(input: VaultRequest): Promise<BrokerResult> {
         const { projectId, userId, payload } = input
@@ -198,6 +218,20 @@ export class RemoteVaultClient implements VaultClient {
         const json = await result.json() as { error?: string; code?: string }
         if (!result.ok) throw new EvolvedError(json.code ?? 'vault_unavailable', json.error ?? 'Vault request failed.', result.status)
         return json
+    }
+    async git(input: GitCredentialRequest, data: Uint8Array, signal?: AbortSignal): Promise<Response> {
+        const envelope = JSON.stringify({ ...input, nonce: randomUUID(), expiresAt: Date.now() + 30_000 })
+        const signature = sign(null, Buffer.from(envelope), this.signingKey).toString('base64url')
+        const response = await (this.config.fetcher ?? fetch)(new URL('/v1/github/git', this.config.url), {
+            method: 'POST', headers: { 'content-type': 'application/octet-stream', 'x-evolved-signature': signature,
+                'x-evolved-request': Buffer.from(envelope).toString('base64url') }, body: Buffer.from(data.buffer, data.byteOffset, data.byteLength), redirect: 'error',
+            signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(GIT_TIMEOUT_MS)]) : AbortSignal.timeout(GIT_TIMEOUT_MS),
+        })
+        if (!response.ok) {
+            await response.body?.cancel()
+            throw new EvolvedError('github_transfer_denied', 'Git transfer denied or interrupted. Inspect remote refs before retrying a push.', response.status)
+        }
+        return response
     }
 }
 

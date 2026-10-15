@@ -1,5 +1,11 @@
 # Vollständige Backlog-Runde vom 15.10.2026
 
+Veröffentlichungshinweis: Persönliche absolute Arbeitsverzeichnisse wurden in der
+Matrix und dem historischen Review-Artefakt zu repository-relativen Referenzen
+normalisiert. Befunde und Quellcommits bleiben historische Nachweise. Frühere
+Git-Versionen dieser Dateien sind dadurch nicht bereinigt; vor einer öffentlichen
+Sichtbarkeitsänderung gilt die Historienprüfung aus der Releaseanleitung.
+
 Ausgangspunkt ist HAPI evolved 0.1 auf Commit
 `8033c3df01eed9fb7d28318ba5e1aa5aa2478543`. Die Runde umfasst sämtliche **113 offenen
 Upstream-Issues einschließlich 169 Kommentaren** im erfassten Stand. 209 offene PRs
@@ -103,8 +109,8 @@ aus, sobald die unten dokumentierte Kontosperre aufgehoben ist.
 
 **Externe CI-Sperre:** [PR #2](https://github.com/BGGBTAC/hapi-evolved/pull/2),
 Implementierungscommit `f8a1716527d8a18cca537db8001563432619309e`. GitHub hat am
-15.10.2026 sämtliche Jobs vor dem ersten Schritt abgewiesen und nennt fehlgeschlagene
-Kontozahlungen oder ein zu niedriges Ausgabenlimit. Belege:
+15.10.2026 sämtliche Jobs vor dem ersten Schritt abgewiesen. Es liegt deshalb für
+diesen historischen Lauf keine erfolgreiche Remote-Abnahme vor. Belege:
 [Test](https://github.com/BGGBTAC/hapi-evolved/actions/runs/38664511945),
 [iOS](https://github.com/BGGBTAC/hapi-evolved/actions/runs/38664511950),
 [Android](https://github.com/BGGBTAC/hapi-evolved/actions/runs/38664511958).

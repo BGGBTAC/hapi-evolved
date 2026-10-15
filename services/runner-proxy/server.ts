@@ -3,6 +3,7 @@ import { Server } from 'socket.io'
 import { io as connect } from 'socket.io-client'
 import { privateFile } from '../../hub/src/evolved/store'
 import { SOCKET_MAX_HTTP_BUFFER_SIZE } from '../../hub/src/socket/socketLimits'
+import { boundedGitResponse, GIT_TIMEOUT_MS, gitPath, parseGitRequest, readGitBody } from '../../hub/src/evolved/githubProtocol'
 
 type Grant = { token: string; expiresAt: number; projectId: string }
 const MAX_PENDING_BYTES = 8 * 1024 * 1024
@@ -32,6 +33,7 @@ export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; p
     const hub = new URL(config.hubUrl)
     if (hub.username || hub.password || !['http:', 'https:'].includes(hub.protocol)) throw new Error('Invalid Hub URL')
     let grant: Grant | null = null, renewing: Promise<Grant> | null = null
+    const gitTransfers = new Set<AbortController>()
     async function current(): Promise<Grant> {
         if (grant && grant.expiresAt > Date.now() + 30_000) return grant
         if (renewing) return renewing
@@ -101,6 +103,38 @@ export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; p
             const url = new URL(request.url)
             if (url.pathname.startsWith('/socket.io/')) return handler.fetch(request, server)
             if (request.headers.has('origin')) return new Response('Browser access denied', { status: 403 })
+            if (url.pathname.startsWith('/evolved-git/')) {
+                if (gitTransfers.size >= 2) return new Response('Git transfer limit reached', { status: 429 })
+                const controller = new AbortController()
+                const cancelled = () => controller.abort()
+                const timeout = setTimeout(cancelled, GIT_TIMEOUT_MS)
+                request.signal.addEventListener('abort', cancelled, { once: true })
+                if (request.signal.aborted) cancelled()
+                gitTransfers.add(controller)
+                const finish = () => { clearTimeout(timeout); request.signal.removeEventListener('abort', cancelled); gitTransfers.delete(controller) }
+                try {
+                    const git = parseGitRequest(request, '/evolved-git/github.com/')
+                    const access = await current()
+                    const body = await readGitBody(new Request(request, { signal: controller.signal }))
+                    const headers = new Headers({ authorization: `Bearer ${access.token}` })
+                    if (!git.advertisement) headers.set('content-type', `application/x-${git.service}-request`)
+                    if (git.protocol) headers.set('git-protocol', git.protocol)
+                    const response = await fetch(new URL(`/api/evolved/projects/${config.projectId}/git/${gitPath(git)}`, hub), {
+                        method: git.advertisement ? 'GET' : 'POST', headers, body: git.advertisement ? undefined : body,
+                        redirect: 'error', signal: controller.signal,
+                    })
+                    if (response.status === 401) grant = null
+                    const type = `application/x-${git.service}-${git.advertisement ? 'advertisement' : 'result'}`
+                    if (response.status !== 200 || response.headers.get('content-type') !== type) {
+                        await response.body?.cancel(); finish()
+                        return new Response('Git operation denied or interrupted; inspect remote refs before retrying a push.', { status: response.status === 200 ? 502 : response.status })
+                    }
+                    return boundedGitResponse(new Response(response.body, { headers: { 'content-type': type, 'cache-control': 'no-store' } }), controller, finish)
+                } catch {
+                    controller.abort(); finish()
+                    return new Response('Git operation denied or interrupted; inspect remote refs before retrying a push.', { status: 502 })
+                }
+            }
             if (url.pathname === '/evolved-runner-authority' && request.method === 'GET') {
                 try {
                     const lease = privateFile(config.leaseFile).toString('utf8').trim()
@@ -126,7 +160,7 @@ export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; p
             } catch { return new Response('Runner lease unavailable', { status: 503 }) }
         }
     })
-    return { server, close: () => { io.close(); server.stop(true) } }
+    return { server, close: () => { for (const controller of gitTransfers) controller.abort(); io.close(); server.stop(true) } }
 }
 if (import.meta.main) {
     const hubUrl = process.env.EVOLVED_HUB_URL, leaseFile = process.env.EVOLVED_RUNNER_LEASE_FILE, projectId = process.env.EVOLVED_PROJECT_ID

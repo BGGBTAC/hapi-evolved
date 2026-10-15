@@ -1,10 +1,11 @@
 import { lstatSync, readFileSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { validRunnerRoot } from '../../services/runner-proxy/workspace'
 
 const keys = [
     'EVOLVED_UID', 'EVOLVED_GID', 'EVOLVED_PROJECT_ID', 'EVOLVED_PROJECT_DIRECTORY',
     'EVOLVED_RUNNER_PROFILE', 'EVOLVED_WORKSPACE_MODE', 'EVOLVED_RUNNER_WORKSPACE',
-    'EVOLVED_RUNNER_HOME', 'EVOLVED_RUNNER_LEASE_FILE', 'EVOLVED_BACKEND_NETWORK', 'EVOLVED_EGRESS_HOSTS',
+    'EVOLVED_RUNNER_HOME', 'EVOLVED_RUNNER_LEASE_FILE', 'EVOLVED_BACKEND_NETWORK', 'EVOLVED_EGRESS_HOSTS', 'EVOLVED_WORKSPACE_PREFIX',
 ] as const
 type RunnerKey = typeof keys[number]
 type RunnerConfig = Partial<Record<RunnerKey, string>>
@@ -74,6 +75,10 @@ export function checkRunnerConfig(config: RunnerConfig, environment: NodeJS.Proc
     const directory = required(config, 'EVOLVED_PROJECT_DIRECTORY')
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(directory)) {
         throw new Error('EVOLVED_PROJECT_DIRECTORY muss ein einzelner sicherer Verzeichnisname sein.')
+    }
+    const prefix = config.EVOLVED_WORKSPACE_PREFIX ?? '/workspaces'
+    if (!['/workspaces', '/managed-workspaces'].includes(prefix) || !validRunnerRoot(`${prefix}/${directory}`, projectId)) {
+        throw new Error('Workspace-Prefix verlangt /workspaces oder /managed-workspaces mit der Projekt-UUID als Verzeichnisname.')
     }
     const profile = required(config, 'EVOLVED_RUNNER_PROFILE')
     const mode = required(config, 'EVOLVED_WORKSPACE_MODE')

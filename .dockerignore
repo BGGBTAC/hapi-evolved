@@ -10,3 +10,20 @@ test-results
 playwright-report
 ios
 android
+
+# Do not bake operator files, local test output or development metadata into images.
+**/bootstrap.token
+**/service.token
+**/compose.env
+**/runner.env
+**/master.key
+**/vault-signing.pem
+**/provider.key
+**/neo4j.password
+**/*.log
+**/__pycache__
+**/*.pyc
+coverage
+.claude
+.agents
+.ace-tool

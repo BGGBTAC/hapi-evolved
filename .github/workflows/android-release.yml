@@ -1,4 +1,5 @@
-name: Android Official Build
+# Retained for upstream history; every job is disabled outside tiann/hapi.
+name: Upstream only — Android official build
 
 on:
     workflow_dispatch:
