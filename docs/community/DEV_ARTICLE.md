@@ -96,9 +96,6 @@ and [contribution instructions](https://github.com/BGGBTAC/hapi-evolved/blob/mai
 Questions and ideas belong in
 [GitHub Discussions](https://github.com/BGGBTAC/hapi-evolved/discussions).
 
-AI coding assistants contributed substantially to the code, tests and documentation.
-This article draft was written and checked by AI agents at the maintainer's request.
-Their output is subject to review and reproducible checks;
-it is not independent proof that a feature works. HAPI-eVolved is not endorsed by
+HAPI-eVolved is not endorsed by
 HAPI, Anthropic or OpenAI. The code retains AGPL-3.0-only and upstream notices;
 provider tools and dependencies have their own licenses and terms.
