@@ -1,4 +1,6 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { logger } from "@/ui/logger";
 import { getProjectPath } from "./utils/path";
 import { appendMcpConfigArg } from "./utils/mcpConfig";
@@ -28,6 +30,28 @@ function withoutTrackedModelArgs(args: string[]): string[] {
     }
 
     return filtered;
+}
+
+/** Claude's repeated append flag replaces the earlier value. Merge it once. */
+function takeAppendSystemPrompt(args: string[] | undefined): { args: string[]; prompt: string; file?: string } {
+    const filtered: string[] = [];
+    let prompt = '';
+    let file: string | undefined;
+    for (let i = 0; i < (args?.length ?? 0); i++) {
+        const arg = args![i];
+        if (arg === '--') { filtered.push(...args!.slice(i)); break; }
+        const separator = arg.indexOf('=');
+        const flag = separator === -1 ? arg : arg.slice(0, separator);
+        if (flag !== '--append-system-prompt' && flag !== '--append-system-prompt-file') {
+            filtered.push(arg);
+            continue;
+        }
+        const value = separator === -1 ? args![++i] : arg.slice(separator + 1);
+        if (value === undefined) throw new Error(`Missing ${flag} value`);
+        file = flag === '--append-system-prompt-file' ? value : undefined;
+        prompt = file === undefined ? value : '';
+    }
+    return { args: filtered, prompt, file };
 }
 
 export async function claudeLocal(opts: {
@@ -72,7 +96,18 @@ export async function claudeLocal(opts: {
         args.push('--resume', startFrom);
     }
 
-    args.push('--append-system-prompt', stripNewlinesForWindowsShellArg(getSystemPrompt()));
+    const userSystemPrompt = takeAppendSystemPrompt(opts.claudeArgs);
+    const hapiSystemPrompt = getSystemPrompt();
+    const systemPromptArgIndex = args.length;
+    if (userSystemPrompt.file !== undefined) {
+        // Populate this private file immediately before spawning, inside the
+        // cleanup scope. File-based instructions must never enter argv/logs.
+        args.push('--append-system-prompt-file', '');
+    } else {
+        args.push('--append-system-prompt', stripNewlinesForWindowsShellArg(
+            [userSystemPrompt.prompt, hapiSystemPrompt].filter(Boolean).join('\n\n')
+        ));
+    }
 
     const cleanupMcpConfig = appendMcpConfigArg(args, opts.mcpServers, {
         baseDir: projectDir
@@ -83,9 +118,9 @@ export async function claudeLocal(opts: {
     }
 
     // Once model state is available, it is authoritative over startup args.
-    const claudeArgs = opts.model === undefined || !opts.claudeArgs
-        ? opts.claudeArgs
-        : withoutTrackedModelArgs(opts.claudeArgs);
+    const claudeArgs = opts.model === undefined
+        ? userSystemPrompt.args
+        : withoutTrackedModelArgs(userSystemPrompt.args);
     if (claudeArgs) {
         args.push(...claudeArgs);
     }
@@ -116,14 +151,21 @@ export async function claudeLocal(opts: {
         ...opts.claudeEnvVars
     }
 
-    logger.debug(`[ClaudeLocal] Spawning claude with args: ${JSON.stringify(args)}`);
-
     // Get Claude executable path (absolute path on Windows for shell: false)
     const claudeCommand = getDefaultClaudeCodePath();
     logger.debug(`[ClaudeLocal] Using claude executable: ${claudeCommand}`);
 
     // Spawn the process
+    let systemPromptDirectory: string | undefined;
     try {
+        if (userSystemPrompt.file !== undefined) {
+            const userPrompt = readFileSync(resolve(opts.path, userSystemPrompt.file), 'utf8');
+            systemPromptDirectory = mkdtempSync(join(tmpdir(), 'hapi-claude-instructions-'));
+            const file = join(systemPromptDirectory, 'instructions.txt');
+            writeFileSync(file, [userPrompt, hapiSystemPrompt].filter(Boolean).join('\n\n'), { mode: 0o600 });
+            args[systemPromptArgIndex + 1] = file;
+        }
+        logger.debug(`[ClaudeLocal] Spawning claude with args: ${JSON.stringify(args)}`);
         await spawnWithTerminalGuard({
             command: claudeCommand,
             args,
@@ -138,7 +180,8 @@ export async function claudeLocal(opts: {
             shell: false  // Use absolute path, no shell needed
         });
     } finally {
-        cleanupMcpConfig?.();
+        try { cleanupMcpConfig?.(); }
+        finally { if (systemPromptDirectory) rmSync(systemPromptDirectory, { recursive: true, force: true }); }
     }
 
     return startFrom ?? null;

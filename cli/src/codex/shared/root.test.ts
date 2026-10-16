@@ -6,6 +6,7 @@ import type { SessionBootstrapResult } from '@/agent/sessionFactory';
 import { SharedCodexRoot, type RootHost } from './root';
 import { codexPlanProposalId } from './plan';
 import { RPC_METHODS } from '@hapi/protocol/rpcMethods';
+import { getEvolvedOperatingContext } from '@/evolved/operatingContext';
 
 type NativeTurn = { id: string; status: string; items: unknown[] };
 
@@ -51,7 +52,7 @@ vi.mock('../utils/buildHapiMcpBridge', () => ({ buildHapiMcpBridge: async () => 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
     try { for (const cleanup of cleanups.splice(0)) await cleanup(); }
-    finally { vi.useRealTimers(); }
+    finally { vi.useRealTimers(); vi.unstubAllEnvs(); }
 });
 
 async function fixture(opts?: { hubArchived?: boolean; end?: RootHost['end'] }) {
@@ -119,6 +120,17 @@ async function completePlan(f: Awaited<ReturnType<typeof fixture>>, status = 'co
 }
 
 describe('shared startup permissions', () => {
+    it('retains custom developer instructions and adds platform context once for new/resumed roots', async () => {
+        vi.stubEnv('HAPI_EVOLVED_CAPABILITY_FILE', '/private/test-capability');
+        const { root } = await fixture();
+        const custom = 'Preserve the specialist role.';
+        const configured = root.config({ developerInstructions: custom });
+        expect(configured.developerInstructions).toBe(`${custom}\n\n${getEvolvedOperatingContext()}`);
+        expect(root.config({ developerInstructions: configured.developerInstructions }).developerInstructions)
+            .toBe(configured.developerInstructions);
+        expect(configured.developerInstructions).not.toContain('/private/test-capability');
+    });
+
     it('serializes a later default behind an in-flight YOLO update', async () => {
         const f = await fixture();
         await f.root.applySettings({ permissionMode: 'default' });

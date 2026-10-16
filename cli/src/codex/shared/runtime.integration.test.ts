@@ -10,6 +10,7 @@ import { CodexAppServerClient } from '../codexAppServerClient';
 import { initializeSharedClient } from './launch';
 import { record } from './gateway';
 import { isProcessAlive } from '@/utils/process';
+import { getEvolvedOperatingContext } from '@/evolved/operatingContext';
 
 const state = vi.hoisted(() => ({ home: '', sessions: new Map<string, MockSession>(), beforeBootstrap: undefined as (() => Promise<void>) | undefined }));
 class MockSession extends EventEmitter {
@@ -98,19 +99,31 @@ describe.skipIf(process.env.HAPI_RUN_SHARED_CODEX_TESTS !== '1')('installed Code
             }
         } finally { release(); abort.abort(); await running.catch(() => {}); await rm(home, { recursive: true, force: true }); }
     }, 30_000);
-    it('binds empty roots, exchanges messages, isolates /new, and archives only the selected root', async () => {
+    it('preserves Evolved instructions in plan/resume/new and isolated native children while keeping roots separate', async () => {
         const home = await mkdtemp('/tmp/hapi-shared-test-'); state.home = home;
         const ch = join(home, 'codex'); const cwd = join(home, 'work'); await mkdir(ch); await mkdir(cwd);
-        const modelRequests: unknown[] = [];
+        const modelRequests: Record<string, unknown>[] = [];
+        const childRequests: Record<string, unknown>[] = [];
         const http = createServer((request, response) => {
             const chunks: Buffer[] = [];
             request.on('data', chunk => chunks.push(Buffer.from(chunk)));
             request.on('end', () => {
                 if (!request.url?.endsWith('/responses')) { response.writeHead(404).end(); return; }
-                modelRequests.push(JSON.parse(Buffer.concat(chunks).toString()));
+                const body = record(JSON.parse(Buffer.concat(chunks).toString()));
+                modelRequests.push(body);
+                const inputs = Array.isArray(body.input) ? body.input.map(record) : [];
+                const lastUser = [...inputs].reverse().find(item => item.role === 'user');
+                const prompt = JSON.stringify(lastUser);
+                const spawnChild = prompt?.includes('SPAWN_ISOLATED_CHILD') && !inputs.some(item => item.type === 'function_call_output');
+                if (prompt?.includes('ISOLATED_CHILD_CONTEXT_CHECK')) childRequests.push(body);
                 const id = randomUUID();
+                const item = spawnChild
+                    ? { type: 'function_call', call_id: `spawn_${id}`, namespace: 'multi_agent_v1', name: 'spawn_agent', arguments: JSON.stringify({
+                        message: 'ISOLATED_CHILD_CONTEXT_CHECK', fork_context: false
+                    }) }
+                    : { type: 'message', role: 'assistant', id: `msg_${id}`, content: [{ type: 'output_text', text: 'MOCK ANSWER' }] };
                 const events = [{ type: 'response.created', response: { id } },
-                    { type: 'response.output_item.done', item: { type: 'message', role: 'assistant', id: `msg_${id}`, content: [{ type: 'output_text', text: 'MOCK ANSWER' }] } },
+                    { type: 'response.output_item.done', item },
                     { type: 'response.completed', response: { id, usage: { input_tokens: 12, output_tokens: 3, total_tokens: 15 } } }];
                 response.writeHead(200, { 'Content-Type': 'text/event-stream' });
                 response.end(events.map(e => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join(''));
@@ -120,11 +133,12 @@ describe.skipIf(process.env.HAPI_RUN_SHARED_CODEX_TESTS !== '1')('installed Code
         const port = (http.address() as { port: number }).port;
         await writeFile(join(ch, 'config.toml'), `model = "mock-model"\nmodel_provider = "mock_provider"\napproval_policy = "never"\nsandbox_mode = "read-only"\ncheck_for_update_on_startup = false\n[model_providers.mock_provider]\nname = "Isolated mock"\nbase_url = "http://127.0.0.1:${port}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false\nrequest_max_retries = 0\nstream_max_retries = 0\n[analytics]\nenabled = false\n[feedback]\nenabled = false\n[projects."${cwd}"]\ntrust_level = "trusted"\n`);
         vi.stubEnv('CODEX_HOME', ch); vi.stubEnv('HOME', home); vi.stubEnv('HAPI_SESSION_ID', 'parent-must-not-leak');
+        vi.stubEnv('HAPI_EVOLVED_PROXY', '1'); vi.stubEnv('EVOLVED_RUNNER_PROFILE', 'extended');
         const { runSharedRuntime } = await import('./runtime');
         let ready!: (value: import('./runtime').RuntimeReady) => void;
         const readiness = new Promise<import('./runtime').RuntimeReady>(resolve => { ready = resolve; });
         const abort = new AbortController();
-        const running = runSharedRuntime({ workingDirectory: cwd }, ready, abort.signal);
+        const running = runSharedRuntime({ workingDirectory: cwd, codexArgs: ['--enable', 'multi_agent'] }, ready, abort.signal);
         const clients: CodexAppServerClient[] = [];
         let roots: string[] = [];
         try {
@@ -133,8 +147,8 @@ describe.skipIf(process.env.HAPI_RUN_SHARED_CODEX_TESTS !== '1')('installed Code
                 client.setServerRequestHandler(() => {}); clients.push(client); await initializeSharedClient(client); return client; };
             const first = await connect(); const second = await connect();
             const initial = runtime.sessions[sessionId].threadId; roots.push(initial);
-            const resumed = record(await first.request('thread/resume', { threadId: initial }));
-            await second.request('thread/resume', { threadId: initial });
+            const resumed = record(await first.request('thread/resume', { threadId: initial, developerInstructions: 'Keep the custom native instructions.' }));
+            await second.request('thread/resume', { threadId: initial, developerInstructions: 'Keep the custom native instructions.' });
             expect(record(resumed.thread).turns).toEqual([]); expect(modelRequests).toHaveLength(0);
             expect(state.sessions.size).toBe(1);
             const web = state.sessions.get(sessionId)!;
@@ -146,17 +160,29 @@ describe.skipIf(process.env.HAPI_RUN_SHARED_CODEX_TESTS !== '1')('installed Code
             }));
             expect(web.state.requests).toEqual({});
             expect(web.state.completedRequests?.['old-worker']?.status).toBe('canceled');
+            await first.request('thread/settings/update', { threadId: initial, collaborationMode: {
+                mode: 'plan', settings: { model: 'mock-model', reasoning_effort: null, developer_instructions: null }
+            } });
             web.user?.({ content: { text: 'HELLO FROM WEB' } }, 'web-1');
             await vi.waitFor(() => expect(web.consumed).toContain('web-1'), { timeout: 15_000 });
             await vi.waitFor(() => expect(web.messages).toContainEqual(expect.objectContaining({ type: 'message', message: 'MOCK ANSWER' })), { timeout: 15_000 });
-            const newResponse = record(await first.request('thread/start', { cwd }));
+            expect(JSON.stringify(modelRequests[0]).includes(getEvolvedOperatingContext().split('\n')[0])).toBe(true);
+            const newResponse = record(await first.request('thread/start', { cwd, developerInstructions: 'New custom native instructions.' }));
             const next = String(record(newResponse.thread).id); roots.push(next);
             expect(next).not.toBe(initial); expect(state.sessions.size).toBe(2);
             const nextSession = [...state.sessions.values()].find(session => session.metadata.codexSessionId === next)!;
+            await first.request('turn/start', { threadId: next, input: [{ type: 'text', text: 'CHECK_NEW_CUSTOM_CONTEXT', text_elements: [] }] });
+            await vi.waitFor(() => expect(nextSession.messages).toContainEqual(expect.objectContaining({ type: 'message', message: 'MOCK ANSWER' })), { timeout: 15_000 });
+            const newRequest = modelRequests.find(body => JSON.stringify(body.input).includes('CHECK_NEW_CUSTOM_CONTEXT'));
+            expect(JSON.stringify(newRequest).includes('New custom native instructions.')).toBe(true);
+            expect(JSON.stringify(newRequest).includes(getEvolvedOperatingContext().split('\n')[0])).toBe(true);
             expect(web.metadata.codexSessionId).toBe(initial);
             expect(process.env.HAPI_SESSION_ID).toBe('parent-must-not-leak');
             await first.request('thread/archive', { threadId: next }); roots = [initial];
             await vi.waitFor(() => expect(nextSession.dead).toBe(true)); expect(web.dead).toBe(false);
+            await first.request('thread/settings/update', { threadId: initial, collaborationMode: {
+                mode: 'default', settings: { model: 'mock-model', reasoning_effort: null, developer_instructions: null }
+            } });
             await second.request('turn/start', { threadId: initial, model: 'second-mock', input: [{ type: 'text', text: 'HELLO FROM TERMINAL', text_elements: [] }], clientUserMessageId: 'native-1' });
             await vi.waitFor(() => expect(web.messages).toContainEqual({ user: 'HELLO FROM TERMINAL' }), { timeout: 15_000 });
             await vi.waitFor(() => {
@@ -164,6 +190,14 @@ describe.skipIf(process.env.HAPI_RUN_SHARED_CODEX_TESTS !== '1')('installed Code
                 expect(usageModels).toContain('mock-model');
                 expect(usageModels).toContain('second-mock');
             }, { timeout: 15_000 });
+            await second.request('turn/start', { threadId: initial, input: [{ type: 'text', text: 'SPAWN_ISOLATED_CHILD', text_elements: [] }] });
+            await vi.waitFor(() => {
+                const last = modelRequests.at(-1);
+                const outputs = Array.isArray(last?.input) ? last.input.map(record).filter(item => item.type === 'function_call_output').map(item => item.output) : [];
+                const names = Array.isArray(last?.tools) ? last.tools.map(record).map(tool => ({ name: tool.name, tools: Array.isArray(tool.tools) ? tool.tools.map(record).map(tool => tool.name) : undefined })) : [];
+                expect(childRequests.length, JSON.stringify({ outputs, names }).slice(0, 3500)).toBeGreaterThan(0);
+            }, { timeout: 15_000 });
+            expect(JSON.stringify(childRequests[0]).includes(getEvolvedOperatingContext().split('\n')[0])).toBe(true);
             await first.disconnect(); expect(web.dead).toBe(false);
             await second.request('thread/archive', { threadId: initial }); roots = [];
             await running;

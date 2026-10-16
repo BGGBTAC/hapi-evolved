@@ -1,4 +1,5 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { getEvolvedOperatingContext } from '@/evolved/operatingContext';
 import { createServer, type Server } from 'node:http';
 import {
     detectHookEventName,
@@ -23,10 +24,47 @@ describe('detectHookEventName', () => {
 let server: Server | null = null;
 
 afterEach(async () => {
+    vi.unstubAllEnvs();
     if (server) {
         await new Promise<void>((r) => server!.close(() => r()));
         server = null;
     }
+});
+
+describe('Evolved operating context hooks', () => {
+    it.each(['startup', 'resume', 'compact', 'clear'])('refreshes context after SessionStart %s despite an unavailable observer', async source => {
+        vi.stubEnv('HAPI_EVOLVED_PROXY', '1');
+        const port = await startStub(() => ({ status: 503, body: 'unavailable' }));
+        const previousExitCode = process.exitCode;
+        process.exitCode = undefined;
+        const out = captureStdout();
+        try {
+            await withStdin(JSON.stringify({ hook_event_name: 'SessionStart', source, session_id: 's-1' }),
+                () => runSessionHookForwarder(['--port', String(port), '--token', 'tok']));
+            expect(process.exitCode).toBeUndefined();
+        } finally {
+            out.restore();
+            process.exitCode = previousExitCode;
+        }
+        expect(JSON.parse(out.get())).toEqual({
+            hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: getEvolvedOperatingContext() }
+        });
+    });
+
+    it('provides context to a native child without forwarding it as a root session', async () => {
+        vi.stubEnv('HAPI_EVOLVED_PROXY', '1');
+        const observer = vi.fn(() => ({ status: 200, body: '{}' }));
+        const port = await startStub(observer);
+        const out = captureStdout();
+        try {
+            await withStdin(JSON.stringify({ hook_event_name: 'SubagentStart', agent_id: 'child' }),
+                () => runSessionHookForwarder(['--port', String(port), '--token', 'tok']));
+        } finally { out.restore(); }
+        expect(observer).not.toHaveBeenCalled();
+        expect(JSON.parse(out.get())).toEqual({
+            hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: getEvolvedOperatingContext() }
+        });
+    });
 });
 
 function startStub(handler: (path: string, body: string) => { status: number; body: string }): Promise<number> {

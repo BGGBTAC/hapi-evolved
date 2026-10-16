@@ -15,6 +15,7 @@ import { githubPrEnabled, registerGithubPrTool } from '@/modules/githubPr';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerEvolvedTools } from '@/evolved/mcp';
 import { evolvedClientFromEnvironment } from '@/evolved/client';
+import { getEvolvedOperatingContext } from '@/evolved/operatingContext';
 import { initializePeerToolsPolicy, isEvolvedPeerMode, peerScopeAllowed } from '@/modules/pingPeer/evolvedPeer';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -87,7 +88,7 @@ export async function runHappyMcpStdioBridge(argv: string[]): Promise<void> {
     const server = new McpServer({
       name: 'HAPI MCP Bridge',
       version: '1.0.0',
-    });
+    }, { instructions: getEvolvedOperatingContext() || undefined });
     if (process.env.HAPI_EVOLVED_CAPABILITY_FILE || process.env.HAPI_EVOLVED_PROXY === '1') registerEvolvedTools(server, evolvedClientFromEnvironment());
 
     // Register tools and forward to HTTP MCP

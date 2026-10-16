@@ -1,5 +1,6 @@
 import { request } from 'node:http';
 import { LocalPermissionDecisionSchema } from './localPermissionProtocol';
+import { getEvolvedOperatingContext } from '@/evolved/operatingContext';
 
 export const SESSION_HOOK_FORWARD_TIMEOUT_MS = 1_000;
 
@@ -347,7 +348,8 @@ export async function runSessionHookForwarder(args: string[]): Promise<void> {
             return;
         }
 
-        if (detectHookEventName(body) === 'PermissionRequest') {
+        const hookEventName = detectHookEventName(body);
+        if (hookEventName === 'PermissionRequest') {
             const response = await postHook(port, token, '/hook/permission-request', body);
             // The local dialog is the fallback. A missing/expired bridge must
             // neither auto-approve nor reject a tool on the user's behalf.
@@ -369,12 +371,26 @@ export async function runSessionHookForwarder(args: string[]): Promise<void> {
         // PreToolUse is observation-only for Claude. In particular, mode
         // tracking must not emit an `allow` that bypasses the native prompt.
 
+        // This static context does not depend on a healthy hub, graph service,
+        // or capability-file reads. SubagentStart is not a root session event.
+        const operatingContext = hookEventName === 'SessionStart' || hookEventName === 'SubagentStart'
+            ? getEvolvedOperatingContext()
+            : '';
+        if (operatingContext) {
+            process.stdout.write(JSON.stringify({
+                hookSpecificOutput: { hookEventName, additionalContext: operatingContext }
+            }));
+        }
+        if (hookEventName === 'SubagentStart') return;
+
         const response = await postHook(port, token, '/hook/session-start', body, SESSION_HOOK_FORWARD_TIMEOUT_MS);
         if (response.error || (response.statusCode && response.statusCode >= 400)) {
             if (response.statusCode && response.statusCode >= 400) {
                 logError(`Hook server responded with status ${response.statusCode}`);
             }
-            process.exitCode = 1;
+            // Keep the independently available context visible to Claude even
+            // when its lifecycle observer is temporarily unreachable.
+            if (!operatingContext) process.exitCode = 1;
         }
     } catch (error) {
         logError('Failed to forward session hook', error);

@@ -7,6 +7,7 @@ import { githubPrEnabled, registerGithubPrTool } from '@/modules/githubPr';
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerEvolvedTools, EVOLVED_TOOL_NAMES } from '@/evolved/mcp';
 import { evolvedClientFromEnvironment } from '@/evolved/client';
+import { getEvolvedOperatingContext } from '@/evolved/operatingContext';
 import { createServer, type IncomingMessage } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { AddressInfo } from "node:net";
@@ -100,7 +101,7 @@ function createHapiMcpServer(
     const mcp = new McpServer({
         name: "HAPI MCP",
         version: "1.0.0",
-    });
+    }, { instructions: mediaOnly ? undefined : getEvolvedOperatingContext() || undefined });
     if (!mediaOnly && (process.env.HAPI_EVOLVED_CAPABILITY_FILE || process.env.HAPI_EVOLVED_PROXY === '1')) registerEvolvedTools(mcp, evolvedClientFromEnvironment());
     if (!mediaOnly && prEnabled) registerGithubPrTool(mcp, client.sessionId);
 

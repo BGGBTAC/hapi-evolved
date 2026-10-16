@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ApiSessionClient } from '@/api/apiSession'
 import { startHappyServer, toClaudeAllowedHapiMcpTools } from './startHappyServer'
+import { getEvolvedOperatingContext } from '@/evolved/operatingContext'
 
 type ToolResult = {
     content?: Array<{ type: string; text?: string }>
@@ -106,6 +107,7 @@ describe('startHappyServer skill_lookup', () => {
     it('does not expose the fallback tool to native-skill sessions', async () => {
         const mcp = await connect(false)
         const tools = await mcp.listTools()
+        expect(mcp.getInstructions()).toBeUndefined()
 
         expect(tools.tools.map((tool) => tool.name)).toEqual([
             'change_title',
@@ -345,6 +347,36 @@ it('mediaOnly exposes exactly display tools and performs no feature discovery', 
         expect(discoveryCalls).toBe(0)
         expect(server.toolNames).toEqual(['display_image', 'display_video', 'display_media'])
         await client.connect(new StreamableHTTPClientTransport(new URL(server.url)))
+        expect(client.getInstructions()).toBeUndefined()
         expect((await client.listTools()).tools.map(tool => tool.name)).toEqual(server.toolNames)
     } finally { await client.close(); server.stop(); fetcher.mockRestore(); vi.unstubAllEnvs() }
+})
+
+it('publishes the same operating context on every scoped MCP connection', async () => {
+    vi.stubEnv('HAPI_EVOLVED_PROXY', '1')
+    vi.stubEnv('EVOLVED_PROJECT_ID', 'context-test')
+    vi.stubEnv('HAPI_EVOLVED_URL', 'http://127.0.0.1:1')
+    vi.stubEnv('HAPI_PEER_TOOLS', '')
+    vi.stubEnv('HAPI_PEER_SCOPES', '')
+    // Feature-policy discovery is deliberately offline; context is static and
+    // must still be available without a healthy graph, Hub or credential read.
+    const policy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
+    const session = { updateMetadata: vi.fn() } as unknown as ApiSessionClient
+    let server: Awaited<ReturnType<typeof startHappyServer>> | undefined
+    try {
+        server = await startHappyServer(session)
+        policy.mockRestore()
+        for (let attempt = 0; attempt < 2; attempt++) {
+            const client = new Client({ name: 'operating-context-test', version: '1' }, { capabilities: {} })
+            try {
+                await client.connect(new StreamableHTTPClientTransport(new URL(server.url)))
+                expect(client.getInstructions()).toBe(getEvolvedOperatingContext())
+                expect(client.getInstructions()).toContain('evolved_memory_propose')
+            } finally { await client.close() }
+        }
+    } finally {
+        server?.stop()
+        policy.mockRestore()
+        vi.unstubAllEnvs()
+    }
 })
