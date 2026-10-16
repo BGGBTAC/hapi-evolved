@@ -1,12 +1,14 @@
 import { accessSync, constants, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { EvolvedVault, createVaultSigningKey } from '../../hub/src/evolved/vault.ts'
 import { createVaultServer } from '../../hub/src/evolved/vaultServer.ts'
 import { startHub } from '../../hub/src/startHub.ts'
-const tmp = process.env.EVOLVED_TEST_STATE!
-if (!tmp || !/^\/tmp\/hapi-evolved-ui-[A-Za-z0-9-]+$/.test(tmp)) throw new Error('Synthetic test state required')
+const requestedState = process.env.EVOLVED_TEST_STATE
+if (!requestedState || !/^\/tmp\/hapi-evolved-ui-[A-Za-z0-9-]+$/.test(requestedState)) throw new Error('Synthetic test state required')
+const tmp = join('/tmp', basename(requestedState))
+if (!tmp.startsWith('/tmp/hapi-evolved-ui-')) throw new Error('Synthetic test state required')
 if (process.env.EVOLVED_TEST_PLUGINS === '1') {
     // Only this isolated test entrypoint replaces external GitHub responses.
     // Product runtime and its PluginService always retain the ordinary fetcher.

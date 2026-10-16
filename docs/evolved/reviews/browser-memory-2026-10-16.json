@@ -125,11 +125,18 @@
       "unexpectedResponses": 0,
       "scope": "Real isolated Hub/Vault/WebAuthn and built browser; synthetic internal model catalog/configuration/binding service."
     },
-    "realNeo4jGraphiti": "passed with synthetic model transport"
+    "realNeo4jGraphiti": "passed with synthetic model transport",
+    "fixturePathRegression": {
+      "rejectedInvalidStarts": 3,
+      "browserChecks": 6,
+      "reportSha256": "66e51698e1a489306ee3c5227c2f8ac6cabd84aa1c3fbc66e18720d08e4b226a",
+      "inferenceRequests": 0
+    }
   },
   "postModelReviewDeltas": [
     "Python N1 exact-binding check moved before active/indeterminate check within the same existing lock; regression compares the entire ledger before/after.",
-    "Browser harness respects the real rate window before reconnect; read-only review confirmed no product limit change."
+    "Browser harness respects the real rate window before reconnect; read-only review confirmed no product limit change.",
+    "Browser fixture constructs its temporary path from a fixed root and validated basename, then checks the normalized prefix. Three traversal/subpath starts rejected before initialization; browser regression passed again. Product runtime unchanged."
   ],
   "limits": [
     "No arbitrary model inference or Graphiti compatibility is inferred from the provider catalog or connection test.",
@@ -146,7 +153,7 @@
     "services/memory/test_runtime_configuration.py": "d3e8d0bc38e0a01baddbe13f63e31a4e145b5edb36f2dbb38cc6f3c1c8595141",
     "web/src/evolved/MemoryProvider.tsx": "862e0b491048ba618be894d4c929d5e61561d0521c0f67917183530ea455f57e",
     "web/src/evolved/MemoryProvider.test.tsx": "e1693ce3150192c8ba79aa03932b44d8831ef7a57e07088676347525e7d69776",
-    "web/scripts/evolved-browser-hub.ts": "2f8c4d1387420d526638273397bde6b970654114eae9c667461599dbf92e2486",
+    "web/scripts/evolved-browser-hub.ts": "849fcdddb3771091f48ab631556098cfe9f9b3547329eee1480287c43ef918ff",
     "web/scripts/evolved-memory-check.mjs": "95e7117bb7aec2b36ccbfb50c31ffe22b3b02204ad41004c1e9f944dcb2257ef",
     "services/memory/validate_stack.py": "8d86d279a6c4648ea53e80b48957ee9acce01e181bcc97d61510b700795ae4a2"
   }
