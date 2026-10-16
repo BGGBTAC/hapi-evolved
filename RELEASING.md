@@ -1,6 +1,8 @@
 # Preparing and publishing HAPI-eVolved
 
-The first distribution is a **source preview**, version 0.1.0. No npm package,
+The first distribution is a **source preview**, version 0.1.0, published as
+[`v0.1.0-preview.1`](https://github.com/BGGBTAC/hapi-evolved/releases/tag/v0.1.0-preview.1).
+The release tag is distinct from the source version in the manifest. No npm package,
 official container registry, hosted service or app-store release is implied.
 The root and CLI packages remain private to prevent accidental npm publication.
 Repository visibility and a versioned release are separate actions. Making the
@@ -125,7 +127,10 @@ The source repository must be accessible to those users. See the retained
 [AGPL license, section 13](LICENSE) and the
 [GNU AGPL FAQ](https://www.gnu.org/licenses/gpl-faq.en.html#AGPLv3CorrespondingSource).
 
-After publication, verify anonymous access to source/downloads and checksum
-verification, confirm the private report channel, and test installation from the
-published artifact on a clean machine. Update CHANGELOG with the actual release
-date and tag only once those exist.
+Before creating the immutable tag, test installation from the exact candidate
+archive in a clean, isolated environment. After publication, download all release
+assets anonymously and compare their bytes and checksums with that installed
+candidate. Confirm source access and the private report channel. An identical
+download does not require repeating the installation; changed bytes require
+investigation and a new candidate. Update CHANGELOG with the actual release date
+and tag only once those exist.
