@@ -203,3 +203,10 @@
     .ev-provider-card { padding: 18px; }
 }
 @media (prefers-reduced-motion: reduce) { .evolved * { transition: none !important; } }
+.ev-memory-steps { display: flex; flex-wrap: wrap; gap: .6rem 1.2rem; list-style: none; padding: 0; margin: 0 0 1.25rem; }
+.ev-memory-steps li { display: flex; align-items: center; gap: .45rem; color: var(--app-hint); font-size: .875rem; }
+.ev-memory-steps li > span { display: grid; place-items: center; width: 1.6rem; height: 1.6rem; border: 1px solid var(--ev-line); border-radius: 50%; font-size: .75rem; }
+.ev-memory-steps li[data-complete="true"] { color: var(--ev-accent); }
+.ev-memory-steps li[data-complete="true"] > span { background: var(--ev-accent-soft); border-color: var(--ev-accent); }
+.ev-memory-disconnect { margin-top: .75rem; }
+#memory-provider, #memory-budget { scroll-margin-top: 5rem; }

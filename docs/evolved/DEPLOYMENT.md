@@ -141,10 +141,14 @@ Idempotenz-ID; unklare Ergebnisse werden nicht automatisch erneut ausgeführt.
 ## Persistentes Memory und Codegraph
 
 Lokale Quellen, Vorschläge, Verifikation und Volltextsuche funktionieren ohne Cloudkonfiguration.
-Graphiti und Neo4j bilden den zusätzlichen Wissensgraphen. Der Wissensdienst bleibt zunächst pausiert.
-Der Betreiber hinterlegt einen eigenen Provider-Key in `credentials/memory/provider.key`, setzt
-die Modell-/Embeddingnamen und deren tatsächlich gültige Preise in `compose.env` und startet den
-Memory-Dienst neu. Unterstützt wird zunächst der OpenAI-Endpunkt. Alle Variablen und Kostenregeln
+Graphiti und Neo4j bilden den zusätzlichen Wissensgraphen. Ein Projektadministrator richtet
+**Gedächtnis → Graph-Memory einrichten** im Browser ein: OpenAI-API-Key, live geladene Modelle,
+aktuelle Tokenpreise und Verbindungstest. Der Vault speichert den Key projektbezogen verschlüsselt;
+Konfiguration und Schlüsselwechsel werden ohne Neustart übernommen. Der Test nutzt nur den
+Modellkatalog und die Datenbank, keine kostenpflichtige Inferenz. Eine bestehende Betreiberkonfiguration
+über `credentials/memory/provider.key` und `compose.env` bleibt als Standard für noch nicht
+projektbezogen konfigurierte Projekte verwendbar. Explizites Entfernen der Projektverbindung sperrt
+diesen Rückfall. Unterstützt wird im Browser der feste OpenAI-Endpunkt. Alle Variablen und Kostenregeln
 stehen in [services/memory/README.md](https://github.com/BGGBTAC/hapi-evolved/blob/main/services/memory/README.md).
 Ein menschlicher Projektadmin aktiviert anschließend Cloudverarbeitung und Projektbudget im Browser.
 Ohne diese Freigabe entstehen keine Modellaufrufe. Preise müssen bei Anbieteränderungen gepflegt werden.

@@ -4,6 +4,40 @@ Dieser datierte Bericht belegt den damaligen Quellstand, nicht automatisch die
 aktuelle Veröffentlichung. Einstieg und heutiger Umfang: [Quickstart](QUICKSTART.md)
 und [Projekt](PROJECT.md).
 
+## Graph-Memory im Browser am 16.10.2026
+
+`feat/browser-memory-setup` ergänzt die projektbezogene Einrichtung unter
+**Gedächtnis → Graph-Memory einrichten**: verschlüsselter API-Key, live geladener
+Modellkatalog, Preise, Datenbank-/Katalogtest und nachvollziehbare Budgetfreigabe.
+Design und die Übernahme alter leerer Graphen wurden mit tatsächlichem Claude
+Opus 5.5 geprüft. Die abschließende Reviewdisposition gehört zum zugehörigen PR.
+
+Der vollständige lokale Paketlauf bestand 9.880 Tests. Nach den engen
+Reviewkorrekturen bestanden nochmals 1.893 Hub- und 3.970 Web-Tests sowie die
+betroffenen Typechecks; alle sieben Paket-Typechecks sind abgedeckt. Ein bestehender
+Benachrichtigungstest mit 20-ms-Abklingzeit schlug während paralleler CPU-Last fehl;
+die vollständige Hub-Wiederholung ohne konkurrierende Suites bestand. 13 bedingte
+CLI- und drei Hub-Integrationstests bleiben übersprungen.
+
+38 Python-Tests prüfen Konfigurationsisolierung, Schlüsselredaktion, positive
+Preise, Budget-/Receipt-Verhalten, echte SDK-Embeddingdimensionen und die dauerhafte
+Modellbindung gegen verspätete Aufträge. Die gesonderte Integration mit tatsächlichem
+Neo4j und Graphiti bestand; nur der Modelltransport wird dabei ersetzt.
+
+Der isolierte Browserlauf verwendet echten Hub, Vault und WebAuthn. Fünf Prüfgruppen
+decken Einrichtung, beliebige neue Katalog-IDs, Schlüsselwechsel, Projektwechsel,
+Entfernen und erneutes Verbinden ab. Ein zusätzlicher Komponententest stellt sicher,
+dass ein Verbindungstest keine vorhandene Hybridsuche erneut ausführt. Bei 1.440,
+390 und 320 Pixeln gab es keinen horizontalen Überlauf oder unerwartete Seitenfehler.
+Der interne Memory-Katalog-/Prüfdienst ist in diesem Browserlauf eine synthetische
+Fixture; Datenbank und SDK werden durch die getrennte Integration geprüft.
+
+Es wurden keine echten API-Keys verwendet und keine kostenpflichtigen Inferenzaufrufe
+ausgeführt. Der Modellkatalog und der Verbindungstest beweisen weder verfügbares
+API-Guthaben noch die Graphiti-Kompatibilität beliebiger Modelle. Bereits fehlgeschlagene
+Altaufträge werden durch das Speichern einer Konfiguration nicht automatisch wiederholt.
+Der tatsächliche Rollout samt Sicherung und Datenerhalt wird getrennt privat dokumentiert.
+
 ## Integrierter Projektablauf am 15.10.2026
 
 Der Ausbau auf `feat/integrated-project-workflow` verbindet Bereitschaftsprüfung,

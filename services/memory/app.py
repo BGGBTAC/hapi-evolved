@@ -9,7 +9,6 @@ import re
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlparse
 
 os.environ["GRAPHITI_TELEMETRY_ENABLED"] = "false"
 os.environ["DO_NOT_TRACK"] = "1"
@@ -17,6 +16,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from neo4j import AsyncGraphDatabase
 from budget import OperationLedger, OperationConflict, BudgetExceeded
+from configuration import EMBEDDING_DIMENSIONS, MODEL_ID, InvalidConfiguration, operator_config, provider_config
+from provider_catalog import list_models, CatalogUnavailable, ProviderUnauthorized
 
 logging.getLogger("graphiti_core").setLevel(logging.CRITICAL)
 logging.getLogger("httpx").setLevel(logging.CRITICAL)
@@ -34,6 +35,9 @@ ledger = OperationLedger(state_file)
 os.chmod(state_file, 0o600)
 driver = AsyncGraphDatabase.driver(os.environ.get("NEO4J_URI", "bolt://neo4j:7687"), auth=(os.environ.get("NEO4J_USER", "neo4j"), secret("NEO4J_PASSWORD")))
 locks = defaultdict(asyncio.Lock)
+# Admission starts before reading an operation body. A timed-out Hub request may
+# still be arriving here; an unknown project must conservatively block binding.
+operation_admissions = {}
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 def group_id(project, generation):
@@ -44,36 +48,28 @@ def validate_project(project):
         raise ValueError("Invalid project")
 
 def model_config():
-    base = os.environ.get("EVOLVED_MEMORY_API_BASE", "https://api.openai.com/v1")
-    parsed = urlparse(base)
-    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
-        raise ValueError("A configured HTTPS model endpoint is required")
-    required = ["EVOLVED_MEMORY_MODEL", "EVOLVED_MEMORY_EMBEDDING_MODEL", "EVOLVED_MEMORY_INPUT_USD_PER_MTOK", "EVOLVED_MEMORY_OUTPUT_USD_PER_MTOK", "EVOLVED_MEMORY_EMBEDDING_USD_PER_MTOK"]
-    if any(not os.environ.get(name) for name in required) or not secret("OPENAI_API_KEY"):
-        raise ValueError("Explicit model, key, and pricing configuration required")
-    return {"base": base, "host": parsed.hostname, "model": os.environ[required[0]], "embedding_model": os.environ[required[1]],
-            "input_rate": os.environ[required[2]], "output_rate": os.environ[required[3]], "embedding_rate": os.environ[required[4]],
-            "max_output_tokens": min(4096, max(256, int(os.environ.get("EVOLVED_MEMORY_MAX_OUTPUT_TOKENS", "2048"))))}
+    return operator_config(os.environ, secret)
 
-async def graph_client(operation):
+async def graph_client(operation, config=None):
     import httpx
     from openai import AsyncOpenAI
     from graphiti_core import Graphiti
     from graphiti_core.llm_client import OpenAIClient
     from graphiti_core.llm_client.config import LLMConfig
-    from graphiti_core.embedder.openai import OpenAIEmbedder, OpenAIEmbedderConfig
+    from graphiti_core.embedder.openai import OpenAIEmbedderConfig
     from graphiti_core.cross_encoder.openai_reranker_client import OpenAIRerankerClient
     from graphiti_core.driver.neo4j_driver import Neo4jDriver
     from transport import BudgetTransport
-    config = model_config()
-    http = httpx.AsyncClient(transport=BudgetTransport(ledger, operation, config), timeout=40)
-    client = AsyncOpenAI(api_key=secret("OPENAI_API_KEY"), base_url=config["base"], max_retries=0, http_client=http)
-    llm_config = LLMConfig(model=config["model"], small_model=config["model"], max_tokens=config["max_output_tokens"])
+    from embedding import ConfiguredOpenAIEmbedder
+    config = model_config() if config is None else config
+    http = httpx.AsyncClient(transport=BudgetTransport(ledger, operation, config.transport_config()), timeout=40, follow_redirects=False)
+    client = AsyncOpenAI(api_key=config.api_key, base_url=config.base, max_retries=0, http_client=http)
+    llm_config = LLMConfig(model=config.model, small_model=config.model, max_tokens=config.max_output_tokens)
     graph = Graphiti(
         graph_driver=Neo4jDriver(os.environ.get("NEO4J_URI", "bolt://neo4j:7687"), os.environ.get("NEO4J_USER", "neo4j"), secret("NEO4J_PASSWORD")),
         llm_client=OpenAIClient(config=llm_config, client=client),
         cross_encoder=OpenAIRerankerClient(config=llm_config, client=client),
-        embedder=OpenAIEmbedder(config=OpenAIEmbedderConfig(embedding_model=config["embedding_model"], embedding_dim=int(os.environ.get("EVOLVED_MEMORY_EMBEDDING_DIM", "1536"))), client=client),
+        embedder=ConfiguredOpenAIEmbedder(config=OpenAIEmbedderConfig(embedding_model=config.embedding_model, embedding_dim=config.embedding_dimensions), client=client),
         max_coroutines=2,
     )
     return graph, http
@@ -88,6 +84,10 @@ async def authorize(request: Request, call_next):
         return JSONResponse({"error": "Invalid request length"}, 400)
     if declared > 100_000:
         return JSONResponse({"error": "Request too large"}, 413)
+    admission = object() if request.url.path in ("/ingest", "/search") else None
+    if admission is not None:
+        operation_admissions[admission] = None
+        request.state.memory_admission = admission
     try:
         body = bytearray()
         async for chunk in request.stream():
@@ -98,6 +98,9 @@ async def authorize(request: Request, call_next):
         return await call_next(request)
     except Exception:
         return JSONResponse({"error": "Memory backend unavailable"}, 503)
+    finally:
+        if admission is not None:
+            operation_admissions.pop(admission, None)
 
 @app.get("/health")
 async def health():
@@ -107,6 +110,82 @@ async def health():
         return {"ok": True, "backend": "graphiti-0.30.2/neo4j"}
     except Exception:
         return JSONResponse({"error": "Memory model or database is not configured/available"}, 503)
+
+@app.post("/configuration/check")
+async def check_configuration(request: Request):
+    try:
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {"providerConfig"}:
+            raise InvalidConfiguration()
+        provider_config(data["providerConfig"])
+    except (ValueError, TypeError):
+        return JSONResponse({"error": "Invalid provider configuration"}, 400)
+    try:
+        await asyncio.wait_for(driver.verify_connectivity(), 2)
+        return {"ok": True, "backend": "graphiti-0.30.2/neo4j"}
+    except Exception:
+        return JSONResponse({"error": "Memory database unavailable"}, 503)
+
+@app.post("/configuration/models")
+async def configuration_models(request: Request):
+    try:
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {"apiKey"}:
+            raise InvalidConfiguration()
+        return {"models": await list_models(data["apiKey"])}
+    except (ValueError, TypeError):
+        return JSONResponse({"error": "Invalid provider configuration"}, 400)
+    except ProviderUnauthorized:
+        return JSONResponse({"error": "Model provider credentials were not accepted"}, 401)
+    except CatalogUnavailable:
+        return JSONResponse({"error": "Model catalog unavailable"}, 503)
+
+def active_project_operations(project):
+    return any(scope is None or scope == project for scope in operation_admissions.values()) or ledger.db.execute(
+        "SELECT 1 FROM operations WHERE project_id=? AND status IN ('running','indeterminate') LIMIT 1", (project,)).fetchone() is not None
+
+@app.post("/configuration/binding")
+async def check_binding(request: Request):
+    try:
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {"projectId", "embeddingModel", "embeddingDimensions"}:
+            raise ValueError()
+        project = data["projectId"]
+        validate_project(project)
+        model, dimensions = data["embeddingModel"], data["embeddingDimensions"]
+        if not isinstance(model, str) or not MODEL_ID.fullmatch(model) or type(dimensions) is not int or dimensions != EMBEDDING_DIMENSIONS:
+            raise ValueError()
+    except (ValueError, TypeError):
+        return JSONResponse({"error": "Invalid project"}, 400)
+    if locks[project].locked():
+        return {"empty": False}
+    async with locks[project]:
+        try:
+            if active_project_operations(project):
+                return {"empty": False}
+            # All generations, exact project prefix, including relationships whose
+            # endpoints alone would not prove this project's graph to be empty.
+            pattern = "^" + re.escape(f"hapi_{project.replace('-', '_')}_") + r"\d+$"
+            async def counts():
+                async with driver.session() as session:
+                    result = await session.run("""CALL { MATCH (n) WHERE n.group_id =~ $pattern RETURN count(n) AS nodes }
+                        CALL { MATCH ()-[r]->() WHERE r.group_id =~ $pattern RETURN count(r) AS relationships }
+                        RETURN nodes, relationships""", pattern=pattern)
+                    row = await result.single()
+                    if row is None or type(row["nodes"]) is not int or type(row["relationships"]) is not int:
+                        raise ValueError()
+                    return row["nodes"] == 0 and row["relationships"] == 0
+            graph_empty = await asyncio.wait_for(counts(), 2)
+            # Requests admitted while the DB read awaited are still pending behind
+            # our lock. They also invalidate the proof; never let one slip past it.
+            if not graph_empty or active_project_operations(project):
+                return {"empty": False}
+            # Seal the proof before returning. A pre-change request that reaches
+            # ASGI only later must pass this durable binding before graph work.
+            ledger.bind(project, model, dimensions)
+            return {"empty": True}
+        except Exception:
+            return JSONResponse({"error": "Memory graph binding could not be verified"}, 503)
 
 @app.post("/reset")
 async def reset(request: Request):
@@ -140,33 +219,63 @@ async def receipt(request: Request):
 
 async def execute(request: Request, kind: str):
     data = await request.json()
+    if not isinstance(data, dict):
+        return JSONResponse({"error": "Invalid operation"}, 400)
     if kind == "search":
         projects = data.get("projects", [])
         # One authorized project per request: no implicit global search or post-filtering.
-        if len(projects) != 1:
+        if not isinstance(projects, list) or len(projects) != 1 or not isinstance(projects[0], dict):
             return JSONResponse({"error": "Exactly one explicit project scope required"}, 400)
         project = projects[0].get("projectId"); generation = projects[0].get("generation")
     else:
         project = data.get("projectId"); generation = data.get("generation")
-    validate_project(project)
+    try:
+        validate_project(project)
+    except ValueError:
+        return JSONResponse({"error": "Invalid project"}, 400)
+    admission = getattr(request.state, "memory_admission", None)
+    if admission in operation_admissions:
+        operation_admissions[admission] = project
     operation = data.get("operationId"); budget = data.get("budgetMicros")
-    if not isinstance(operation, str) or not re.fullmatch(r"[A-Za-z0-9-]{1,80}", operation) or not isinstance(budget, int) or not 0 < budget <= 1_000_000_000 or not isinstance(generation, int) or generation < 0:
+    if not isinstance(operation, str) or not re.fullmatch(r"[A-Za-z0-9-]{1,80}", operation) or type(budget) is not int or not 0 < budget <= 1_000_000_000 or type(generation) is not int or generation < 0:
         return JSONResponse({"error": "Invalid operation"}, 400)
+    has_provider_config = "providerConfig" in data
+    supplied_config = data.pop("providerConfig", None)
+    # Operation identity remains the original authorized input. Credential/model
+    # rotation must not hide an existing receipt or cause an ambiguous paid retry.
     fingerprint = hashlib.sha256(json.dumps({**data, "kind": kind}, sort_keys=True).encode()).hexdigest()
     async with locks[project]:
         if generation != ledger.generation(project):
             return JSONResponse({"error": "Stale graph generation", "spentMicros": 0}, 409)
         try:
-            existing = ledger.begin(operation, project, generation, fingerprint, budget)
+            existing = ledger.existing(operation, project, generation, fingerprint, budget)
         except OperationConflict:
             return JSONResponse({"error": "Operation conflict"}, 409)
         if existing:
             result = json.loads(existing["result"]) if existing["result"] else {"error": "Operation indeterminate or purged"}
             return JSONResponse({**result, "spentMicros": existing["spent"]}, 200 if existing["status"] == "complete" else 409)
+        try:
+            # Copy once, before any operation work. Never change global environment or
+            # include configuration/credentials in the durable idempotency identity.
+            config = provider_config(supplied_config) if has_provider_config else model_config()
+        except (ValueError, OSError):
+            return JSONResponse({"error": "Invalid provider configuration" if has_provider_config else "Memory model configuration unavailable"}, 400 if has_provider_config else 503)
+        binding = ledger.binding(project)
+        if binding is not None and binding != (config.embedding_model, config.embedding_dimensions):
+            result = {"error": "Embedding configuration does not match project binding"}
+            try:
+                ledger.reject(operation, project, generation, fingerprint, budget, result)
+            except OperationConflict:
+                return JSONResponse({"error": "Operation conflict"}, 409)
+            return JSONResponse({**result, "spentMicros": 0}, 422)
+        try:
+            ledger.begin(operation, project, generation, fingerprint, budget)
+        except OperationConflict:
+            return JSONResponse({"error": "Operation conflict"}, 409)
         graph = None; http = None
         success = False
         try:
-            graph, http = await graph_client(operation)
+            graph, http = await graph_client(operation, config)
             await graph.build_indices_and_constraints()
             scope = group_id(project, generation)
             if kind == "ingest":

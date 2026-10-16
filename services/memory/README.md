@@ -15,6 +15,47 @@ bleibt die lokale Ledger-Suche verfügbar; hybride Suche meldet den fehlenden Di
 
 ## Konfiguration
 
+Der normale Einrichtungsweg ist **Projekt → Gedächtnis → Graph-Memory einrichten**.
+Ein menschlicher Projektadministrator hinterlegt einen OpenAI-API-Key, lädt den
+aktuellen Modellkatalog und speichert Sprachmodell, Embedding-Modell und Preise.
+Die Verwaltung verlangt eine frische Passkey-Bestätigung. Der Key liegt verschlüsselt
+in einer eigenen Tabelle des Projekt-Vaults und ist weder über die generische
+Secretverwaltung noch über Agentenwerkzeuge abrufbar. Im Browser bleibt er nur bis
+zum Absenden beziehungsweise Verlassen des Projektkontexts im Formular.
+
+Der Hub gibt die aufgelöste Konfiguration intern für `/ingest` und `/search`
+als unveränderlichen Snapshot sowie für die Einrichtungsprüfung weiter. Der Python-Dienst schreibt Schlüssel und Preise weder in
+Umgebungsvariablen noch in Operationsbelege oder Idempotenz-Fingerprints.
+Wiederholungen einer bereits angenommenen Operations-ID behalten ihr ursprüngliches
+Ergebnis auch nach einem Schlüsselwechsel. `/receipt` und `/reset` benötigen keinen
+Provider-Key. Ein Projektwechsel kann keine Schlüssel eines anderen Projekts übernehmen.
+
+Der interne Endpunkt `/configuration/models` fragt ausschließlich
+`https://api.openai.com/v1/models` ab, ohne Redirects, mit Zeit-/Größenlimits.
+`/configuration/check` validiert die übergebene Konfiguration und prüft Neo4j;
+beide verwenden das interne Dienst-Token. Der Browser-Verbindungstest kombiniert
+diese Prüfungen, ohne kostenpflichtige Modellaufrufe. Modelllisten liefern weder
+Preise noch einen Nachweis der Graphiti-Kompatibilität. Nötig sind strukturierte
+Textausgaben, Chat-Completions-Logprobs und 1536-dimensionale Embeddings.
+
+Projektkonfiguration hat Vorrang vor den unten beschriebenen Betreiberwerten.
+Explizites Entfernen hinterlässt eine versionierte Sperre gegen den Rückfall auf
+globale Credentials. Ein bestehendes Embeddingprofil bleibt bei Graphdaten gebunden;
+die Einrichtung führt keine automatische Neuindizierung durch. Cloud-Freigabe und
+positive Monats-/Auftragsbudgets bleiben zusätzliche Voraussetzungen.
+
+Alte Installationen können fehlgeschlagene Indexaufträge ohne jemals erzeugte
+Graphdaten enthalten. Bei unbekannter früherer Modellbindung prüft der interne
+Endpunkt `/configuration/binding` alle Projektgenerationen und aktive beziehungsweise
+unklare Aufträge. Nur bei nachgewiesen leerem Graph schreibt er unter Projektsperre
+eine dauerhafte Bindung an das gewählte Embedding-Modell und seine Dimensionen.
+Verspätete Anfragen mit abweichendem Modell dürfen danach keine Graphdaten erzeugen;
+vorhandene Operationsbelege bleiben unverändert abrufbar. Unsichere Zustände verweigern
+die Übernahme. Der Speichervorgang löscht keine Daten, gibt keine alten Reservierungen
+frei und wiederholt keine bereits fehlgeschlagenen Indexaufträge automatisch.
+
+### Betreiberwerte und vorhandene Installationen
+
 | Variable | Bedeutung |
 |---|---|
 | `EVOLVED_SERVICE_TOKEN_FILE` | Internes Hub/Dienst-Token; mindestens 32 Zeichen |
@@ -34,7 +75,9 @@ bleibt die lokale Ledger-Suche verfügbar; hybride Suche meldet den fehlenden Di
 
 Für die drei Zugangsdaten funktioniert alternativ die gleichnamige Umgebungsvariable ohne `_FILE`.
 Dateivarianten vermeiden Zugangsdaten in Compose-Konfiguration und Prozessargumenten.
-Modellnamen und Preise haben absichtlich keine impliziten Vorgaben. Graphiti-Telemetrie ist deaktiviert.
+Modellnamen und Preise haben serverseitig keine impliziten Vorgaben. Die Browsermaske
+bietet nachvollziehbare Preisvorschläge für einzelne Modelle; aktuelle Preise muss
+der Projektadministrator prüfen. Graphiti-Telemetrie ist deaktiviert.
 Cloudverarbeitung muss anschließend ein menschlicher Projektadmin im Hub mit Monats- und Operationsbudget aktivieren.
 
 ## Kosten, Quellen und Löschung

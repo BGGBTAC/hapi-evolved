@@ -35,11 +35,17 @@ async def main():
         adapter = importlib.import_module('app')
         original = adapter.graph_client
         provider_calls = []
+        browser = {'provider': 'openai', 'apiKey': 'synthetic-browser-key-never-sent',
+            'model': 'synthetic-model', 'embeddingModel': 'text-embedding-3-small', 'embeddingDimensions': 1536,
+            'inputUsdPerMTok': '1', 'outputUsdPerMTok': '2', 'embeddingUsdPerMTok': '0.1', 'maxOutputTokens': 2048}
         async def mock_provider(request):
             data = json.loads(request.content)
             provider_calls.append(request.url.path)
-            assert request.url.host == 'provider.invalid'
+            assert request.url.host in ('provider.invalid', 'api.openai.com')
+            if request.url.host == 'api.openai.com':
+                assert request.headers['authorization'] == 'Bearer ' + browser['apiKey']
             if request.url.path.endswith('/embeddings'):
+                if request.url.host == 'api.openai.com': assert data['dimensions'] == 1536
                 inputs = data['input'] if isinstance(data['input'], list) else [data['input']]
                 return httpx.Response(200, json={'object': 'list', 'model': data['model'],
                     'data': [{'object': 'embedding', 'index': i, 'embedding': [1.0] + [0.0] * 1535} for i in range(len(inputs))],
@@ -52,8 +58,8 @@ async def main():
                 'status': 'completed', 'model': data['model'], 'output': [{'id': 'msg_test', 'type': 'message',
                     'role': 'assistant', 'status': 'completed', 'content': [{'type': 'output_text', 'text': output, 'annotations': []}]}],
                 'usage': {'input_tokens': 100, 'output_tokens': 10, 'total_tokens': 110}})
-        async def test_graph_client(operation):
-            graph, http = await original(operation)
+        async def test_graph_client(operation, config=None):
+            graph, http = await original(operation, config)
             await http._transport.inner.aclose()
             http._transport.inner = httpx.MockTransport(mock_provider)
             assert graph.llm_client.client is graph.cross_encoder.client is graph.embedder.client
@@ -77,10 +83,17 @@ async def main():
                 async with adapter.driver.session() as session:
                     result = await session.run('MATCH (n:Episodic {uuid:$id,group_id:$scope}) RETURN n.uuid AS id', id=memory_id, scope=scope)
                     assert (await result.single())['id'] == memory_id
-                searched = await client.post('/search', json={'projects': [{'projectId': project, 'generation': 0}],
-                    'query': 'Synthetic', 'operationId': str(uuid4()), 'budgetMicros': 1_000_000, 'limit': 5})
+                search_payload = {'projects': [{'projectId': project, 'generation': 0}], 'providerConfig': browser,
+                    'query': 'Synthetic', 'operationId': str(uuid4()), 'budgetMicros': 1_000_000, 'limit': 5}
+                searched = await client.post('/search', json=search_payload)
                 assert searched.status_code == 200, searched.text
                 assert searched.json()['results'] == []
+                call_count = len(provider_calls)
+                rotated = await client.post('/search', json={**search_payload, 'providerConfig': {
+                    **browser, 'apiKey': 'rotated-key-never-sent', 'model': 'changed-model', 'inputUsdPerMTok': '3'}})
+                assert rotated.json() == searched.json() and len(provider_calls) == call_count
+                dump = '\n'.join(adapter.ledger.db.iterdump())
+                assert browser['apiKey'] not in dump and 'rotated-key-never-sent' not in dump
                 receipt = await client.post('/receipt', json={'operationId': payload['operationId']})
                 assert receipt.status_code == 200 and receipt.json()['final'] is True
                 assert receipt.json()['spentMicros'] == response.json()['spentMicros']
@@ -91,6 +104,7 @@ async def main():
                     assert (await result.single())['total'] == 0
                 assert '/v1/responses' in provider_calls and '/v1/embeddings' in provider_calls
                 print(json.dumps({'realSDK': 'graphiti-0.30.2', 'neo4j': 'passed', 'ingest': True, 'search': True,
+                    'operatorFallbackIngest': True, 'projectConfiguredSearch': True, 'rotationReceiptReplay': True,
                     'receipt': True, 'purge': True, 'paidCalls': 0, 'mockProviderRequests': len(provider_calls)}))
         finally:
             async with adapter.driver.session() as session:

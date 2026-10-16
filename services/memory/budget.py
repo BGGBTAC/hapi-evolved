@@ -33,19 +33,47 @@ class OperationLedger:
                 status TEXT NOT NULL, result TEXT
             );
             CREATE TABLE IF NOT EXISTS generations (project_id TEXT PRIMARY KEY, generation INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS embedding_bindings (
+                project_id TEXT PRIMARY KEY, embedding_model TEXT NOT NULL, dimensions INTEGER NOT NULL
+            );
         """)
         # Never repeat an uncertain paid request after process death.
         self.db.execute("UPDATE operations SET status='indeterminate',result=NULL WHERE status='running'")
 
-    def begin(self, operation: str, project: str, generation: int, fingerprint: str, budget: int):
+    def existing(self, operation: str, project: str, generation: int, fingerprint: str, budget: int):
         row = self.db.execute("SELECT * FROM operations WHERE id=?", (operation,)).fetchone()
         if row:
             if (row["project_id"], row["generation"], row["fingerprint"], row["budget"]) != (project, generation, fingerprint, budget):
                 raise OperationConflict("Operation identifier reused with different input")
             return dict(row)
+        return None
+
+    def begin(self, operation: str, project: str, generation: int, fingerprint: str, budget: int):
+        row = self.existing(operation, project, generation, fingerprint, budget)
+        if row:
+            return row
         self.db.execute("INSERT INTO operations(id,project_id,generation,fingerprint,budget,status) VALUES(?,?,?,?,?,'running')",
                         (operation, project, generation, fingerprint, budget))
         return None
+
+    def binding(self, project: str):
+        row = self.db.execute("SELECT embedding_model,dimensions FROM embedding_bindings WHERE project_id=?", (project,)).fetchone()
+        return (row[0], row[1]) if row else None
+
+    def bind(self, project: str, model: str, dimensions: int):
+        # The caller holds the project lock and has just proved every graph
+        # generation empty with no admitted or uncertain operation.
+        self.db.execute("""INSERT INTO embedding_bindings VALUES(?,?,?) ON CONFLICT(project_id)
+            DO UPDATE SET embedding_model=excluded.embedding_model,dimensions=excluded.dimensions""", (project, model, dimensions))
+
+    def reject(self, operation: str, project: str, generation: int, fingerprint: str, budget: int, result: dict):
+        # A late incompatible snapshot gets a durable zero-cost receipt without
+        # ever becoming a running operation or changing an existing receipt.
+        try:
+            self.db.execute("""INSERT INTO operations(id,project_id,generation,fingerprint,budget,status,result)
+                VALUES(?,?,?,?,?,'failed',?)""", (operation, project, generation, fingerprint, budget, json.dumps(result)))
+        except sqlite3.IntegrityError:
+            raise OperationConflict("Operation identifier reused") from None
 
     def charge(self, operation: str, maximum: int):
         # One statement is atomic even if model extraction schedules concurrent calls.

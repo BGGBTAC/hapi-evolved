@@ -68,7 +68,7 @@ export function createMemoryRoutes(options: { store: EvolvedStore; service?: Mem
     }
     app.get('/projects/:id/memory', async c => {
         const projectId = c.req.param('id'); authorized(c.get('principal'), projectId)
-        const available = await service.backend.available()
+        const available = await service.backend.available(projectId)
         await service.reconcileSources([projectId])
         await revalidate(c, [projectId])
         return c.json({ items: ledger.list(projectId), settings: ledger.settings(projectId), budget: ledger.budget(projectId), backend: { available } })
@@ -179,7 +179,7 @@ export function createMemoryRoutes(options: { store: EvolvedStore; service?: Mem
         const requested = c.req.query('projectId')
         const ids = requested ? [requested] : principal.capability ? [principal.capability.projectId] : principal.accessibleProjects.map(project => project.id)
         for (const id of ids) authorized(principal, id)
-        const backendAvailable = await service.backend.available()
+        const backendAvailable = (await Promise.all(ids.map(id => service.backend.available(id)))).every(Boolean)
         const useHybrid = c.req.query('mode') === 'hybrid'
         if (useHybrid && !backendAvailable) return c.json({ error: 'Memory graph service unavailable', backendAvailable: false }, 503)
         if (useHybrid) {

@@ -5,6 +5,7 @@ import { isAbsolute, relative, resolve, sep, extname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { MemoryError, MemoryLedger, memoryHash, type MemorySource } from './memoryStore'
 import { EvolvedStore, EvolvedError } from './store'
+import type { MemoryProviderOperation, MemoryProviderResolver } from './memoryProvider'
 
 function legacyExcludedMemoryPath(path: string): boolean {
     return path.split(/[\\/]/).some(part => /^(?:\.env(?:\..*)?|secrets?|credentials?|\.ssh|\.aws|\.gnupg|\.git|\.codegraph.*|node_modules)$/i.test(part))
@@ -63,21 +64,55 @@ export async function readMemorySource(root: string, path: string, policy: 'curr
 }
 
 export type MemoryBackend = {
-    available(): Promise<boolean>
-    request(path: string, payload: Record<string, unknown>): Promise<Record<string, unknown>>
+    available(projectId?: string): Promise<boolean>
+    prepare?(projectId: string): Promise<void>
+    request(path: string, payload: Record<string, unknown>, revalidate?: () => void | Promise<void>): Promise<Record<string, unknown>>
 }
 export class HttpMemoryBackend implements MemoryBackend {
-    constructor(private url?: string, private token?: string) {}
-    async available(): Promise<boolean> {
+    constructor(private url?: string, private token?: string, private provider?: MemoryProviderResolver, private using?: MemoryProviderOperation) {}
+    async prepare(projectId: string): Promise<void> {
+        // First setup must not manufacture an uncertain graph binding by reserving
+        // budget for a job whose provider/database is not configured yet.
+        if (!await this.available(projectId)) throw new MemoryError('Memory provider or database is not ready', 503)
+    }
+    async available(projectId?: string): Promise<boolean> {
         if (!this.url || !this.token) return false
-        try { const response = await fetch(`${this.url}/health`, { headers: { authorization: `Bearer ${this.token}` }, signal: AbortSignal.timeout(2000) }); return response.ok }
+        try {
+            const config = projectId && this.provider ? await this.provider(projectId) : undefined
+            if (config === null) return false
+            const response = await fetch(`${this.url}${config ? '/configuration/check' : '/health'}`, {
+                method: config ? 'POST' : 'GET', redirect: 'error',
+                headers: { authorization: `Bearer ${this.token}`, ...(config ? { 'content-type': 'application/json' } : {}) },
+                ...(config ? { body: JSON.stringify({ providerConfig: config }) } : {}), signal: AbortSignal.timeout(5000),
+            })
+            return response.ok
+        }
         catch { return false }
     }
-    async request(path: string, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+    async request(path: string, payload: Record<string, unknown>, revalidate?: () => void | Promise<void>): Promise<Record<string, unknown>> {
         if (!this.url || !this.token) throw new MemoryError('Memory graph service is not configured', 503)
+        if (this.provider && (path === '/ingest' || path === '/search')) {
+            const projects = payload.projects
+            const projectId = path === '/ingest' ? payload.projectId : Array.isArray(projects) && projects.length === 1 ? projects[0]?.projectId : undefined
+            if (typeof projectId !== 'string' || !projectId) throw new MemoryError('A single project is required for memory processing', 400)
+            const run = async () => {
+                const config = await this.provider!(projectId)
+                if (config === null) throw new MemoryError('Project memory provider is disabled', 503)
+                if (revalidate) await revalidate()
+                const { providerConfig: _untrusted, ...base } = payload
+                return this.send(path, { ...base, ...(config ? { providerConfig: config } : {}) })
+            }
+            return this.using ? this.using(projectId, run) : run()
+        }
+        // Reconciliation and deletion must not carry provider credentials or depend on key availability.
+        const { providerConfig: _untrusted, ...base } = payload
+        if (revalidate) await revalidate()
+        return this.send(path, base)
+    }
+    private async send(path: string, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
         let response: Response
         try {
-            response = await fetch(`${this.url}${path}`, { method: 'POST', headers: { authorization: `Bearer ${this.token}`, 'content-type': 'application/json' }, body: JSON.stringify(payload), signal: AbortSignal.timeout(120_000) })
+            response = await fetch(`${this.url}${path}`, { method: 'POST', redirect: 'error', headers: { authorization: `Bearer ${this.token}`, 'content-type': 'application/json' }, body: JSON.stringify(payload), signal: AbortSignal.timeout(120_000) })
         } catch { throw new MemoryError('Memory graph service unavailable; budget reservation retained for reconciliation', 503) }
         const result = await response.json().catch(() => ({})) as Record<string, unknown>
         // A definitive cost receipt can be reconciled even for an interrupted model operation.
@@ -110,11 +145,18 @@ export class MemoryService {
             const item = task.item_id ? this.ledger.get(task.project_id, task.item_id) : null
             if (!item) { this.ledger.complete(task); return true }
             for (const source of item.sources) this.store.requireProject(task.actor_id, source.projectId)
+            const revalidate = () => {
+                this.store.requireProject(task!.actor_id, task!.project_id, 'member')
+                for (const source of item.sources) this.store.requireProject(task!.actor_id, source.projectId)
+                const current = this.ledger.settings(task!.project_id)
+                if (!current.enabled || !current.cloudAllowed || current.generation !== task!.generation) throw new MemoryError('Memory processing permission or generation changed', 409)
+            }
+            if (!task.reservation_id && this.backend.prepare) { await this.backend.prepare(task.project_id); revalidate() }
             const reservationId = task.reservation_id ?? task.id
             const budgetMicros = this.ledger.reserve(task.project_id, reservationId)
             this.ledger.taskReservation(task.id, reservationId)
             const result = await this.backend.request('/ingest', { operationId: reservationId, projectId: task.project_id, generation: task.generation,
-                memoryId: item.id, title: item.title, body: item.body, sources: item.sources, referenceTime: new Date(item.createdAt).toISOString(), budgetMicros })
+                memoryId: item.id, title: item.title, body: item.body, sources: item.sources, referenceTime: new Date(item.createdAt).toISOString(), budgetMicros }, revalidate)
             if (typeof result.spentMicros !== 'number') throw new MemoryError('Missing memory cost receipt', 502)
             this.ledger.settle(reservationId, result.spentMicros)
             if (result.ok === false) {
@@ -224,7 +266,12 @@ export class MemoryService {
             if (!settings.enabled || !settings.cloudAllowed) continue
             const operationId = randomUUID()
             const budgetMicros = this.ledger.reserve(projectId, operationId)
-            const result = await this.backend.request('/search', { operationId, projects: [{ projectId, generation: settings.generation }], query, limit, budgetMicros })
+            const result = await this.backend.request('/search', { operationId, projects: [{ projectId, generation: settings.generation }], query, limit, budgetMicros }, async () => {
+                if (revalidate) await revalidate()
+                this.store.requireProject(actorId, projectId)
+                const current = this.ledger.settings(projectId)
+                if (!current.enabled || !current.cloudAllowed || current.generation !== settings.generation) throw new MemoryError('Memory processing permission or generation changed', 409)
+            })
             if (typeof result.spentMicros !== 'number') throw new MemoryError('Missing memory cost receipt', 502)
             this.ledger.settle(operationId, result.spentMicros)
             if (result.ok === false) throw new MemoryError('Memory search failed', 503)
