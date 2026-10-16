@@ -1,0 +1,21 @@
+title: "[Idea]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Which workflow would this improve?
+      description: Describe a concrete user problem without private project data.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: What would the user be able to do, and what alternatives have you tried?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and tradeoffs (optional)
+      description: Platform, permissions, costs or compatibility that the design should consider.

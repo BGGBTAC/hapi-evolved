@@ -34,7 +34,7 @@ const manifest = {
     // not claim that standalone invocation ran tests or validated a deployment.
     validation: {
         workflow: '.github/workflows/evolved-preview.yml',
-        precedingSteps: ['publication-policy', 'bun install --frozen-lockfile', 'bun typecheck', 'bun run build:web'],
+        precedingSteps: ['publication-policy', 'bun install --frozen-lockfile', 'bun typecheck', 'bun run build:web', 'node web/scripts/check-pwa-assets.mjs'],
         runUrl: process.env.GITHUB_ACTIONS === 'true'
             ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
             : null,

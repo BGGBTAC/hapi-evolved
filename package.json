@@ -50,7 +50,7 @@
         "evolved:cli": "bun cli/src/index.ts evolved",
         "typecheck:proxy": "cd services/runner-proxy && bun run typecheck",
         "test:proxy": "cd services/runner-proxy && bun test",
-        "test:deployment": "bun test deploy/evolved/check-runner.test.ts",
+        "test:deployment": "bun test deploy/evolved/check-runner.test.ts deploy/evolved/install.test.ts",
         "typecheck:runner-auth": "cd services/runner-auth && bun run typecheck",
         "typecheck:runner-control": "cd services/runner-control && bun run typecheck",
         "test:runner-auth": "cd services/runner-auth && bun test",
@@ -72,5 +72,14 @@
     "bugs": {
         "url": "https://github.com/BGGBTAC/hapi-evolved/issues"
     },
-    "homepage": "https://github.com/BGGBTAC/hapi-evolved#readme"
+    "homepage": "https://github.com/BGGBTAC/hapi-evolved#readme",
+    "overrides": {
+        "engine.io": "6.6.11",
+        "engine.io-client": "6.6.6",
+        "socket.io-adapter": "2.5.8",
+        "katex": "0.18.2",
+        "lodash-es": "4.18.1",
+        "mermaid": "11.16.1",
+        "dompurify": "3.4.17"
+    }
 }

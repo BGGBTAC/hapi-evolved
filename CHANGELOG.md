@@ -4,6 +4,19 @@ Changes specific to HAPI-eVolved are recorded here. Upstream history remains in
 Git. Source version numbers do not imply a published GitHub release, npm package
 or container image.
 
+## Unreleased
+
+- A fresh Linux core-installation assistant with read-only prerequisite/status
+  checks, private state, isolated images and explicit build/start steps. Managed
+  browser provider login remains a separate, documented host-control setup.
+- English installation and pilot guides, GitHub Discussion forms, contribution
+  entry points and an explicitly labelled synthetic UI walkthrough with desktop,
+  mobile and Codegraph screenshots.
+- Security updates for affected application and build dependencies; the release
+  notes will identify remaining tooling advisories and the exact tested revision.
+- Correct PWA cache revisions for stable KaTeX fonts, excluding the static-host
+  fallback that is copied after service-worker generation; final-asset CI checks.
+
 ## [0.1.0-preview.1](https://github.com/BGGBTAC/hapi-evolved/releases/tag/v0.1.0-preview.1) — 2026-10-16
 
 First published source preview, built from commit

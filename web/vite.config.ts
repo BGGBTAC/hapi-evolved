@@ -202,6 +202,12 @@ export default defineConfig({
             },
             injectManifest: {
                 globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+                // The build copies index.html over this static-host fallback
+                // after manifest generation. Precache index.html itself instead.
+                globIgnores: ['**/node_modules/**/*', '**/404.html'],
+                // Only Vite's hashed JS/CSS names are immutable. Copied KaTeX
+                // fonts keep stable names and need content-based revisions.
+                dontCacheBustURLsMatching: /^assets\/[^/]+-[A-Za-z0-9_-]{8}\.(?:js|css)$/,
                 // The SPA entry contains the complete multi-agent control surface.
                 // Keep it available offline after adding Pi history import instead
                 // of silently dropping the entry chunk from the PWA precache.

@@ -74,7 +74,21 @@ test('unauthenticated chunked payloads are rejected with bounded buffering', asy
     let chunks = 0
     const body = new ReadableStream<Uint8Array>({ pull(controller) { chunks++; controller.enqueue(new Uint8Array(256 * 1024)); if (chunks === 40) controller.close() } }, { highWaterMark: 0 })
     const request = new Request(`${t.origin}/api/evolved/peers/messages`, { method: 'POST', headers: { authorization: 'Bearer invalid' }, body })
-    expect((await t.app.request(request)).status).toBe(401)
+    // Hono validates chunked bodies before next(), even when the later handler
+    // would not read the body. The outer size boundary therefore wins over auth.
+    const response = await t.app.request(request)
+    expect(response.status).toBe(413)
+    expect((await response.json() as { code: string }).code).toBe('body_too_large')
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(chunks).toBeLessThanOrEqual(5)
+})
+
+test('a small chunked body still reaches authentication and cannot bypass it', async () => {
+    const t = setup()
+    const body = new ReadableStream<Uint8Array>({ pull(controller) {
+        controller.enqueue(new TextEncoder().encode('{}'))
+        controller.close()
+    } }, { highWaterMark: 0 })
+    const request = new Request(`${t.origin}/api/evolved/peers/messages`, { method: 'POST', headers: { authorization: 'Bearer invalid' }, body })
+    expect((await t.app.request(request)).status).toBe(401)
 })

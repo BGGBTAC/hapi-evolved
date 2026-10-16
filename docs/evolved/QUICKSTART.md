@@ -3,13 +3,15 @@
 An independent fork of [tiann/hapi](https://github.com/tiann/hapi), developed on its
 own roadmap for faster improvements to self-hosted coding-agent workflows.
 
-This starts a separate Linux preview installation. It does not migrate accounts,
+This starts a Linux preview on a **fresh, dedicated host**. The manual commands
+below use shared `hapi-evolved` Compose/image names: do not run them on a host
+that already has an Evolved stack or matching image tags. They do not migrate accounts,
 sessions or credentials from HAPI. Use source and Compose files from the same
-reviewed Evolved revision. The commands below use the published
-[v0.1.0-preview.1 source release](https://github.com/BGGBTAC/hapi-evolved/releases/tag/v0.1.0-preview.1).
-The release also provides `hapi-evolved-0.1.0-preview-72df6df86b9b.tar.gz`,
-`manifest.json`, `SHA256SUMS` and known limitations. The `main` branch contains
-ongoing development.
+reviewed Evolved revision. These commands target `v0.1.0-preview.2`. Verify that
+this tag appears as a published [source release](https://github.com/BGGBTAC/hapi-evolved/releases)
+with an archive, `manifest.json`, `SHA256SUMS` and validation notes before using it.
+The archive's exact filename and source SHA are recorded in its manifest.
+The `main` branch contains ongoing development and is not itself a release.
 
 ## Requirements
 
@@ -22,10 +24,28 @@ ongoing development.
 
 Host administrator and Docker access remain trusted.
 
+## Choose a setup path
+
+For browser-managed Claude/Codex login, follow the separate
+[English host-control guide](HOST_CONTROL.md) on a dedicated host. It explains
+the required protected source/state layout and initialization order. Core-only
+Compose setup does not install that privileged service. That guide targets the
+initializer shipped with this source tree; `v0.1.0-preview.1` additionally needs
+its frozen workspace dependencies installed before initialization. Use its
+[versioned deployment guide](https://github.com/BGGBTAC/hapi-evolved/blob/v0.1.0-preview.1/docs/evolved/DEPLOYMENT.md)
+when remaining on that first preview.
+
+Source revisions containing `deploy/evolved/install.ts` also provide a
+fresh local core-stack assistant, suitable for exploring the interface before
+setting up managed runners. See [the assistant guide](INSTALL_ASSISTANT.md).
+It uses separate images and network names and cannot be converted implicitly
+into the stock host-control layout. Choose the managed path from the start when
+you want browser-managed agents.
+
 ## Initialize private state
 
 ```sh
-git clone --branch v0.1.0-preview.1 --depth 1 https://github.com/BGGBTAC/hapi-evolved.git
+git clone --branch v0.1.0-preview.2 --depth 1 https://github.com/BGGBTAC/hapi-evolved.git
 cd hapi-evolved
 bun install --frozen-lockfile
 bun deploy/evolved/init.ts "$HOME/.local/share/hapi-evolved"
@@ -79,7 +99,7 @@ A local browser folder picker would not select a directory on the server.
 ## Connect a provider and start work
 
 For browser-managed runners, the operator must first install the
-[local control service](DEPLOYMENT.md#browser-anmeldung-und-verwaltete-projektdienste).
+[local control service](HOST_CONTROL.md).
 The Compose-only commands above do not install that privileged host service. Its
 bundled unit expects root-owned `/opt/hapi-evolved`, state under `/var/lib/hapi-evolved`
 and UID/GID1001; adapt the unit and protected paths for another layout. Do not point
@@ -107,7 +127,7 @@ Connecting GitHub or a coding subscription does not authorize cloud memory spend
 
 Local knowledge/search need no cloud provider. Extraction and hybrid search
 require a provider, current prices and an explicit project budget.
-See the [memory configuration](https://github.com/BGGBTAC/hapi-evolved/blob/v0.1.0-preview.1/services/memory/README.md).
+See the [memory configuration](https://github.com/BGGBTAC/hapi-evolved/blob/v0.1.0-preview.2/services/memory/README.md).
 
 Back up state and private keys together from a stopped, consistent stack.
 Without its master key the vault is unrecoverable. Follow the

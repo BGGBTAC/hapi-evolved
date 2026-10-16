@@ -1,5 +1,11 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Community questions
+    url: https://github.com/BGGBTAC/hapi-evolved/discussions/categories/q-a
+    about: Ask about installation and usage; reproducible bugs belong in the issue tracker.
+  - name: Pilot reports and workflows
+    url: https://github.com/BGGBTAC/hapi-evolved/discussions/categories/show-and-tell
+    about: Share an installation experience or a useful workflow, including things that did not work.
   - name: Security reporting policy
     url: https://github.com/BGGBTAC/hapi-evolved/security/policy
     about: Read this before reporting a suspected vulnerability. Private reporting depends on repository visibility and enablement; a safe fallback is documented.

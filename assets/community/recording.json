@@ -1,0 +1,102 @@
+{
+  "result": "PASS",
+  "recordedAt": "2026-10-16T11:58:20.049Z",
+  "baseCommit": "c36b0db60d3dc55047a9dca08b0c10b5d12b568a",
+  "sourceNote": "Recorded from the working tree; input hashes identify the exact fixture, dependency and build inputs. The base commit is not a release-validation claim.",
+  "viewports": {
+    "desktop": {
+      "width": 1440,
+      "height": 1000
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844
+    },
+    "deviceScaleFactor": 1
+  },
+  "provenance": "Scripted demo: real local Hub, Vault, WebAuthn, Git diff, Codegraph and Memory ledger. Synthetic GitHub/account/runner fixtures. No model calls, remote Git transfers, provider credentials or production services.",
+  "files": {
+    "desktop.png": {
+      "sha256": "2f5d967bdd7dbe2dfac9f4b39623b813b720c87fa14adc4103879231a8a66288",
+      "bytes": 138473
+    },
+    "mobile.png": {
+      "sha256": "39541d0138214703f5b6d884355bc566b7140b54e2c404e49d6a2f426aea8979",
+      "bytes": 59174
+    },
+    "codegraph.png": {
+      "sha256": "5177fbb6c9b68ed1731b4f72e13d8e79cdc4bbd55c7f07942069826a93f8d046",
+      "bytes": 116068
+    },
+    "walkthrough.webm": {
+      "sha256": "df6e680aa74877d63648725f283dc85a4a055c16cf2fac2c1cdb33f4b8fb906c",
+      "bytes": 6581300
+    }
+  },
+  "checks": [
+    "Real chat KaTeX display formula rendered without .katex-error",
+    "Real Git unstaged diff rendered; no remote clone or transfer",
+    "Real indexed Codegraph returned nodes for the selected source file",
+    "File stored as proposed; no verification or cloud processing enabled"
+  ],
+  "chapters": [
+    {
+      "title": "01 · One home for your project",
+      "seconds": 0.3
+    },
+    {
+      "title": "02 · An explicitly approved repository",
+      "seconds": 7.6
+    },
+    {
+      "title": "03 · Inspect the real local Git diff",
+      "seconds": 15.3
+    },
+    {
+      "title": "04 · Explore Codegraph impact hints",
+      "seconds": 26.1
+    },
+    {
+      "title": "05 · Prepare a scoped review — no agent started",
+      "seconds": 37
+    },
+    {
+      "title": "06 · Keep a source-linked knowledge proposal",
+      "seconds": 48.2
+    },
+    {
+      "title": "HAPI-eVolved · Independent HAPI fork · Source preview",
+      "seconds": 58.3
+    }
+  ],
+  "externalRequests": [],
+  "pageErrors": [],
+  "httpErrors": [
+    {
+      "path": "/api/evolved/projects/:synthetic-project/providers/claude/models/refresh",
+      "status": 503
+    }
+  ],
+  "runtime": {
+    "node": "v24.16.0",
+    "chromium": "153.0.8010.12"
+  },
+  "impact": {
+    "files": [
+      "src/math.ts"
+    ],
+    "nodes": 4,
+    "edges": 4
+  },
+  "videoSeconds": 76,
+  "limits": "No external provider, remote Git transfer, mobile-device hardware, user enrollment video, security certification or performance claim. Native model refresh is unavailable without a real provider/control service. Demo captions are an added presentation strip; all product status text is unchanged.",
+  "inputs": {
+    "scripts/community/record-demo.mjs": "054ab432ec9e5b96b47a94056c456d1275607efe996c020c1b692c3281cc4713",
+    "scripts/community/seed-math.ts": "33cdebd8a278ec4937b84cc9569a3ea67b3f459dabd70f0ff6f59631a87d2012",
+    "web/scripts/evolved-browser-hub.ts": "416b7d233c772597e5d20db59ab353d1bc7e64ee256b5793a192a431d2fb3e52",
+    "web/scripts/evolved-workflow-fixture.ts": "39d2f8302031de4d51e0b2d2de0ae931a31b7b43b6c69f850f878b1ed56ff7d0",
+    "bun.lock": "39f08289fd6f4a14a5467ad97bf82467d9abaf5ae7439d6f55c4f0a5d22e50db",
+    "services/codegraph/package-lock.json": "2bb310cdc427e0966b54798de67d9b2df67f1fb9abebb23db5ce835bb6f4a38d",
+    "web/dist/index.html": "d687533531da931820de0ea8aed5db0b71796cc17fb9b07ef21355bc4deaec3e"
+  }
+}
