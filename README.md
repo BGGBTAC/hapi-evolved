@@ -22,7 +22,7 @@ credits, and follow our own roadmap.
 [Suggest a feature](https://github.com/BGGBTAC/hapi-evolved/issues/new?template=feature-request.yml) ·
 [Contribute](CONTRIBUTING.md)
 
-**0.1.0 source preview** · Linux + Docker Compose · Desktop & mobile PWA ·
+**[0.1.0-preview.1 source release](https://github.com/BGGBTAC/hapi-evolved/releases/tag/v0.1.0-preview.1)** · Linux + Docker Compose · Desktop & mobile PWA ·
 Claude Code & Codex · AGPL-3.0-only
 
 ## What makes it Evolved
@@ -55,10 +55,13 @@ built from this repository. Use **Bun 1.3.14** and plan for approximately
 **12 GiB RAM** for the stack and one runner.
 
 ```sh
-git clone https://github.com/BGGBTAC/hapi-evolved.git
+git clone --branch v0.1.0-preview.1 --depth 1 https://github.com/BGGBTAC/hapi-evolved.git
 cd hapi-evolved
 bun install --frozen-lockfile
 ```
+
+The [release downloads](https://github.com/BGGBTAC/hapi-evolved/releases/tag/v0.1.0-preview.1)
+also include the verified source archive, manifest and checksums.
 
 Continue with the [English quick start](docs/evolved/QUICKSTART.md) to initialize
 private state, build the services, configure HTTPS and create your first account.

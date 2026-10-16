@@ -4,7 +4,11 @@ Changes specific to HAPI-eVolved are recorded here. Upstream history remains in
 Git. Source version numbers do not imply a published GitHub release, npm package
 or container image.
 
-## Unreleased — 0.1.0 preview
+## [0.1.0-preview.1](https://github.com/BGGBTAC/hapi-evolved/releases/tag/v0.1.0-preview.1) — 2026-10-16
+
+First published source preview, built from commit
+`72df6df86b9bbb0e4c946bdb146b4c47390b731a`. The release includes the source archive,
+manifest, checksums, installation instructions and known limitations.
 
 ### Added
 
@@ -88,5 +92,9 @@ See [initial validation](docs/evolved/VALIDATION.md),
 [reproducible live acceptance](docs/evolved/LIVE_ACCEPTANCE.md), plus the
 [project/GitHub and publication acceptance](docs/evolved/PUBLICATION_READINESS.md).
 Dated reports apply to their named commits, not automatically to later releases.
-Native client parity, real cloud extraction quality, a complete backup restore
-drill and a public distribution release remain separate checks.
+The release commit passed required CI and CodeQL. A fresh, isolated Docker Compose
+installation passed service health, access-control and web-asset checks. All three
+published downloads were retrieved anonymously and matched the tested candidate
+byte for byte. See the release notes for exact CI runs and dependency advisories.
+Native client parity, real cloud extraction quality and a complete backup restore
+drill remain separate checks.

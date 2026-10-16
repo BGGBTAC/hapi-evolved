@@ -5,8 +5,11 @@ own roadmap for faster improvements to self-hosted coding-agent workflows.
 
 This starts a separate Linux preview installation. It does not migrate accounts,
 sessions or credentials from HAPI. Use source and Compose files from the same
-reviewed Evolved revision. The public main branch is the source-preview entry;
-you can pin a specific reviewed commit before building for a reproducible deployment.
+reviewed Evolved revision. The commands below use the published
+[v0.1.0-preview.1 source release](https://github.com/BGGBTAC/hapi-evolved/releases/tag/v0.1.0-preview.1).
+The release also provides `hapi-evolved-0.1.0-preview-72df6df86b9b.tar.gz`,
+`manifest.json`, `SHA256SUMS` and known limitations. The `main` branch contains
+ongoing development.
 
 ## Requirements
 
@@ -22,7 +25,7 @@ Host administrator and Docker access remain trusted.
 ## Initialize private state
 
 ```sh
-git clone https://github.com/BGGBTAC/hapi-evolved.git
+git clone --branch v0.1.0-preview.1 --depth 1 https://github.com/BGGBTAC/hapi-evolved.git
 cd hapi-evolved
 bun install --frozen-lockfile
 bun deploy/evolved/init.ts "$HOME/.local/share/hapi-evolved"
@@ -104,7 +107,7 @@ Connecting GitHub or a coding subscription does not authorize cloud memory spend
 
 Local knowledge/search need no cloud provider. Extraction and hybrid search
 require a provider, current prices and an explicit project budget.
-See the [memory configuration](https://github.com/BGGBTAC/hapi-evolved/blob/main/services/memory/README.md).
+See the [memory configuration](https://github.com/BGGBTAC/hapi-evolved/blob/v0.1.0-preview.1/services/memory/README.md).
 
 Back up state and private keys together from a stopped, consistent stack.
 Without its master key the vault is unrecoverable. Follow the
