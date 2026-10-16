@@ -61,7 +61,7 @@ function parseConfig(state: string): Config {
     const parsed = new Map<string, string>()
     for (const line of privateText(join(state, 'compose.env')).split(/\r?\n/)) {
         if (!line || line.startsWith('#')) continue
-        const match = /^([A-Z_]+)=([A-Za-z0-9_./:@-]+)$/.exec(line)
+        const match = /^([A-Z_]+)=([A-Za-z0-9_./:@\[\]-]+)$/.exec(line)
         if (!match || !ENV_KEYS.includes(match[1]!) || parsed.has(match[1]!)) {
             fail('invalid_config', 'compose.env must contain only the five generated settings, without interpolation, duplicates or shell syntax. Use the operator guide for custom installations.')
         }
@@ -323,8 +323,12 @@ export async function runInstaller(options: InstallerOptions, deps: InstallerDep
         if (state) check('state', 'Private installation metadata and permissions verified; secret values were not inspected.')
         else check('state', 'No initialized state found; check/status created no files.', 'warning')
         for (const service of report.services) check(`service_${service.name}`, `${service.name}: ${service.state}${service.health ? ` (${service.health})` : ''}.`, service.state !== 'running' || service.health === 'unhealthy' ? 'warning' : 'ok')
+        const presentServices = new Set(report.services.map(service => service.name))
+        const missingServices = SERVICES.filter(service => !presentServices.has(service))
+        if (report.services.length && missingServices.length) fail('incomplete_stack', `Core stack is incomplete; missing services: ${missingServices.join(', ')}. Existing containers were not changed. Inspect the installation before operator recovery.`)
+        const ready = missingServices.length === 0 && report.services.every(service => service.state === 'running' && service.health !== 'unhealthy')
         report.nextSteps = state
-            ? [...(!existsSync(join(options.state, BUILT)) ? ['Next: run build, then start with the same --state.'] : !report.services.length ? ['Next: run start with the same --state.'] : []), `Open ${config.origin}/evolved after the hub is healthy. Read hub/bootstrap.token privately on the host; the assistant never prints it.`, 'Native runner images and browser-managed provider login require the separate protected host-control operator procedure in docs/evolved/HOST_CONTROL.md.']
+            ? [...(!existsSync(join(options.state, BUILT)) ? ['Next: run build, then start with the same --state.'] : !report.services.length ? ['Next: run start with the same --state.'] : []), ...(ready ? [`Open ${config.origin}/evolved after the hub is healthy. Read hub/bootstrap.token privately on the host; the assistant never prints it.`] : report.services.length ? ['Inspect the reported service status before opening the app; recovery is a separate operator task.'] : []), 'Native runner images and browser-managed provider login require the separate protected host-control operator procedure in docs/evolved/HOST_CONTROL.md.']
             : ['Run init, then build, then start with the same --state and chosen --origin/--port; or explicitly request install --yes.', 'Choose the final HTTPS hostname before enrolling passkeys. No DNS, firewall or system packages are configured automatically.']
         report.ok = true
     } catch (error) {

@@ -304,6 +304,19 @@ describe('fresh core installer boundaries', () => {
             expect(mutations(f.calls)).toHaveLength(0)
         }
     })
+    test('a valid HTTPS IPv6 origin round-trips through initialization, status and build', async () => {
+        const f = fixture(), origin = 'https://[2001:db8::1]'
+        expect((await f.run('init', { origin })).ok).toBe(true)
+        const before = credentials(f.state)
+        for (const action of ['status', 'build', 'check'] as const) {
+            const result = await f.run(action)
+            expect(result.ok).toBe(true)
+            expect(result.installation.origin).toBe(origin)
+            expect(result.nextSteps.some(step => step.startsWith('Open '))).toBe(false)
+        }
+        expect(credentials(f.state)).toEqual(before)
+        expect(readFileSync(join(f.state, 'compose.env'), 'utf8')).toContain(`EVOLVED_ORIGIN=${origin}\n`)
+    })
     test('fresh install has explicit consent, isolated tags, correct build order and controlled child environment', async () => {
         const f = fixture()
         expect(errors(await f.run('install'))).toContain('confirmation_required')
@@ -334,6 +347,27 @@ describe('fresh core installer boundaries', () => {
         expect((await f.run('start')).ok).toBe(true)
         expect((await f.run('status')).ok).toBe(true)
         expect(mutations(f.calls)).toHaveLength(count)
+    })
+    test('status and check report a missing Hub or backend service without advertising a ready app', async () => {
+        for (const missing of ['hub', 'vault']) {
+            const f = fixture(); expect((await f.run('install', { yes: true })).ok).toBe(true)
+            const before = credentials(f.state), mutationCount = mutations(f.calls).length
+            f.containers.delete(digest(missing))
+            if (missing === 'hub') f.setPort(true)
+            for (const action of ['status', 'check'] as const) {
+                const result = await f.run(action)
+                expect(result.ok).toBe(false)
+                expect(result.services).toHaveLength(4)
+                expect(result.checks.find(check => check.id === 'incomplete_stack')?.message).toContain(`missing services: ${missing}`)
+                expect(result.nextSteps.some(step => step.startsWith('Open '))).toBe(false)
+            }
+            expect(credentials(f.state)).toEqual(before)
+            expect(mutations(f.calls)).toHaveLength(mutationCount)
+            f.addContainers(); f.setPort(false)
+            const complete = await f.run('status')
+            expect(complete.ok).toBe(true)
+            expect(complete.nextSteps.some(step => step.startsWith('Open '))).toBe(true)
+        }
     })
     test('foreign container labels, mounts, images or stopped services prevent restart/recreation', async () => {
         for (const mutate of [
@@ -431,7 +465,7 @@ describe('fresh core installer boundaries', () => {
         expect(child.stderr.toString()).toBe('')
     })
     test.skipIf(!Bun.which('docker'))('real Compose config preserves relative build roots and replaces the privileged socket mount without starting Docker', async () => {
-        const f = fixture(); await f.run('init')
+        const f = fixture(), origin = 'https://[2001:db8::1]'; await f.run('init', { origin })
         const child = Bun.spawnSync(['docker', 'compose', '--project-directory', dirname(compose), '--project-name', f.project, '--env-file', join(f.state, 'compose.env'), '-f', compose, '-f', join(f.state, 'installer.compose.json'), 'config', '--format', 'json'], { cwd: SOURCE_ROOT, env: { PATH: process.env.PATH, HOME: f.directory }, stdout: 'pipe', stderr: 'pipe' })
         expect(child.exitCode).toBe(0)
         const config = JSON.parse(child.stdout.toString())
@@ -450,6 +484,8 @@ describe('fresh core installer boundaries', () => {
         expect(config.services.vault.image).toBe(`${f.project}:hub`)
         expect(config.services.hub.volumes.filter((mount: any) => mount.target === '/runner-control')).toEqual([expect.objectContaining({ source: join(f.state, 'control-placeholder'), read_only: true })])
         expect(config.services.hub.ports[0].host_ip).toBe('127.0.0.1')
+        expect(config.services.hub.environment.EVOLVED_ORIGIN).toBe(origin)
+        expect(config.services.hub.environment.HAPI_PUBLIC_URL).toBe(origin)
         expect(config.services.hub.environment.EVOLVED_MEMORY_MODEL).toBeUndefined()
         expect(config.services.memory.environment.EVOLVED_MEMORY_MODEL).toBe('')
         expect(f.containers.size).toBe(0)
