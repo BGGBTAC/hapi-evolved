@@ -189,7 +189,7 @@ export class MemoryService {
                 this.store.requireProject(task!.actor_id, task!.project_id, 'member')
                 for (const source of item.sources) this.store.requireProject(task!.actor_id, source.projectId)
                 const current = this.ledger.settings(task!.project_id)
-                if (!current.enabled || !current.cloudAllowed || current.generation !== task!.generation) throw new MemoryError('Memory processing permission or generation changed', 409)
+                if (!current.enabled || !current.cloudAllowed || current.generation !== task!.generation || !this.ledger.get(task!.project_id, item.id)) throw new MemoryError('Memory processing permission or generation changed', 409)
             }
             if (!task.reservation_id && this.backend.prepare) { await this.backend.prepare(task.project_id); revalidate() }
             const reservationId = task.reservation_id ?? task.id
@@ -199,16 +199,14 @@ export class MemoryService {
             this.ledger.settle(reservationId, result.spentMicros)
             if (result.ok === false) {
                 // A terminal, receipted failure must not be reissued with an already settled budget.
-                this.store.db.query("UPDATE evolved_memory_tasks SET state='failed',error='Graph extraction failed' WHERE id=? AND state='running'").run(task.id)
-                this.store.db.query("UPDATE evolved_memory_items SET index_state='error' WHERE id=?").run(item.id)
+                this.ledger.fail(task, 'Graph extraction failed')
                 return true
             }
             this.ledger.complete(task)
             return true
         } catch (error) {
             if (task && error instanceof EvolvedError && [401, 403, 404].includes(error.status)) {
-                this.store.db.query("UPDATE evolved_memory_tasks SET state='failed',error='Authorization revoked' WHERE id=? AND state='running' AND lease_until=?").run(task.id, task.lease_until)
-                if (task.item_id) this.store.db.query("UPDATE evolved_memory_items SET index_state='error' WHERE id=?").run(task.item_id)
+                this.ledger.fail(task, 'Authorization revoked')
             } else if (task) this.ledger.retry(task, error instanceof MemoryError ? error.message : 'Memory processing unavailable')
             return false
         } finally { this.running = false }
@@ -230,31 +228,15 @@ export class MemoryService {
             }
         } finally { this.reconcilingCosts = false }
     }
-    ingestChat(input: { projectId: string; actorId: string; namespace: string; sessionId: string; messageId: string; body: string }): boolean {
-        const project = this.store.requireProject(input.actorId, input.projectId, 'member')
-        if (project.namespace !== input.namespace || !this.ledger.settings(project.id).enabled) return false
-        if (!input.body.trim() || input.body.length > 50_000 || containsCredential(input.body)) return false
-        this.ledger.create(project.id, input.actorId, `Conversation ${input.sessionId.slice(0, 12)}`, input.body, [{
-            kind: 'chat', projectId: project.id, sessionId: input.sessionId, messageId: input.messageId, hash: memoryHash(input.body)
-        }])
-        return true
-    }
-    /** Only persisted, newly received Hub messages call this hook; no historical DB import. */
-    ingestHubEvent(input: { namespace: string; sessionId: string; messageId: string; body: string }): boolean {
+    /** Session events only invalidate existing provenance; knowledge requires explicit intake. */
+    reconcileHubMessage(input: { namespace: string; sessionId: string; messageId: string; content: unknown }): number {
         const project = this.store.listProjectsForService().find(project => project.namespace === input.namespace)
-        if (!project) return false
-        const settings = this.ledger.settings(project.id)
-        if (!settings.enabled || !settings.approvedBy) return false
-        try { this.store.requireProject(settings.approvedBy, project.id, 'admin') } catch { return false }
-        if (!input.body.trim() || input.body.length > 50_000 || containsCredential(input.body)) return false
-        const hash = memoryHash(input.body)
+        if (!project) return 0
         const prior = this.ledger.chatSourceHashes(project.id, input.sessionId, input.messageId)
-        if (prior.some(priorHash => priorHash !== hash)) this.ledger.forgetSource(project.id, settings.approvedBy, input.sessionId, input.messageId)
-        this.ledger.create(project.id, settings.approvedBy, `Conversation ${input.sessionId.slice(0, 12)}`, input.body, [{
-            projectId: project.id, kind: 'chat', sessionId: input.sessionId, messageId: input.messageId,
-            origin: `hub:session:${input.sessionId}`, hash
-        }])
-        return true
+        if (!prior.length) return 0
+        const body = JSON.stringify(input.content)
+        if (typeof body === 'string' && prior.every(hash => hash === memoryHash(body))) return 0
+        return this.ledger.forgetSource(project.id, 'system:source-change', input.sessionId, input.messageId)
     }
     forgetSession(namespace: string, sessionId: string): number {
         const project = this.store.listProjectsForService().find(project => project.namespace === namespace)

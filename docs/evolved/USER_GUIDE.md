@@ -174,6 +174,19 @@ Projekt noch keine Aktion eingerichtet wurde.
 
 ## Persistentes Gedächtnis
 
+Das Gedächtnis enthält ausdrücklich gespeicherte Erkenntnisse und ausgewählte
+Quellen. Normale Sessionnachrichten, Tool-Aufrufe, Tool-Ergebnisse und
+Fortschrittsmeldungen werden nicht automatisch zu Wissenseinträgen. Agenten
+speichern belegte Erkenntnisse gezielt mit `evolved_memory_propose`.
+
+Frühere Fassungen konnten rohe Sessionereignisse als `Conversation …` importieren.
+Eindeutig erkennbare, ungeprüfte Autoimporte werden beim Update getrennt archiviert.
+Unter **Alte Gesprächsimporte** bleiben Inhalt und Quellen einsehbar; sie erscheinen
+nicht mehr in der Wissenssuche und werden nicht für den Graph verarbeitet.
+Bewusst gespeicherte oder verifizierte Erkenntnisse bleiben erhalten. Die
+Archivierung löscht keine Session und startet keine fehlgeschlagenen Modellaufträge
+erneut. **Vergessen** entfernt einen solchen Altimport endgültig.
+
 Unter „Gedächtnis“ kannst du eine Erkenntnis mit Titel, Inhalt und Quelle
 vorschlagen. Bei Quellcode oder Anhängen gibst du den projektbezogenen Dateipfad
 an; bei manuellen Sessionreferenzen die Session- und Nachrichten-ID. Solche

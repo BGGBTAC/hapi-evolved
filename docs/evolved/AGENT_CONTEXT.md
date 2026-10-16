@@ -127,6 +127,12 @@ den Schreibaufruf. Eine Datei unter `knowledge/` wird nicht automatisch in
 dieses zentrale Wissen übernommen. Vorgeschlagene Inhalte bleiben ungeprüft;
 Quellen und bestehende Projektrechte gelten weiterhin.
 
+Die Betriebsgrundlagen verlangen gezielte, knappe Wissensvorschläge mit Belegen.
+Sessiontranskripte, Tool-Aufrufe und Fortschrittsmeldungen werden nicht automatisch
+ins Gedächtnis übernommen und sollen auch nicht als Rohdaten vorgeschlagen werden.
+Alte automatisch importierte Gesprächsereignisse stehen Menschen getrennt zur
+Einsicht zur Verfügung; Agentensuche und Graphverarbeitung schließen sie aus.
+
 ## Übertragung und Lebenszyklus
 
 Die gemeinsame Memory-Anleitung verweist bei fehlender Graph-Konfiguration auf

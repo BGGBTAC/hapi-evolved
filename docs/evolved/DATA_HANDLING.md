@@ -19,6 +19,14 @@ Operators are responsible for their installation, providers and retention.
 
 ## External requests
 
+Session messages and tool events are not automatically imported into knowledge.
+Strictly identified unverified raw conversation imports from earlier versions are
+archived in the local ledger, with original content and sources retained for human
+inspection. They are excluded from knowledge search and graph processing. Explicit
+knowledge proposals and verified entries are not automatically archived. Forgetting
+an archived entry or removing its source deletes it through the existing deletion
+flow; archiving itself is not deletion and does not erase backups.
+
 Memory sends selected authorized content to its model provider only after
 configuration and project approval. Native agent requests use their own provider
 sessions and terms. GitHub operations send repository queries and Git data to

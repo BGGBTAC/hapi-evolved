@@ -1,0 +1,199 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-16",
+  "scope": "Explicit project memory, conservative historical raw-import quarantine, provenance invalidation, queue/cost isolation and compact archive UI",
+  "status": "locally_validated_no_open_confirmed_review_findings",
+  "modelReview": {
+    "requestedModel": "claude-opus-5-5",
+    "canonicalModel": "claude-opus-5-5",
+    "provider": "firstParty",
+    "effort": "medium",
+    "result": "success",
+    "inputSha256": "efe3beb623ec3f2397b4e6923be698ab5193909152e372e6db56b1fbc659dc26",
+    "outputSha256": "0122b4cecce2aa5c14baf9d5e36dbbc7ad2771c854b9a161f4a313ee8d7b5a3d",
+    "sourceHashes": {
+      "hub/src/startHub.ts": "addc58dd8fab08b270941f3f77418a2f1c5d43bff0f8aa84edee1e04ad4565d9",
+      "hub/src/evolved/memoryStore.ts": "2073e02c5a8eaae2b8923b9d99809aa2a1e4276bdb4cc858dac2feaef4b5ff55",
+      "hub/src/evolved/memoryService.ts": "0e1ec670f5afd3d1fb57696f33798644a80514c62afddc452e638676f168374a",
+      "hub/src/evolved/memory.ts": "ff91b176248644c10472d1ca184be6b7b2485c2fd2e7443ea1d636d9a52f5b3f",
+      "services/memory/app.py": "984a7614b81d9020e0ccbcce001a1e09fa33f0b523c3649f442c3de003b003d7"
+    },
+    "coverage": "One actual targeted design/development-snapshot review. Final fixes were independently inspected and regression-tested; no subsequent model approval is claimed."
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "status": "fixed_after_model_review",
+      "summary": "Forgetting archived imports unnecessarily rebuilt active indexed knowledge.",
+      "resolution": "Archive-only deletion preserves generation and tasks, returns taskId:null/graphPurgePending:false and does not start a worker. Project deletion still forces graph cleanup.",
+      "evidence": [
+        "hub/src/evolved/memoryStore.ts:forgetIds",
+        "hub/src/evolved/memory.ts:DELETE memory",
+        "hub/src/evolved/memoryImports.test.ts:forgetting only archived imports does not purge or requeue successful active knowledge"
+      ]
+    },
+    {
+      "id": "F2",
+      "status": "not_reproduced_existing_boundary",
+      "summary": "Potential mismatch between event serialization and stored-message provenance.",
+      "resolution": "Normal socket and web emissions use persisted StoredMessage content. The real SQLite reopen/from-message/event roundtrip regression preserves the exact source hash. Manual user:reference hashes are explicitly excluded from trusted raw-source comparisons. Arbitrary nonpersisted synthetic events are not an authorization source.",
+      "evidence": [
+        "hub/src/store/messages.ts:addMessage",
+        "hub/src/socket/handlers/cli/sessionHandlers.ts:message",
+        "hub/src/sync/messageService.ts",
+        "hub/src/evolved/memoryMessage.test.ts:real persisted Hub message roundtrip",
+        "hub/src/evolved/memoryImports.test.ts:a replayed Hub event"
+      ]
+    },
+    {
+      "id": "F3",
+      "status": "fixed_after_model_review",
+      "summary": "Late failed ingest could overwrite newer item state after cancellation or lease replacement.",
+      "resolution": "Transactional fail() requires running task, matching lease and current generation before changing task/item state. Cost receipts settle before the state transition. Late paid failure and stale-lease regressions pass.",
+      "evidence": [
+        "hub/src/evolved/memoryStore.ts:fail",
+        "hub/src/evolved/memoryService.ts:processOne",
+        "hub/src/evolved/memoryImports.test.ts"
+      ]
+    },
+    {
+      "id": "F4",
+      "status": "false_positive_existing_guard",
+      "summary": "Subscriber exception might interrupt message dispatch.",
+      "resolution": "EventPublisher.emit already catches each listener independently and broadcasts afterward.",
+      "evidence": [
+        "hub/src/sync/eventPublisher.ts:27"
+      ]
+    },
+    {
+      "id": "F5",
+      "status": "closed_by_schema_and_dry_run_evidence",
+      "summary": "Audit schema assumptions and exact classification need confirmation.",
+      "resolution": "EvolvedStore creates the required audit schema before MemoryService. Missing audit table skips migration; unsupported malformed schemas fail rather than classify without provenance. An independent read-only target dry run confirmed the exact conservative predicate and retained explicit-intake items.",
+      "evidence": [
+        "hub/src/evolved/store.ts:80",
+        "hub/src/evolved/runtime.ts:50",
+        "hub/src/evolved/memoryStore.ts:archiveLegacyConversationImports",
+        "hub/src/evolved/memoryImports.test.ts"
+      ]
+    },
+    {
+      "id": "F6",
+      "status": "accepted_existing_scoped_delete_semantics",
+      "summary": "A memory:write capability can forget a known archived item ID.",
+      "resolution": "Existing project-scoped deletion authority remains available for privacy/source cleanup. Archive reads remain human-only; archive-only deletion cannot start reindexing after F1. UUID knowledge does not bypass project authorization.",
+      "evidence": [
+        "hub/src/evolved/memory.ts:authorized and DELETE",
+        "hub/src/evolved/memoryImports.test.ts:imports API"
+      ]
+    },
+    {
+      "id": "F7",
+      "status": "implemented_during_review",
+      "summary": "Archive must expose more than one page.",
+      "resolution": "Stable created_at/id ordering, bounded offset and 100-item pages; previous-page recovery after deleting the final item.",
+      "evidence": [
+        "hub/src/evolved/memoryStore.ts:list",
+        "web/src/evolved/Memory.tsx",
+        "web/src/evolved/Memory.test.tsx"
+      ]
+    },
+    {
+      "id": "F8",
+      "status": "false_positive_no_public_caller",
+      "summary": "Unfiltered sources() might expose archived provenance through another API.",
+      "resolution": "Repository-wide caller inspection found only internal tests; public memory routes use filtered ledger reads. Source lifecycle methods intentionally retain archive visibility for actual source deletion.",
+      "evidence": [
+        "hub/src/evolved/memoryStore.ts:sources",
+        "hub/src/evolved/memoryImports.test.ts",
+        "hub/src/evolved/memory.test.ts"
+      ]
+    },
+    {
+      "id": "GH-P1",
+      "status": "fixed_after_github_review",
+      "summary": "Repeated provenance/audit/task lookups could scan flooded legacy tables quadratically.",
+      "resolution": "Add item_id source index, target_id/action audit index before migration, and item/project/kind/time task lookup index. Query-plan regression confirms indexed SEARCH and no full scan or temporary sort.",
+      "evidence": [
+        "hub/src/evolved/memoryStore.ts:constructor",
+        "hub/src/evolved/memoryStore.ts:archiveLegacyConversationImports",
+        "hub/src/evolved/memoryImports.test.ts:legacy migration installs indexed provenance and audit lookups before scanning imports"
+      ]
+    },
+    {
+      "id": "GH-P2",
+      "status": "fixed_after_github_review",
+      "summary": "A departed historical budget approver incorrectly replaced the retained item task actor.",
+      "resolution": "Preserve concrete task actor before legacy approver fallback. Existing processOne revalidates current project and source permissions before reservations and provider work. Revoked task actors are not reassigned to an available administrator.",
+      "evidence": [
+        "hub/src/evolved/memoryStore.ts:invalidateProjection",
+        "hub/src/evolved/memoryImports.test.ts:rebuild retains the current task actor when the historical spending approver has left",
+        "hub/src/evolved/memoryImports.test.ts:a revoked task actor is not replaced with the still-authorized spending approver"
+      ]
+    }
+  ],
+  "validation": {
+    "backendOwnerFocused": {
+      "passed": 52,
+      "assertions": 334
+    },
+    "independentBackendSubset": {
+      "passed": 34,
+      "failed": 0,
+      "assertions": 180,
+      "logSha256": "1ddc2f9c899bec2feeb833921dfddd4e50c3e85994d61267aab5f2cfef364141"
+    },
+    "webFocused": {
+      "passed": 27,
+      "reportedBy": "web owner after archive-only success-copy delta"
+    },
+    "browser": {
+      "reportSha256": "2143c5af4280d1fc7f267c2c828f8ae6b286383a496de721d5e7979652464a55",
+      "syntheticHistoricalImports": 101,
+      "viewportWidths": [
+        1440,
+        390,
+        320
+      ],
+      "checks": [
+        "real isolated Hub/Vault/WebAuthn",
+        "migration and archive100+1 pagination",
+        "explicit fulltext and deletion",
+        "page recovery and project switch",
+        "no horizontal overflow or page errors"
+      ],
+      "providerCalls": 0,
+      "expectedConsoleWarning": "Service worker intentionally blocked by fixture",
+      "postBrowserDelta": "Only the archive-deletion success message changed; targeted Web tests passed again. Later backend-only changes add lookup indexes and preserve the task actor during graph rebuild; targeted regression tests cover both."
+    },
+    "postGithubReviewFocused": {
+      "passed": 55,
+      "failed": 0,
+      "assertions": 354,
+      "logSha256": "47b67bb6fbc4a8e602473fc405fe1b4cb2a7d329dd7b80a6dada87572fb50e7c",
+      "typecheck": "hub passed"
+    }
+  },
+  "finalSourceHashes": {
+    "hub/src/startHub.ts": "addc58dd8fab08b270941f3f77418a2f1c5d43bff0f8aa84edee1e04ad4565d9",
+    "hub/src/evolved/memoryStore.ts": "645bcc074f3bcf22cd56afc5540ca8ceafb14011e489e4ff9e26acfc99140a07",
+    "hub/src/evolved/memoryService.ts": "686fa4585a1848bd75ef098bc84c9255151721e2c8cafc850396410f89b07595",
+    "hub/src/evolved/memory.ts": "ead1d26696dd3f124119b8ac7f36b77c8c66c2d37b25d534331f171b557ce8f2",
+    "hub/src/evolved/memoryImports.test.ts": "3d8ecf126b341bc0940752d7744a447df013d33c7af1f5cb7307d00d3efd62fc",
+    "hub/src/evolved/memoryMessage.test.ts": "1ce0cf27f9e48c8a446cbe47dcab63537ad89a0a0386daee25c7398f1e86fbab",
+    "hub/src/evolved/memory.test.ts": "42d2a53f34d9dc6ed7df2e60354dcb54b5b26218ce246cbf606e4c799c4616df",
+    "web/src/evolved/Memory.tsx": "2c8a78ff071d30e4ea6bad1080ce48e3d4c7cfc35504b756f0f32f8427d5775d",
+    "web/src/evolved/Memory.test.tsx": "d9e64c03afbf023c2c0ac1eb8ae34b5696246aee70b79f44c9fd37d5cf9b02d8",
+    "web/src/evolved/api.ts": "626b7e5b28dc6e2e58df28d662b37b52cf0cd5addff0c7aebb90759bc800d851",
+    "web/src/evolved/evolved.css": "d5cad88b23e3686b8e241b41dcc212beb0f97e38c53a1f7f030a112fa20ce515",
+    "cli/src/evolved/capabilities.ts": "159bc6f9d276dac4311a98278f31bb625176dba51c638896af6bfcc6f305f4cb",
+    "cli/src/evolved/operatingContext.ts": "8d8c4aaf46c44d134522ff8961fcca06b56b7ccc25f029514a23ec97ead5a690"
+  },
+  "limits": [
+    "Strict provenance classification deliberately leaves ambiguous historical entries active instead of guessing.",
+    "Archive retains raw text and sources until explicit forget or source deletion; it is excluded from active knowledge and graph generation.",
+    "Existing failed/error items are not automatically retried by migration. Previously successful or still pending active work may rebuild under unchanged project permissions and budgets.",
+    "A source/image rollback to pre-fix code would ignore the archive flag and resume old automatic imports; no database restore or silent unarchive is part of this change.",
+    "This record does not assert deployment, provider-login validity, paid-inference success or a backup restore test."
+  ]
+}
