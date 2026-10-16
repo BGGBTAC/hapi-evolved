@@ -112,7 +112,10 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
         self.app.ledger.begin("uncertain", "project-a", 0, "synthetic", 100)
         self.app.ledger.db.execute("UPDATE operations SET status='indeterminate' WHERE id='uncertain'")
         run.reset_mock()
-        self.assertEqual((await self.client.post("/configuration/binding", json=self.binding_request())).json(), {"bound": False})
+        before = list(self.app.ledger.db.iterdump())
+        self.assertEqual((await self.client.post("/configuration/binding", json=self.binding_request())).json(), {"bound": True})
+        self.assertEqual((await self.client.post("/configuration/binding", json=self.binding_request(embeddingModel="text-embedding-3-large"))).json(), {"bound": False})
+        self.assertEqual(list(self.app.ledger.db.iterdump()), before)
         run.assert_not_called()
 
     async def test_durable_binding_rejects_late_old_snapshot_but_preserves_existing_receipt(self):

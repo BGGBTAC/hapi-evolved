@@ -161,13 +161,14 @@ async def check_binding(request: Request):
         return {"bound": False}
     async with locks[project]:
         try:
-            if active_project_operations(project):
-                return {"bound": False}
             # Confirm the durable state for every Hub save, including recovery
             # after a successful bind followed by a failed external Vault save.
-            # Matching bindings remain valid when the graph already has data.
+            # Matching bindings remain valid with graph data or old uncertain
+            # operations: this only reads the binding while holding its lock.
             if ledger.binding(project) == (model, dimensions):
                 return {"bound": True}
+            if active_project_operations(project):
+                return {"bound": False}
             # All generations, exact project prefix, including relationships whose
             # endpoints alone would not prove this project's graph to be empty.
             pattern = "^" + re.escape(f"hapi_{project.replace('-', '_')}_") + r"\d+$"

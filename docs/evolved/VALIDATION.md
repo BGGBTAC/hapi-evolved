@@ -10,7 +10,8 @@ und [Projekt](PROJECT.md).
 **Gedächtnis → Graph-Memory einrichten**: verschlüsselter API-Key, live geladener
 Modellkatalog, Preise, Datenbank-/Katalogtest und nachvollziehbare Budgetfreigabe.
 Design und die Übernahme alter leerer Graphen wurden mit tatsächlichem Claude
-Opus 5.5 geprüft. Die abschließende Reviewdisposition gehört zum zugehörigen PR.
+Opus 5.5 geprüft. Die [abschließende Reviewdisposition](./reviews/browser-memory-2026-10-16.json)
+dokumentiert die umgesetzten Korrekturen, Quellprüfsummen und verbleibenden Grenzen.
 
 Der vollständige lokale Paketlauf bestand 9.880 Tests. Nach den engen
 Reviewkorrekturen bestanden nochmals 1.893 Hub- und 3.970 Web-Tests sowie die
@@ -28,9 +29,9 @@ Reparatur einer unterbrochenen Modellbindung, Schlüsselwechsel bei vorhandenem 
 und die Freigabe ausschließlich neuer, nachweislich noch nicht versandter
 Kostenreservierungen ab. Alle sieben Paket-Typechecks bestanden erneut.
 
-Der isolierte Browserlauf verwendet echten Hub, Vault und WebAuthn. Fünf Prüfgruppen
-decken Einrichtung, beliebige neue Katalog-IDs, Schlüsselwechsel, Projektwechsel,
-Entfernen und erneutes Verbinden ab. Ein zusätzlicher Komponententest stellt sicher,
+Der isolierte Browserlauf verwendet echten Hub, Vault und WebAuthn. Sechs Prüfgruppen
+decken Einrichtung, beliebige neue Katalog-IDs, Embeddingwechsel bei leerem Graph,
+Schlüsselwechsel, Projektwechsel, Entfernen und erneutes Verbinden ab. Ein zusätzlicher Komponententest stellt sicher,
 dass ein Verbindungstest keine vorhandene Hybridsuche erneut ausführt. Bei 1.440,
 390 und 320 Pixeln gab es keinen horizontalen Überlauf oder unerwartete Seitenfehler.
 Der interne Memory-Katalog-/Prüfdienst ist in diesem Browserlauf eine synthetische

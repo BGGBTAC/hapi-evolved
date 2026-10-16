@@ -52,6 +52,8 @@ abweichenden oder unbekannten Bindung prüft der Dienst alle Projektgenerationen
 aktive beziehungsweise unklare Aufträge. Nur bei nachgewiesen leerem Graph schreibt er
 unter Projektsperre die neue Bindung an Embedding-Modell und Dimensionen. Das erneute
 Speichern repariert auch eine vorherige Teilunterbrechung zwischen Dienst und Vault.
+Bis zu diesem erneuten Speichern können alte, noch wartende Aufträge wegen der
+abweichenden Bindung fehlschlagen. Diese Aufträge werden nicht automatisch wiederholt.
 Verspätete Anfragen mit abweichendem Modell dürfen danach keine Graphdaten erzeugen;
 vorhandene Operationsbelege bleiben unverändert abrufbar. Unsichere Zustände verweigern
 die Übernahme. Der Speichervorgang löscht keine Daten, gibt keine alten Reservierungen
