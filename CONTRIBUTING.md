@@ -6,6 +6,12 @@ reports about this fork belong here. Our aim is to bring useful new features to
 a self-hosted agent workspace quickly, through focused changes and reproducible
 checks. Upstream contributions retain their attribution; Evolved has its own roadmap.
 
+New here? Start with the [community guide](COMMUNITY.md) and an open
+[good first issue](https://github.com/BGGBTAC/hapi-evolved/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22good%20first%20issue%22).
+Each starter task should name its files, acceptance criteria and relevant checks.
+Comment before taking a task so we can coordinate; ask in
+[Q&A](https://github.com/BGGBTAC/hapi-evolved/discussions/categories/q-a) if setup is unclear.
+
 The 0.1.0 preview focuses on a fresh Linux
 deployment, Web/PWA access, and Claude Code and Codex project runners. Inherited
 upstream code does not imply support for every upstream deployment or client.
@@ -48,6 +54,12 @@ Do not point development or test commands at an existing installation's database
 runner home, credentials or workspace. Integration tests can start processes and
 use network ports. Provider-backed tests may incur charges; use isolated test
 credentials only when you intentionally choose to run them.
+
+Keep the VitePress documentation development server on localhost. Do not pass
+`--host` or expose it through a proxy or tunnel, particularly on Windows. Publish
+the compiled documentation with a static server instead. The remaining tooling
+advisories, their input boundaries and upgrade follow-up are recorded in
+[the dependency review](docs/evolved/DEPENDENCY_REVIEW.md).
 
 ## Verify what you change
 

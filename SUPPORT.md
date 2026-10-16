@@ -1,8 +1,10 @@
 # Getting help with HAPI-eVolved
 
 HAPI-eVolved is an independent fork. Use
+[community Q&A](https://github.com/BGGBTAC/hapi-evolved/discussions/categories/q-a)
+for setup and usage questions, and
 [this repository's issues](https://github.com/BGGBTAC/hapi-evolved/issues) for
-help with Evolved; upstream HAPI's support channels do not maintain this fork.
+reproducible bugs; upstream HAPI's support channels do not maintain this fork.
 Support is community-based, with no guaranteed response time or service level.
 
 The **0.1.0 preview** targets a fresh Linux deployment, the Web/PWA client and
@@ -14,6 +16,8 @@ supported in-place import of an existing HAPI installation.
 
 - [Quick start and first account — English](docs/evolved/QUICKSTART.md)
 - [Installation, operation and recovery — German](docs/evolved/DEPLOYMENT.md)
+- [Managed browser login: host control — English](docs/evolved/HOST_CONTROL.md)
+- [Pilot workflow and voluntary feedback](docs/evolved/PILOT.md)
 - [User guide](docs/evolved/USER_GUIDE.md)
 - [Project scope and architecture](docs/evolved/PROJECT.md)
 - [Validation evidence and known limits](docs/evolved/VALIDATION.md)

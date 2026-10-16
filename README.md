@@ -18,12 +18,25 @@ credits, and follow our own roadmap.
 
 [Get started](docs/evolved/QUICKSTART.md) ·
 [Explore the features](docs/evolved/USER_GUIDE.md) ·
+[Join the pilot](docs/evolved/PILOT.md) ·
+[Community](COMMUNITY.md) ·
 [Roadmap](ROADMAP.md) ·
 [Suggest a feature](https://github.com/BGGBTAC/hapi-evolved/issues/new?template=feature-request.yml) ·
 [Contribute](CONTRIBUTING.md)
 
-**[0.1.0-preview.1 source release](https://github.com/BGGBTAC/hapi-evolved/releases/tag/v0.1.0-preview.1)** · Linux + Docker Compose · Desktop & mobile PWA ·
+**[Source preview releases](https://github.com/BGGBTAC/hapi-evolved/releases)** · Linux + Docker Compose · Desktop & mobile PWA ·
 Claude Code & Codex · AGPL-3.0-only
+
+![HAPI-eVolved project overview — scripted synthetic demo](assets/community/desktop.png)
+
+[Watch the 76-second walkthrough](assets/community/walkthrough.webm) ·
+[Mobile view](assets/community/mobile.png) ·
+[Codegraph review](assets/community/codegraph.png) ·
+[Demo scope and reproduction](assets/community/README.md)
+
+The recording shows the real interface with a synthetic project and controlled
+GitHub/provider fixtures. It makes no model calls. Some interface labels are
+currently German; the setup and pilot guides are available in English.
 
 ## What makes it Evolved
 
@@ -52,27 +65,35 @@ real-world feedback are welcome. The [roadmap](ROADMAP.md) explains what comes n
 
 The supported preview is a **fresh Linux installation using Docker Compose**,
 built from this repository. Use **Bun 1.3.14** and plan for approximately
-**12 GiB RAM** for the stack and one runner.
+**12 GiB RAM** for the stack and one runner. These instructions target
+`v0.1.0-preview.2`; verify that it has a published source release and checksums
+before using the tag below. Development `main` is not itself a published release.
 
 ```sh
-git clone --branch v0.1.0-preview.1 --depth 1 https://github.com/BGGBTAC/hapi-evolved.git
+git clone --branch v0.1.0-preview.2 --depth 1 https://github.com/BGGBTAC/hapi-evolved.git
 cd hapi-evolved
 bun install --frozen-lockfile
 ```
 
-The [release downloads](https://github.com/BGGBTAC/hapi-evolved/releases/tag/v0.1.0-preview.1)
-also include the verified source archive, manifest and checksums.
+The [release downloads](https://github.com/BGGBTAC/hapi-evolved/releases)
+include the source archive, manifest and checksums for each published revision.
 
 Continue with the [English quick start](docs/evolved/QUICKSTART.md) to initialize
 private state, build the services, configure HTTPS and create your first account.
 Choose the final HTTPS hostname before registering a passkey. For a local test,
 `http://localhost:3006` is supported.
 
-Browser provisioning requires the [local control service](docs/evolved/DEPLOYMENT.md#browser-anmeldung-und-verwaltete-projektdienste),
+Browser provisioning requires the [local control service](docs/evolved/HOST_CONTROL.md),
 installed by the operator as described in the quick start. Once signed in, open
 **Connect subscriptions / Abos verbinden**, choose your project and follow the
 provider's browser sign-in. HAPI-eVolved prepares the project runner when needed.
 You can then start a session or a specialist agent.
+
+For a source checkout or archive containing the installation assistant,
+`bun deploy/evolved/install.ts check` performs a read-only prerequisites check.
+The assistant starts a separate core stack; managed browser login additionally
+needs the [English host-control setup](docs/evolved/HOST_CONTROL.md). It does not
+upgrade an existing installation or configure privileged host services.
 
 This repository supplies the Evolved stack. Upstream `@twsxtd/hapi` packages and
 upstream hosted services install or operate upstream HAPI, not this fork.
@@ -125,6 +146,12 @@ individual decisions. It is not a claim that every upstream issue is resolved.
 Documentation improvements and translations are welcome.
 
 ## Build with us
+
+Try the [pilot workflow](docs/evolved/PILOT.md), ask in
+[Discussions](https://github.com/BGGBTAC/hapi-evolved/discussions), or pick a
+[good first issue](https://github.com/BGGBTAC/hapi-evolved/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22good%20first%20issue%22).
+The [community guide](COMMUNITY.md) explains where to share feedback and how
+first contributions are reviewed.
 
 ```sh
 bun install --frozen-lockfile

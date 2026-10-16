@@ -1,0 +1,22 @@
+title: "[Question]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search existing questions and read SUPPORT.md first. This forum is public.
+        Do not include secrets, provider codes, environment files, private conversations or vulnerability details.
+        Use the private security-reporting channel for suspected vulnerabilities.
+  - type: input
+    id: version
+    attributes:
+      label: Evolved version and environment
+      description: Release/source SHA, Linux distribution and browser. No hostnames, IPs or credentials.
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: What are you trying to do?
+      description: Include the step you reached, what you expected, what happened and what you already tried.
+    validations:
+      required: true

@@ -29,6 +29,8 @@ jobs:
             - run: bun install --frozen-lockfile
             - run: bun typecheck
             - run: bunx playwright install --with-deps chromium
+            - name: Test Mermaid HTML and CSS isolation in Chromium
+              run: timeout 90s node web/scripts/mermaid-security-check.mjs
             # Required by cli/src/utils/windowsProcessTree.pwsh.test.ts — image
             # inspect alone does not pull; silent skip was fake B1 coverage (#1911).
             - run: docker pull mcr.microsoft.com/powershell:latest
