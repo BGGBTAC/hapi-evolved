@@ -7,7 +7,7 @@ const uuidSchema = z.string().uuid()
 const REPOSITORY_REQUEST_TIMEOUT_MS = 45_000
 
 export class EvolvedRequestError extends Error {
-    constructor(message: string, readonly status: number, readonly code?: string) { super(message) }
+    constructor(message: string, readonly status: number, readonly code?: string, readonly backendAvailable?: boolean) { super(message) }
 }
 export class EvolvedRepositorySyncError extends Error {
     constructor(readonly requestId: string, readonly reason: unknown) {
@@ -45,7 +45,8 @@ export class EvolvedClient {
         if (!response.ok) {
             const detail = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {}
             throw new EvolvedRequestError(typeof detail.error === 'string' ? detail.error : `Evolved request failed (${response.status})`, response.status,
-                typeof detail.code === 'string' ? detail.code : undefined)
+                typeof detail.code === 'string' ? detail.code : undefined,
+                typeof detail.backendAvailable === 'boolean' ? detail.backendAvailable : undefined)
         }
         if (payload === null) throw new Error('Invalid Evolved API response')
         return payload

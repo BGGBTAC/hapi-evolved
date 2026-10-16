@@ -14,6 +14,12 @@ The proxy holds the project lease and supplies short-lived capabilities; the age
 receives neither the lease nor a shared Hub owner token. Current profile/role checks
 constrain session start, resume, native configuration and protected operations.
 
+Scoped Claude/Codex sessions automatically receive the shared
+[Evolved operating context](../docs/evolved/AGENT_CONTEXT.md). It covers project
+paths, persistent knowledge, graph availability, GitHub and broker permissions.
+The same versioned reference is available through MCP initialization and the
+read-only `evolved_context` tool; no per-project instruction file is required.
+
 For development and manual runners, follow the
 [operator guide](../docs/evolved/DEPLOYMENT.md). Browser-created manual access alone
 does not install a process. Upstream npm/Homebrew packages install upstream HAPI,

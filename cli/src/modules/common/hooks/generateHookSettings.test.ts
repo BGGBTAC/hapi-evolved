@@ -14,6 +14,12 @@ describe('buildHookSettings', () => {
         expect(settings.hooks.PreToolUse?.[0].matcher).toBe('*')
         expect(settings.hooks.PreToolUse?.[0].hooks[0].command).toBe('forward-cmd')
     })
+
+    it('registers native child context without adding permission hooks to remote sessions', () => {
+        const settings = buildHookSettings('forward-cmd', undefined, false, false, true)
+        expect(Object.keys(settings.hooks)).toEqual(['SessionStart', 'SubagentStart'])
+        expect(settings.hooks.SubagentStart).toEqual([{ matcher: '*', hooks: [{ type: 'command', command: 'forward-cmd' }] }])
+    })
 })
 
 describe('buildHookSettings local approvals', () => {

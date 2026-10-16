@@ -54,6 +54,11 @@ Cloudverarbeitung und Budget werden durch diese Aktionen nicht eingeschaltet.
 
 Plan und Grenzen: [Integrierter Projektablauf](PROJECT_WORKFLOW.md).
 
+Die Agenten erhalten die [gemeinsamen Betriebsgrundlagen](AGENT_CONTEXT.md)
+automatisch: Projektordner, GitHub-Zugang, Wissen und Codegraph müssen nicht in
+jeder Sitzung erneut erklärt werden. Ein Ausfall der optionalen Graphsuche
+bedeutet nicht, dass lokale Wissenssuche oder Speicherung ausgefallen sind.
+
 ## Erstes Konto und Wiederherstellung
 
 1. Trage deinen Benutzernamen und den Einrichtungscode des Betreibers ein.

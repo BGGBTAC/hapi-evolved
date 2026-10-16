@@ -5,6 +5,7 @@ import { logger } from '@/ui/logger';
 import { getHappyCliCommand } from '@/utils/spawnHappyCLI';
 import { shellJoin } from '@/modules/common/shellQuote';
 import { LOCAL_PERMISSION_TIMEOUT_SECONDS } from '@/claude/utils/localPermissionProtocol';
+import { getEvolvedOperatingContext } from '@/evolved/operatingContext';
 
 type HookCommandConfig = {
     matcher?: string;
@@ -22,6 +23,7 @@ type HookSettings = {
     };
     hooks: {
         SessionStart: HookCommandConfig[];
+        SubagentStart?: HookCommandConfig[];
         UserPromptSubmit?: HookCommandConfig[];
         PreToolUse?: HookCommandConfig[];
         PermissionRequest?: HookCommandConfig[];
@@ -53,7 +55,8 @@ export function buildHookSettings(
     command: string,
     hooksEnabled?: boolean,
     trackPermissionMode?: boolean,
-    includeLocalPermissions?: boolean
+    includeLocalPermissions?: boolean,
+    includeOperatingContext = false
 ): HookSettings {
     const commandHook = {
         hooks: [
@@ -66,6 +69,11 @@ export function buildHookSettings(
     const hooks: HookSettings['hooks'] = {
         SessionStart: [{ matcher: '*', ...commandHook }]
     };
+    // Claude runs SessionStart again after resume/clear/compaction. Native
+    // subagents have their own system prompt and need the same context hook.
+    if (includeOperatingContext) {
+        hooks.SubagentStart = [{ matcher: '*', ...commandHook }];
+    }
     if (trackPermissionMode || includeLocalPermissions) {
         hooks.UserPromptSubmit = [commandHook];
         hooks.PreToolUse = [{ matcher: '*', ...commandHook }];
@@ -118,7 +126,8 @@ export function generateHookSettingsFile(
         hookCommand,
         options.hooksEnabled,
         options.trackPermissionMode,
-        options.includeLocalPermissions
+        options.includeLocalPermissions,
+        Boolean(getEvolvedOperatingContext())
     );
 
     writeFileSync(filepath, JSON.stringify(settings, null, 4));

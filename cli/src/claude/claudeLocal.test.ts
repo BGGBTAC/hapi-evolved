@@ -1,11 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const harness = vi.hoisted(() => ({
-    spawn: vi.fn(async (_opts: unknown) => {})
+    spawn: vi.fn(async (_opts: unknown) => {}),
+    writeFile: vi.fn(),
+    removeDirectory: vi.fn()
 }))
 
 vi.mock('node:fs', () => ({
-    mkdirSync: vi.fn()
+    mkdirSync: vi.fn(),
+    readFileSync: vi.fn(() => 'Instructions from user file'),
+    mkdtempSync: vi.fn(() => '/tmp/private-hapi-prompt'),
+    writeFileSync: harness.writeFile,
+    rmSync: harness.removeDirectory
 }))
 
 vi.mock('@/ui/logger', () => ({
@@ -59,6 +65,8 @@ function getSpawnArgs(): string[] {
 describe('claudeLocal model arguments', () => {
     beforeEach(() => {
         harness.spawn.mockClear()
+        harness.writeFile.mockClear()
+        harness.removeDirectory.mockClear()
     })
 
     it('preserves an explicit native resume even when the local transcript probe has no history', async () => {
@@ -66,6 +74,39 @@ describe('claudeLocal model arguments', () => {
             path: '/moved-workspace', hookSettingsPath: '/tmp/hooks.json',
             claudeEnvVars: { CLAUDE_CONFIG_DIR: '/isolated-config' } })
         expect(getSpawnArgs().slice(0, 2)).toEqual(['--resume', 'requested-native-id'])
+    })
+
+    it.each([
+        ['--append-system-prompt', 'User instructions'],
+        ['--append-system-prompt=User instructions']
+    ])('preserves wrapper instructions with custom append arguments %j on resume', async (...claudeArgs) => {
+        await claudeLocal({ abort: new AbortController().signal, sessionId: 'native-id',
+            path: '/workspace', hookSettingsPath: '/tmp/hooks.json', claudeArgs })
+        const args = getSpawnArgs()
+        expect(args.slice(0, 2)).toEqual(['--resume', 'native-id'])
+        expect(args.filter(arg => arg.startsWith('--append-system-prompt'))).toEqual(['--append-system-prompt'])
+        expect(args[args.indexOf('--append-system-prompt') + 1]).toBe('User instructions\n\nHAPI system prompt')
+    })
+
+    it('merges a user prompt file without leaving a competing native override', async () => {
+        await claudeLocal({ abort: new AbortController().signal, sessionId: null,
+            path: '/workspace', hookSettingsPath: '/tmp/hooks.json',
+            claudeArgs: ['--append-system-prompt-file', 'extra.txt'] })
+        const args = getSpawnArgs()
+        expect(args).not.toContain('--append-system-prompt')
+        expect(args[args.indexOf('--append-system-prompt-file') + 1]).toBe('/tmp/private-hapi-prompt/instructions.txt')
+        expect(args.join(' ')).not.toContain('Instructions from user file')
+        expect(harness.writeFile).toHaveBeenCalledWith('/tmp/private-hapi-prompt/instructions.txt',
+            'Instructions from user file\n\nHAPI system prompt', { mode: 0o600 })
+        expect(harness.removeDirectory).toHaveBeenCalledWith('/tmp/private-hapi-prompt', { recursive: true, force: true })
+    })
+
+    it('removes a merged prompt file even when native launch fails', async () => {
+        harness.spawn.mockRejectedValueOnce(new Error('native launch failed'))
+        await expect(claudeLocal({ abort: new AbortController().signal, sessionId: null,
+            path: '/workspace', hookSettingsPath: '/tmp/hooks.json',
+            claudeArgs: ['--append-system-prompt-file=extra.txt'] })).rejects.toThrow('native launch failed')
+        expect(harness.removeDirectory).toHaveBeenCalledWith('/tmp/private-hapi-prompt', { recursive: true, force: true })
     })
 
     it('launches Claude with the current session model', async () => {

@@ -1,8 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { getEvolvedOperatingContext } from '@/evolved/operatingContext'
 
 type ToolHandler = (args: Record<string, unknown>) => Promise<unknown>
 
 const harness = vi.hoisted(() => ({
+    instructions: undefined as string | undefined,
     tools: new Map<string, ToolHandler>(),
     configs: new Map<string, Record<string, unknown>>(),
     callTool: vi.fn(async (_request: unknown) => ({
@@ -13,6 +15,9 @@ const harness = vi.hoisted(() => ({
 
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
     McpServer: class {
+        constructor(_info: unknown, options?: { instructions?: string }) {
+            harness.instructions = options?.instructions
+        }
         registerTool(name: string, config: Record<string, unknown>, handler: ToolHandler): void {
             harness.tools.set(name, handler)
             harness.configs.set(name, config)
@@ -45,10 +50,24 @@ vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
 import { runHappyMcpStdioBridge } from './happyMcpStdioBridge'
 
 describe('runHappyMcpStdioBridge tool forwarding', () => {
+    afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks() })
     beforeEach(() => {
+        harness.instructions = undefined
         harness.tools.clear()
         harness.configs.clear()
         harness.callTool.mockClear()
+    })
+
+    it('supplies scoped operating context even when feature-policy discovery is offline', async () => {
+        vi.stubEnv('HAPI_EVOLVED_PROXY', '1')
+        vi.stubEnv('EVOLVED_PROJECT_ID', 'context-test')
+        vi.stubEnv('HAPI_EVOLVED_URL', 'http://127.0.0.1:1')
+        vi.stubEnv('HAPI_PEER_TOOLS', '')
+        vi.stubEnv('HAPI_PEER_SCOPES', '')
+        vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
+        await runHappyMcpStdioBridge(['--url', 'http://127.0.0.1:43006', '--tools', 'display_image'])
+        expect(harness.instructions).toBe(getEvolvedOperatingContext())
+        expect(harness.tools.has('evolved_context')).toBe(true)
     })
 
     it('describes display_image as user output rather than image input', async () => {
@@ -60,6 +79,7 @@ describe('runHappyMcpStdioBridge tool forwarding', () => {
         ])
 
         const description = harness.configs.get('display_image')?.description
+        expect(harness.instructions).toBeUndefined()
         expect(description).toContain('human user')
         expect(description).toContain('does not provide image input to the model')
         expect(description).toContain('cannot be used to read, inspect, or analyze image contents')

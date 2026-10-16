@@ -1,0 +1,47 @@
+{
+  "date": "2026-10-16",
+  "baseCommit": "d4f64961149f9c70d89781a5dba0c2d70d9e0f58",
+  "scope": "Shared operating instructions, memory MCP diagnostics, provider bootstrap and Claude lifecycle hooks",
+  "reviewer": {
+    "interface": "Claude Code CLI, tool-free source review",
+    "requestedModel": "claude-opus-5-5",
+    "observedCanonicalModel": "claude-opus-5-5",
+    "passes": ["architecture", "operating-context semantics", "implementation diff", "private prompt-file correction"]
+  },
+  "reviewInputs": {
+    "selectedImplementationDiffSha256": "1cee60364a450f4a9dc0c76ac43c59252d7c60c137142b9e3d93fc78f54422fb",
+    "promptFileCorrectionDeltaSha256": "1ae57ad0fac9beb19d37d7a141174e5a50093f909d5b561ee97e20db2c1b8261",
+    "selectedCorrectedDiffSha256": "a142e1536ae147bd9832977130d3a0b28d8509c030a3684d1db47b2b81224eae"
+  },
+  "disposition": [
+    {
+      "finding": "A hybrid graph failure must not be presented as failure of persistent local memory.",
+      "resolution": "Explicit ledger retry guidance, independent proposal semantics, preserved error status and no automatic downgrade. Generic failures and permission denials do not receive graph-specific diagnostics."
+    },
+    {
+      "finding": "Caller-supplied prompts and native subagents can lose the central instructions.",
+      "resolution": "Merge Claude append prompts and Codex root developer instructions; add Claude SessionStart/SubagentStart context and MCP initialize instructions plus a read-only context tool. Native Codex plan and isolated-child payloads verified against a local mock provider."
+    },
+    {
+      "finding": "Reading a user prompt file into a CLI argument exposes its contents in argv/debug logs and risks argument-size limits.",
+      "resolution": "Keep file-based prompts in a private temporary directory and 0600 file. Pass only the path, preserve newlines and clean up in finally. Correction independently reviewed and regression-tested."
+    },
+    {
+      "finding": "Multiple delivery paths can repeat the static operating block.",
+      "resolution": "Accepted for lifecycle reliability. The composition helper deduplicates exact copies within one prompt; provider-level delivery across system prompts, hooks and MCP may repeat the block."
+    },
+    {
+      "finding": "MCP server instructions alone do not establish universal client/subagent support.",
+      "resolution": "Document supported Claude/Codex paths, lifecycle handling and inherited-adapter limits. No parity or model-obedience guarantee."
+    }
+  ],
+  "independentPeerReview": "Separate code review of Claude launch and lifecycle changes; confirmed private-file correction and no remaining blocking findings.",
+  "nativeLifecycleVerification": {
+    "engine": "Codex 0.157.0",
+    "endpoint": "Isolated localhost mock; no external model-provider calls",
+    "result": "Passed: stored legacy thread resumed in a new process, successful native compaction, subsequent turn and isolated child all receive the full current context.",
+    "delivery": "Codex preserves stored developer instructions. Current MCP initialize instructions are automatically included as the mcp__hapi namespace description in the actual model request; this is not a developer-message replacement.",
+    "test": "cli/src/codex/utils/operatingContext.native.integration.test.ts"
+  },
+  "deployment": "Runner image rollout required. Existing running processes do not acquire new code from a repository commit; no active session was interrupted for this change."
+}

@@ -1,4 +1,5 @@
 import { assertEvolvedCodexNativePolicy, assertEvolvedCodexPermission } from '@/evolved/codexPolicy';
+import { withEvolvedOperatingContext } from '@/evolved/operatingContext';
 import { getRuntimeAgentConfigDescriptor } from '@hapi/protocol';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -185,7 +186,9 @@ export class SharedCodexRoot {
     config(params: Record<string, unknown>): Record<string, unknown> {
         assertEvolvedCodexNativePolicy(params);
         return { ...params, cwd: params.cwd ?? this.bootstrap.workingDirectory,
-            developerInstructions: params.developerInstructions ?? getCodexSystemPrompt(), config: {
+            developerInstructions: typeof params.developerInstructions === 'string'
+                ? withEvolvedOperatingContext(params.developerInstructions)
+                : getCodexSystemPrompt(), config: {
             ...record(params.config), 'mcp_servers.hapi': this.bridge.mcpServers.hapi,
             'shell_environment_policy.set.HAPI_SESSION_ID': this.session.sessionId
         } };
