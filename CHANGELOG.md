@@ -14,6 +14,8 @@ or container image.
   mobile and Codegraph screenshots.
 - Security updates for affected application and build dependencies; the release
   notes will identify remaining tooling advisories and the exact tested revision.
+- Correct PWA cache revisions for stable KaTeX fonts, excluding the static-host
+  fallback that is copied after service-worker generation; final-asset CI checks.
 
 ## [0.1.0-preview.1](https://github.com/BGGBTAC/hapi-evolved/releases/tag/v0.1.0-preview.1) — 2026-10-16
 

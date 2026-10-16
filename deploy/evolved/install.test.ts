@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, test } from 'bun:test'
-import { chmodSync, copyFileSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
+import * as fs from 'node:fs'
+import { chmodSync, closeSync, constants, copyFileSync, existsSync, fstatSync, linkSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createHash, createPrivateKey, createPublicKey, sign, verify } from 'node:crypto'
 import { join, dirname } from 'node:path'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { runInstaller, parseOptions, type InstallerDependencies, type InstallerOptions } from './install'
 import { initializeState, checkStatePath, CREDENTIAL_FILES, SOURCE_ROOT } from './init'
 
@@ -86,11 +87,16 @@ function fixture() {
 function mutations(calls: ReturnType<typeof fixture>['calls']) {
     return calls.filter(({ argv }) => argv[1] === 'pull' || argv[1] === 'compose' && (argv.includes('build') || argv.includes('up')))
 }
+function credentialSnapshot(path: string) {
+    const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+    try {
+        const stat = fstatSync(fd)
+        if (!stat.isFile() || stat.nlink !== 1) throw new Error('Expected regular single-linked test credential')
+        return { hash: digest(readFileSync(fd)), mode: stat.mode, inode: stat.ino, mtime: stat.mtimeMs }
+    } finally { closeSync(fd) }
+}
 function credentials(state: string) {
-    return Object.fromEntries(CREDENTIAL_FILES.map(name => {
-        const path = join(state, 'credentials', name), stat = lstatSync(path)
-        return [name, { hash: digest(readFileSync(path)), mode: stat.mode, inode: stat.ino, mtime: stat.mtimeMs }]
-    }))
+    return Object.fromEntries(CREDENTIAL_FILES.map(name => [name, credentialSnapshot(join(state, 'credentials', name))]))
 }
 function errors(report: Awaited<ReturnType<typeof runInstaller>>) { return report.checks.filter(check => check.status === 'error').map(check => check.id) }
 
@@ -201,6 +207,67 @@ describe('fresh core installer boundaries', () => {
         expect(Bun.spawnSync(['mkfifo', '-m', '600', fifoPath]).exitCode).toBe(0)
         expect((await fifo.run('status')).ok).toBe(false)
     })
+    test('private nested paths under root-owned sticky tmp work; writable ancestors fail before initialization', async () => {
+        expect(() => checkStatePath(join(homedir(), '.hapi-evolved-private-path-check'))).not.toThrow()
+        const root = temp(), state = join(root, 'new', 'nested', 'state')
+        expect(initializeState(state).created).toBe(true)
+        for (const path of [join(root, 'new'), join(root, 'new', 'nested'), state]) {
+            expect(lstatSync(path).mode & 0o7777).toBe(0o700)
+        }
+        const before = credentials(state)
+        expect(initializeState(state).created).toBe(false)
+        expect(credentials(state)).toEqual(before)
+        for (const mode of [0o770, 0o777, 0o1777]) {
+            const writable = temp(), child = join(writable, 'state')
+            chmodSync(writable, mode)
+            expect(() => initializeState(child)).toThrow('group/world writable')
+            expect(existsSync(child)).toBe(false)
+        }
+    })
+    test('foreign-owned ancestor and competing directory creation are refused without adoption', () => {
+        const parent = temp(), state = join(parent, 'state')
+        const originalLstat = fs.lstatSync
+        const foreign = spyOn(fs, 'lstatSync').mockImplementation(((path: fs.PathLike, options?: fs.StatOptions) => {
+            const result = originalLstat(path, options as { bigint?: false })
+            if (String(path) === parent) result.uid = process.getuid!() + 1
+            return result
+        }) as typeof fs.lstatSync)
+        try {
+            expect(() => initializeState(state)).toThrow('belong to root or the invoking user')
+            expect(existsSync(state)).toBe(false)
+        } finally { foreign.mockRestore() }
+
+        const root = temp(), racedParent = join(root, 'competing'), racedState = join(racedParent, 'state')
+        const originalMkdir = fs.mkdirSync
+        const competing = spyOn(fs, 'mkdirSync').mockImplementation(((path: fs.PathLike, options?: fs.MakeDirectoryOptions) => {
+            if (String(path) === racedParent) {
+                originalMkdir(path, { mode: 0o700 })
+                writeFileSync(join(racedParent, 'competitor.txt'), 'preserve this directory')
+            }
+            return originalMkdir(path, options)
+        }) as typeof fs.mkdirSync)
+        try {
+            expect(() => initializeState(racedState)).toThrow('EEXIST')
+            expect(existsSync(racedState)).toBe(false)
+            expect(readFileSync(join(racedParent, 'competitor.txt'), 'utf8')).toBe('preserve this directory')
+            expect(readdirSync(racedParent)).toEqual(['competitor.txt'])
+        } finally { competing.mockRestore() }
+    })
+    test('an inserted symlink in a previously missing parent is rejected before creating target directories', () => {
+        const root = temp(), parent = join(root, 'missing'), state = join(parent, 'state'), target = join(root, 'target')
+        mkdirSync(target, { mode: 0o700 })
+        const originalExists = fs.existsSync
+        let stateChecks = 0
+        const swapped = spyOn(fs, 'existsSync').mockImplementation(path => {
+            if (String(path) === state && ++stateChecks === 2) symlinkSync(target, parent)
+            return originalExists(path)
+        })
+        try {
+            expect(() => initializeState(state)).toThrow('symbolic links')
+            expect(readdirSync(target)).toEqual([])
+            expect(lstatSync(parent).isSymbolicLink()).toBe(true)
+        } finally { swapped.mockRestore() }
+    })
     test('a source archive without .git initializes successfully without installed workspace dependencies', () => {
         const directory = temp(), source = join(directory, 'archive'), deployment = join(source, 'deploy/evolved'), state = join(directory, 'state')
         mkdirSync(deployment, { recursive: true })
@@ -224,6 +291,17 @@ describe('fresh core installer boundaries', () => {
         expect(existsSync(busy.state)).toBe(false)
         for (const origin of ['http://public.example.com', 'https://example.com/path', 'https://user:secret@example.com', 'http://localhost:9999']) {
             const fresh = fixture(); expect((await fresh.run('init', { origin })).ok).toBe(false); expect(existsSync(fresh.state)).toBe(false)
+        }
+    })
+    test('duplicate or undeclared environment keys cannot influence configuration or mutate state', async () => {
+        for (const extra of ['EVOLVED_UID=1234', 'EVOLVED_ORIGIN=https://other.example.com', '__PROTO__=injected', 'CONSTRUCTOR=injected']) {
+            const f = fixture(); await f.run('init')
+            const before = credentials(f.state), path = join(f.state, 'compose.env')
+            const original = readFileSync(path, 'utf8')
+            writeFileSync(path, `${original}${extra}\n`)
+            expect(errors(await f.run('start'))).toContain('invalid_config')
+            expect(credentials(f.state)).toEqual(before)
+            expect(mutations(f.calls)).toHaveLength(0)
         }
     })
     test('fresh install has explicit consent, isolated tags, correct build order and controlled child environment', async () => {
@@ -378,8 +456,8 @@ describe('fresh core installer boundaries', () => {
     })
 })
 function credentialsWithoutMissing(state: string) {
-    return Object.fromEntries(CREDENTIAL_FILES.filter(name => existsSync(join(state, 'credentials', name))).map(name => {
-        const path = join(state, 'credentials', name), stat = lstatSync(path)
-        return [name, { hash: digest(readFileSync(path)), mode: stat.mode, inode: stat.ino, mtime: stat.mtimeMs }]
+    return Object.fromEntries(CREDENTIAL_FILES.flatMap(name => {
+        try { return [[name, credentialSnapshot(join(state, 'credentials', name))]] }
+        catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw error }
     }))
 }

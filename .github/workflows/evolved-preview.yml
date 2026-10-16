@@ -31,6 +31,8 @@ jobs:
             - run: bun install --frozen-lockfile
             - run: bun typecheck
             - run: bun run build:web
+            - name: Check final PWA asset revisions
+              run: node web/scripts/check-pwa-assets.mjs
             - name: Package the exact checked-out source commit
               env:
                   SOURCE_BUNDLE_DIR: ${{ runner.temp }}/evolved-preview

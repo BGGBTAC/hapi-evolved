@@ -37,6 +37,8 @@ jobs:
             - run: bun run test:e2e -- terminal-wrap-fidelity.spec.ts composer-copy.spec.ts session-list-scroll.spec.ts cold-initial-tail.spec.ts scrollbar-auto-hide.spec.ts
             - run: bun run test
             - run: bun run build:web
+            - name: Check final PWA asset revisions
+              run: node web/scripts/check-pwa-assets.mjs
             - run: bun run --cwd web test:evolved:e2e
             - name: Test integrated project workflow with real Git and Codegraph
               run: |

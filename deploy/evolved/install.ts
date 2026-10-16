@@ -58,21 +58,21 @@ function createPrivate(path: string, value: unknown): void {
     try { writeFileSync(fd, JSON.stringify(value, null, 2) + '\n') } finally { closeSync(fd) }
 }
 function parseConfig(state: string): Config {
-    const parsed: Record<string, string> = {}
+    const parsed = new Map<string, string>()
     for (const line of privateText(join(state, 'compose.env')).split(/\r?\n/)) {
         if (!line || line.startsWith('#')) continue
         const match = /^([A-Z_]+)=([A-Za-z0-9_./:@-]+)$/.exec(line)
-        if (!match || !ENV_KEYS.includes(match[1]!) || parsed[match[1]!] !== undefined) {
+        if (!match || !ENV_KEYS.includes(match[1]!) || parsed.has(match[1]!)) {
             fail('invalid_config', 'compose.env must contain only the five generated settings, without interpolation, duplicates or shell syntax. Use the operator guide for custom installations.')
         }
-        parsed[match[1]!] = match[2]!
+        parsed.set(match[1]!, match[2]!)
     }
-    if (ENV_KEYS.some(key => !parsed[key]) || parsed.EVOLVED_STATE_DIR !== state
-        || !/^[1-9]\d*$/.test(parsed.EVOLVED_UID!) || !/^[1-9]\d*$/.test(parsed.EVOLVED_GID!)
-        || !/^\d+$/.test(parsed.EVOLVED_LISTEN_PORT!)) fail('invalid_config', 'Installation identity is missing or does not match its state directory.')
-    const port = Number(parsed.EVOLVED_LISTEN_PORT)
+    if (ENV_KEYS.some(key => !parsed.get(key)) || parsed.get('EVOLVED_STATE_DIR') !== state
+        || !/^[1-9]\d*$/.test(parsed.get('EVOLVED_UID')!) || !/^[1-9]\d*$/.test(parsed.get('EVOLVED_GID')!)
+        || !/^\d+$/.test(parsed.get('EVOLVED_LISTEN_PORT')!)) fail('invalid_config', 'Installation identity is missing or does not match its state directory.')
+    const port = Number(parsed.get('EVOLVED_LISTEN_PORT'))
     if (port < 1024 || port > 65535) fail('invalid_port', 'Use a local port between 1024 and 65535.')
-    return { state, uid: Number(parsed.EVOLVED_UID), gid: Number(parsed.EVOLVED_GID), port, origin: validateOrigin(parsed.EVOLVED_ORIGIN!, port) }
+    return { state, uid: Number(parsed.get('EVOLVED_UID')), gid: Number(parsed.get('EVOLVED_GID')), port, origin: validateOrigin(parsed.get('EVOLVED_ORIGIN')!, port) }
 }
 function override(config: Config, project: string): object {
     const images = imageNames(project)
@@ -391,6 +391,8 @@ Repeated init/build/start preserve completed state; this is not an upgrade tool.
 Choose another state path/port for a separate installation. Root/sudo, remote Docker,
 rootless/userns-remapped Docker, Docker Desktop,
 environment overrides and adoption of existing operator installations are refused.
+State ancestors must be owned by root or you and not group/world writable;
+root-owned sticky directories such as /tmp are allowed.
 No system packages, DNS, firewall, host services or provider accounts are configured.
 Native runner images and browser provider login require separate protected host-control
 setup: docs/evolved/HOST_CONTROL.md. No credentials or setup tokens are printed.

@@ -13,14 +13,27 @@ function inside(path: string, parent: string): boolean {
     return part === '' || (part !== '..' && !part.startsWith(`..${sep}`) && !isAbsolute(part))
 }
 
-/** Check the actual source root, irrespective of the caller's current directory. */
+/**
+ * State is an explicit local operator CLI argument, not remote request data.
+ * This unprivileged initializer intentionally allows operator-selected locations
+ * outside HOME; it does not grant filesystem access beyond the invoking UID.
+ * Check the actual source root, irrespective of the caller's current directory.
+ */
 export function checkStatePath(directory: string): void {
     if (!isAbsolute(directory) || resolve(directory) !== directory || !/^\/[A-Za-z0-9_./-]+$/.test(directory)
         || inside(directory, SOURCE_ROOT) || inside(SOURCE_ROOT, directory)) {
         throw new Error('State requires a separate absolute path outside the source tree, without spaces, links or Compose interpolation.')
     }
     for (let path = directory; ; path = dirname(path)) {
-        try { if (!lstatSync(path).isDirectory() || lstatSync(path).isSymbolicLink()) throw new Error('State ancestors must be real directories, not symbolic links.') }
+        try {
+            const info = lstatSync(path)
+            if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('State ancestors must be real directories, not symbolic links.')
+            const trustedOwner = info.uid === 0 || info.uid === process.getuid?.()
+            const protectedSharedParent = info.uid === 0 && (info.mode & 0o1000) !== 0
+            if (!trustedOwner || ((info.mode & 0o022) !== 0 && !protectedSharedParent)) {
+                throw new Error('State ancestors must belong to root or the invoking user and must not be group/world writable, except root-owned sticky directories such as /tmp.')
+            }
+        }
         catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
         if (path === dirname(path)) break
     }
@@ -57,6 +70,13 @@ function createPrivateFile(path: string, value: Uint8Array | string): void {
     try { writeFileSync(fd, value) } finally { closeSync(fd) }
 }
 
+function createPrivateDirectory(path: string): void {
+    // Never silently adopt a directory created by a competing local process.
+    checkStatePath(path)
+    mkdirSync(path, { mode: 0o700 })
+    checkPrivateMetadata(path, true)
+}
+
 export function initializeState(directory: string, options: { origin?: string; port?: number } = {}): { state: string; created: boolean } {
     if (!process.getuid?.() || !process.getgid?.()) throw new Error('Initialize as the unprivileged service user, not root. Host-control setup is a separate operator task.')
     checkStatePath(directory)
@@ -70,10 +90,16 @@ export function initializeState(directory: string, options: { origin?: string; p
             // Do not read, recreate or rotate credentials in an existing installation.
             return { state: directory, created: false }
         }
+    } else {
+        const missing: string[] = []
+        for (let path = directory; !existsSync(path); path = dirname(path)) missing.unshift(path)
+        for (const path of missing) createPrivateDirectory(path)
     }
-    mkdirSync(directory, { recursive: true, mode: 0o700 })
     const state = realpathSync(directory)
-    for (const name of STATE_DIRECTORIES) mkdirSync(join(state, name), { recursive: true, mode: 0o700 })
+    if (state !== directory) throw new Error('State directory changed during initialization.')
+    checkStatePath(state)
+    checkPrivateMetadata(state, true)
+    for (const name of STATE_DIRECTORIES) createPrivateDirectory(join(state, name))
     const hubKeys = join(state, 'credentials/hub'), vaultKeys = join(state, 'credentials/vault')
     const pair = generateKeyPairSync('ed25519')
     createPrivateFile(join(hubKeys, 'vault-signing.pem'), pair.privateKey.export({ format: 'pem', type: 'pkcs8' }))

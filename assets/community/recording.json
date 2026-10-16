@@ -1,7 +1,7 @@
 {
   "result": "PASS",
-  "recordedAt": "2026-10-16T11:36:23.501Z",
-  "baseCommit": "4bf8d787fa250c1b4656c0c81e09ce26c18d7537",
+  "recordedAt": "2026-10-16T11:58:20.049Z",
+  "baseCommit": "c36b0db60d3dc55047a9dca08b0c10b5d12b568a",
   "sourceNote": "Recorded from the working tree; input hashes identify the exact fixture, dependency and build inputs. The base commit is not a release-validation claim.",
   "viewports": {
     "desktop": {
@@ -25,12 +25,12 @@
       "bytes": 59174
     },
     "codegraph.png": {
-      "sha256": "027d9791657dd89a3d9463ffe7847309da280de80c750de7db31a8ecea9d6e42",
-      "bytes": 116105
+      "sha256": "5177fbb6c9b68ed1731b4f72e13d8e79cdc4bbd55c7f07942069826a93f8d046",
+      "bytes": 116068
     },
     "walkthrough.webm": {
-      "sha256": "86e31bfeaa865db8fa63d119fa8ac4da931609627c4e041c88039e76f5f9a607",
-      "bytes": 6665083
+      "sha256": "df6e680aa74877d63648725f283dc85a4a055c16cf2fac2c1cdb33f4b8fb906c",
+      "bytes": 6581300
     }
   },
   "checks": [
@@ -46,7 +46,7 @@
     },
     {
       "title": "02 · An explicitly approved repository",
-      "seconds": 7.7
+      "seconds": 7.6
     },
     {
       "title": "03 · Inspect the real local Git diff",
@@ -58,15 +58,15 @@
     },
     {
       "title": "05 · Prepare a scoped review — no agent started",
-      "seconds": 37.2
+      "seconds": 37
     },
     {
       "title": "06 · Keep a source-linked knowledge proposal",
-      "seconds": 48.4
+      "seconds": 48.2
     },
     {
       "title": "HAPI-eVolved · Independent HAPI fork · Source preview",
-      "seconds": 58.5
+      "seconds": 58.3
     }
   ],
   "externalRequests": [],
@@ -92,7 +92,7 @@
   "limits": "No external provider, remote Git transfer, mobile-device hardware, user enrollment video, security certification or performance claim. Native model refresh is unavailable without a real provider/control service. Demo captions are an added presentation strip; all product status text is unchanged.",
   "inputs": {
     "scripts/community/record-demo.mjs": "054ab432ec9e5b96b47a94056c456d1275607efe996c020c1b692c3281cc4713",
-    "scripts/community/seed-math.ts": "dcb22dd259ace39970c1e5fe5e6078ed3fd1c481ea3ca3228179038c95e8e04c",
+    "scripts/community/seed-math.ts": "33cdebd8a278ec4937b84cc9569a3ea67b3f459dabd70f0ff6f59631a87d2012",
     "web/scripts/evolved-browser-hub.ts": "416b7d233c772597e5d20db59ab353d1bc7e64ee256b5793a192a431d2fb3e52",
     "web/scripts/evolved-workflow-fixture.ts": "39d2f8302031de4d51e0b2d2de0ae931a31b7b43b6c69f850f878b1ed56ff7d0",
     "bun.lock": "39f08289fd6f4a14a5467ad97bf82467d9abaf5ae7439d6f55c4f0a5d22e50db",

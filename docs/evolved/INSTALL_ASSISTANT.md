@@ -33,7 +33,10 @@ Plan about 12 GiB RAM for the stack and a future runner, at least 20 GiB free fo
 image builds, and additional space for repositories and backups.
 
 Use a separate absolute state path outside the source tree, without symlinks,
-spaces or interpolation characters. The default port is loopback `3006` and the
+spaces or interpolation characters. Existing parent directories must belong to
+root or the invoking user and must not be group/world writable; root-owned sticky
+directories such as `/tmp` are allowed. Newly created components are private.
+The default port is loopback `3006` and the
 local browser origin is `http://localhost:3006`. Select a different free port
 with `--port` before initialization. For a preconfigured private HTTPS proxy,
 set its exact origin with `--origin`; the assistant does not configure the proxy.
