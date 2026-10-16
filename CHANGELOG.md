@@ -6,6 +6,12 @@ or container image.
 
 ## Unreleased
 
+## [0.1.0-preview.2](https://github.com/BGGBTAC/hapi-evolved/releases/tag/v0.1.0-preview.2) — 2026-10-16
+
+Community source preview from commit
+`50566349a1ce3e130e47d03829257ad2a24f1351`. See the release notes for the source
+archive, checksums, validation scope and remaining dependency advisories.
+
 - A fresh Linux core-installation assistant with read-only prerequisite/status
   checks, private state, isolated images and explicit build/start steps. Managed
   browser provider login remains a separate, documented host-control setup.
@@ -13,7 +19,7 @@ or container image.
   entry points and an explicitly labelled synthetic UI walkthrough with desktop,
   mobile and Codegraph screenshots.
 - Security updates for affected application and build dependencies; the release
-  notes will identify remaining tooling advisories and the exact tested revision.
+  notes identify remaining tooling advisories and the exact tested revision.
 - Correct PWA cache revisions for stable KaTeX fonts, excluding the static-host
   fallback that is copied after service-worker generation; final-asset CI checks.
 

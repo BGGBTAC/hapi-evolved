@@ -66,11 +66,14 @@ report of native telemetry, not a promise of available quota.
 ## Try a separate installation
 
 Start with the [published source release](https://github.com/BGGBTAC/hapi-evolved/releases)
-and verify the attached checksums. The
+and verify the attached checksums. Choose the installation layout before
+initializing state: the
 [quick start](https://github.com/BGGBTAC/hapi-evolved/blob/main/docs/evolved/QUICKSTART.md)
-covers core services, and the
+explains core-only exploration, while the
 [English host-control guide](https://github.com/BGGBTAC/hapi-evolved/blob/main/docs/evolved/HOST_CONTROL.md)
-explains the additional operator setup required for managed browser login.
+defines the protected managed layout required for browser provider login. Use that
+managed layout from the start for the complete pilot; the isolated core assistant
+does not convert an existing installation into it.
 
 Use a disposable repository initially. This preview does not migrate an existing
 upstream HAPI installation, and native-app parity is not part of the supported
@@ -93,9 +96,6 @@ and [contribution instructions](https://github.com/BGGBTAC/hapi-evolved/blob/mai
 Questions and ideas belong in
 [GitHub Discussions](https://github.com/BGGBTAC/hapi-evolved/discussions).
 
-AI coding assistants contributed substantially to the code, tests and documentation.
-This article draft was written and checked by AI agents at the maintainer's request.
-Their output is subject to review and reproducible checks;
-it is not independent proof that a feature works. HAPI-eVolved is not endorsed by
+HAPI-eVolved is not endorsed by
 HAPI, Anthropic or OpenAI. The code retains AGPL-3.0-only and upstream notices;
 provider tools and dependencies have their own licenses and terms.
