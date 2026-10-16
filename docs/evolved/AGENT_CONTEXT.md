@@ -129,6 +129,14 @@ Quellen und bestehende Projektrechte gelten weiterhin.
 
 ## Übertragung und Lebenszyklus
 
+Die gemeinsame Memory-Anleitung verweist bei fehlender Graph-Konfiguration auf
+**Gedächtnis → Graph-Memory einrichten**. Ein menschlicher Projektadministrator
+hinterlegt dort den API-Key verschlüsselt, lädt den aktuellen Modellkatalog und
+prüft die Verbindung. Diese Verwaltung verlangt eine frische Passkey-Anmeldung
+und ist kein Agentenwerkzeug. Agenten fordern keine Schlüssel im Chat an und
+schalten keine Cloud-Freigaben oder Budgets zur Fehlerbehebung ein. Ein positiver
+Katalog-/Datenbanktest ist kein Nachweis einer erfolgreichen Modellinferenz.
+
 Die Betriebsgrundlage wird zur Laufzeit aufgelöst, sobald der Projektzugang
 feststeht. Claude erhält sie über die angehängten Systemanweisungen, Codex
 über die Entwickleranweisungen. Eigene Anweisungen bleiben erhalten. Derselbe

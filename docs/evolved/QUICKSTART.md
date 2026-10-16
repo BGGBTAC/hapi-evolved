@@ -126,8 +126,12 @@ Connecting GitHub or a coding subscription does not authorize cloud memory spend
 ## Memory, backups and updates
 
 Local knowledge/search need no cloud provider. Extraction and hybrid search
-require a provider, current prices and an explicit project budget.
-See the [memory configuration](https://github.com/BGGBTAC/hapi-evolved/blob/v0.1.0-preview.2/services/memory/README.md).
+require a provider, current prices and an explicit project budget. In current builds,
+a project admin opens **Memory → Graph-Memory setup** to enter the encrypted OpenAI
+API key, fetch available models, save prices and test connectivity without paid
+inference. Then enable cloud processing and set a budget in the same page.
+This browser setup requires an updated Hub, Vault and Memory service; older preview
+releases use the operator configuration. See the [memory configuration](https://github.com/BGGBTAC/hapi-evolved/blob/main/services/memory/README.md).
 
 Back up state and private keys together from a stopped, consistent stack.
 Without its master key the vault is unrecoverable. Follow the

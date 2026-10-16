@@ -9,6 +9,7 @@ import { promisify } from 'node:util'
 import { EvolvedError, hashToken, privateFile, type AgentProfile } from './store'
 import { GithubBroker } from './githubBroker'
 import { GIT_TIMEOUT_MS, type GitCredentialRequest } from './githubProtocol'
+import { memoryProviderConfigSchema, type MemoryProviderConfig } from './memoryProvider'
 
 export type SecretMetadata = { id: string; projectId: string; name: string; version: number; createdAt: number; updatedAt: number }
 export type ResourceAction = {
@@ -16,7 +17,7 @@ export type ResourceAction = {
     timeoutSeconds?: number
 } & ({ type: 'http'; url: string; method: 'GET' | 'HEAD' | 'POST'; secretId?: string; header?: string; prefix?: string; expectedStatus?: number }
     | { type: 'ssh'; host: string; port?: number; user: string; command: string; secretId: string; knownHostsFile: string })
-export type VaultRequest = { userId: string; projectId: string; operation: 'list' | 'set' | 'delete' | 'resources' | 'invoke' | 'purgeProject' | 'github' | 'githubGit'; payload: Record<string, unknown> }
+export type VaultRequest = { userId: string; projectId: string; operation: 'list' | 'set' | 'delete' | 'resources' | 'invoke' | 'purgeProject' | 'github' | 'githubGit' | 'memoryProvider'; payload: Record<string, unknown> }
 export interface VaultClient { request(input: VaultRequest): Promise<unknown>; git?(input: GitCredentialRequest, body: Uint8Array, signal?: AbortSignal): Promise<Response> }
 type Envelope = VaultRequest & { expiresAt: number; nonce: string }
 type CipherRow = { id: string; project_id: string; name: string; version: number; nonce: Uint8Array; ciphertext: Uint8Array; tag: Uint8Array; created_at: number; updated_at: number }
@@ -36,7 +37,7 @@ function decrypted(key: Uint8Array, row: { nonce: Uint8Array; ciphertext: Uint8A
 }
 function metadata(row: CipherRow): SecretMetadata { return { id: row.id, projectId: row.project_id, name: row.name, version: row.version, createdAt: row.created_at, updatedAt: row.updated_at } }
 
-/** Lives in the dedicated vault process. No plaintext read operation is exposed by its protocol. */
+/** User secrets have no plaintext read operation. Memory provider snapshots are internal Hub-to-service credentials. */
 export class EvolvedVault implements VaultClient {
     readonly db: Database
     private readonly masterKey: Buffer
@@ -64,6 +65,7 @@ export class EvolvedVault implements VaultClient {
             CREATE TABLE IF NOT EXISTS revoked_projects(project_id TEXT PRIMARY KEY,revoked_at INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,project_id TEXT NOT NULL,request_key TEXT NOT NULL,fingerprint TEXT NOT NULL,status TEXT NOT NULL,result TEXT,UNIQUE(user_id,project_id,request_key));
             CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,user_id TEXT NOT NULL,project_id TEXT NOT NULL,operation TEXT NOT NULL,target_id TEXT,at INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS memory_providers(project_id TEXT PRIMARY KEY,version INTEGER NOT NULL,embedding_model TEXT,nonce BLOB,ciphertext BLOB,tag BLOB,updated_at INTEGER NOT NULL);
         `)
         this.db.prepare("UPDATE runs SET status='indeterminate',result=? WHERE status='running'").run(JSON.stringify({ status: 'indeterminate' }))
         this.github = new GithubBroker(this.db, {
@@ -114,6 +116,7 @@ export class EvolvedVault implements VaultClient {
                 this.db.prepare('INSERT OR IGNORE INTO revoked_projects VALUES(?,?)').run(projectId, Date.now())
                 this.db.prepare('DELETE FROM secrets WHERE project_id=?').run(projectId)
                 this.github.purge(projectId)
+                this.db.prepare('DELETE FROM memory_providers WHERE project_id=?').run(projectId)
                 this.db.prepare('DELETE FROM project_keys WHERE project_id=?').run(projectId)
                 this.db.prepare('INSERT INTO audit(user_id,project_id,operation,target_id,at) VALUES(?,?,?,?,?)').run(userId, projectId, 'project.purged', projectId, Date.now())
             })()
@@ -121,6 +124,7 @@ export class EvolvedVault implements VaultClient {
         }
         if (this.db.prepare('SELECT 1 FROM revoked_projects WHERE project_id=?').get(projectId)) throw new EvolvedError('project_revoked', 'Project has been deleted.', 403)
         if (operation === 'github') return this.github.request(userId, projectId, payload)
+        if (operation === 'memoryProvider') return this.memoryProvider(userId, projectId, payload)
         if (operation === 'list') return { secrets: (this.db.prepare('SELECT * FROM secrets WHERE project_id=? ORDER BY name').all(projectId) as CipherRow[]).map(metadata) }
         if (operation === 'resources') return { resources: this.actions.filter(a => a.projectId === projectId).map(a => ({ id: a.id, name: a.name, type: a.type, actions: ['execute'], profiles: a.profiles })) }
         if (operation === 'set') {
@@ -147,6 +151,52 @@ export class EvolvedVault implements VaultClient {
         }
         if (operation === 'invoke') return this.invoke(input)
         throw new EvolvedError('operation_denied', 'Unsupported vault operation.', 403)
+    }
+    private memoryProvider(userId: string, projectId: string, payload: Record<string, unknown>): unknown {
+        type Row = { version: number; embedding_model: string | null; nonce: Uint8Array | null; ciphertext: Uint8Array | null; tag: Uint8Array | null }
+        const read = () => this.db.prepare('SELECT * FROM memory_providers WHERE project_id=?').get(projectId) as Row | null
+        const reveal = (row: Row): MemoryProviderConfig | null => {
+            if (!row.ciphertext) return null
+            if (!row.nonce || !row.tag) throw new EvolvedError('vault_integrity', 'Memory provider record is invalid.', 500)
+            const key = this.projectKey(projectId)
+            let clear: Buffer | undefined
+            try {
+                clear = decrypted(key, { nonce: row.nonce, ciphertext: row.ciphertext, tag: row.tag }, JSON.stringify(['hapi-evolved-memory-provider-v1', projectId, row.version]))
+                const parsed = memoryProviderConfigSchema.safeParse(JSON.parse(clear.toString('utf8')))
+                if (!parsed.success) throw new Error()
+                return parsed.data
+            } catch { throw new EvolvedError('vault_integrity', 'Memory provider record is invalid.', 500) }
+            finally { key.fill(0); clear?.fill(0) }
+        }
+        const status = (row: Row | null, runtime = false) => {
+            const config = row ? reveal(row) : null
+            const state = !row ? 'unset' : config ? 'configured' : 'disabled'
+            if (runtime) return { state, version: row?.version ?? 0, config }
+            const publicConfig = config ? (({ apiKey: _key, ...fields }) => fields)(config) : null
+            return { state, version: row?.version ?? 0, config: publicConfig, embeddingModel: row?.embedding_model ?? null }
+        }
+        if (payload.action === 'status') return status(read())
+        // Only signed internal Hub requests can use this branch; never forwarded from browser input.
+        if (payload.action === 'resolve') return status(read(), true)
+        if (!['set', 'delete'].includes(String(payload.action))) throw new EvolvedError('operation_denied', 'Unsupported memory provider operation.', 403)
+        if (!Number.isSafeInteger(payload.version) || Number(payload.version) < 0 || Number(payload.version) >= Number.MAX_SAFE_INTEGER) throw new EvolvedError('invalid_version', 'A configuration version is required.')
+        const parsed = payload.action === 'set' ? memoryProviderConfigSchema.safeParse(payload.config) : undefined
+        if (parsed && !parsed.success) throw new EvolvedError('invalid_memory_provider', 'Invalid memory provider configuration.')
+        return this.db.transaction(() => {
+            const prior = read()
+            if ((prior?.version ?? 0) !== payload.version) throw new EvolvedError('memory_provider_conflict', 'Configuration changed. Reload before saving.', 409)
+            const version = Number(payload.version) + 1, config = parsed?.success ? parsed.data : null
+            let cipher: { nonce: Buffer; ciphertext: Buffer; tag: Buffer } | undefined
+            if (config) {
+                const key = this.projectKey(projectId), clear = Buffer.from(JSON.stringify(config))
+                try { cipher = encrypted(key, clear, JSON.stringify(['hapi-evolved-memory-provider-v1', projectId, version])) }
+                finally { key.fill(0); clear.fill(0) }
+            }
+            this.db.prepare('INSERT INTO memory_providers VALUES(?,?,?,?,?,?,?) ON CONFLICT(project_id) DO UPDATE SET version=excluded.version,embedding_model=excluded.embedding_model,nonce=excluded.nonce,ciphertext=excluded.ciphertext,tag=excluded.tag,updated_at=excluded.updated_at')
+                .run(projectId, version, config?.embeddingModel ?? prior?.embedding_model ?? null, cipher?.nonce ?? null, cipher?.ciphertext ?? null, cipher?.tag ?? null, Date.now())
+            this.db.prepare('INSERT INTO audit(user_id,project_id,operation,target_id,at) VALUES(?,?,?,?,?)').run(userId, projectId, config ? 'memory.provider.set' : 'memory.provider.deleted', projectId, Date.now())
+            return status(read())
+        })()
     }
     async git(input: GitCredentialRequest, body: Uint8Array, signal?: AbortSignal): Promise<Response> {
         if (!input.projectId || !input.userId || input.operation !== 'githubGit') throw new EvolvedError('invalid_scope', 'Git scope is required.', 400)

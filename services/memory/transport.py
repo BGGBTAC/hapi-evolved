@@ -1,5 +1,6 @@
 import json
 import httpx
+from types import MappingProxyType
 from budget import OperationLedger, micros, BudgetExceeded
 
 
@@ -8,7 +9,7 @@ class BudgetTransport(httpx.AsyncBaseTransport):
     def __init__(self, ledger: OperationLedger, operation: str, config: dict):
         self.ledger = ledger
         self.operation = operation
-        self.config = config
+        self.config = MappingProxyType(dict(config))
         self.base = httpx.URL(config["base"])
         self.inner = httpx.AsyncHTTPTransport(retries=0)
 
@@ -24,6 +25,9 @@ class BudgetTransport(httpx.AsyncBaseTransport):
         expected = self.config["embedding_model"] if embedding else self.config["model"]
         if body.get("model") != expected or body.get("stream") or body.get("n", 1) != 1:
             raise ValueError("Model/streaming configuration is not allowed")
+        if embedding and "dimensions" in body and (type(body["dimensions"]) is not int
+                or body["dimensions"] != self.config.get("embedding_dimensions")):
+            raise ValueError("Embedding dimensions are not allowed")
         responses = request.url.path == path + "/responses"
         output_limit = 0
         if not embedding:

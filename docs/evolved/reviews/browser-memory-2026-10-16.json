@@ -1,0 +1,160 @@
+{
+  "date": "2026-10-16",
+  "scope": "Browser project Memory configuration, encrypted Vault delivery, per-operation Python configuration, embedding binding and unchanged budget/consent controls",
+  "status": "locally_validated_no_open_confirmed_release_blockers",
+  "method": "Actual Claude Opus 5.5 consultations followed by independent source and regression verification; an internal review, not an external audit.",
+  "consultations": [
+    {
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "inputSha256": "3ec9c8623daba6c742cd033f65bfff2962ee66386be109e52ffca631a2ae2c61",
+      "outputSha256": "823d9f8069681571f4bd0264fb3108133d4030da8e9e294076931e4cc664fa4a",
+      "disposition": "Historical full review blocked on F1/F2; never represented as approval."
+    },
+    {
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "inputSha256": "d95817e812c943162205d85a8bebd880ccd3ee1ea4ac66b6209701ff02b16803",
+      "outputSha256": "a2c423b21637d7462f43241f9414941b1963db2cc82751f972a28553956ee8b9",
+      "disposition": "Actual narrow review closed F2, required N1 correction for F1, and identified nonblocking N2. Exact requested N1 reordering was subsequently independently reviewed and tested; no additional model call or claim of a model rereview after that correction."
+    }
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "status": "closed",
+      "summary": "Known binding no longer permanently prevents an explicit model change on a provably empty graph. Every PUT confirms the durable Python binding; unchanged bindings do not require graph emptiness.",
+      "evidence": [
+        "hub/src/evolved/memoryProvider.ts:141",
+        "services/memory/app.py:160",
+        "web/src/evolved/MemoryProvider.tsx:156",
+        "hub/src/evolved/memoryProvider.test.ts:160",
+        "hub/src/evolved/memoryProvider.test.ts:175"
+      ]
+    },
+    {
+      "id": "F2",
+      "status": "closed",
+      "summary": "Only a reservation created atomically by the current call and definitely never dispatched can be removed. Existing/crash/possibly sent reservations remain; original authorization errors are preserved and retries do not reuse a zero-settled receipt.",
+      "evidence": [
+        "hub/src/evolved/memoryService.ts:71",
+        "hub/src/evolved/memoryService.ts:96",
+        "hub/src/evolved/memoryService.ts:148",
+        "hub/src/evolved/memoryProvider.test.ts:230"
+      ]
+    },
+    {
+      "id": "N1",
+      "status": "fixed_after_actual_delta_review_independently_verified",
+      "summary": "Within the acquired project lock, exact durable model/dimension equality is confirmed before checking unfinished operations. This read-only confirmation preserves old uncertain receipts; a held lock still returns busy and different/missing bindings retain all admission and empty-graph checks.",
+      "evidence": [
+        "services/memory/app.py:160",
+        "services/memory/app.py:167",
+        "services/memory/test_runtime_configuration.py:99",
+        "services/memory/test_runtime_configuration.py:112"
+      ]
+    },
+    {
+      "id": "N2",
+      "status": "accepted_nonblocking_limitation",
+      "summary": "If Python binding succeeds but Vault save fails, old queued snapshots may be rejected with a zero-cost receipt before the user saves again. A repeated save can repair binding while safely allowed, but already terminally rejected jobs are not automatically replayed. Existing local knowledge, graph contents and receipts are retained. No blind compensation or retry that could charge twice was added.",
+      "acceptedBy": "coordinator explicit scope decision"
+    },
+    {
+      "id": "F3",
+      "status": "accepted_documented_trust_boundary",
+      "summary": "Vault decrypts project keys for the trusted Hub, which sends them to the authenticated private Memory service, including configuration/check. Browser/agent GET never receives keys. This is not end-to-end secrecy from a compromised Hub.",
+      "acceptedBy": "coordinator explicit architecture decision"
+    },
+    {
+      "id": "F4",
+      "status": "accepted_conservative_concurrency",
+      "summary": "Configuration changes can return busy while an operation holds the project reader; no promise of immediate cancellation or key rotation during active processing."
+    },
+    {
+      "id": "F5",
+      "status": "nonblocking_message_limitation",
+      "summary": "Binding rejection combines nonempty graph and transient processing; fail-closed behavior preserved."
+    },
+    {
+      "id": "F6",
+      "status": "deferred_nonblocking",
+      "summary": "Project availability probes on multi-project searches remain existing behavior; no aggregation/performance refactor."
+    },
+    {
+      "id": "F7",
+      "status": "retained_security_limit",
+      "summary": "Six metadata checks per minute remain enforced. Browser regression now waits for a real new window before reconnect, without mutation retries or limit bypass."
+    },
+    {
+      "id": "F8",
+      "status": "fixed",
+      "summary": "Missing custom-model reconnect prices open the editable price section; covered by UI regression."
+    },
+    {
+      "id": "F9",
+      "status": "fixed",
+      "summary": "An explicit confirmed browser action can disable an inherited operator connection without possessing its key."
+    },
+    {
+      "id": "I1",
+      "status": "inherited_conservative_budget_limit",
+      "summary": "Uncertain provider failures retain the conservative upper bound; no generic refund introduced."
+    },
+    {
+      "id": "I2",
+      "status": "inherited_terminal_receipt_limit",
+      "summary": "Failed terminal receipts are not automatically replayed under the same operation ID."
+    }
+  ],
+  "verification": {
+    "hubTargetedTests": 35,
+    "pythonTestsAfterFinalFix": 39,
+    "webTargetedTests": 17,
+    "packageTypechecks": 7,
+    "browser": {
+      "performedBy": "Python/fixture owner",
+      "independentlyRead": true,
+      "reportSha256": "db7abc6012312599fd90d3687299bfa5abb13c17101ad6bd9729da2d9eb75cb6",
+      "checks": 6,
+      "views": 6,
+      "bindingConfirmations": 4,
+      "inferenceRequests": 0,
+      "pageErrors": 0,
+      "unexpectedConsole": 0,
+      "unexpectedResponses": 0,
+      "scope": "Real isolated Hub/Vault/WebAuthn and built browser; synthetic internal model catalog/configuration/binding service."
+    },
+    "realNeo4jGraphiti": "passed with synthetic model transport",
+    "fixturePathRegression": {
+      "rejectedInvalidStarts": 3,
+      "browserChecks": 6,
+      "reportSha256": "66e51698e1a489306ee3c5227c2f8ac6cabd84aa1c3fbc66e18720d08e4b226a",
+      "inferenceRequests": 0
+    }
+  },
+  "postModelReviewDeltas": [
+    "Python N1 exact-binding check moved before active/indeterminate check within the same existing lock; regression compares the entire ledger before/after.",
+    "Browser harness respects the real rate window before reconnect; read-only review confirmed no product limit change.",
+    "Browser fixture constructs its temporary path from a fixed root and validated basename, then checks the normalized prefix. Three traversal/subpath starts rejected before initialization; browser regression passed again. Product runtime unchanged."
+  ],
+  "limits": [
+    "No arbitrary model inference or Graphiti compatibility is inferred from the provider catalog or connection test.",
+    "No historical reservations were refunded, no graph was deleted, no existing receipt was rewritten.",
+    "Single Hub and single Python worker assumptions remain; this review does not claim multi-Hub distributed locking."
+  ],
+  "sourceSha256": {
+    "hub/src/evolved/memoryProvider.ts": "3a0a77b0abc134d7147c92d502f0a61a5c93f73999ebaaf16aa63202404924ab",
+    "hub/src/evolved/memoryProvider.test.ts": "43c8cb0a572973d80edb454fb5d65b2b4541b5055b377f3249bdfecdefdf05d0",
+    "hub/src/evolved/memoryService.ts": "68947114710253c7861c61bbc8a5fbfd29702e4dfd51a99a457b05a6fd6fc16c",
+    "hub/src/evolved/memoryStore.ts": "02031d6cf005f448f1d1e180d453a8206216ee8816319e3f8e66f79f4b8aa9af",
+    "services/memory/app.py": "984a7614b81d9020e0ccbcce001a1e09fa33f0b523c3649f442c3de003b003d7",
+    "services/memory/budget.py": "bd061cebb0abfeb3ee377b1d5a91a61bbada777a0b082d8fcf399ef66924fa69",
+    "services/memory/test_runtime_configuration.py": "d3e8d0bc38e0a01baddbe13f63e31a4e145b5edb36f2dbb38cc6f3c1c8595141",
+    "web/src/evolved/MemoryProvider.tsx": "862e0b491048ba618be894d4c929d5e61561d0521c0f67917183530ea455f57e",
+    "web/src/evolved/MemoryProvider.test.tsx": "e1693ce3150192c8ba79aa03932b44d8831ef7a57e07088676347525e7d69776",
+    "web/scripts/evolved-browser-hub.ts": "849fcdddb3771091f48ab631556098cfe9f9b3547329eee1480287c43ef918ff",
+    "web/scripts/evolved-memory-check.mjs": "95e7117bb7aec2b36ccbfb50c31ffe22b3b02204ad41004c1e9f944dcb2257ef",
+    "services/memory/validate_stack.py": "8d86d279a6c4648ea53e80b48957ee9acce01e181bcc97d61510b700795ae4a2"
+  }
+}

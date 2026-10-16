@@ -55,6 +55,19 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(BudgetExceeded):
                 await client.post("https://model.invalid/v1/embeddings", json={"model": "test-embedding", "input": "hello"})
 
+    async def test_changed_dimensions_fail_before_charge_or_network(self):
+        ledger = OperationLedger(":memory:")
+        ledger.begin("dimensions", "p", 0, "hash", 10000)
+        config = {**self.config(), "embedding_dimensions": 1536}
+        transport = BudgetTransport(ledger, "dimensions", config)
+        config["embedding_dimensions"] = 3072
+        transport.inner = httpx.MockTransport(lambda request: self.fail("Provider must not be called"))
+        async with httpx.AsyncClient(transport=transport) as client:
+            for dimensions in [3072, 1536.0, "1536", True]:
+                with self.assertRaises(ValueError):
+                    await client.post("https://model.invalid/v1/embeddings", json={"model": "test-embedding", "input": "hello", "dimensions": dimensions})
+        self.assertEqual(ledger.spent("dimensions"), 0)
+
     async def test_wrong_endpoint_is_rejected_before_request(self):
         ledger = OperationLedger(":memory:")
         ledger.begin("op", "p", 0, "hash", 10_000)

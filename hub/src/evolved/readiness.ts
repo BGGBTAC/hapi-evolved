@@ -21,7 +21,7 @@ export function createReadinessRoutes(options: {
     readResource: (request: Request, projectId: string, resource: ReadinessResource) => Promise<Resource>
     graphConfigured?: boolean
     graphStatus: (projectId: string) => CodegraphStatusSnapshot | undefined
-    memoryAvailable: () => Promise<boolean>
+    memoryAvailable: (projectId: string) => Promise<boolean>
 }) {
     const app = new Hono(), { store } = options
     let active = 0
@@ -60,7 +60,7 @@ export function createReadinessRoutes(options: {
                 machine && engine && project.role !== 'viewer' && capabilities.includes(MACHINE_CAPABILITIES.AgentAvailability) ? engine.getAgentAvailability(machine.id) : Promise.reject(new Error('unavailable')),
                 project.role === 'admin' ? options.readResource(c.req.raw, project.id, 'providers') : Promise.resolve({ status: 403, body: null }),
                 options.readResource(c.req.raw, project.id, 'repositories'),
-                options.memoryAvailable(),
+                options.memoryAvailable(project.id),
             ])
             const [probe, agentReply, providerReply, repoReply, memoryReply] = settled
             const rpc = probe.status === 'fulfilled' && Array.isArray(probe.value) && probe.value.length === 0 ? 'ok' : machine ? 'stale' : 'missing'

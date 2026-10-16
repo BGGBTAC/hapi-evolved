@@ -192,14 +192,39 @@ Die lokale Textsuche funktioniert ohne Cloud-Verarbeitung. Die ausdrücklich
 gewählte Hybridsuche verwendet den verbundenen Graphdienst und das
 Verarbeitungsbudget. Statusfilter grenzen die angezeigten Ergebnisse ein.
 
-Projektadministratoren konfigurieren unter „Verarbeitung und Budget“:
+Für den Wissensgraphen öffnet ein Projektadministrator **Gedächtnis → Graph-Memory einrichten**:
+
+1. Einen eigenen OpenAI-API-Key in das Passwortfeld einfügen. Ein vorhandener
+   Schlüssel bleibt bei leerem Feld unverändert. Claude-/Codex-Abos sind separate Anmeldungen.
+2. **Modelle vom Anbieter laden** wählen und Sprach- sowie Embedding-Modell auswählen.
+   Der Katalog wird live abgefragt. Für bekannte Modelle werden Preise vorgeschlagen;
+   bei anderen Modellen die aktuellen USD-Preise je Million Tokens unter
+   **Preise und erweiterte Einstellungen** eintragen.
+3. **Einrichtung speichern**, gegebenenfalls mit Passkey bestätigen und
+   **Verbindung testen**. Der Test prüft Key, Modellkatalog und Datenbank ohne
+   kostenpflichtige Inferenz. Er bestätigt keine Modellkompatibilität oder verfügbares API-Guthaben.
+4. Unter **Verarbeitung und Budget** Cloud-Verarbeitung und Budget freigeben.
+
+Der Key wird verschlüsselt im Projekt-Tresor gespeichert und weder an Agenten
+noch beim erneuten Öffnen an den Browser ausgegeben. Kein SSH und kein Neustart
+sind erforderlich. Neue und wartende Aufträge nutzen die gespeicherte Einrichtung
+unter den bestehenden Projektfreigaben. **Verbindung entfernen** entfernt den
+Projekt-Key und verhindert einen Rückfall auf einen globalen Betreiber-Key;
+lokale Einträge bleiben erhalten.
+
+Graph-Memory benötigt strukturierte Textausgaben, Chat Completions mit Logprobs
+und Embeddings mit 1536 Dimensionen. Nicht jede Modell-ID aus dem Katalog ist
+dafür geeignet. Ein an vorhandene Graphdaten gebundenes Embedding-Modell kann
+nicht einfach ausgetauscht werden; dafür wäre eine gesonderte Neuindizierung nötig.
+
+Projektadministratoren konfigurieren unter **Verarbeitung und Budget**:
 
 1. Cloud-Verarbeitung für dieses Projekt erlauben.
 2. Monatslimit und Limit je Auftrag in USD festlegen.
 3. Automatische Wissensverarbeitung aktivieren und speichern.
 
-Ein Budget von null gibt keine Ausgaben frei. Der Betreiber muss zusätzlich
-Provider und Modell konfigurieren. Die Anzeige zeigt Verbrauch, Reservierungen
+Ein Budget von null gibt keine Ausgaben frei. Die Einrichtung oben ergänzt
+Provider und Modelle. Die Anzeige zeigt Verbrauch, Reservierungen
 und Monatslimit. Bei ausgeschöpftem Budget oder fehlendem Provider bleiben
 lokale Einträge und die lokale Suche nutzbar.
 

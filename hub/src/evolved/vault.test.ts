@@ -13,8 +13,40 @@ function vault(dir: string, actions: ConstructorParameters<typeof EvolvedVault>[
     const result = new EvolvedVault({ dbPath: join(dir, 'vault.sqlite'), masterKeyFile: join(dir, 'master.key'), actions }); vaults.push(result); return result
 }
 const request = (operation: VaultRequest['operation'], payload: Record<string, unknown> = {}, projectId = 'project-a'): VaultRequest => ({ userId: 'user-a', projectId, operation, payload })
+const memoryConfig = { provider: 'openai', apiKey: 'SYNTHETIC-memory-credential', model: 'chat-model', embeddingModel: 'text-embedding-3-small', embeddingDimensions: 1536, inputUsdPerMTok: '0.4', outputUsdPerMTok: '1.6', embeddingUsdPerMTok: '0.02', maxOutputTokens: 1024 }
 
 describe('Evolved isolated vault and bounded broker', () => {
+    test('memory credentials use separate encrypted records and survive restart without entering the secret catalog', async () => {
+        const dir = directory(), v = vault(dir)
+        const saved = await v.request(request('memoryProvider', { action: 'set', version: 0, config: memoryConfig }))
+        expect(JSON.stringify(saved)).not.toContain(memoryConfig.apiKey)
+        expect(await v.request(request('list'))).toEqual({ secrets: [] })
+        expect(await v.request(request('resources'))).toEqual({ resources: [] })
+        const row = v.db.query('SELECT ciphertext FROM memory_providers').get() as { ciphertext: Uint8Array }
+        expect(Buffer.from(row.ciphertext).toString()).not.toContain(memoryConfig.apiKey)
+        expect(JSON.stringify(v.db.query('SELECT * FROM audit').all())).not.toContain(memoryConfig.apiKey)
+        v.close(); vaults.splice(vaults.indexOf(v), 1)
+        expect(readFileSync(join(dir, 'vault.sqlite')).includes(Buffer.from(memoryConfig.apiKey))).toBe(false)
+        const restarted = vault(dir)
+        expect(await restarted.request(request('memoryProvider', { action: 'resolve' }))).toMatchObject({ state: 'configured', version: 1, config: memoryConfig })
+        expect(await restarted.request(request('memoryProvider', { action: 'resolve' }, 'project-b'))).toMatchObject({ state: 'unset', config: null })
+        await expect(restarted.request(request('memoryProvider', { action: 'set', version: 0, config: memoryConfig }))).rejects.toThrow('changed')
+        await expect(restarted.request(request('memoryProvider', { action: 'delete', version: 0 }))).rejects.toThrow('changed')
+        expect(await restarted.request(request('memoryProvider', { action: 'delete', version: 1 }))).toMatchObject({ state: 'disabled', version: 2, config: null, embeddingModel: memoryConfig.embeddingModel })
+        expect(await restarted.request(request('memoryProvider', { action: 'resolve' }))).toMatchObject({ state: 'disabled', config: null })
+        expect(await restarted.request(request('memoryProvider', { action: 'set', version: 2, config: memoryConfig }))).toMatchObject({ version: 3 })
+        await restarted.request(request('purgeProject'))
+        expect(restarted.db.query('SELECT * FROM memory_providers').all()).toEqual([])
+        await expect(restarted.request(request('memoryProvider', { action: 'resolve' }))).rejects.toThrow('deleted')
+    })
+    test('memory provider AAD prevents version and project substitution', async () => {
+        const v = vault(directory())
+        await v.request(request('memoryProvider', { action: 'set', version: 0, config: memoryConfig }))
+        v.db.query('UPDATE memory_providers SET version=2').run()
+        await expect(v.request(request('memoryProvider', { action: 'resolve' }))).rejects.toThrow('invalid')
+        v.db.query("UPDATE memory_providers SET version=1,project_id='project-b'").run()
+        await expect(v.request(request('memoryProvider', { action: 'resolve' }, 'project-b'))).rejects.toThrow('invalid')
+    })
     test('credential-carrying HTTP actions require TLS outside literal loopback addresses', () => {
         for (const url of ['http://api.example.test/action', 'http://10.0.0.3/action', 'http://localhost/action']) {
             expect(() => vault(directory(), [{ id: 'unsafe', projectId: 'project-a', name: 'Unsafe', profiles: ['extended'], type: 'http', url, method: 'POST', secretId: 'synthetic-secret', header: 'authorization' }])).toThrow('require HTTPS')

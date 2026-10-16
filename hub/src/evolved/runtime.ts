@@ -10,6 +10,7 @@ import { createCodegraphRoutes, startCodegraphSync, enqueueCodegraphDeletion, qu
 import { createReadinessRoutes } from './readiness'
 import { createMemoryRoutes, proposeMemoryFile, type MemoryMessageResolver } from './memory'
 import { HttpMemoryBackend, MemoryService } from './memoryService'
+import { createMemoryProviderRoutes, MemoryProviderService } from './memoryProvider'
 import { createEvolvedRequestGuard } from './security'
 import { createPreviewRoutes } from './previews'
 import { createPeerRoutes } from './peers'
@@ -55,7 +56,8 @@ export function createEvolvedRuntime(dataDir: string, secret: Uint8Array) {
     if (!vaultUrl || !signingKeyFile) throw new Error('The isolated vault URL and signing-key file are required')
     const vault = new RemoteVaultClient({ url: vaultUrl, signingKeyFile })
     const serviceToken = process.env.EVOLVED_SERVICE_TOKEN_FILE ? privateFile(process.env.EVOLVED_SERVICE_TOKEN_FILE).toString('utf8').trim() : undefined
-    const memory = new MemoryService(store, new HttpMemoryBackend(process.env.EVOLVED_MEMORY_URL, serviceToken))
+    const memoryProvider = new MemoryProviderService(store, vault, process.env.EVOLVED_MEMORY_URL, serviceToken)
+    const memory = new MemoryService(store, new HttpMemoryBackend(process.env.EVOLVED_MEMORY_URL, serviceToken, memoryProvider.resolve, memoryProvider.using))
     const graphStatus = new Map<string, CodegraphStatusSnapshot>()
     const graphOptions = { store, origin, adapterUrl: process.env.EVOLVED_CODEGRAPH_URL, serviceToken, statusCache: graphStatus }
     const routes = new Hono()
@@ -77,7 +79,7 @@ export function createEvolvedRuntime(dataDir: string, secret: Uint8Array) {
     })
     routes.route('/', repositories.routes)
     routes.route('/', createReadinessRoutes({ store, origin, getEngine: () => getSyncEngine(),
-        graphConfigured: !!graphOptions.adapterUrl && !!serviceToken, graphStatus: id => graphStatus.get(id), memoryAvailable: () => memory.backend.available(),
+        graphConfigured: !!graphOptions.adapterUrl && !!serviceToken, graphStatus: id => graphStatus.get(id), memoryAvailable: id => memory.backend.available(id),
         readResource: async (request, projectId, resource) => {
             // Only fixed internal diagnostic routes. No caller-supplied URL or mutation method.
             const response = await routes.request(new Request(`${origin}/projects/${encodeURIComponent(projectId)}/${resource}`, { headers: request.headers }))
@@ -98,6 +100,7 @@ export function createEvolvedRuntime(dataDir: string, secret: Uint8Array) {
     routes.route('/', createScheduleRoutes(schedules, () => getSyncEngine()))
     routes.route('/', createEvolvedRoutes({ store, vault, origin, allowedWorkspaceRoots: roots as string[], repositoryDiscovery: repositories.discovery,
         onProjectDelete: projectId => { memory.forgetProject(projectId); enqueueCodegraphDeletion(store, projectId) } }))
+    routes.route('/', createMemoryProviderRoutes({ store, service: memoryProvider, origin }))
     routes.route('/', createMemoryRoutes({ store, service: memory, origin, resolveMessage: (...args) => resolveMessage(...args) }))
     routes.route('/', createCodegraphRoutes(graphOptions))
     const stopMemory = memory.start()
