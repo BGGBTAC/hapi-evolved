@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'bun:test'
+import { afterEach, expect, spyOn, test } from 'bun:test'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -298,19 +298,53 @@ test('IPC EOF cancels the native child before service completion and returns onl
 
 test('only explicit heartbeat extends IPC lifetime; ordinary authenticated requests do not', async () => {
     const f = await fixture(), source = new PassThrough(), sink = new PassThrough()
-    sink.resume()
-    const service = serveRequests(f.controller, source, sink, 80)
-    for (let i = 0; i < 3; i++) {
-        source.write(`${JSON.stringify({ requestId: `beat-${i}`, action: 'heartbeat' })}\n`)
-        await new Promise(resolve => setTimeout(resolve, 50))
-    }
+    // Native startup must not consume the deliberately short IPC lifetime.
     const { operation } = await f.controller.start('codex')
     await waitFor(f.controller, 'codex', operation.id, 'waiting')
     const pid = Number(readFileSync(join(f.home, 'codex.pid'), 'utf8'))
-    const interval = setInterval(() => source.write(`${JSON.stringify({ requestId: 'read', action: 'get', provider: 'codex', operationId: operation.id })}\n`), 10)
-    await service.closed
-    clearInterval(interval)
-    expect(() => process.kill(pid, 0)).toThrow()
+    const replies: { requestId: string; result?: unknown; error?: unknown }[] = []
+    sink.on('data', chunk => { for (const line of chunk.toString().trim().split('\n')) replies.push(JSON.parse(line)) })
+    // Control elapsed authorization time while retaining real watchdog timers and
+    // child-process termination. CI scheduling cannot expire setup accidentally.
+    let now = Date.now()
+    const clock = spyOn(Date, 'now').mockImplementation(() => now)
+    const service = serveRequests(f.controller, source, sink, 80)
+    let closed = false
+    void service.closed.then(() => { closed = true })
+    let requests: ReturnType<typeof setInterval> | undefined
+    let deadline: ReturnType<typeof setTimeout> | undefined
+    try {
+        for (let i = 0; i < 3; i++) {
+            now += 50
+            source.write(`${JSON.stringify({ requestId: `beat-${i}`, action: 'heartbeat' })}\n`)
+            expect(replies).toContainEqual({ requestId: `beat-${i}`, result: { ok: true } })
+            await new Promise(resolve => setTimeout(resolve, 100))
+            expect(closed).toBe(false)
+            expect(f.controller.get('codex', operation.id).operation.state).toBe('waiting')
+            expect(() => process.kill(pid, 0)).not.toThrow()
+        }
+        requests = setInterval(() => {
+            now += 20
+            source.write(`${JSON.stringify({ requestId: 'read', action: 'get', provider: 'codex', operationId: operation.id })}\n`)
+        }, 10)
+        await Promise.race([
+            service.closed,
+            new Promise<never>((_, reject) => {
+                deadline = setTimeout(() => reject(new Error('IPC did not expire without a heartbeat')), 2_000)
+            }),
+        ])
+        expect(replies.some(reply => reply.requestId === 'read')).toBe(true)
+        expect(f.controller.get('codex', operation.id).operation.state).toBe('cancelled')
+        expect(() => process.kill(pid, 0)).toThrow()
+    } finally {
+        clearInterval(requests)
+        clearTimeout(deadline)
+        try { await service.close() } finally {
+            clock.mockRestore()
+            source.destroy()
+            sink.destroy()
+        }
+    }
 })
 
 test('IPC rejects oversized input and generic errors never echo malformed payloads or credentials', async () => {
