@@ -25,6 +25,8 @@ Einstieg: [English quick start](QUICKSTART.md), [Benutzeranleitung](USER_GUIDE.m
   widerrufbarer HAPI-Zugang, Modellkatalog und gemeldete Abo-Kapazität bleiben getrennt.
 - Globale Spezialistenvorlagen und deklarative GitHub-Plugins mit Vorschau und
   festgelegtem Quellcommit. Profile, Rollen und Projektgrenzen gelten auch bei deren Start.
+- Projektweiter [MCP-Shop](MCP_SHOP.md) für Context7 und öffentliche HTTPS-MCPs,
+  mit Werkzeugfreigaben, verschlüsselten Schlüsseln und gemeinsamer Claude-/Codex-Anbindung.
 - Jedes neue Projekt erhält automatisch ein eigenes UUID-Verzeichnis im
   verwalteten Workspacebereich. Manuelles Verknüpfen vorhandener Verzeichnisse
   ist eine optionale Systemadmin-Aktion; Projektpfade dürfen sich nicht überlappen.
@@ -76,6 +78,8 @@ Hub → signierte, zeitlich begrenzte Anfragen → Vault/Broker.
 Hub → signierter lokaler Socket → Host-Steuerdienst → verwalteter Projektrunner.
 Hub → authentisierte interne Dienste → Codegraph bzw. Graphiti → Neo4j.
 Projekt-Runner → widerrufbare Projekt-Capability → Hub.
+Projekt-MCP → Runner-Proxy → Hub-ACL/Freigaben → geprüfter öffentlicher MCP-Endpunkt.
+MCP-Schlüssel: signierter Hub → isolierter Vault; kein Schlüssel im Agenten.
 Projekt-Git → Runner-Proxy → Hub-ACL → signierter Vault-Broker → GitHub.
 Nur der Hub kann im getrennten verwalteten Verzeichnis neue Projektordner anlegen;
 manuell verknüpfte Workspaces und Codegraph-Quellen bleiben im Compose-Stack lesend.

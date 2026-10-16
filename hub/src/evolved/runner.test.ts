@@ -36,10 +36,23 @@ function setup() {
         expect(response.status).toBe(200)
         return await response.json() as { id: string; token: string; expiresAt: number; leaseExpiresAt: number | null }
     }
-    return { store, team, project, path, call, issue, exchange, now: () => now, advance: (ms: number) => { now += ms } }
+    return { store, team, project, path, call, issue, exchange, app, origin, sessions, now: () => now, advance: (ms: number) => { now += ms } }
 }
 
 describe('permanent runner access', () => {
+    test('direct capabilities support Git scopes with the same restricted-profile boundary as leases', async () => {
+        const t = setup(), path = `/projects/${t.project.id}/capabilities`
+        const granted = await t.call(path, { scopes: ['git:read', 'git:write'], expiresInSeconds: 300 })
+        expect(granted.status).toBe(201)
+        const body = await granted.json() as { token: string }
+        expect(t.store.capability(body.token)?.capability?.scopes).toEqual(['git:read', 'git:write'])
+        t.store.setProfile('admin', t.project.id, 'restricted')
+        expect((await t.call(path, { scopes: ['git:write'] })).status).toBe(403)
+        expect((await t.call(path, { scopes: ['git:read'] })).status).toBe(201)
+        expect((await t.call(path, { scopes: ['git:read'] }, { user: 'viewer' })).status).toBe(403)
+        expect((await t.call(path, { scopes: ['git:read'] }, { bearer: body.token })).status).toBe(401)
+    })
+
     test('explicit null expiry survives time while exchanged capabilities remain short lived', async () => {
         const t = setup(), lease = await t.issue()
         expect(lease.expiresAt).toBeNull()
@@ -109,5 +122,33 @@ describe('permanent runner access', () => {
         expect((await t.call('/runner/token', {}, { bearer: lease.token })).status).toBe(401)
         expect(t.store.capability(cap.token)).toBeNull()
         expect(t.store.db.query('SELECT expires_at,revoked_at FROM evolved_runner_leases WHERE id=?').get(lease.id)).toEqual({ expires_at: null, revoked_at: t.now() })
+    })
+})
+
+
+describe('runner lease body authorization boundary', () => {
+    test.each(['logout', 'role removal', 'profile change', 'unchanged'] as const)('%s while a request body is pending uses current authority', async action => {
+        const t = setup(), payload = JSON.stringify({ name: 'Delayed request', expiresInSeconds: null, scopes: ['runner:connect', 'git:write'] })
+        let controller!: ReadableStreamDefaultController<Uint8Array>
+        let reading!: () => void
+        const started = new Promise<void>(resolve => { reading = resolve })
+        const stream = new ReadableStream<Uint8Array>({ start(c) { controller = c } })
+        // Observe actual body consumption, not ReadableStream's eager pull: the
+        // old handler reached json() only after authorizing the stale session.
+        const request = new Request(`${t.origin}/api/evolved${t.path}`, { method: 'POST', headers: { origin: t.origin, 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(payload)), cookie: `${SESSION_COOKIE}=${t.sessions.admin}` }, body: stream, duplex: 'half' } as RequestInit)
+        const readText = request.text.bind(request), readJson = request.json.bind(request)
+        Object.defineProperties(request, {
+            text: { value: () => { reading(); return readText() } },
+            json: { value: () => { reading(); return readJson() } },
+        })
+        const response = t.app.fetch(request)
+        await started
+        if (action === 'logout') t.store.revokeSession(t.sessions.admin)
+        if (action === 'role removal') t.store.setMember('other', t.team.id, 'admin', null)
+        if (action === 'profile change') t.store.setProfile('other', t.project.id, 'restricted')
+        controller.enqueue(new TextEncoder().encode(payload)); controller.close()
+        const result = await response
+        expect(result.status).toBe(action === 'unchanged' ? 201 : action === 'logout' ? 401 : 403)
+        expect(t.store.db.query('SELECT COUNT(*) AS n FROM evolved_runner_leases').get()).toEqual({ n: action === 'unchanged' ? 1 : 0 })
     })
 })

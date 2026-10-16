@@ -164,7 +164,7 @@ export function createMemoryRoutes(options: { store: EvolvedStore; service?: Mem
         const projectId = c.req.param('id'); const principal = c.get('principal'); authorized(principal, projectId, true)
         const parsed = z.object({ status: z.enum(['proposed', 'verified']) }).safeParse(await c.req.json().catch(() => null))
         if (!parsed.success) return c.json({ error: 'Invalid memory status' }, 400)
-        if (parsed.data.status === 'verified' && principal.capability) return c.json({ error: 'A person must verify agent knowledge' }, 403)
+        if (principal.capability) return c.json({ error: 'Only a person may change knowledge verification' }, 403)
         await revalidate(c, [projectId], true)
         const item = ledger.setStatus(projectId, c.req.param('memoryId'), parsed.data.status)
         options.store.audit(principal.user.id, projectId, 'memory.status', item.id)

@@ -9,6 +9,8 @@ Operators are responsible for their installation, providers and retention.
 | Sessions and attachment originals | Hub database and attachment directory | Access and retention/deletion workflows |
 | Project files | Selected or automatically managed workspace | Project binding and runner mount/profile |
 | Vault values and GitHub credentials | Separate encrypted vault database | Master key outside workspaces; constrained operations |
+| Project MCP credentials and grants | Separate encrypted vault; ephemeral key resolution by the Hub | Human-admin configuration, project-scoped tool grants and version checks |
+| MCP call diagnostics | Hub database, latest 50 completed attempts per connection | Tool name, time, duration and status only; no arguments, output or keys |
 | Local knowledge and sources | Hub ledger | Source checks, human verification and current ACLs |
 | Derived knowledge | Memory service and Neo4j | Optional provider, budgets and generation-based deletion |
 | Code index | Codegraph private mirror/index | Local processing with credential exclusions |
@@ -34,6 +36,13 @@ GitHub. Offline synthetic tests do not establish real provider billing or qualit
 Plugin previews read public GitHub repository metadata and the manifest at the
 resolved commit; no repository scripts are executed. Provider sign-in opens the
 provider's official account page. HAPI does not request the provider password.
+
+Enabled project MCP tools send the arguments chosen by the agent to the configured
+external MCP provider. Read-only tools can still transmit data and incur provider
+costs; HAPI memory budgets do not limit MCP-provider billing. Connection discovery
+sends protocol metadata and authentication, but no tool arguments. Disconnecting
+removes the local key and configuration; revoke the key at its provider separately.
+See the [MCP shop guide](MCP_SHOP.md).
 
 Codegraph works locally. Compose disables configured Codegraph, Graphiti and
 Neo4j telemetry/update paths. This does not describe every inherited client,

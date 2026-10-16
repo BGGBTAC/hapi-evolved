@@ -49,6 +49,7 @@ currently German; the setup and pilot guides are available in English.
 | Review changes in context | Repository diffs, Codegraph impact hints and a review specialist in the same checkout |
 | Know what is ready | Project diagnostics for the working folder, live runner RPC, native login, repositories, Codegraph and memory |
 | Reuse your best agents | Global specialist templates that run within each project's permissions and profile |
+| Share MCP tools across agents | A project MCP shop with Context7, custom HTTPS servers, encrypted credentials, tool grants and recent-call diagnostics |
 | Add your own extensions | Public GitHub plugins for agent templates, skills and color profiles, with preview and pinned revisions |
 | Keep useful context | Source-linked proposals from stored messages and files, persistent local search, and an optional Graphiti/Neo4j knowledge graph |
 | Understand a codebase | Codegraph symbol search, callers, impact analysis and affected-test exploration |
@@ -132,6 +133,7 @@ experimentation. See [data handling](docs/evolved/DATA_HANDLING.md) and
 | [User guide](docs/evolved/USER_GUIDE.md) | Daily workflows and project administration — German |
 | [Provider connections](docs/evolved/PROVIDER_LOGIN.md) | Browser subscription login, persistent access and models |
 | [GitHub integration](docs/evolved/GITHUB.md) | Repository grants and native Git operations |
+| [Project MCP shop](docs/evolved/MCP_SHOP.md) | Context7, shared remote tools and project permissions |
 | [Agents and plugins](docs/evolved/EXTENSIONS.md) | Reusable specialists and extension manifests |
 | [Subscription capacity](docs/evolved/CAPACITY.md) | Usage sources, reset times and freshness |
 | [Operator guide](docs/evolved/DEPLOYMENT.md) | Services, isolation, backups and upgrades — German |

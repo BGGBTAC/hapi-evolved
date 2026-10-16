@@ -12,7 +12,7 @@ const role = z.enum(['viewer', 'member', 'admin'])
 const profile = z.enum(['restricted', 'workspace', 'extended'])
 const name = z.string().trim().min(1).max(120)
 const identifier = z.string().min(1).max(128)
-const capabilityScope = z.enum(['memory:read', 'memory:write', 'codegraph:read', 'resource:execute', 'peers:read', 'peers:send', 'peers:manage', 'runner:connect'])
+const capabilityScope = z.enum(['memory:read', 'memory:write', 'codegraph:read', 'resource:execute', 'peers:read', 'peers:send', 'peers:manage', 'runner:connect', 'git:read', 'git:write'])
 export type EvolvedRoutesConfig = { store: EvolvedStore; vault: VaultClient; origin: string; rpName?: string; allowedWorkspaceRoots?: string[]; onProjectDelete?: (projectId: string) => void; repositoryDiscovery?: (request: Request, projectId: string) => Promise<unknown> }
 
 export function createEvolvedRoutes(config: EvolvedRoutesConfig): Hono<EvolvedEnv> {
@@ -153,6 +153,8 @@ export function createEvolvedRoutes(config: EvolvedRoutesConfig): Hono<EvolvedEn
     app.post('/projects/:id/capabilities', async c => {
         const principal = c.get('principal'); requireFreshPasskey(c, store, principal)
         const body = await parseBody(c, z.object({ scopes: z.array(capabilityScope).min(1).max(10), actionIds: z.array(identifier).max(50).default([]), expiresInSeconds: z.number().int().min(30).max(900).default(900) }).strict())
+        const project = store.requireProject(principal.user.id, c.req.param('id'), 'admin')
+        if (project.profile === 'restricted' && body.scopes.includes('git:write')) throw new EvolvedError('profile_denied', 'Restricted capabilities cannot receive Git push permission.', 403)
         return c.json(store.issueCapability(principal.user.id, c.req.param('id'), [...new Set(body.scopes)], [...new Set(body.actionIds)], body.expiresInSeconds), 201)
     })
     app.delete('/projects/:id/capabilities/:capabilityId', c => {

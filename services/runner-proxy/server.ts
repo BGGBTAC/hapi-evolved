@@ -30,6 +30,11 @@ export function queuedPacketBytes(value: unknown, depth = 0): number {
     return 8
 }
 export function allowedProxyPath(path: string, method = 'GET', search = ''): boolean {
+    const mcp = /^\/api\/evolved\/projects\/[A-Za-z0-9_-]{1,80}\/mcp\/servers(?:\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\/(tools|query|call))?$/.exec(path)
+    if (mcp) return search === '' && method === (mcp[2] === 'call' || mcp[2] === 'query' ? 'POST' : 'GET')
+    if (/^\/api\/evolved\/projects\/[^/]+\/codegraph(?:\/|$)/.test(path)) {
+        return method === 'GET' && /^\/api\/evolved\/projects\/[A-Za-z0-9_-]{1,80}\/codegraph\/(status|search|graph|node|impact|affected)$/.test(path)
+    }
     const repositories = /^\/api\/evolved\/projects\/[A-Za-z0-9_-]{1,80}\/(repositories(?:\/([1-9][0-9]{0,19})\/(sync|authorization))?|repository-jobs\/([a-fA-F0-9-]+))$/.exec(path)
     if (repositories) {
         const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -42,7 +47,7 @@ export function allowedProxyPath(path: string, method = 'GET', search = ''): boo
     return path === '/health' || /^\/cli\//.test(path)
         || /^\/api\/evolved\/peers(?:\/[a-zA-Z0-9_-]+)?$/.test(path)
         || /^\/api\/evolved\/github-pr\/(?:features|link)$/.test(path)
-        || /^\/api\/evolved\/(memory\/search|projects\/[^/]+\/(memory(?:\/.*)?|codegraph\/[^/]+|resources(?:\/.*)?))$/.test(path)
+        || /^\/api\/evolved\/(memory\/search|projects\/[^/]+\/(memory(?:\/.*)?|resources(?:\/.*)?))$/.test(path)
 }
 export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; projectId: string; host?: string; port?: number }) {
     const hub = new URL(config.hubUrl)

@@ -18,6 +18,38 @@ function fixture() {
     return { permissions, request, respond, handlers, send, state: () => state };
 }
 describe('shared request arbitration', () => {
+    it('waits for the Web decision for native HAPI gateway tool approvals', async () => {
+        const f = fixture();
+        f.permissions.receive({ id: 7, method: 'mcpServer/elicitation/request', params: {
+            threadId: 'thread', turnId: 'turn', serverName: 'hapi', mode: 'form', message: 'Approve external action?',
+            requestedSchema: { type: 'object', properties: {} },
+            _meta: { codex_approval_kind: 'mcp_tool_call', tool_name: 'evolved_mcp_call' }
+        } });
+        await Promise.resolve();
+        const [id, pending] = Object.entries(f.state().requests ?? {})[0]!;
+        expect(pending.tool).toBe('evolved_mcp_call');
+        expect(f.respond).not.toHaveBeenCalled();
+        await f.handlers.get('permission')!({ id, approved: false, decision: 'denied' });
+        await vi.waitFor(() => expect(f.respond).toHaveBeenCalledWith(7, { action: 'decline', content: null, _meta: null }));
+        f.permissions.resolved('thread', 7);
+    });
+
+    it('retains metadata-free HAPI elicitation defaults without exposing a blanket approval fallback', async () => {
+        const f = fixture();
+        f.permissions.receive({ id: 8, method: 'mcpServer/elicitation/request', params: {
+            threadId: 'thread', serverName: 'hapi', mode: 'form', message: 'Safe bridge form',
+            requestedSchema: { type: 'object', properties: { remember: { type: 'boolean', default: false } } }
+        } });
+        await vi.waitFor(() => expect(f.respond).toHaveBeenCalledWith(8, { action: 'accept', content: { remember: false }, _meta: null }));
+        f.permissions.receive({ id: 9, method: 'mcpServer/elicitation/request', params: {
+            threadId: 'thread', serverName: 'hapi', mode: 'form', message: 'Unknown approval',
+            _meta: { codex_approval_kind: 'future_kind' }, requestedSchema: { type: 'object', properties: {} }
+        } });
+        await Promise.resolve(); await Promise.resolve();
+        expect(f.respond).toHaveBeenCalledTimes(1);
+        f.permissions.close();
+    });
+
     it.each([{ notes: [] }, { notes: ['user_note: custom answer'] }])('preserves isOther and canonical other answers (%j) without claiming a winner', async ({ notes }) => {
         const f = fixture();
         const request = { ...f.request, params: { ...f.request.params, isBlocking: true,

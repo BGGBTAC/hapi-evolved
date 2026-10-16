@@ -7,6 +7,17 @@ model catalog; listed models may be cached and do not prove account entitlement.
 Project profiles restrict each provider's permission modes, including on resume.
 A CLI flag cannot override the server's project policy.
 
+Project administrators can connect Context7 or custom HTTPS MCP servers once in
+the project's **MCP-Shop**, then grant individual tools. Claude and Codex discover
+the current servers and schemas through `evolved_mcp_servers` and
+`evolved_mcp_tools`, query administrator-approved read-only tools with
+`evolved_mcp_query`, and invoke other tools with `evolved_mcp_call`. No provider-specific
+server configuration or copied credentials are needed. Calls retain native
+approval policy; remote tool descriptions do not grant permission. See the
+[shared agent context](../evolved/AGENT_CONTEXT.md#zentraler-projekt-mcp-shop).
+Already-updated gateways see server changes immediately. Older agent processes
+need one safe resume/restart after the updated runner has been installed.
+
 The inherited adapter catalog below is retained from
 [tiann/hapi](https://github.com/tiann/hapi) and subsequent work in this fork.
 It describes code paths, not a support promise for every provider/platform in the

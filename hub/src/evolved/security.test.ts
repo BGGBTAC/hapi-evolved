@@ -158,12 +158,21 @@ describe('Evolved authentication and authorization', () => {
         expect((await s.call('/auth/login/verify', { challengeId: options.challengeId, response: { id: 'fake' } })).status).toBe(401)
         expect((await s.call('/auth/login/verify', { challengeId: options.challengeId, response: { id: 'fake' } })).status).toBe(401)
     })
+    test('capabilities accept explicit Git read scope and reject unknown scopes without issuing another token', async () => {
+        const s = setup(), { userId } = await enroll(s), team = s.store.createTeam(userId, 'Scoped team'), project = s.store.createProject(userId, team.id, 'Scoped project')
+        const path = `/projects/${project.id}/capabilities`
+        const response = await s.call(path, { scopes: ['runner:connect', 'git:read'] })
+        expect(response.status).toBe(201)
+        const { token } = await response.json() as { token: string }
+        expect(s.store.capability(token)?.capability?.scopes).toEqual(['runner:connect', 'git:read'])
+        expect((await s.call(path, { scopes: ['runner:connect', 'git:admin'] })).status).toBe(400)
+        expect(s.store.db.prepare('SELECT COUNT(*) AS count FROM evolved_capabilities WHERE project_id=?').get(project.id)).toEqual({ count: 1 })
+    })
     test('runner leases refresh short capabilities but cannot outlive revocation, absolute expiry or issuer rights', async () => {
         const s = setup(), { userId } = await enroll(s), team = s.store.createTeam(userId, 'Runner team'), project = s.store.createProject(userId, team.id, 'Runner project')
         const response = await s.call(`/projects/${project.id}/runner-leases`, { name: 'Local runner', scopes: ['runner:connect'], expiresInSeconds: 3600 })
         expect(response.status).toBe(201)
         const lease = await response.json() as { id: string; token: string; expiresAt: number }
-        expect((await s.call(`/projects/${project.id}/capabilities`, { scopes: ['runner:connect', 'git:read'] })).status).toBe(400)
         for (let index = 0; index < 8; index++) expect((await s.call('/runner/authority', undefined, { bearer: lease.token })).status).toBe(200)
         expect(await (await s.call('/runner/authority', undefined, { bearer: lease.token })).json()).toEqual({ projectId: project.id, profile: project.profile, rootPath: project.rootPath, expiresAt: lease.expiresAt })
         const mint = await s.call('/runner/token', {}, { bearer: lease.token })

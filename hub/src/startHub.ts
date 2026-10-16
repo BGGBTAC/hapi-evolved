@@ -31,6 +31,7 @@ import QRCode from 'qrcode'
 import type { Server as BunServer } from 'bun'
 import type { WebSocketData } from '@socket.io/bun-engine'
 import { createEvolvedRuntime } from './evolved/runtime'
+import type { ProjectMcpRemote } from './evolved/mcp'
 
 /** Format config source for logging */
 function formatSource(source: ConfigSource | 'generated'): string {
@@ -107,6 +108,7 @@ export interface HubInstance {
 
 export interface StartHubOptions {
     args?: string[]
+    evolvedMcpRemote?: ProjectMcpRemote
 }
 
 export async function startHub(options: StartHubOptions = {}): Promise<HubInstance> {
@@ -187,7 +189,7 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubInstan
     try { await store.cleanupOrphanedAttachments() }
     catch { console.warn('[attachments] Cleanup incomplete; retrying on next Hub start') }
     const jwtSecret = await getOrCreateJwtSecret()
-    const evolved = evolvedEnabled ? createEvolvedRuntime(config.dataDir, jwtSecret) : undefined
+    const evolved = evolvedEnabled ? createEvolvedRuntime(config.dataDir, jwtSecret, { mcpRemote: options.evolvedMcpRemote }) : undefined
     const vapidKeys = await getOrCreateVapidKeys(config.dataDir)
     const vapidSubject = process.env.VAPID_SUBJECT ?? 'mailto:admin@hapi.run'
     const pushService = new PushService(vapidKeys, vapidSubject, store)

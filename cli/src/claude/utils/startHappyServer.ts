@@ -57,13 +57,14 @@ const CLAUDE_MANUAL_APPROVAL_HAPI_TOOLS = new Set([
     'ping_peer',
     'inspect_peer',
     'spawn_peer',
-    'archive_peer'
+    'archive_peer',
+    'evolved_mcp_call'
 ]);
 
 /**
  * Map HAPI MCP tool names to Claude `--allowedTools` entries.
  * Keeps `display_media` / `display_video` (arbitrary local-path readers), `ping_peer`, and
- * `inspect_peer` off the auto-allow list so they still prompt.
+ * `inspect_peer` and arbitrary external MCP calls off the auto-allow list.
  * `list_peers` stays allowed (discovery shortlist only).
  * `search_peers` stays allowed (keyword inventory; no resume/inject).
  */
@@ -579,6 +580,9 @@ export async function startHappyServer(client: ApiSessionClient, options: StartH
     const createMcpTransport = () => {
         const mcp = createHapiMcpServer(client, emitTitleSummary, enableChangeTitle, options.skillLookup, prEnabled, options.mediaOnly);
         const transport = new StreamableHTTPServerTransport({
+            enableDnsRebindingProtection: true,
+            allowedHosts: [baseUrl.host, `localhost:${baseUrl.port}`],
+            allowedOrigins: [baseUrl.origin, `http://localhost:${baseUrl.port}`],
             sessionIdGenerator: () => randomUUID(),
             onsessioninitialized: (sessionId) => {
                 transports.set(sessionId, transport);
@@ -597,6 +601,14 @@ export async function startHappyServer(client: ApiSessionClient, options: StartH
 
     const server = createServer(async (req, res) => {
         try {
+            // Native MCP clients omit Origin. A browser must use this exact local
+            // origin, and DNS-rebound hosts must never allocate an MCP session.
+            const host = req.headers.host, origin = req.headers.origin;
+            if (![baseUrl.host, `localhost:${baseUrl.port}`].includes(host ?? '')
+                || (origin !== undefined && ![baseUrl.origin, `http://localhost:${baseUrl.port}`].includes(origin))) {
+                res.writeHead(403).end();
+                return;
+            }
             const sessionId = readMcpSessionId(req);
             const transport = sessionId
                 ? transports.get(sessionId)

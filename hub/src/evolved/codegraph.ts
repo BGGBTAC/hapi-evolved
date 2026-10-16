@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { EvolvedError, EvolvedStore, type EvolvedPrincipal } from './store'
-import { authenticateEvolvedRequest, requireScope } from './security'
+import { authenticateEvolvedRequest, requireHuman, requireScope } from './security'
 
 type CodegraphEnv = { Variables: { principal: EvolvedPrincipal } }
 export type CodegraphStatusSnapshot = { rootPath: string; checkedAt: number; status: number; result: Record<string, unknown> }
@@ -49,7 +49,7 @@ export function createCodegraphRoutes(options: CodegraphOptions) {
     }
     app.post('/projects/:id/codegraph/reindex', async c => {
         const principal = c.get('principal'); const projectId = c.req.param('id')
-        requireScope(principal, 'codegraph:read', projectId)
+        requireHuman(principal)
         const project = options.store.requireProject(principal.user.id, projectId, 'member')
         const response = await queryCodegraph(options, project, 'reindex')
         options.store.audit(principal.user.id, project.id, 'codegraph.reindex')

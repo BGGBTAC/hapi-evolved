@@ -16,6 +16,20 @@ export type Team = { id: string; name: string; role: ProjectRole }
 export type TeamMember = { userId: string; displayName: string; role: ProjectRole; override?: ProjectRole | null }
 export type SecretMetadata = { id: string; name: string; version: number; createdAt: number | string; updatedAt: number | string }
 export type Resource = { id: string; name: string; type: string; actions: string[] }
+export type McpAuth = { mode: 'none' | 'bearer' | 'header'; configured: boolean; headerName?: string }
+export type McpTool = { name: string; description: string; inputSchema: Record<string, unknown>; readOnly: boolean; fingerprint: string }
+export type McpConnection = {
+    id: string; name: string; kind: 'context7' | 'custom'; endpoint: string; version: number; enabled: boolean
+    auth: McpAuth
+    status: { state: 'untested' | 'ready' | 'auth_required' | 'unreachable' | 'catalog_changed'; checkedAt: number | null; errorCode?: string }
+    catalogRevision: string | null; tools: McpTool[]; enabledTools: string[]; createdAt: number; updatedAt: number
+}
+export type McpCatalog = {
+    canManage: boolean
+    templates: { id: 'context7'; name: string; description: string; endpoint: string; docsUrl: string }[]
+    connections: McpConnection[]
+}
+export type McpCallHistory = { calls: { id: number; toolName: string; startedAt: number; durationMs: number; status: 'success' | 'tool_error' | 'failed' | 'unknown'; errorCode: string | null }[] }
 export type MemorySource = { kind: 'chat' | 'code' | 'attachment' | 'manual'; path?: string; commit?: string; hash?: string; sessionId?: string; messageId?: string; origin?: string }
 export type MemoryItem = { id: string; projectId: string; title: string; body: string; status: 'proposed' | 'verified'; createdAt: number | string; sources: MemorySource[]; archivedImport: boolean; score?: number }
 export type MemorySettings = { enabled: boolean; cloudAllowed: boolean; monthlyBudgetMicros: number; jobBudgetMicros: number }

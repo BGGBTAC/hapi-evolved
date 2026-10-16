@@ -40,6 +40,22 @@ function createHarness(
 }
 
 describe('CodexPermissionHandler', () => {
+    it.each(['default', 'read-only'] as const)('does not infer native MCP approval safety from missing/spoofed tool names in %s', async mode => {
+        const { handler, rpcHandlers, getAgentState } = createHarness(mode);
+        for (const tool of ['hapi', 'change_title', 'save_memory']) {
+            const result = handler.handleToolCall('change_title-id', tool, { codexApprovalKind: 'mcp_tool_call', serverName: 'hapi' });
+            expect(getAgentState().requests).toHaveProperty('change_title-id');
+            await rpcHandlers.get('permission')!({ id: 'change_title-id', approved: false, decision: 'denied' });
+            await expect(result).resolves.toMatchObject({ decision: 'denied' });
+        }
+    });
+    it.each(['safe-yolo', 'yolo'] as const)('preserves explicit %s policy for native MCP tool approvals', async mode => {
+        const { handler, getAgentState } = createHarness(mode);
+        await expect(handler.handleToolCall('approval', 'hapi', { codexApprovalKind: 'mcp_tool_call' }))
+            .resolves.toMatchObject({ decision: mode === 'yolo' ? 'approved_for_session' : 'approved' });
+        expect(getAgentState().requests).toEqual({});
+    });
+
     it('auto-approves change_title tools in default mode', async () => {
         const { handler, getAgentState } = createHarness('default');
 

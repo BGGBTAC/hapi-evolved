@@ -55,6 +55,7 @@ const SENSITIVE_TOOL_NAME_HINTS = [
     'ping peer',
     'inspect_peer',
     'inspect peer',
+    'evolved_mcp_call',
 ];
 const AUTO_APPROVE_WRITE_TOOL_HINTS = [
     'write',
@@ -81,6 +82,14 @@ export function resolveToolAutoApprovalDecision(
     const lowerTool = toolName.toLowerCase();
     const lowerId = toolCallId.toLowerCase();
     const decisionForMode: AutoApprovalDecision = (mode === 'yolo' || mode === 'always-proceed') ? 'approved_for_session' : 'approved';
+
+    // This gateway can execute arbitrary granted external writes. A misleading
+    // call ID, tool title or generic read-only heuristic cannot authorize it.
+    // Explicit user-selected unattended policies retain their usual meaning.
+    if (lowerTool.includes('evolved_mcp_call')) {
+        return mode === 'yolo' || mode === 'always-proceed' ? 'approved_for_session'
+            : mode === 'safe-yolo' ? 'approved' : null;
+    }
 
     if (
         AUTO_APPROVE_EXACT_TOOL_NAMES.has(lowerTool)

@@ -4,6 +4,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { request as httpRequest } from 'node:http'
 import type { ApiSessionClient } from '@/api/apiSession'
 import { startHappyServer, toClaudeAllowedHapiMcpTools } from './startHappyServer'
 import { getEvolvedOperatingContext } from '@/evolved/operatingContext'
@@ -322,13 +323,20 @@ describe('toClaudeAllowedHapiMcpTools', () => {
             'search_peers',
             'ping_peer',
             'inspect_peer',
-            'skill_lookup'
+            'skill_lookup',
+            'evolved_mcp_servers',
+            'evolved_mcp_tools',
+            'evolved_mcp_query',
+            'evolved_mcp_call'
         ])).toEqual([
             'mcp__hapi__change_title',
             'mcp__hapi__display_image',
             'mcp__hapi__list_peers',
             'mcp__hapi__search_peers',
-            'mcp__hapi__skill_lookup'
+            'mcp__hapi__skill_lookup',
+            'mcp__hapi__evolved_mcp_servers',
+            'mcp__hapi__evolved_mcp_tools',
+            'mcp__hapi__evolved_mcp_query'
         ])
         expect(toClaudeAllowedHapiMcpTools(['display_video'])).not.toContain('mcp__hapi__display_video')
         expect(toClaudeAllowedHapiMcpTools(['display_media'])).not.toContain('mcp__hapi__display_media')
@@ -372,6 +380,7 @@ it('publishes the same operating context on every scoped MCP connection', async 
                 await client.connect(new StreamableHTTPClientTransport(new URL(server.url)))
                 expect(client.getInstructions()).toBe(getEvolvedOperatingContext())
                 expect(client.getInstructions()).toContain('evolved_memory_propose')
+                expect((await client.listTools()).tools.map(tool => tool.name)).toEqual(expect.arrayContaining(['evolved_mcp_servers', 'evolved_mcp_tools', 'evolved_mcp_query', 'evolved_mcp_call']))
             } finally { await client.close() }
         }
     } finally {
@@ -379,4 +388,42 @@ it('publishes the same operating context on every scoped MCP connection', async 
         policy.mockRestore()
         vi.unstubAllEnvs()
     }
+})
+
+it('rejects rebound hosts and foreign origins while allowing native and same-origin local MCP clients', async () => {
+    const session = { updateMetadata: vi.fn() } as unknown as ApiSessionClient
+    const server = await startHappyServer(session, { mediaOnly: true })
+    const url = new URL(server.url)
+    const initialize = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'host-check', version: '1' } } })
+    // Native fetch may discard a custom Host header. Send actual wire headers
+    // so this regression proves DNS-rebinding protection, not client filtering.
+    const probe = (headers: Record<string, string>) => new Promise<{ status: number | undefined; sessionId: string | string[] | undefined }>((resolve, reject) => {
+        const request = httpRequest(url, { method: 'POST', headers: { ...headers, accept: 'application/json, text/event-stream', 'content-type': 'application/json', 'content-length': Buffer.byteLength(initialize) } }, response => {
+            response.resume()
+            response.on('end', () => resolve({ status: response.statusCode, sessionId: response.headers['mcp-session-id'] }))
+        })
+        request.on('error', reject)
+        request.setTimeout(3000, () => request.destroy(new Error('Loopback probe timed out')))
+        request.end(initialize)
+    })
+    try {
+        const hostileHeaders: Array<Record<string, string>> = [
+            { host: 'attacker.example' }, { host: `attacker.example:${url.port}`, origin: 'https://attacker.example' },
+            { origin: 'https://attacker.example' }, { origin: 'null' }, { origin: 'http://127.0.0.1:1' },
+            { origin: `http://localhost:${url.port}.attacker.example` },
+        ]
+        for (const headers of hostileHeaders) {
+            const response = await probe(headers)
+            expect(response.status).toBe(403)
+            expect(response.sessionId).toBeUndefined()
+        }
+        const localHeaders: Array<Record<string, string> | undefined> = [undefined, { origin: url.origin }, { host: `localhost:${url.port}`, origin: `http://localhost:${url.port}` }]
+        for (const headers of localHeaders) {
+            const caller = new Client({ name: 'native-loopback-test', version: '1' })
+            try {
+                await caller.connect(new StreamableHTTPClientTransport(url, { requestInit: { headers } }))
+                expect((await caller.listTools()).tools.map(tool => tool.name)).toEqual(['display_image', 'display_video', 'display_media'])
+            } finally { await caller.close() }
+        }
+    } finally { server.stop() }
 })
