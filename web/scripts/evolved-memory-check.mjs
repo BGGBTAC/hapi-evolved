@@ -7,7 +7,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const state = mkdtempSync('/tmp/hapi-evolved-ui-memory-'), output = mkdtempSync('/tmp/hapi-memory-browser-');
-const report = { fixture: 'Built UI, real isolated Hub/Vault/WebAuthn; synthetic internal Memory catalog/check, no inference', checks: [], views: [], failures: [] };
+const report = { fixture: 'Built UI, real isolated Hub/Vault/WebAuthn; synthetic internal Memory catalog/check and empty-graph binding, no inference', checks: [], views: [], failures: [] };
 const mark = message => { report.checks.push(message); console.log(`PASS ${message}`); };
 const check = (condition, message) => { if (!condition) throw Error(message); };
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -46,6 +46,8 @@ try {
     const { project } = await api('/projects', 'POST', { teamId: team.id, name: 'Configured memory project' });
     const { project: second } = await api('/projects', 'POST', { teamId: team.id, name: 'Independent memory project' });
     projectIds.push(project.id, second.id);
+    writeFileSync(join(state, 'memory-projects.json'), JSON.stringify(projectIds), { mode: 0o600 });
+    const observations = () => JSON.parse(readFileSync(join(state, 'memory-observed.json'), 'utf8'));
     mark('Real Passkey registration, team and independent projects');
     const provider = () => page.locator('#memory-provider');
     const keyField = () => provider().getByLabel('OpenAI-API-Key', { exact: true });
@@ -89,17 +91,32 @@ try {
     }
     await navigate(project.id);
     check(await provider().getByRole('button', { name: 'Verbindung testen', exact: true }).isDisabled(), 'Unconfigured provider can be tested');
+    const providerWindowStarted = Date.now();
     await loadAndSelect(initialKey); await save();
     const configured = await api(`/projects/${project.id}/memory/provider`);
     check(configured.configured && configured.apiKeyConfigured && configured.config.model === dynamicModel, 'Dynamic provider model was not persisted');
     check(!Object.hasOwn(configured.config, 'apiKey'), 'Status returned a plaintext API key');
+    check(observations().bindings.length === 1 && observations().bindings[0].projectId === project.id
+        && observations().bindings[0].embeddingModel === 'text-embedding-3-small', 'First setup skipped the project embedding binding');
     mark('Dynamic provider catalog, explicit model/prices, encrypted Vault save and cleared key input');
     for (const width of [1440, 390, 320]) await capture('memory-setup-compact', width);
+    for (const embeddingModel of ['text-embedding-3-large', 'text-embedding-3-small']) {
+        const previousBindings = observations().bindings.length;
+        await provider().getByLabel('Embedding-Modell', { exact: true }).selectOption(embeddingModel);
+        check(await provider().getByRole('button', { name: 'Verbindung testen', exact: true }).isDisabled(), 'Unsaved embedding change can be tested');
+        await save();
+        const changed = await api(`/projects/${project.id}/memory/provider`);
+        check(changed.config.embeddingModel === embeddingModel && changed.boundEmbeddingModel === embeddingModel, 'Embedding switch was not persisted');
+        const observed = observations(), binding = observed.bindings.at(-1);
+        check(observed.bindings.length === previousBindings + 1 && binding.projectId === project.id
+            && binding.embeddingModel === embeddingModel && binding.embeddingDimensions === 1536
+            && observed.inferenceRequests === 0, 'Embedding switch skipped the scoped empty-graph binding or attempted inference');
+    }
+    mark('Explicit embedding changes use the empty-graph binding for each model and retain the stored key without inference');
     await provider().getByRole('button', { name: 'Verbindung testen', exact: true }).click();
     await provider().getByText('Eine kostenpflichtige KI-Anfrage wurde nicht ausgeführt;', { exact: false }).waitFor();
     const memory = await api(`/projects/${project.id}/memory`);
     check(memory.settings.enabled === false && memory.settings.cloudAllowed === false, 'Connection setup implicitly enabled cloud processing');
-    const observations = () => JSON.parse(readFileSync(join(state, 'memory-observed.json'), 'utf8'));
     check(observations().configurationChecks > 0 && observations().inferenceRequests === 0, 'Connection test attempted inference');
     mark('Connection test checks catalog/database without inference; cloud processing stays disabled');
     await navigate(second.id);
@@ -116,6 +133,10 @@ try {
     const removed = await api(`/projects/${project.id}/memory/provider`);
     check(!removed.configured && !removed.apiKeyConfigured && removed.source === 'disabled', 'Deleted project connection fell back to operator credentials');
     for (const width of [1440, 390, 320]) await capture('memory-removed', width);
+    // Exercise the real six-checks/minute limit without bypassing it or retrying
+    // mutations. Setup plus both model changes used five checks in this window.
+    if (Date.now() < providerWindowStarted + 61_000) console.log('Waiting for the real provider-check rate window before reconnecting');
+    while (Date.now() < providerWindowStarted + 61_000) await delay(Math.min(30_000, providerWindowStarted + 61_000 - Date.now()));
     await loadAndSelect(reconnectedKey); await save();
     await provider().getByRole('button', { name: 'Verbindung testen', exact: true }).click();
     await provider().getByText('Eine kostenpflichtige KI-Anfrage wurde nicht ausgeführt;', { exact: false }).waitFor();

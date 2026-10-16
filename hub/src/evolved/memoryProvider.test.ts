@@ -3,7 +3,7 @@ import { Hono } from 'hono'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { EvolvedStore } from './store'
+import { EvolvedError, EvolvedStore } from './store'
 import { EvolvedVault } from './vault'
 import { HttpMemoryBackend, MemoryService } from './memoryService'
 import { createMemoryProviderRoutes, MemoryProviderService, type MemoryProviderConfig } from './memoryProvider'
@@ -22,7 +22,7 @@ function fixture() {
     const sessions = Object.fromEntries(['admin', 'member', 'viewer', 'other'].map(id => [id, store.createSession(id)]))
     new MemoryService(store, { available: async () => false, request: async () => ({}) })
     const calls: Array<{ path: string; body: Record<string, unknown> }> = []
-    let upstream = async (path: string, _body: Record<string, unknown>) => Response.json(path.endsWith('/models') ? { models: ['chat-model', 'text-embedding-3-small', 'text-embedding-3-large'] } : { ok: true })
+    let upstream = async (path: string, _body: Record<string, unknown>) => Response.json(path.endsWith('/models') ? { models: ['chat-model', 'text-embedding-3-small', 'text-embedding-3-large'] } : path.endsWith('/binding') ? { bound: true } : { ok: true })
     const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
         const path = new URL(String(input)).pathname, body = JSON.parse(String(init?.body)) as Record<string, unknown>
         calls.push({ path, body }); return upstream(path, body)
@@ -84,7 +84,7 @@ describe('human-only project memory provider setup', () => {
             expect((await f.request(method, body, suffix, 'admin', { authorization: `Bearer ${issued.token}` })).status).toBe(403)
             if (method !== 'GET') expect((await f.request(method, body, suffix, 'member')).status).toBe(403)
         }
-        expect(f.calls).toHaveLength(1)
+        expect(f.calls).toHaveLength(2)
     })
 
     test('fresh passkeys, CSRF and bounded strict input protect credential operations', async () => {
@@ -107,7 +107,7 @@ describe('human-only project memory provider setup', () => {
         expect(await f.service.resolve(f.project.id)).toBeUndefined()
         expect((await f.request('PUT', { ...config, version: 0 })).status).toBe(200)
         expect(await (await f.request('POST', {}, '/test')).json()).toEqual({ ok: true, backend: 'graphiti-0.30.2/neo4j', modelsVerified: true, inferenceTested: false })
-        expect(f.calls.map(call => call.path)).toEqual(['/configuration/models', '/configuration/models', '/configuration/models', '/configuration/check'])
+        expect(f.calls.map(call => call.path)).toEqual(['/configuration/models', '/configuration/models', '/configuration/binding', '/configuration/models', '/configuration/check'])
         f.setUpstream(async () => new Response(JSON.stringify({ error: key }), { status: 401 }))
         const denied = await f.request('POST', {}, '/models')
         expect(denied.status).toBe(400)
@@ -121,15 +121,17 @@ describe('human-only project memory provider setup', () => {
         expect((await f.request('PUT', { ...config, version: 0 })).status).toBe(200)
         expect(await (await f.request()).json()).toMatchObject({ embeddingLocked: true })
         const legacy = fixture()
+        legacy.setUpstream(async path => Response.json(path.endsWith('/binding') ? { bound: false } : { models: ['chat-model', 'text-embedding-3-small'] }))
         legacy.store.db.query("INSERT INTO evolved_memory_tasks(id,project_id,actor_id,kind,generation,state,created_at) VALUES('legacy-task',?,'admin','index',0,'complete',?)").run(legacy.project.id, legacy.store.now())
         expect((await legacy.request('PUT', { ...config, version: 0 })).status).toBe(409)
         expect(await legacy.service.resolve(legacy.project.id)).toBeUndefined()
     })
 
-    test('prevents embedding changes for queued or existing graph work, even across delete/recreate', async () => {
+    test('prevents embedding changes when the graph service cannot prove it is empty, even across delete/recreate', async () => {
         const f = fixture()
         expect((await f.request('PUT', { ...config, version: 0 })).status).toBe(200)
         f.store.db.query("INSERT INTO evolved_memory_tasks(id,project_id,actor_id,kind,generation,created_at) VALUES('task',?,'admin','index',0,?)").run(f.project.id, f.store.now())
+        f.setUpstream(async (path, body) => Response.json(path.endsWith('/binding') ? { bound: body.embeddingModel === config.embeddingModel } : { models: ['chat-model', 'text-embedding-3-small', 'text-embedding-3-large'] }))
         expect((await f.request('PUT', { ...config, embeddingModel: 'text-embedding-3-large', version: 1 })).status).toBe(409)
         expect((await f.request('DELETE', { version: 1 })).status).toBe(200)
         expect((await f.request('PUT', { ...config, embeddingModel: 'text-embedding-3-large', version: 2 })).status).toBe(409)
@@ -141,18 +143,65 @@ describe('human-only project memory provider setup', () => {
         const f = fixture()
         f.store.db.query("INSERT INTO evolved_memory_reservations(id,project_id,period,reserved_micros,spent_micros,state,created_at) VALUES('old',?,'2026-10',20,0,'settled',?)").run(f.project.id, f.store.now())
         f.store.db.query("INSERT INTO evolved_memory_tasks(id,project_id,actor_id,kind,generation,state,reservation_id,attempts,created_at) VALUES('old-task',?,'admin','index',0,'failed','old',1,?)").run(f.project.id, f.store.now())
-        let empty: unknown = false
-        f.setUpstream(async path => Response.json(path.endsWith('/binding') ? { empty } : { models: ['chat-model', 'text-embedding-3-small'] }))
+        let bound: unknown = false
+        f.setUpstream(async path => Response.json(path.endsWith('/binding') ? { bound, empty: true } : { models: ['chat-model', 'text-embedding-3-small'] }))
         expect(await (await f.request()).json()).toMatchObject({ embeddingLocked: true, boundEmbeddingModel: null })
         expect((await f.request('PUT', { ...config, version: 0 })).status).toBe(409)
-        empty = 'true'
+        bound = 'true'
         expect((await f.request('PUT', { ...config, version: 0 })).status).toBe(409)
-        empty = true
+        bound = true
         expect((await f.request('PUT', { ...config, version: 0 })).status).toBe(200)
         expect(f.calls.filter(call => call.path === '/configuration/binding').map(call => call.body)).toEqual(Array(3).fill({ projectId: f.project.id, embeddingModel: config.embeddingModel, embeddingDimensions: config.embeddingDimensions }))
         expect(f.store.db.query('SELECT state,reservation_id FROM evolved_memory_tasks WHERE id=?').get('old-task')).toEqual({ state: 'failed', reservation_id: 'old' })
         expect(f.store.db.query('SELECT state,spent_micros FROM evolved_memory_reservations WHERE id=?').get('old')).toEqual({ state: 'settled', spent_micros: 0 })
         expect(await (await f.request()).json()).toMatchObject({ boundEmbeddingModel: config.embeddingModel, embeddingLocked: true })
+    })
+
+    test('known model bindings can change after a durable empty-graph proof, even with no local tasks remaining', async () => {
+        const f = fixture()
+        expect((await f.request('PUT', { ...config, version: 0 })).status).toBe(200)
+        f.store.db.query("INSERT INTO evolved_memory_tasks(id,project_id,actor_id,kind,generation,created_at) VALUES('queued',?,'admin','index',0,?)").run(f.project.id, f.store.now())
+        f.store.db.query("INSERT INTO evolved_memory_reservations(id,project_id,period,reserved_micros,spent_micros,state,created_at) VALUES('old',?,'2026-10',20,0,'settled',?)").run(f.project.id, f.store.now())
+        expect((await f.request('PUT', { ...config, embeddingModel: 'text-embedding-3-large', version: 1 })).status).toBe(200)
+        expect(await f.service.resolve(f.project.id)).toMatchObject({ embeddingModel: 'text-embedding-3-large' })
+        // Python can retain a binding after local queue/ledger housekeeping.
+        f.store.db.query('DELETE FROM evolved_memory_tasks').run()
+        f.store.db.query('DELETE FROM evolved_memory_reservations').run()
+        f.calls.length = 0
+        expect((await f.request('PUT', { ...config, version: 2 })).status).toBe(200)
+        expect(f.calls.find(call => call.path === '/configuration/binding')?.body).toEqual({ projectId: f.project.id, embeddingModel: config.embeddingModel, embeddingDimensions: 1536 })
+    })
+
+    test('every save confirms its binding and repairs a Python bind whose later Vault commit failed', async () => {
+        const f = fixture()
+        let pythonBinding: unknown = null, graphEmpty = true
+        f.setUpstream(async (path, body) => {
+            if (!path.endsWith('/binding')) return Response.json({ models: ['chat-model', 'text-embedding-3-small', 'text-embedding-3-large'] })
+            const allowed = pythonBinding === body.embeddingModel || graphEmpty
+            if (allowed) pythonBinding = body.embeddingModel
+            return Response.json({ bound: allowed })
+        })
+        expect((await f.request('PUT', { ...config, version: 0 })).status).toBe(200)
+        const request = f.vault.request.bind(f.vault)
+        let failNextCommit = true
+        f.vault.request = async input => {
+            if (input.operation === 'memoryProvider' && input.payload.action === 'set' && failNextCommit) {
+                failNextCommit = false
+                throw new EvolvedError('memory_provider_conflict', 'Concurrent configuration change', 409)
+            }
+            return request(input)
+        }
+        expect((await f.request('PUT', { ...config, embeddingModel: 'text-embedding-3-large', version: 1 })).status).toBe(409)
+        expect(pythonBinding).toBe('text-embedding-3-large')
+        expect(await f.service.resolve(f.project.id)).toMatchObject({ embeddingModel: config.embeddingModel })
+        // Saving the unchanged Vault selection repairs the successful external bind.
+        expect((await f.request('PUT', { ...config, version: 1 })).status).toBe(200)
+        expect(pythonBinding).toBe(config.embeddingModel)
+        graphEmpty = false
+        expect((await f.request('PUT', { ...config, apiKey: 'SYNTHETIC-rotated-key', inputUsdPerMTok: '0.5', version: 2 })).status).toBe(200)
+        expect(f.calls.filter(call => call.path === '/configuration/binding').map(call => call.body.embeddingModel)).toEqual([
+            config.embeddingModel, 'text-embedding-3-large', config.embeddingModel, config.embeddingModel,
+        ])
     })
 
     test('revocation during model validation blocks save, and concurrent processing blocks settings mutation', async () => {
@@ -178,6 +227,59 @@ describe('human-only project memory provider setup', () => {
 })
 
 describe('internal project-specific memory snapshots', () => {
+    test('fresh requests rejected before transport release their budget and can later succeed without a conflicting zero receipt', async () => {
+        const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: request => Response.json({ ok: true, spentMicros: new URL(request.url).pathname === '/ingest' ? 7 : 0 }) })
+        cleanup.unshift(() => server.stop(true))
+        for (const reason of ['busy', 'disabled'] as const) {
+            const f = fixture()
+            let admitted = false, lookups = 0
+            const backend = new HttpMemoryBackend(`http://127.0.0.1:${server.port}`, 'internal-token', async () => ++lookups === 1 || admitted || reason === 'busy' ? config : null,
+                async (_project, operation) => { if (!admitted && reason === 'busy') throw new EvolvedError('memory_provider_busy', 'Busy', 409); return operation() })
+            const service = new MemoryService(f.store, backend)
+            service.ledger.configure(f.project.id, { enabled: true, cloudAllowed: true, monthlyBudgetMicros: 100, jobBudgetMicros: 20 })
+            service.ledger.create(f.project.id, 'admin', 'Knowledge', 'Retained', [{ kind: 'manual', projectId: f.project.id, hash: 'x' }])
+            expect(await service.processOne()).toBe(false)
+            expect(service.ledger.budget(f.project.id)).toMatchObject({ reservedMicros: 0, spentMicros: 0 })
+            expect(f.store.db.query('SELECT * FROM evolved_memory_reservations').all()).toEqual([])
+            admitted = true
+            f.store.db.query('UPDATE evolved_memory_tasks SET lease_until=0').run()
+            expect(await service.processOne()).toBe(true)
+            expect(service.ledger.budget(f.project.id)).toMatchObject({ reservedMicros: 0, spentMicros: 7 })
+        }
+    })
+
+    test('previous or potentially transmitted reservations survive both pretransport denial and missing receipts', async () => {
+        const paths: string[] = []
+        const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: request => {
+            const path = new URL(request.url).pathname; paths.push(path)
+            return path === '/ingest' ? Response.json({ error: 'Receipt unavailable' }, { status: 503 }) : Response.json({ ok: true })
+        } })
+        cleanup.unshift(() => server.stop(true))
+        for (const prior of ['crash-before-task-link', 'linked', 'new-but-transmitted'] as const) {
+            const f = fixture()
+            const backend = new HttpMemoryBackend(`http://127.0.0.1:${server.port}`, 'internal-token', async () => config,
+                async (_project, operation) => { if (prior !== 'new-but-transmitted') throw new EvolvedError('memory_provider_busy', 'Busy', 409); return operation() })
+            const service = new MemoryService(f.store, backend)
+            service.ledger.configure(f.project.id, { enabled: true, cloudAllowed: true, monthlyBudgetMicros: 100, jobBudgetMicros: 20 })
+            service.ledger.create(f.project.id, 'admin', 'Knowledge', 'Retained', [{ kind: 'manual', projectId: f.project.id, hash: 'x' }])
+            const task = f.store.db.query('SELECT id FROM evolved_memory_tasks').get() as { id: string }
+            if (prior !== 'new-but-transmitted') service.ledger.reserve(f.project.id, task.id)
+            if (prior === 'linked') service.ledger.taskReservation(task.id, task.id)
+            expect(await service.processOne()).toBe(false)
+            expect(service.ledger.budget(f.project.id).reservedMicros).toBe(20)
+        }
+        expect(paths.filter(path => path === '/ingest')).toHaveLength(1)
+    })
+
+    test('hybrid search releases only freshly reserved requests rejected before transport', async () => {
+        const f = fixture(), backend = new HttpMemoryBackend('http://unused.invalid', 'internal-token', async () => null)
+        const service = new MemoryService(f.store, backend)
+        service.ledger.configure(f.project.id, { enabled: true, cloudAllowed: true, monthlyBudgetMicros: 100, jobBudgetMicros: 20 })
+        await expect(service.hybridSearch('admin', [f.project.id], 'query')).rejects.toThrow('disabled')
+        expect(service.ledger.budget(f.project.id)).toMatchObject({ reservedMicros: 0, spentMicros: 0 })
+        expect(f.store.db.query('SELECT * FROM evolved_memory_reservations').all()).toEqual([])
+    })
+
     test('failed preflight creates no reservation or graph binding that would block first browser setup', async () => {
         const f = fixture(), calls: string[] = []
         const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: request => {
@@ -215,6 +317,9 @@ describe('internal project-specific memory snapshots', () => {
             service.ledger.configure(f.project.id, { enabled: true, cloudAllowed: true, monthlyBudgetMicros: 100, jobBudgetMicros: 20 })
             service.ledger.create(f.project.id, 'admin', 'Local knowledge', 'Source-backed knowledge', [{ kind: 'manual', projectId: f.project.id, hash: 'manual' }])
             expect(await service.processOne()).toBe(false)
+            expect(service.ledger.budget(f.project.id).reservedMicros).toBe(0)
+            expect(f.store.db.query('SELECT * FROM evolved_memory_reservations').all()).toEqual([])
+            expect(f.store.db.query('SELECT state,reservation_id FROM evolved_memory_tasks').get()).toEqual({ state: revoke === 'member' ? 'failed' : 'queued', reservation_id: null })
         }
         expect(calls).toEqual(['/configuration/check', '/configuration/check', '/configuration/check'])
     })
@@ -243,7 +348,7 @@ describe('internal project-specific memory snapshots', () => {
         expect(calls.at(-1)?.body).not.toHaveProperty('providerConfig')
         resolved = null
         expect(await backend.available('project-a')).toBe(false)
-        await expect(backend.request('/ingest', { projectId: 'project-a' })).rejects.toThrow('disabled')
+        await expect(backend.request('/ingest', { projectId: 'project-a' })).rejects.toThrow('not sent')
         await backend.request('/reset', { projectId: 'project-a' })
         expect(calls.at(-1)?.path).toBe('/reset')
     })

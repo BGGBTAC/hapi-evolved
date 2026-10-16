@@ -138,13 +138,11 @@ export function createMemoryProviderRoutes(options: { store: EvolvedStore; servi
             const models = await service.models(apiKey)
             if (!models.includes(config.model) || !models.includes(config.embeddingModel)) throw new EvolvedError('memory_provider_model_unavailable', 'Select models returned for this API key.', 400)
             await authorize(c, true)
-            if (service.embeddingLocked(project.id, current.embeddingModel !== null) && current.embeddingModel !== config.embeddingModel) {
-                // Old installations can have final, zero-cost failed jobs without ever
-                // having a provider. Only the service can prove their graph is empty
-                // and persist a model fence that rejects late incompatible requests.
-                const empty = current.embeddingModel === null && (await service.request('/configuration/binding', { projectId: project.id, embeddingModel: config.embeddingModel, embeddingDimensions: config.embeddingDimensions })).empty === true
-                if (!empty) throw new EvolvedError('memory_embedding_locked', 'Existing graph data or processing tasks prevent changing the embedding model.', 409)
-            }
+            // Confirm even an unchanged selection: a prior Python bind can succeed
+            // before the Vault CAS fails. Identical bindings are idempotent; changing
+            // one still requires the service's empty-graph proof and durable fence.
+            const binding = await service.request('/configuration/binding', { projectId: project.id, embeddingModel: config.embeddingModel, embeddingDimensions: config.embeddingDimensions })
+            if (binding.bound !== true) throw new EvolvedError('memory_embedding_locked', 'Existing graph data or processing tasks prevent changing the embedding model.', 409)
             await authorize(c, true)
             await service.vault.request({ userId: principal.user.id, projectId: project.id, operation: 'memoryProvider', payload: { action: 'set', version: expectedVersion, config } })
             await authorize(c, true)

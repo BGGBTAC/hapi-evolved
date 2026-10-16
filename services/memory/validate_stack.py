@@ -41,16 +41,18 @@ async def main():
             assert checked.status_code == 200 and checked.json()['ok'] is True
             assert (await client.post('/configuration/check', json={'providerConfig': {**config, 'embeddingDimensions': 3072}})).status_code == 400
             assert (await client.get('/health')).status_code == 503, 'Project check must not change operator configuration'
-            assert (await client.post('/configuration/binding', json=binding)).json() == {'empty': False}
+            assert (await client.post('/configuration/binding', json=binding)).json() == {'bound': False}
             response = await client.post('/reset', json={'projectId': project, 'generation': 1})
             assert response.status_code == 200, response.text
             assert await count(own) == 0
             assert await count(neighbor) == 2, 'Purge crossed into another project prefix'
-            assert (await client.post('/configuration/binding', json=binding)).json() == {'empty': True}, 'Neighbor prefix must not prevent an exact empty-project proof'
+            assert (await client.post('/configuration/binding', json=binding)).json() == {'bound': True}, 'Neighbor prefix must not prevent an exact empty-project proof'
             async with driver.session() as session:
                 result = await session.run('MATCH (a:EvolvedValidation {group_id:$neighbor})-[:DERIVED]->(b:EvolvedValidation {group_id:$neighbor}) CREATE (a)-[:OWNED {group_id:$own}]->(b)', neighbor=neighbor, own=own)
                 await result.consume()
-            assert (await client.post('/configuration/binding', json=binding)).json() == {'empty': False}, 'Relationship-only project data must prevent binding'
+            assert (await client.post('/configuration/binding', json=binding)).json() == {'bound': True}, 'Existing binding must remain valid with graph data'
+            alternate_binding = {**binding, 'embeddingModel': 'text-embedding-3-large'}
+            assert (await client.post('/configuration/binding', json=alternate_binding)).json() == {'bound': False}, 'Relationship-only project data must prevent a different binding'
             async with driver.session() as session:
                 result = await session.run('MATCH ()-[r:OWNED {group_id:$own}]->() DELETE r', own=own)
                 await result.consume()
@@ -68,10 +70,10 @@ async def main():
             assert (await client.post('/search', json={'projects': []})).status_code == 400
             assert (await client.post('/search', content=b'x' * 100001)).status_code == 413
             await client.post('/reset', json={'projectId': project, 'generation': 2})
-            assert (await client.post('/configuration/binding', json=binding)).json() == {'empty': True}
+            assert (await client.post('/configuration/binding', json=binding)).json() == {'bound': True}
         print(json.dumps({'memory': 'passed', 'neo4jCascade': True, 'projectIsolation': True,
             'idempotentReset': True, 'staleGenerationRejected': True, 'projectConfigurationCheck': True,
-            'operatorRemainsUnconfigured': True, 'allGenerationBindingProof': True, 'relationshipOnlyBindingBlocked': True,
+            'operatorRemainsUnconfigured': True, 'allGenerationBindingProof': True, 'relationshipOnlyBindingBlocked': True, 'identicalBindingWithGraph': True,
             'providerDisabled': True, 'spentMicros': 0}))
     finally:
         async with driver.session() as session:

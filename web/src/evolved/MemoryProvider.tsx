@@ -20,6 +20,7 @@ const embeddingPrices: Record<string, string> = { 'text-embedding-3-small': '0.0
 const emptyConfig = (): MemoryProviderConfig => ({ provider: 'openai', model: '', embeddingModel: '', embeddingDimensions: 1536, inputUsdPerMTok: '', outputUsdPerMTok: '', embeddingUsdPerMTok: '', maxOutputTokens: 2048 })
 const storedConfig = (status: MemoryProviderStatus): MemoryProviderConfig => status.config ?? { ...emptyConfig(), embeddingModel: status.boundEmbeddingModel ?? '', embeddingUsdPerMTok: embeddingPrices[status.boundEmbeddingModel ?? ''] ?? '' }
 const validPrice = (value: string) => value.length <= 32 && /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(value) && Number(value) > 0 && Number(value) <= 1_000_000
+const needsPrices = (value: MemoryProviderConfig) => Boolean(value.model || value.embeddingModel) && ![value.inputUsdPerMTok, value.outputUsdPerMTok, value.embeddingUsdPerMTok].every(validPrice)
 
 function setupError(error: unknown): Error {
     if (error instanceof EvolvedApiError) {
@@ -65,7 +66,7 @@ function MemoryProviderForm({ settings, onChanged }: { settings?: MemorySettings
         lifecycle.current = controller
         void api.request<MemoryProviderStatus>(path, { signal: controller.signal }).then(value => {
             if (controller.signal.aborted) return
-            setStatus(value); setConfig(storedConfig(value))
+            setStatus(value); setConfig(storedConfig(value)); setAdvanced(needsPrices(storedConfig(value)))
         }).catch(cause => { if (!controller.signal.aborted) setError(setupError(cause)) })
             .finally(() => { if (!controller.signal.aborted) setLoading(false) })
         return () => { controller.abort(); lifecycle.current = null }
@@ -80,7 +81,7 @@ function MemoryProviderForm({ settings, onChanged }: { settings?: MemorySettings
         finally { if (!controller.signal.aborted) { pending.current = false; setBusy(false) } }
     }
     const accept = (value: MemoryProviderStatus) => {
-        setStatus(value); setConfig(storedConfig(value)); setDirty(false); setTested(false)
+        setStatus(value); setConfig(storedConfig(value)); setAdvanced(needsPrices(storedConfig(value))); setDirty(false); setTested(false)
     }
     const change = (patch: Partial<MemoryProviderConfig>) => { setConfig(value => ({ ...value, ...patch })); setDirty(true); setTested(false); setNotice('') }
     const chooseModel = (model: string) => {
@@ -152,7 +153,7 @@ function MemoryProviderForm({ settings, onChanged }: { settings?: MemorySettings
                 <div className="ev-actions"><button type="button" disabled={busy || (!apiKey.trim() && !status.apiKeyConfigured)} onClick={() => void fetchModels()}>Modelle vom Anbieter laden</button><small className="ev-muted">Keine kostenpflichtige KI-Anfrage.</small></div>
                 <div className="ev-form-grid">
                     <Field label="Sprachmodell" hint="Extrahiert Wissen und bewertet Suchtreffer."><select aria-label="Sprachmodell" required disabled={busy || !models.length} value={config.model} onChange={event => chooseModel(event.target.value)}><option value="">Modell auswählen</option>{options(config.model)}</select></Field>
-                    <Field label="Embedding-Modell" hint={status.embeddingLocked && status.boundEmbeddingModel ? 'An bestehende Graphdaten gebunden. Ein Modellwechsel benötigt eine gesonderte Neuindizierung.' : status.embeddingLocked ? 'Vor dem erstmaligen Speichern wird geprüft, ob frühere Verarbeitungsversuche bereits Graphdaten erzeugt haben.' : 'Wandelt Wissen in Suchvektoren um. Das Projekt verwendet 1536 Dimensionen.'}><select aria-label="Embedding-Modell" required disabled={busy || !models.length || (status.embeddingLocked && Boolean(status.boundEmbeddingModel))} value={config.embeddingModel} onChange={event => chooseEmbedding(event.target.value)}><option value="">Modell auswählen</option>{options(config.embeddingModel)}</select></Field>
+                    <Field label="Embedding-Modell" hint={status.boundEmbeddingModel ? 'Ein Modellwechsel wird beim Speichern nur zugelassen, wenn der Graph nachweislich leer ist. Vorhandene Graphdaten werden nicht überschrieben.' : status.embeddingLocked ? 'Vor dem erstmaligen Speichern wird geprüft, ob frühere Verarbeitungsversuche bereits Graphdaten erzeugt haben.' : 'Wandelt Wissen in Suchvektoren um. Das Projekt verwendet 1536 Dimensionen.'}><select aria-label="Embedding-Modell" required disabled={busy || !models.length} value={config.embeddingModel} onChange={event => chooseEmbedding(event.target.value)}><option value="">Modell auswählen</option>{options(config.embeddingModel)}</select></Field>
                 </div>
                 <details className="ev-disclosure" open={advanced} onToggle={event => setAdvanced(event.currentTarget.open)}>
                     <summary>Preise und erweiterte Einstellungen</summary>
@@ -167,6 +168,7 @@ function MemoryProviderForm({ settings, onChanged }: { settings?: MemorySettings
                 </div>
             </form>}
             {admin && status?.apiKeyConfigured && <div className="ev-actions ev-memory-disconnect"><ConfirmButton label="Verbindung entfernen" detail="Cloud-Verbindung dieses Projekts entfernen? Lokales Wissen bleibt erhalten." disabled={busy} onConfirm={() => void disconnect()} /></div>}
+            {admin && status?.source === 'environment' && <div className="ev-actions ev-memory-disconnect"><ConfirmButton label="Betreiberzugang für dieses Projekt sperren" detail="Einen eventuell vorhandenen allgemeinen Memory-Zugang für dieses Projekt sperren? Lokales Wissen bleibt erhalten." disabled={busy} onConfirm={() => void disconnect()} /></div>}
             {!status && admin && <button disabled={busy} onClick={() => void reload()}>Einrichtung erneut laden</button>}
         </>}
         <ErrorNotice error={error} />{notice && <p className="ev-notice" role="status">{notice}</p>}

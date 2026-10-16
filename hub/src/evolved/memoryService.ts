@@ -68,6 +68,9 @@ export type MemoryBackend = {
     prepare?(projectId: string): Promise<void>
     request(path: string, payload: Record<string, unknown>, revalidate?: () => void | Promise<void>): Promise<Record<string, unknown>>
 }
+class MemoryRequestNotSent extends Error {
+    constructor(readonly original: unknown) { super('Memory request was not sent') }
+}
 export class HttpMemoryBackend implements MemoryBackend {
     constructor(private url?: string, private token?: string, private provider?: MemoryProviderResolver, private using?: MemoryProviderOperation) {}
     async prepare(projectId: string): Promise<void> {
@@ -90,24 +93,39 @@ export class HttpMemoryBackend implements MemoryBackend {
         catch { return false }
     }
     async request(path: string, payload: Record<string, unknown>, revalidate?: () => void | Promise<void>): Promise<Record<string, unknown>> {
-        if (!this.url || !this.token) throw new MemoryError('Memory graph service is not configured', 503)
-        if (this.provider && (path === '/ingest' || path === '/search')) {
-            const projects = payload.projects
-            const projectId = path === '/ingest' ? payload.projectId : Array.isArray(projects) && projects.length === 1 ? projects[0]?.projectId : undefined
-            if (typeof projectId !== 'string' || !projectId) throw new MemoryError('A single project is required for memory processing', 400)
-            const run = async () => {
-                const config = await this.provider!(projectId)
-                if (config === null) throw new MemoryError('Project memory provider is disabled', 503)
-                if (revalidate) await revalidate()
-                const { providerConfig: _untrusted, ...base } = payload
-                return this.send(path, { ...base, ...(config ? { providerConfig: config } : {}) })
-            }
-            return this.using ? this.using(projectId, run) : run()
+        if (path !== '/ingest' && path !== '/search') {
+            if (!this.url || !this.token) throw new MemoryError('Memory graph service is not configured', 503)
+            // Reconciliation/deletion never carry provider credentials.
+            const { providerConfig: _untrusted, ...base } = payload
+            return this.send(path, base)
         }
-        // Reconciliation and deletion must not carry provider credentials or depend on key availability.
-        const { providerConfig: _untrusted, ...base } = payload
-        if (revalidate) await revalidate()
-        return this.send(path, base)
+        let transportStarted = false
+        try {
+            if (!this.url || !this.token) throw new MemoryError('Memory graph service is not configured', 503)
+            const send = (body: Record<string, unknown>) => {
+                transportStarted = true
+                return this.send(path, body)
+            }
+            if (this.provider) {
+                const projects = payload.projects
+                const projectId = path === '/ingest' ? payload.projectId : Array.isArray(projects) && projects.length === 1 ? projects[0]?.projectId : undefined
+                if (typeof projectId !== 'string' || !projectId) throw new MemoryError('A single project is required for memory processing', 400)
+                const run = async () => {
+                    const config = await this.provider!(projectId)
+                    if (config === null) throw new MemoryError('Project memory provider is disabled', 503)
+                    if (revalidate) await revalidate()
+                    const { providerConfig: _untrusted, ...base } = payload
+                    return send({ ...base, ...(config ? { providerConfig: config } : {}) })
+                }
+                return await (this.using ? this.using(projectId, run) : run())
+            }
+            const { providerConfig: _untrusted, ...base } = payload
+            if (revalidate) await revalidate()
+            return await send(base)
+        } catch (error) {
+            if (!transportStarted) throw new MemoryRequestNotSent(error)
+            throw error
+        }
     }
     private async send(path: string, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
         let response: Response
@@ -127,6 +145,28 @@ export class MemoryService {
     private reconciling = false
     private reconcilingCosts = false
     constructor(readonly store: EvolvedStore, readonly backend: MemoryBackend) { this.ledger = new MemoryLedger(store.db) }
+    private async requestWithBudget(projectId: string, operationId: string, path: '/ingest' | '/search', payload: Record<string, unknown>, revalidate: () => void | Promise<void>, taskId?: string): Promise<Record<string, unknown>> {
+        const { created, budgetMicros } = this.store.db.transaction(() => {
+            // Checking inside the same write transaction also covers a crash between
+            // an earlier reserve and the task's reservation_id update.
+            const prior = this.store.db.query('SELECT 1 FROM evolved_memory_reservations WHERE id=?').get(operationId)
+            const budgetMicros = this.ledger.reserve(projectId, operationId)
+            if (taskId) this.ledger.taskReservation(taskId, operationId)
+            return { created: !prior, budgetMicros }
+        }).immediate()
+        try { return await this.backend.request(path, { ...payload, operationId, budgetMicros }, revalidate) }
+        catch (error) {
+            if (error instanceof MemoryRequestNotSent) {
+                if (created) this.store.db.transaction(() => {
+                    const removed = this.store.db.query("DELETE FROM evolved_memory_reservations WHERE id=? AND project_id=? AND state='reserved' AND spent_micros=0").run(operationId, projectId)
+                    if (removed.changes) this.store.db.query('UPDATE evolved_memory_tasks SET reservation_id=NULL WHERE project_id=? AND reservation_id=?').run(projectId, operationId)
+                }).immediate()
+                // Retain the original authorization error and its terminal handling.
+                throw error.original
+            }
+            throw error
+        }
+    }
     async processOne(): Promise<boolean> {
         if (this.running) return false
         this.running = true
@@ -153,10 +193,8 @@ export class MemoryService {
             }
             if (!task.reservation_id && this.backend.prepare) { await this.backend.prepare(task.project_id); revalidate() }
             const reservationId = task.reservation_id ?? task.id
-            const budgetMicros = this.ledger.reserve(task.project_id, reservationId)
-            this.ledger.taskReservation(task.id, reservationId)
-            const result = await this.backend.request('/ingest', { operationId: reservationId, projectId: task.project_id, generation: task.generation,
-                memoryId: item.id, title: item.title, body: item.body, sources: item.sources, referenceTime: new Date(item.createdAt).toISOString(), budgetMicros }, revalidate)
+            const result = await this.requestWithBudget(task.project_id, reservationId, '/ingest', { projectId: task.project_id, generation: task.generation,
+                memoryId: item.id, title: item.title, body: item.body, sources: item.sources, referenceTime: new Date(item.createdAt).toISOString() }, revalidate, task.id)
             if (typeof result.spentMicros !== 'number') throw new MemoryError('Missing memory cost receipt', 502)
             this.ledger.settle(reservationId, result.spentMicros)
             if (result.ok === false) {
@@ -265,8 +303,7 @@ export class MemoryService {
             const settings = this.ledger.settings(projectId)
             if (!settings.enabled || !settings.cloudAllowed) continue
             const operationId = randomUUID()
-            const budgetMicros = this.ledger.reserve(projectId, operationId)
-            const result = await this.backend.request('/search', { operationId, projects: [{ projectId, generation: settings.generation }], query, limit, budgetMicros }, async () => {
+            const result = await this.requestWithBudget(projectId, operationId, '/search', { projects: [{ projectId, generation: settings.generation }], query, limit }, async () => {
                 if (revalidate) await revalidate()
                 this.store.requireProject(actorId, projectId)
                 const current = this.ledger.settings(projectId)

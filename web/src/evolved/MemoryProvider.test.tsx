@@ -113,7 +113,7 @@ describe('Graph Memory browser configuration', () => {
         expect(context.api.request).toHaveBeenCalledTimes(role === 'viewer' ? 0 : 1)
     })
 
-    it('prevents an embedding change once graph data exists and disconnects only after confirmation', async () => {
+    it('explains the server-enforced embedding check and disconnects only after confirmation', async () => {
         context.api.request.mockImplementation(async (path: string, options: { method?: string }) => {
             if (path.endsWith('/models')) return { models: catalog }
             return options.method === 'DELETE' ? { ...status(), version: 2 } : { ...status(true), embeddingLocked: true }
@@ -121,6 +121,7 @@ describe('Graph Memory browser configuration', () => {
         render(<MemoryProviderPanel />)
         await screen.findByLabelText(/OpenAI-API-Key/)
         expect(screen.getByLabelText('Embedding-Modell')).toBeDisabled()
+        expect(screen.getByText(/wenn der Graph nachweislich leer ist/)).toBeInTheDocument()
         fireEvent.click(screen.getByRole('button', { name: 'Verbindung entfernen' }))
         expect(context.api.request.mock.calls.some(([, options]) => ['PUT', 'DELETE'].includes(options.method))).toBe(false)
         fireEvent.click(screen.getByRole('button', { name: 'Bestätigen' }))
@@ -161,6 +162,43 @@ describe('Graph Memory browser configuration', () => {
         expect(screen.getByLabelText('Embedding-Modell')).toHaveValue(config.embeddingModel)
         expect(screen.getByText(/frühere Verarbeitungsversuche bereits Graphdaten/)).toBeInTheDocument()
         expect(screen.getByRole('button', { name: 'Einrichtung speichern' })).toBeEnabled()
+    })
+
+    it('permits an explicit embedding change to be checked by the server without bypassing a nonempty-graph rejection', async () => {
+        context.api.request.mockImplementation(async (path: string, options: { method?: string }) => {
+            if (path.endsWith('/models')) return { models: [...catalog, 'text-embedding-3-large'] }
+            if (options.method === 'PUT') throw new EvolvedApiError('Graph not empty', 409, 'memory_embedding_locked')
+            return { ...status(true), embeddingLocked: true }
+        })
+        render(<MemoryProviderPanel />)
+        await screen.findByLabelText('OpenAI-API-Key')
+        fireEvent.click(screen.getByRole('button', { name: 'Modelle vom Anbieter laden' }))
+        await screen.findByText(/4 Modelle direkt/)
+        fireEvent.change(screen.getByLabelText('Embedding-Modell'), { target: { value: 'text-embedding-3-large' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Einrichtung speichern' }))
+        expect(await screen.findByRole('alert')).toHaveTextContent(/keine Graphdaten geändert/)
+        expect(context.api.request.mock.calls.find(([, options]) => options.method === 'PUT')?.[1].body).toMatchObject({ embeddingModel: 'text-embedding-3-large', embeddingUsdPerMTok: '0.13' })
+    })
+
+    it('opens required prices for reconnecting a custom embedding and keeps them open while editing', async () => {
+        context.api.request.mockResolvedValue({ ...status(), embeddingLocked: true, boundEmbeddingModel: 'custom-embedding' })
+        render(<MemoryProviderPanel />)
+        await screen.findByLabelText('OpenAI-API-Key')
+        const details = screen.getByText('Preise und erweiterte Einstellungen').closest('details')!
+        expect(details.open).toBe(true)
+        for (const label of ['Sprachmodell: Eingabe', 'Sprachmodell: Ausgabe', 'Embeddings: Eingabe']) fireEvent.change(screen.getByLabelText(label), { target: { value: '0.2' } })
+        expect(details.open).toBe(true)
+    })
+
+    it('allows explicitly blocking an inherited operator connection without possessing its key', async () => {
+        context.api.request.mockImplementation(async (_path: string, options: { method?: string }) => options.method === 'DELETE' ? { ...status(), version: 1 } : { ...status(), source: 'environment' })
+        render(<MemoryProviderPanel />)
+        await screen.findByLabelText('OpenAI-API-Key')
+        fireEvent.click(screen.getByRole('button', { name: 'Betreiberzugang für dieses Projekt sperren' }))
+        expect(context.api.request.mock.calls.some(([, options]) => options.method === 'DELETE')).toBe(false)
+        fireEvent.click(screen.getByRole('button', { name: 'Bestätigen' }))
+        await screen.findByText(/Projektverbindung entfernt/)
+        expect(context.api.request).toHaveBeenCalledWith('/projects/project-1/memory/provider', expect.objectContaining({ method: 'DELETE', body: { version: 0 } }))
     })
 
     it.each(['project', 'user', 'role', 'origin'] as const)('discards secret-bearing state and a late model response after changing %s', async change => {

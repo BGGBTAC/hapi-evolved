@@ -45,10 +45,13 @@ die Einrichtung führt keine automatische Neuindizierung durch. Cloud-Freigabe u
 positive Monats-/Auftragsbudgets bleiben zusätzliche Voraussetzungen.
 
 Alte Installationen können fehlgeschlagene Indexaufträge ohne jemals erzeugte
-Graphdaten enthalten. Bei unbekannter früherer Modellbindung prüft der interne
-Endpunkt `/configuration/binding` alle Projektgenerationen und aktive beziehungsweise
-unklare Aufträge. Nur bei nachgewiesen leerem Graph schreibt er unter Projektsperre
-eine dauerhafte Bindung an das gewählte Embedding-Modell und seine Dimensionen.
+Graphdaten enthalten. Jeder Speichervorgang bestätigt deshalb über den internen
+Endpunkt `/configuration/binding` die dauerhafte Modellbindung. Eine bereits identische
+Bindung erlaubt Schlüssel- und Preisänderungen auch mit vorhandenem Graph. Bei einer
+abweichenden oder unbekannten Bindung prüft der Dienst alle Projektgenerationen und
+aktive beziehungsweise unklare Aufträge. Nur bei nachgewiesen leerem Graph schreibt er
+unter Projektsperre die neue Bindung an Embedding-Modell und Dimensionen. Das erneute
+Speichern repariert auch eine vorherige Teilunterbrechung zwischen Dienst und Vault.
 Verspätete Anfragen mit abweichendem Modell dürfen danach keine Graphdaten erzeugen;
 vorhandene Operationsbelege bleiben unverändert abrufbar. Unsichere Zustände verweigern
 die Übernahme. Der Speichervorgang löscht keine Daten, gibt keine alten Reservierungen
@@ -89,6 +92,9 @@ Unklare/abgebrochene Aufrufe behalten ihre Reservierung; Wiederholungen mit ders
 keinen erneuten Aufruf. Ein regelmäßiger Belegabgleich löst endgültig abgeschlossene Reservierungen auch
 nach abgebrochener Suche oder Quellenlöschung auf; unbekannte/laufende Operationen bleiben reserviert. Nach Prozessabsturz werden laufende Operationen als unklar abgeschlossen.
 Die eingetragenen Preise müssen zu den ausgewählten Modellen passen.
+Scheitert eine neue Anfrage nachweislich bereits vor dem HTTP-Versand, entfernt der
+Hub ausschließlich ihre frisch angelegte, noch ungenutzte Reservierung. Frühere
+Reservierungen und Anfragen mit unklarem Versandstatus bleiben erhalten.
 
 Episoden behalten Projekt, Quellenart, Inhaltshash, gegebenenfalls Datei/Commit sowie Sitzung/Nachricht.
 Neue Hub-Nachrichten werden nur mit aktivem, weiterhin berechtigtem Freigabeadmin aufgenommen; historische

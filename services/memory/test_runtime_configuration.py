@@ -61,7 +61,7 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
         before = [dict(row) for row in self.app.ledger.db.execute("SELECT * FROM operations ORDER BY id")]
         response = await self.client.post("/configuration/binding", json=self.binding_request())
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"empty": True})
+        self.assertEqual(response.json(), {"bound": True})
         self.assertEqual([dict(row) for row in self.app.ledger.db.execute("SELECT * FROM operations ORDER BY id")], before)
         self.assertEqual(self.app.ledger.binding("project-a"), ("text-embedding-3-small", 1536))
         pattern = run.call_args.kwargs["pattern"]
@@ -74,12 +74,12 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
     async def test_existing_nodes_relationships_or_unfinished_operations_prevent_empty_proof(self):
         for nodes, relationships in [(1, 0), (0, 1)]:
             self.graph_counts(nodes, relationships)
-            self.assertEqual((await self.client.post("/configuration/binding", json=self.binding_request())).json(), {"empty": False})
+            self.assertEqual((await self.client.post("/configuration/binding", json=self.binding_request())).json(), {"bound": False})
         run = self.graph_counts()
         for state in ["running", "indeterminate"]:
             self.app.ledger.begin(state, state, 0, "synthetic", 100)
             self.app.ledger.db.execute("UPDATE operations SET status=? WHERE id=?", (state, state))
-            self.assertEqual((await self.client.post("/configuration/binding", json=self.binding_request(state))).json(), {"empty": False})
+            self.assertEqual((await self.client.post("/configuration/binding", json=self.binding_request(state))).json(), {"bound": False})
         run.assert_not_called()
 
     async def test_binding_validation_auth_and_database_failures_are_closed(self):
@@ -94,7 +94,26 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
             run.side_effect = error
             response = await self.client.post("/configuration/binding", json=self.binding_request())
             self.assertEqual(response.status_code, 503)
-            self.assertEqual(response.json(), {"error": "Memory graph binding could not be verified"})
+            self.assertEqual(response.json(), {"bound": False, "error": "Memory graph binding could not be verified"})
+
+    async def test_identical_durable_binding_is_confirmed_with_graph_data_without_claiming_empty(self):
+        self.app.ledger.bind("project-a", "text-embedding-3-small", 1536)
+        run = self.graph_counts(nodes=5, relationships=3)
+        before = self.app.ledger.db.total_changes
+        response = await self.client.post("/configuration/binding", json=self.binding_request())
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"bound": True})
+        self.assertEqual(self.app.ledger.db.total_changes, before)
+        run.assert_not_called()
+        incompatible = await self.client.post("/configuration/binding", json=self.binding_request(embeddingModel="text-embedding-3-large"))
+        self.assertEqual(incompatible.json(), {"bound": False})
+        run.assert_awaited_once()
+        self.assertEqual(self.app.ledger.binding("project-a"), ("text-embedding-3-small", 1536))
+        self.app.ledger.begin("uncertain", "project-a", 0, "synthetic", 100)
+        self.app.ledger.db.execute("UPDATE operations SET status='indeterminate' WHERE id='uncertain'")
+        run.reset_mock()
+        self.assertEqual((await self.client.post("/configuration/binding", json=self.binding_request())).json(), {"bound": False})
+        run.assert_not_called()
 
     async def test_durable_binding_rejects_late_old_snapshot_but_preserves_existing_receipt(self):
         self.graph_counts()
@@ -102,7 +121,7 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
             original = await self.client.post("/search", json=self.operation())
             self.assertEqual(original.status_code, 200)
             claimed = await self.client.post("/configuration/binding", json=self.binding_request(embeddingModel="text-embedding-3-large"))
-            self.assertEqual(claimed.json(), {"empty": True})
+            self.assertEqual(claimed.json(), {"bound": True})
             # Reopen the durable ledger to prove the binding survives service restart.
             filename = str(Path(self.directory.name) / "operations.db")
             self.app.ledger.db.close()
@@ -123,14 +142,20 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
     async def test_retry_after_external_save_failure_can_rebind_only_a_still_empty_project(self):
         self.graph_counts()
         first = await self.client.post("/configuration/binding", json=self.binding_request())
-        self.assertEqual(first.json(), {"empty": True})
+        self.assertEqual(first.json(), {"bound": True})
         retry = await self.client.post("/configuration/binding", json=self.binding_request(embeddingModel="text-embedding-3-large"))
-        self.assertEqual(retry.json(), {"empty": True})
+        self.assertEqual(retry.json(), {"bound": True})
         self.assertEqual(self.app.ledger.binding("project-a"), ("text-embedding-3-large", 1536))
         self.graph_counts(nodes=1)
         failed = await self.client.post("/configuration/binding", json=self.binding_request())
-        self.assertEqual(failed.json(), {"empty": False})
+        self.assertEqual(failed.json(), {"bound": False})
         self.assertEqual(self.app.ledger.binding("project-a"), ("text-embedding-3-large", 1536))
+        # The Hub still has A if its Vault save of B failed. Saving that same
+        # visible A must restore the Python binding while the graph is empty.
+        self.graph_counts()
+        restore = await self.client.post("/configuration/binding", json=self.binding_request())
+        self.assertEqual(restore.json(), {"bound": True})
+        self.assertEqual(self.app.ledger.binding("project-a"), ("text-embedding-3-small", 1536))
 
     async def test_binding_detects_new_operation_waiting_behind_its_database_read(self):
         run = self.graph_counts()
@@ -152,7 +177,7 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
                 create.assert_not_called()
             finally:
                 finish_read.set()
-            self.assertEqual((await binding).json(), {"empty": False})
+            self.assertEqual((await binding).json(), {"bound": False})
             self.assertEqual((await operation).status_code, 200)
             self.assertEqual(self.app.operation_admissions, {})
 
@@ -167,7 +192,7 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.wait_for(entered.wait(), 1)
             try:
                 result = await asyncio.wait_for(self.client.post("/configuration/binding", json=self.binding_request()), 1)
-                self.assertEqual(result.json(), {"empty": False})
+                self.assertEqual(result.json(), {"bound": False})
             finally:
                 release.set()
             self.assertEqual((await operation).status_code, 200)
@@ -184,7 +209,7 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(body_started.wait(), 1)
         try:
             response = await self.client.post("/configuration/binding", json=self.binding_request("unknown-project"))
-            self.assertEqual(response.json(), {"empty": False})
+            self.assertEqual(response.json(), {"bound": False})
         finally:
             finish_body.set()
         self.assertEqual((await request).status_code, 503)

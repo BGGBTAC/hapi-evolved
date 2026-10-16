@@ -19,10 +19,14 @@ Benachrichtigungstest mit 20-ms-Abklingzeit schlug während paralleler CPU-Last 
 die vollständige Hub-Wiederholung ohne konkurrierende Suites bestand. 13 bedingte
 CLI- und drei Hub-Integrationstests bleiben übersprungen.
 
-38 Python-Tests prüfen Konfigurationsisolierung, Schlüsselredaktion, positive
+39 Python-Tests prüfen Konfigurationsisolierung, Schlüsselredaktion, positive
 Preise, Budget-/Receipt-Verhalten, echte SDK-Embeddingdimensionen und die dauerhafte
 Modellbindung gegen verspätete Aufträge. Die gesonderte Integration mit tatsächlichem
 Neo4j und Graphiti bestand; nur der Modelltransport wird dabei ersetzt.
+Der enge Abschlusslauf bestand zusätzlich 35 Hub- und 17 Web-Tests. Er deckt die
+Reparatur einer unterbrochenen Modellbindung, Schlüsselwechsel bei vorhandenem Graph
+und die Freigabe ausschließlich neuer, nachweislich noch nicht versandter
+Kostenreservierungen ab. Alle sieben Paket-Typechecks bestanden erneut.
 
 Der isolierte Browserlauf verwendet echten Hub, Vault und WebAuthn. Fünf Prüfgruppen
 decken Einrichtung, beliebige neue Katalog-IDs, Schlüsselwechsel, Projektwechsel,

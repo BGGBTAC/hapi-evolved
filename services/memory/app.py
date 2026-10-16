@@ -158,11 +158,16 @@ async def check_binding(request: Request):
     except (ValueError, TypeError):
         return JSONResponse({"error": "Invalid project"}, 400)
     if locks[project].locked():
-        return {"empty": False}
+        return {"bound": False}
     async with locks[project]:
         try:
             if active_project_operations(project):
-                return {"empty": False}
+                return {"bound": False}
+            # Confirm the durable state for every Hub save, including recovery
+            # after a successful bind followed by a failed external Vault save.
+            # Matching bindings remain valid when the graph already has data.
+            if ledger.binding(project) == (model, dimensions):
+                return {"bound": True}
             # All generations, exact project prefix, including relationships whose
             # endpoints alone would not prove this project's graph to be empty.
             pattern = "^" + re.escape(f"hapi_{project.replace('-', '_')}_") + r"\d+$"
@@ -179,13 +184,13 @@ async def check_binding(request: Request):
             # Requests admitted while the DB read awaited are still pending behind
             # our lock. They also invalidate the proof; never let one slip past it.
             if not graph_empty or active_project_operations(project):
-                return {"empty": False}
+                return {"bound": False}
             # Seal the proof before returning. A pre-change request that reaches
             # ASGI only later must pass this durable binding before graph work.
             ledger.bind(project, model, dimensions)
-            return {"empty": True}
+            return {"bound": True}
         except Exception:
-            return JSONResponse({"error": "Memory graph binding could not be verified"}, 503)
+            return JSONResponse({"bound": False, "error": "Memory graph binding could not be verified"}, 503)
 
 @app.post("/reset")
 async def reset(request: Request):

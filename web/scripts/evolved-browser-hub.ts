@@ -6,7 +6,7 @@ import { EvolvedVault, createVaultSigningKey } from '../../hub/src/evolved/vault
 import { createVaultServer } from '../../hub/src/evolved/vaultServer.ts'
 import { startHub } from '../../hub/src/startHub.ts'
 const tmp = process.env.EVOLVED_TEST_STATE!
-if (!tmp || !tmp.startsWith('/tmp/hapi-evolved-ui-')) throw new Error('Synthetic test state required')
+if (!tmp || !/^\/tmp\/hapi-evolved-ui-[A-Za-z0-9-]+$/.test(tmp)) throw new Error('Synthetic test state required')
 if (process.env.EVOLVED_TEST_PLUGINS === '1') {
     // Only this isolated test entrypoint replaces external GitHub responses.
     // Product runtime and its PluginService always retain the ordinary fetcher.
@@ -68,6 +68,7 @@ const sideProvider = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(req
 Object.assign(process.env, { EVOLVED_SIDECHANNEL_ADAPTER: 'openai-chat-completions-v1', EVOLVED_SIDECHANNEL_URL: `http://127.0.0.1:${sideProvider.port}/completions`, EVOLVED_SIDECHANNEL_ALLOW_LOOPBACK_HTTP: '1', EVOLVED_SIDECHANNEL_MODEL: 'synthetic-side-model', EVOLVED_SIDECHANNEL_DAILY_TOKENS: '40000', EVOLVED_SIDECHANNEL_KEY_FILE: sideKey })
 // Optional real local Codegraph fixture: all state and credentials are synthetic.
 let codegraphProcess: ReturnType<typeof spawn> | undefined
+let codegraphServiceToken: { file: string; value: string } | undefined
 process.on('exit', () => codegraphProcess?.kill('SIGTERM'))
 if (process.env.EVOLVED_TEST_CODEGRAPH === '1') {
     const codegraphNode = new URL('../../services/codegraph/node_modules/@colbymchenry/codegraph-linux-x64/node', import.meta.url).pathname
@@ -76,6 +77,7 @@ if (process.env.EVOLVED_TEST_CODEGRAPH === '1') {
     const token = randomBytes(32).toString('hex')
     const tokenFile = join(tmp, 'codegraph-service.key')
     writeFileSync(tokenFile, token, { mode: 0o600 })
+    codegraphServiceToken = { file: tokenFile, value: token }
     const port = process.env.EVOLVED_TEST_CODEGRAPH_PORT!
     mkdirSync(join(tmp, 'managed-workspaces'), { recursive: true, mode: 0o700 })
     codegraphProcess = spawn(codegraphNode, ['--liftoff-only', new URL('../../services/codegraph/server.mjs', import.meta.url).pathname], {
@@ -94,10 +96,10 @@ if (process.env.EVOLVED_TEST_CODEGRAPH === '1') {
 // service is synthetic. No provider inference or external model endpoint exists.
 let memoryServer: ReturnType<typeof Bun.serve> | undefined
 if (process.env.EVOLVED_TEST_MEMORY === '1') {
-    const tokenFile = process.env.EVOLVED_SERVICE_TOKEN_FILE || join(tmp, 'memory-service.key')
-    const token = process.env.EVOLVED_SERVICE_TOKEN_FILE ? readFileSync(tokenFile, 'utf8').trim() : randomBytes(32).toString('hex')
-    if (!process.env.EVOLVED_SERVICE_TOKEN_FILE) writeFileSync(tokenFile, token, { mode: 0o600 })
-    const observed = { catalogRequests: 0, configurationChecks: 0, inferenceRequests: 0, keyLabels: [] as string[] }
+    const tokenFile = codegraphServiceToken?.file ?? join(tmp, 'memory-service.key')
+    const token = codegraphServiceToken?.value ?? randomBytes(32).toString('hex')
+    if (!codegraphServiceToken) writeFileSync(tokenFile, token, { mode: 0o600 })
+    const observed = { catalogRequests: 0, configurationChecks: 0, inferenceRequests: 0, keyLabels: [] as string[], bindings: [] as { projectId: string; embeddingModel: string; embeddingDimensions: number }[] }
     const observe = () => writeFileSync(join(tmp, 'memory-observed.json'), JSON.stringify(observed), { mode: 0o600 })
     const keyLabel = (key: unknown) => key === 'synthetic-memory-browser-initial-key' ? 'initial'
         : key === 'synthetic-memory-browser-reconnected-key' ? 'reconnected' : null
@@ -111,7 +113,18 @@ if (process.env.EVOLVED_TEST_MEMORY === '1') {
             return Response.json({ error: 'Inference is forbidden in this synthetic fixture' }, { status: 503 })
         }
         if (request.method !== 'POST') return Response.json({ error: 'Unknown fixture request' }, { status: 404 })
-        const body = await request.json() as { apiKey?: unknown; providerConfig?: { apiKey?: unknown; provider?: unknown; embeddingDimensions?: unknown } }
+        const body = await request.json() as { apiKey?: unknown; providerConfig?: { apiKey?: unknown; provider?: unknown; embeddingDimensions?: unknown }; projectId?: unknown; embeddingModel?: unknown; embeddingDimensions?: unknown }
+        if (path === '/configuration/binding') {
+            // This fixture has no graph and rejects inference. Accept only the
+            // explicit projects and embeddings created by this browser scenario.
+            const projects = JSON.parse(readFileSync(join(tmp, 'memory-projects.json'), 'utf8')) as string[]
+            if (!body || Object.keys(body).sort().join(',') !== 'embeddingDimensions,embeddingModel,projectId'
+                || typeof body.projectId !== 'string' || !/^[A-Za-z0-9-]{1,80}$/.test(body.projectId) || !projects.includes(body.projectId)
+                || typeof body.embeddingModel !== 'string' || !['text-embedding-3-small', 'text-embedding-3-large'].includes(body.embeddingModel)
+                || body.embeddingDimensions !== 1536) return Response.json({ error: 'Invalid synthetic binding' }, { status: 400 })
+            observed.bindings.push({ projectId: body.projectId, embeddingModel: body.embeddingModel, embeddingDimensions: body.embeddingDimensions }); observe()
+            return Response.json({ bound: true })
+        }
         const label = keyLabel(path === '/configuration/models' ? body.apiKey : body.providerConfig?.apiKey)
         if (!label) return Response.json({ error: 'Only synthetic fixture credentials are accepted' }, { status: 401 })
         if (!observed.keyLabels.includes(label)) observed.keyLabels.push(label)
