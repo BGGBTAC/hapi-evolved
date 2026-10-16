@@ -42,6 +42,25 @@ function fixture(backend: MemoryBackend = { available: async () => false, reques
 }
 
 describe('explicit knowledge and quarantined historical conversation imports', () => {
+    test('legacy migration installs indexed provenance and audit lookups before scanning imports', () => {
+        const f = fixture(), old = f.legacy('indexed-migration')
+        f.store.db.exec(`DROP INDEX evolved_memory_source_item;
+            DROP INDEX evolved_memory_audit_target;
+            DROP INDEX evolved_memory_task_item`)
+        f.upgrade()
+        expect(f.service.ledger.archivedImports(f.project.id)).toBe(1)
+        const plans = [
+            ["SELECT source_json FROM evolved_memory_sources WHERE item_id=?", [old.id]],
+            ["SELECT 1 FROM evolved_audit WHERE target_id=? AND action LIKE 'memory.%'", [old.id]],
+            ["SELECT actor_id FROM evolved_memory_tasks WHERE item_id=? AND project_id=? AND kind='index' ORDER BY created_at DESC,id DESC LIMIT 1", [old.id, f.project.id]],
+        ] as const
+        for (const [sql, args] of plans) {
+            const plan = f.store.db.query(`EXPLAIN QUERY PLAN ${sql}`).all(...args) as { detail: string }[]
+            expect(plan.some(row => row.detail.includes('SEARCH') && row.detail.includes('INDEX'))).toBe(true)
+            expect(plan.some(row => row.detail.includes('SCAN') || row.detail.includes('TEMP B-TREE'))).toBe(false)
+        }
+    })
+
     test('ordinary text and screenshot tool events create no items or jobs, even with cloud enabled', () => {
         const f = fixture()
         f.service.ledger.configure(f.project.id, { enabled: true, cloudAllowed: true, monthlyBudgetMicros: 100, jobBudgetMicros: 20 }, 'alice')
@@ -150,6 +169,49 @@ describe('explicit knowledge and quarantined historical conversation imports', (
         const next = f.service.ledger.claim()!
         expect(next.item_id).toBe(fact.id); expect(next.generation).toBe(1)
         expect(f.store.db.query("SELECT * FROM evolved_memory_tasks WHERE item_id=? AND state IN ('queued','running')").all(old.id)).toEqual([])
+    })
+
+    test('rebuild retains the current task actor when the historical spending approver has left', async () => {
+        const calls: string[] = []
+        const f = fixture({ available: async () => true, request: async (path, _payload, revalidate) => {
+            await revalidate?.(); calls.push(path)
+            return { ok: true, spentMicros: 3 }
+        } })
+        f.store.setMember('alice', f.project.teamId, 'bob', 'admin')
+        const fact = f.service.ledger.create(f.project.id, 'bob', 'Retained fact', 'Useful knowledge', [{ projectId: f.project.id, kind: 'manual', hash: 'fact' }])
+        f.store.db.query("UPDATE evolved_memory_items SET index_state='indexed' WHERE id=?").run(fact.id)
+        f.store.db.query("UPDATE evolved_memory_tasks SET state='complete' WHERE item_id=?").run(fact.id)
+        f.legacy('old-approver-import')
+        f.service.ledger.configure(f.project.id, { enabled: true, cloudAllowed: true, monthlyBudgetMicros: 100, jobBudgetMicros: 20 }, 'alice')
+        f.store.setMember('bob', f.project.teamId, 'alice', null)
+        f.upgrade()
+        expect(f.store.db.query("SELECT actor_id FROM evolved_memory_tasks WHERE item_id=? AND generation=1").get(fact.id)).toEqual({ actor_id: 'bob' })
+        expect(await f.service.processOne()).toBe(true) // Projection purge.
+        expect(await f.service.processOne()).toBe(true) // Current actor's rebuild.
+        expect(calls).toEqual(['/reset', '/ingest'])
+        expect(f.service.ledger.get(f.project.id, fact.id)?.indexState).toBe('indexed')
+        expect(f.service.ledger.budget(f.project.id)).toMatchObject({ spentMicros: 3, reservedMicros: 0 })
+    })
+
+    test('a revoked task actor is not replaced with the still-authorized spending approver', async () => {
+        const calls: string[] = []
+        const f = fixture({ available: async () => true, request: async path => { calls.push(path); return { ok: true, spentMicros: 0 } } })
+        f.store.setMember('alice', f.project.teamId, 'bob', 'member')
+        const fact = f.service.ledger.create(f.project.id, 'bob', 'Revoked actor fact', 'Retained local knowledge', [{ projectId: f.project.id, kind: 'manual', hash: 'fact' }])
+        f.store.db.query("UPDATE evolved_memory_items SET index_state='indexed' WHERE id=?").run(fact.id)
+        f.store.db.query("UPDATE evolved_memory_tasks SET state='complete' WHERE item_id=?").run(fact.id)
+        f.legacy('still-authorized-approver-import')
+        f.service.ledger.configure(f.project.id, { enabled: true, cloudAllowed: true, monthlyBudgetMicros: 100, jobBudgetMicros: 20 }, 'alice')
+        f.store.setMember('alice', f.project.teamId, 'bob', null)
+        f.upgrade()
+        expect(f.store.db.query("SELECT actor_id FROM evolved_memory_tasks WHERE item_id=? AND generation=1").get(fact.id)).toEqual({ actor_id: 'bob' })
+        expect(await f.service.processOne()).toBe(true)
+        expect(await f.service.processOne()).toBe(false)
+        expect(calls).toEqual(['/reset'])
+        expect(f.store.db.query('SELECT * FROM evolved_memory_reservations').all()).toEqual([])
+        expect(f.service.ledger.get(f.project.id, fact.id)?.indexState).toBe('error')
+        expect(f.store.db.query("SELECT state,error FROM evolved_memory_tasks WHERE item_id=? AND generation=1").get(fact.id))
+            .toEqual({ state: 'failed', error: 'Authorization revoked' })
     })
 
     test('late failed extraction settles its cost without overwriting the replacement generation state', async () => {

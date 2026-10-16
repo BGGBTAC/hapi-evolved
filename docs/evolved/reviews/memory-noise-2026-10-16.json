@@ -108,6 +108,28 @@
         "hub/src/evolved/memoryImports.test.ts",
         "hub/src/evolved/memory.test.ts"
       ]
+    },
+    {
+      "id": "GH-P1",
+      "status": "fixed_after_github_review",
+      "summary": "Repeated provenance/audit/task lookups could scan flooded legacy tables quadratically.",
+      "resolution": "Add item_id source index, target_id/action audit index before migration, and item/project/kind/time task lookup index. Query-plan regression confirms indexed SEARCH and no full scan or temporary sort.",
+      "evidence": [
+        "hub/src/evolved/memoryStore.ts:constructor",
+        "hub/src/evolved/memoryStore.ts:archiveLegacyConversationImports",
+        "hub/src/evolved/memoryImports.test.ts:legacy migration installs indexed provenance and audit lookups before scanning imports"
+      ]
+    },
+    {
+      "id": "GH-P2",
+      "status": "fixed_after_github_review",
+      "summary": "A departed historical budget approver incorrectly replaced the retained item task actor.",
+      "resolution": "Preserve concrete task actor before legacy approver fallback. Existing processOne revalidates current project and source permissions before reservations and provider work. Revoked task actors are not reassigned to an available administrator.",
+      "evidence": [
+        "hub/src/evolved/memoryStore.ts:invalidateProjection",
+        "hub/src/evolved/memoryImports.test.ts:rebuild retains the current task actor when the historical spending approver has left",
+        "hub/src/evolved/memoryImports.test.ts:a revoked task actor is not replaced with the still-authorized spending approver"
+      ]
     }
   ],
   "validation": {
@@ -142,15 +164,22 @@
       ],
       "providerCalls": 0,
       "expectedConsoleWarning": "Service worker intentionally blocked by fixture",
-      "postBrowserDelta": "Only the archive-deletion success message changed; targeted Web tests passed again."
+      "postBrowserDelta": "Only the archive-deletion success message changed; targeted Web tests passed again. Later backend-only changes add lookup indexes and preserve the task actor during graph rebuild; targeted regression tests cover both."
+    },
+    "postGithubReviewFocused": {
+      "passed": 55,
+      "failed": 0,
+      "assertions": 354,
+      "logSha256": "47b67bb6fbc4a8e602473fc405fe1b4cb2a7d329dd7b80a6dada87572fb50e7c",
+      "typecheck": "hub passed"
     }
   },
   "finalSourceHashes": {
     "hub/src/startHub.ts": "addc58dd8fab08b270941f3f77418a2f1c5d43bff0f8aa84edee1e04ad4565d9",
-    "hub/src/evolved/memoryStore.ts": "3d0e15851ab690eabcc4e7c8df027e11d6f9578afa1d5604eaf07cca87ae90ad",
+    "hub/src/evolved/memoryStore.ts": "645bcc074f3bcf22cd56afc5540ca8ceafb14011e489e4ff9e26acfc99140a07",
     "hub/src/evolved/memoryService.ts": "686fa4585a1848bd75ef098bc84c9255151721e2c8cafc850396410f89b07595",
     "hub/src/evolved/memory.ts": "ead1d26696dd3f124119b8ac7f36b77c8c66c2d37b25d534331f171b557ce8f2",
-    "hub/src/evolved/memoryImports.test.ts": "e9a7706011d737eb9c1202b1d3c520c9e053038f6486e8443c72e4411a3e99ab",
+    "hub/src/evolved/memoryImports.test.ts": "3d8ecf126b341bc0940752d7744a447df013d33c7af1f5cb7307d00d3efd62fc",
     "hub/src/evolved/memoryMessage.test.ts": "1ce0cf27f9e48c8a446cbe47dcab63537ad89a0a0386daee25c7398f1e86fbab",
     "hub/src/evolved/memory.test.ts": "42d2a53f34d9dc6ed7df2e60354dcb54b5b26218ce246cbf606e4c799c4616df",
     "web/src/evolved/Memory.tsx": "2c8a78ff071d30e4ea6bad1080ce48e3d4c7cfc35504b756f0f32f8427d5775d",

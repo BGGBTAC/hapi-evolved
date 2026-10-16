@@ -41,6 +41,7 @@ export class MemoryLedger {
             );
             CREATE INDEX IF NOT EXISTS evolved_memory_source_lookup ON evolved_memory_sources(project_id,json_extract(source_json,'$.sessionId'),json_extract(source_json,'$.messageId'));
             CREATE INDEX IF NOT EXISTS evolved_memory_source_kind ON evolved_memory_sources(project_id,json_extract(source_json,'$.kind'));
+            CREATE INDEX IF NOT EXISTS evolved_memory_source_item ON evolved_memory_sources(item_id);
             CREATE TABLE IF NOT EXISTS evolved_memory_reservations (
                 id TEXT PRIMARY KEY, project_id TEXT NOT NULL, period TEXT NOT NULL,
                 reserved_micros INTEGER NOT NULL CHECK(reserved_micros>=0), spent_micros INTEGER NOT NULL DEFAULT 0 CHECK(spent_micros>=0),
@@ -54,6 +55,7 @@ export class MemoryLedger {
                 error TEXT, created_at INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS evolved_memory_queue ON evolved_memory_tasks(state,lease_until,created_at);
+            CREATE INDEX IF NOT EXISTS evolved_memory_task_item ON evolved_memory_tasks(item_id,project_id,kind,created_at DESC,id DESC);
             CREATE TABLE IF NOT EXISTS evolved_memory_migrations(name TEXT PRIMARY KEY, completed_at INTEGER NOT NULL);
         `)
         const columns = db.query('PRAGMA table_info(evolved_memory_settings)').all() as { name: string }[]
@@ -66,6 +68,9 @@ export class MemoryLedger {
     private archiveLegacyConversationImports(): void {
         // Without the audit table we cannot rule out an explicit human/agent intake.
         if (!this.db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='evolved_audit'").get()) return
+        // Classification probes each item's provenance and audit history. Index
+        // those keys before scanning flooded legacy ledgers during Hub startup.
+        this.db.exec('CREATE INDEX IF NOT EXISTS evolved_memory_audit_target ON evolved_audit(target_id,action)')
         this.db.transaction(() => {
             const migration = 'archive-automatic-conversations-v1'
             if (this.db.query('SELECT 1 FROM evolved_memory_migrations WHERE name=?').get(migration)) return
@@ -264,7 +269,10 @@ export class MemoryLedger {
         const taskId = this.queue(projectId, actorId, 'purge', null)
         for (const item of items) {
             this.db.query("UPDATE evolved_memory_items SET index_state='pending' WHERE id=? AND archived_import=0").run(item.id)
-            this.queue(projectId, previous.approvedBy ?? item.actor_id ?? actorId, 'index', item.id)
+            // Preserve the concrete task principal. A former spending approver
+            // may have left; a revoked task actor must not gain an admin fallback.
+            // processOne rechecks this actor's current project/source access.
+            this.queue(projectId, item.actor_id ?? previous.approvedBy ?? actorId, 'index', item.id)
         }
         return { generation, taskId }
     }
