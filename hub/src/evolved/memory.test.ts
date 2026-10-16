@@ -62,19 +62,22 @@ describe('Memory ledger budgets and source lifecycle', () => {
         ledger.complete(purge)
         expect(ledger.claim()?.kind).toBe('index')
     })
-    test('new Hub events require an active approving administrator; session deletion cascades', () => {
-        const { store, service, project, team } = setup()
+    test('session events never create knowledge but changed explicit sources invalidate without cloud approval', () => {
+        const { service, project } = setup()
+        const content = { role: 'user', content: { type: 'text', text: 'We selected a PostgreSQL adapter.' } }
+        const input = { namespace: project.namespace, sessionId: 's', messageId: 'm', content }
         service.ledger.configure(project.id, { enabled: true, cloudAllowed: true, monthlyBudgetMicros: 100, jobBudgetMicros: 20 }, 'alice')
-        const input = { namespace: project.namespace, sessionId: 's', messageId: 'm', body: 'We selected a PostgreSQL adapter.' }
-        expect(service.ingestHubEvent(input)).toBe(true)
-        expect(service.ingestHubEvent(input)).toBe(true)
-        expect(service.ledger.list(project.id)).toHaveLength(1)
-        expect(service.ledger.list(project.id)[0].sources[0].origin).toBe('hub:session:s')
-        expect(service.forgetSession(project.namespace, 's')).toBe(1)
+        expect(service.reconcileHubMessage(input)).toBe(0)
         expect(service.ledger.list(project.id)).toHaveLength(0)
-        store.setMember('alice', team.id, 'bob', 'admin')
-        store.setMember('bob', team.id, 'alice', null)
-        expect(service.ingestHubEvent({ ...input, messageId: 'new' })).toBe(false)
+        const item = service.ledger.create(project.id, 'alice', 'Selected database', 'Use PostgreSQL.', [{
+            projectId: project.id, kind: 'chat', sessionId: 's', messageId: 'm', origin: 'hub:session:s', hash: memoryHash(JSON.stringify(content))
+        }])
+        service.ledger.configure(project.id, { enabled: false, cloudAllowed: false })
+        expect(service.reconcileHubMessage(input)).toBe(0)
+        expect(service.ledger.get(project.id, item.id)).not.toBeNull()
+        expect(service.reconcileHubMessage({ ...input, content: { role: 'user', content: { type: 'text', text: 'Changed source' } } })).toBe(1)
+        expect(service.ledger.get(project.id, item.id)).toBeNull()
+        expect(service.ledger.list(project.id)).toHaveLength(0)
     })
     test('changed and deleted code sources remove their facts before a subsequent read', async () => {
         const { service, store, project } = setup()

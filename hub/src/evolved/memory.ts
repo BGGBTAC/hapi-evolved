@@ -68,10 +68,15 @@ export function createMemoryRoutes(options: { store: EvolvedStore; service?: Mem
     }
     app.get('/projects/:id/memory', async c => {
         const projectId = c.req.param('id'); authorized(c.get('principal'), projectId)
+        const view = c.req.query('view') ?? 'active'
+        if (view !== 'active' && view !== 'imports') return c.json({ error: 'Invalid memory view' }, 400)
+        if (view === 'imports' && c.get('principal').capability) return c.json({ error: 'Only a person may inspect archived imports' }, 403)
+        const offsetText = c.req.query('offset') ?? '0'
+        if (!/^(0|[1-9][0-9]*)$/.test(offsetText) || Number(offsetText) > 2_147_483_647) return c.json({ error: 'Invalid memory offset' }, 400)
         const available = await service.backend.available(projectId)
         await service.reconcileSources([projectId])
         await revalidate(c, [projectId])
-        return c.json({ items: ledger.list(projectId), settings: ledger.settings(projectId), budget: ledger.budget(projectId), backend: { available } })
+        return c.json({ items: ledger.list(projectId, 100, view, view === 'imports' ? Number(offsetText) : 0), archivedImports: ledger.archivedImports(projectId), settings: ledger.settings(projectId), budget: ledger.budget(projectId), backend: { available } })
     })
     app.post('/projects/:id/memory', async c => {
         const projectId = c.req.param('id'); const principal = c.get('principal'); authorized(principal, projectId, true)
@@ -169,8 +174,8 @@ export function createMemoryRoutes(options: { store: EvolvedStore; service?: Mem
         const projectId = c.req.param('id'); const principal = c.get('principal'); authorized(principal, projectId, true)
         const result = ledger.forget(projectId, c.req.param('memoryId'), principal.user.id)
         options.store.audit(principal.user.id, projectId, 'memory.forget', c.req.param('memoryId'))
-        void service.processOne()
-        return c.json({ deleted: true, graphPurgePending: true, ...result }, 202)
+        if (result.taskId) void service.processOne()
+        return c.json({ deleted: true, graphPurgePending: result.taskId !== null, ...result }, 202)
     })
     app.get('/memory/search', async c => {
         const principal = c.get('principal')

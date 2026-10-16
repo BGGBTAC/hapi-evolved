@@ -227,8 +227,8 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubInstan
     if (evolved) syncEngine.subscribe(event => {
         if (!event.namespace?.startsWith('evolved-') || !('sessionId' in event)) return
         if (event.type === 'message-received') {
-            evolved.memory.ingestHubEvent({ namespace: event.namespace, sessionId: event.sessionId,
-                messageId: event.message.id, body: JSON.stringify(event.message.content) })
+            evolved.memory.reconcileHubMessage({ namespace: event.namespace, sessionId: event.sessionId,
+                messageId: event.message.id, content: event.message.content })
         } else if (event.type === 'session-removed' || event.type === 'messages-invalidated') {
             evolved.memory.forgetSession(event.namespace, event.sessionId)
             if (event.type === 'session-removed') evolved.onSessionRemoved(event.sessionId, event.namespace)

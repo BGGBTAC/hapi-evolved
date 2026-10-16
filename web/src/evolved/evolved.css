@@ -146,9 +146,20 @@
 .evolved .ev-selected { border-color: var(--ev-accent); background: var(--ev-accent-soft); box-shadow: inset 0 0 0 1px var(--ev-accent); }
 .ev-badge { display: inline-block; border: 1px solid var(--ev-line); border-radius: 6px; padding: 3px 8px; font-size: 12px; white-space: nowrap; }
 .ev-verified { color: var(--ev-accent); border-color: var(--ev-accent); background: var(--ev-accent-soft); }
-.ev-memory-card { border: 1px solid var(--ev-line); border-radius: 12px; padding: 18px; min-width: 0; }
-.ev-memory-card header { display: flex; justify-content: space-between; gap: 10px; align-items: start; }
+.ev-memory-grid { align-items: start; }
+.ev-memory-card { border: 1px solid var(--ev-line); border-radius: 12px; padding: 16px; min-width: 0; overflow-wrap: anywhere; }
+.ev-memory-card header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: start; }
+.ev-memory-card h3 { min-width: 0; flex: 1 1 150px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.ev-memory-card .ev-badge { white-space: normal; max-width: 100%; }
 .ev-memory-body { white-space: pre-wrap; overflow-wrap: anywhere; margin: 12px 0 !important; }
+.ev-memory-preview { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; overflow: hidden; }
+.ev-memory-fulltext { max-height: 20rem; overflow-y: auto; overscroll-behavior: contain; }
+.evolved button.ev-memory-expand { min-height: 36px; padding: 6px 10px; font-size: .8125rem; }
+.ev-memory-date, .ev-memory-archive-label { display: block; color: var(--app-hint); font-size: .75rem; margin-top: 8px !important; }
+.ev-memory-card > .ev-actions { margin-top: 10px; }
+.ev-memory-views { margin-block: 12px 18px; }
+.ev-memory-pagination { justify-content: center; margin-top: 18px; }
+.evolved .ev-memory-views button[aria-pressed=true] { background: var(--ev-accent-soft); border-color: var(--ev-accent); color: var(--ev-accent); }
 .evolved details { margin-top: 12px; }
 .evolved summary { cursor: pointer; min-height: 36px; }
 .ev-sources { padding-left: 18px; }

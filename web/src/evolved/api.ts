@@ -17,10 +17,11 @@ export type TeamMember = { userId: string; displayName: string; role: ProjectRol
 export type SecretMetadata = { id: string; name: string; version: number; createdAt: number | string; updatedAt: number | string }
 export type Resource = { id: string; name: string; type: string; actions: string[] }
 export type MemorySource = { kind: 'chat' | 'code' | 'attachment' | 'manual'; path?: string; commit?: string; hash?: string; sessionId?: string; messageId?: string; origin?: string }
-export type MemoryItem = { id: string; projectId: string; title: string; body: string; status: 'proposed' | 'verified'; createdAt: number | string; sources: MemorySource[]; score?: number }
+export type MemoryItem = { id: string; projectId: string; title: string; body: string; status: 'proposed' | 'verified'; createdAt: number | string; sources: MemorySource[]; archivedImport: boolean; score?: number }
 export type MemorySettings = { enabled: boolean; cloudAllowed: boolean; monthlyBudgetMicros: number; jobBudgetMicros: number }
 export type MemoryResponse = {
     items: MemoryItem[]
+    archivedImports: number
     settings: MemorySettings
     budget: { spentMicros: number; reservedMicros: number; limitMicros: number; period: string }
     backend: { available: boolean; error?: string }

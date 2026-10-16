@@ -33,7 +33,7 @@ function setup() {
 }
 const sourceQuery = 'message-source?sessionId=session&messageId=message'
 describe('explicit memory from stored conversation', () => {
-    test('real persisted Hub message roundtrip retains the event source hash during later automatic ingestion', async () => {
+    test('real persisted Hub message roundtrip retains the event source hash during later source reconciliation', async () => {
         const f = setup(), directory = mkdtempSync(join(tmpdir(), 'memory-source-roundtrip-'))
         let hub = new Store(join(directory, 'hub.db'))
         try {
@@ -53,7 +53,7 @@ describe('explicit memory from stored conversation', () => {
             expect(response.status).toBe(201)
             const { item } = await response.json() as { item: MemoryItem }
             f.service.ledger.configure(f.project.id, { enabled: true, cloudAllowed: true, monthlyBudgetMicros: 100, jobBudgetMicros: 20 }, 'alice')
-            f.service.ingestHubEvent({ namespace: f.project.namespace, sessionId: session.id, messageId: eventMessage.id, body: eventBody })
+            f.service.reconcileHubMessage({ namespace: f.project.namespace, sessionId: session.id, messageId: eventMessage.id, content: eventMessage.content })
             expect(f.service.ledger.get(f.project.id, item.id)).not.toBeNull()
         } finally { hub.close(); rmSync(directory, { recursive: true, force: true }) }
     })
@@ -87,7 +87,7 @@ describe('explicit memory from stored conversation', () => {
         f.messages.delete('session:message')
         expect((await f.request(sourceQuery)).status).toBe(404)
     })
-    test('uses codepoint excerpts and keeps the original ingestion hash compatible', async () => {
+    test('uses codepoint excerpts and keeps the original source hash compatible', async () => {
         const f = setup()
         const content = { role: 'user', content: { type: 'text', text: 'A😀BC' } }
         f.messages.set('session:message', content)
@@ -98,7 +98,7 @@ describe('explicit memory from stored conversation', () => {
         const { item } = await response.json() as {item:MemoryItem}
         expect(item.body).toBe('[Auszug, nicht automatisch verifiziert]\n\n😀B')
         f.service.ledger.configure(f.project.id, { enabled: true, cloudAllowed: true, monthlyBudgetMicros: 100, jobBudgetMicros: 20 }, 'alice')
-        f.service.ingestHubEvent({ namespace: f.project.namespace, sessionId: 'session', messageId: 'message', body: JSON.stringify(content) })
+        f.service.reconcileHubMessage({ namespace: f.project.namespace, sessionId: 'session', messageId: 'message', content })
         expect(f.service.ledger.get(f.project.id, item.id)).not.toBeNull()
         expect((await f.request('from-message', { ...proposal, excerpt: { start: 0, end: 10 } })).status).toBe(400)
         expect((await f.request('from-message', { ...proposal, body: 'Forged source text' })).status).toBe(400)
