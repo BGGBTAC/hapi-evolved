@@ -284,6 +284,70 @@ test('repository proxy routes admit only exact methods, IDs and query shapes', (
         ['/api/evolved/projects/a%2fb/repositories', 'GET', ''], [`${base}/github`, 'GET', ''],
     ]) expect(allowedProxyPath(path, method, query)).toBe(false)
 })
+test('project MCP proxy permits only agent discovery and calls, never browser configuration or arbitrary tool paths', () => {
+    const base = '/api/evolved/projects/a/mcp', id = '768237a3-3378-4384-aaaf-eed31ae931e9'
+    expect(allowedProxyPath(`${base}/servers`, 'GET')).toBe(true)
+    expect(allowedProxyPath(`${base}/servers/${id}/tools`, 'GET')).toBe(true)
+    expect(allowedProxyPath(`${base}/servers/${id}/call`, 'POST')).toBe(true)
+    expect(allowedProxyPath(`${base}/servers/${id}/query`, 'POST')).toBe(true)
+    for (const [path, method, query] of [
+        [base, 'GET', ''], [base, 'POST', ''], [`${base}/${id}`, 'PUT', ''], [`${base}/${id}`, 'DELETE', ''],
+        [`${base}/${id}/discover`, 'POST', ''], [`${base}/servers`, 'POST', ''], [`${base}/servers`, 'HEAD', ''],
+        [`${base}/servers/${id}/tools`, 'POST', ''], [`${base}/servers/${id}/call`, 'GET', ''],
+        [`${base}/servers/${id}/query`, 'GET', ''], [`${base}/servers/${id}/query`, 'POST', '?readOnly=0'],
+        [`${base}/servers/${id}/call`, 'POST', '?projectId=b'], [`${base}/servers`, 'GET', '?includeDisabled=true'],
+        [`${base}/servers/${id}/tools`, 'GET', '?token=secret'], [`${base}/servers/${id}/call/extra`, 'POST', ''],
+        [`${base}/servers/invalid-id/call`, 'POST', ''], [`${base}/servers/${id}%2fcall`, 'POST', ''],
+        [`${base}/servers/${id}/tool-name`, 'POST', ''], ['/api/evolved/projects/a%2fb/mcp/servers', 'GET', ''],
+    ]) expect(allowedProxyPath(path, method, query)).toBe(false)
+})
+
+test('Codegraph proxy grants only actual GET reader routes and never reindex or other mutations', () => {
+    const base = '/api/evolved/projects/a/codegraph'
+    for (const operation of ['status', 'search', 'graph', 'node', 'impact', 'affected']) {
+        expect(allowedProxyPath(`${base}/${operation}`, 'GET', '?q=example')).toBe(true)
+        for (const method of ['POST', 'PUT', 'DELETE', 'PATCH', 'HEAD']) expect(allowedProxyPath(`${base}/${operation}`, method)).toBe(false)
+    }
+    for (const method of ['GET', 'POST', 'PUT', 'DELETE']) {
+        expect(allowedProxyPath(`${base}/reindex`, method)).toBe(false)
+        expect(allowedProxyPath(`${base}/unknown`, method)).toBe(false)
+        expect(allowedProxyPath(`${base}/status/extra`, method)).toBe(false)
+        expect(allowedProxyPath('/api/evolved/projects/a%2fb/codegraph/status', method)).toBe(false)
+    }
+})
+
+test('MCP proxy retains exact project, current upstream denials and tool results without credentials or automatic retries', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'evolved-mcp-proxy-')), leaseFile = join(directory, 'lease')
+    cleanup.push(() => rmSync(directory, { recursive: true, force: true }))
+    writeFileSync(leaseFile, 'synthetic-lease', { mode: 0o600 })
+    const forwarded: Array<{ path: string; method: string; authorization: string | null; cookie: string | null; key: string | null; body: unknown }> = []
+    let enabled = true
+    const hub = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(request) {
+        const path = new URL(request.url).pathname
+        if (path === '/api/evolved/runner/token') return Response.json({ token: 'x'.repeat(43), projectId: 'a', expiresAt: Date.now() + 900_000 })
+        forwarded.push({ path, method: request.method, authorization: request.headers.get('authorization'), cookie: request.headers.get('cookie'), key: request.headers.get('x-api-key'), body: request.method === 'POST' ? await request.json() : undefined })
+        return enabled ? Response.json({ content: [{ type: 'text', text: 'Tool output' }], structuredContent: { count: 1 }, isError: true })
+            : Response.json({ error: 'Disabled', code: 'mcp_disabled' }, { status: 403 })
+    } })
+    cleanup.push(() => hub.stop(true))
+    const proxy = createRunnerProxy({ hubUrl: hub.url.toString(), leaseFile, projectId: 'a', port: 0 })
+    cleanup.push(proxy.close)
+    const id = '768237a3-3378-4384-aaaf-eed31ae931e9', path = `/api/evolved/projects/a/mcp/servers/${id}/call`
+    const body = { toolName: 'docs/query.v2', arguments: { query: 'public docs' }, version: 2, catalogRevision: 'a'.repeat(64) }
+    const response = await fetch(new URL(path, proxy.server.url), { method: 'POST', headers: { authorization: 'Bearer caller-forgery', cookie: 'browser-session=forgery', 'x-api-key': 'must-not-forward', 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ content: [{ type: 'text', text: 'Tool output' }], structuredContent: { count: 1 }, isError: true })
+    expect(forwarded).toEqual([{ path, method: 'POST', authorization: `Bearer ${'x'.repeat(43)}`, cookie: null, key: null, body }])
+    expect((await fetch(new URL('/api/evolved/projects/b/mcp/servers', proxy.server.url))).status).toBe(403)
+    expect((await fetch(new URL(`/api/evolved/projects/a/mcp/${id}/discover`, proxy.server.url), { method: 'POST', body: '{}' })).status).toBe(403)
+    expect(forwarded).toHaveLength(1)
+    enabled = false
+    const denied = await fetch(new URL(path, proxy.server.url), { method: 'POST', body: JSON.stringify(body) })
+    expect(denied.status).toBe(403)
+    expect(await denied.json()).toEqual({ error: 'Disabled', code: 'mcp_disabled' })
+    expect(forwarded).toHaveLength(2)
+})
+
 test('repository sync renews a short-lived cached capability before forwarding the job', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'evolved-repository-renew-')), leaseFile = join(directory, 'lease')
     cleanup.push(() => rmSync(directory, { recursive: true, force: true }))

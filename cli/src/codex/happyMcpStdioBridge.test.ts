@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getEvolvedOperatingContext } from '@/evolved/operatingContext'
+import { EVOLVED_TOOL_NAMES } from '@/evolved/mcp'
 
 type ToolHandler = (args: Record<string, unknown>) => Promise<unknown>
 
@@ -7,10 +8,18 @@ const harness = vi.hoisted(() => ({
     instructions: undefined as string | undefined,
     tools: new Map<string, ToolHandler>(),
     configs: new Map<string, Record<string, unknown>>(),
+    prEnabled: false,
     callTool: vi.fn(async (_request: unknown) => ({
         content: [{ type: 'text', text: 'forwarded' }],
         isError: false
     }))
+}))
+
+vi.mock('@/modules/githubPr', () => ({
+    githubPrEnabled: async () => harness.prEnabled,
+    registerGithubPrTool: (server: { registerTool: (name: string, config: Record<string, unknown>, handler: ToolHandler) => void }) => {
+        server.registerTool('link_pr', {}, async () => ({ content: [{ type: 'text', text: 'linked' }] }))
+    },
 }))
 
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
@@ -55,6 +64,7 @@ describe('runHappyMcpStdioBridge tool forwarding', () => {
         harness.instructions = undefined
         harness.tools.clear()
         harness.configs.clear()
+        harness.prEnabled = false
         harness.callTool.mockClear()
     })
 
@@ -65,9 +75,43 @@ describe('runHappyMcpStdioBridge tool forwarding', () => {
         vi.stubEnv('HAPI_PEER_TOOLS', '')
         vi.stubEnv('HAPI_PEER_SCOPES', '')
         vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
-        await runHappyMcpStdioBridge(['--url', 'http://127.0.0.1:43006', '--tools', 'display_image'])
+        await runHappyMcpStdioBridge(['--url', 'http://127.0.0.1:43006'])
         expect(harness.instructions).toBe(getEvolvedOperatingContext())
         expect(harness.tools.has('evolved_context')).toBe(true)
+        for (const name of ['evolved_mcp_servers', 'evolved_mcp_tools', 'evolved_mcp_query', 'evolved_mcp_call']) expect(harness.tools.has(name)).toBe(true)
+        expect(harness.configs.get('evolved_mcp_call')?.annotations).toMatchObject({ readOnlyHint: false, idempotentHint: false })
+    })
+
+    it.each([['--tools', ''], ['--tools='], ['--tools', 'display_image,evolved_context,evolved_mcp_query'], ['--tools=display_image,evolved_context,evolved_mcp_query']])('honors explicit tool selection for native and Evolved tools: %j', async (...selection) => {
+        harness.prEnabled = true
+        vi.stubEnv('HAPI_EVOLVED_PROXY', '1')
+        vi.stubEnv('EVOLVED_PROJECT_ID', 'context-test')
+        vi.stubEnv('HAPI_EVOLVED_URL', 'http://127.0.0.1:1')
+        vi.stubEnv('HAPI_PEER_TOOLS', '')
+        vi.stubEnv('HAPI_PEER_SCOPES', '')
+        vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
+        await runHappyMcpStdioBridge(['--url', 'http://127.0.0.1:43006', ...selection])
+        const expected = selection.join('').includes('display_image') ? ['display_image', 'evolved_context', 'evolved_mcp_query'] : []
+        expect([...harness.tools.keys()].sort()).toEqual(expected.sort())
+        expect(harness.tools.has('evolved_mcp_call')).toBe(false)
+        expect(harness.tools.has('evolved_resource_execute')).toBe(false)
+    })
+
+    it.each([[], ['--tools', 'link_pr']])('retains enabled PR tools with no filter or an explicit selection: %j', async (...selection) => {
+        harness.prEnabled = true
+        await runHappyMcpStdioBridge(['--url', 'http://127.0.0.1:43006', ...selection])
+        expect(harness.tools.has('link_pr')).toBe(true)
+    })
+
+    it('retains every Evolved tool when the normal HAPI bridge supplies its complete tool list', async () => {
+        vi.stubEnv('HAPI_EVOLVED_PROXY', '1')
+        vi.stubEnv('EVOLVED_PROJECT_ID', 'context-test')
+        vi.stubEnv('HAPI_EVOLVED_URL', 'http://127.0.0.1:1')
+        vi.stubEnv('HAPI_PEER_TOOLS', '')
+        vi.stubEnv('HAPI_PEER_SCOPES', '')
+        vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
+        await runHappyMcpStdioBridge(['--url', 'http://127.0.0.1:43006', '--tools', ['display_image', ...EVOLVED_TOOL_NAMES].join(',')])
+        expect([...harness.tools.keys()].sort()).toEqual(['display_image', ...EVOLVED_TOOL_NAMES].sort())
     })
 
     it('describes display_image as user output rather than image input', async () => {

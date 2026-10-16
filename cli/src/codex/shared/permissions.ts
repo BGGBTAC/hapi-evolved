@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { ApiSessionClient } from '@/api/apiSession';
 import { RPC_METHODS } from '@hapi/protocol/rpcMethods';
 import type { CodexAppServerClient } from '../codexAppServerClient';
-import { registerAppServerPermissionHandlers, IGNORE_SHARED_REQUEST } from '../utils/appServerPermissionAdapter';
+import { registerAppServerPermissionHandlers, IGNORE_SHARED_REQUEST, isHapiBridgeElicitation } from '../utils/appServerPermissionAdapter';
 import { record, string } from './gateway';
 
 const ReplySchema = z.object({
@@ -92,7 +92,7 @@ export class SharedCodexPermissions {
             if (result === IGNORE_SHARED_REQUEST) return;
             if (this.closed || this.retired.has(key)) return;
             // No pending entry means a native client already resolved the displayed request.
-            if (this.pending.has(key) || request.method === 'mcpServer/elicitation/request' && record(request.params).serverName === 'hapi') {
+            if (this.pending.has(key) || request.method === 'mcpServer/elicitation/request' && isHapiBridgeElicitation(request.params)) {
                 // The adapter's decision envelope is HAPI-internal, not the
                 // native request_user_input response schema. An invalid first
                 // response would consume Codex's callback even if it cannot decode.

@@ -11,6 +11,7 @@ import { createReadinessRoutes } from './readiness'
 import { createMemoryRoutes, proposeMemoryFile, type MemoryMessageResolver } from './memory'
 import { HttpMemoryBackend, MemoryService } from './memoryService'
 import { createMemoryProviderRoutes, MemoryProviderService } from './memoryProvider'
+import { createProjectMcpRoutes, ProjectMcpService, type ProjectMcpRemote } from './mcp'
 import { createEvolvedRequestGuard } from './security'
 import { createPreviewRoutes } from './previews'
 import { createPeerRoutes } from './peers'
@@ -28,7 +29,7 @@ import { assertManagedWorkspaceSeparation, openManagedWorkspaceRoot, workspaceBi
 import type { SyncEngine } from '../sync/syncEngine'
 
 export type EvolvedRuntime = ReturnType<typeof createEvolvedRuntime>
-export function createEvolvedRuntime(dataDir: string, secret: Uint8Array) {
+export function createEvolvedRuntime(dataDir: string, secret: Uint8Array, dependencies: { mcpRemote?: ProjectMcpRemote } = {}) {
     let getSyncEngine: () => SyncEngine | null = () => null
     let resolveMessage: MemoryMessageResolver = () => null
     const originValue = process.env.EVOLVED_ORIGIN
@@ -101,6 +102,7 @@ export function createEvolvedRuntime(dataDir: string, secret: Uint8Array) {
     routes.route('/', createEvolvedRoutes({ store, vault, origin, allowedWorkspaceRoots: roots as string[], repositoryDiscovery: repositories.discovery,
         onProjectDelete: projectId => { memory.forgetProject(projectId); enqueueCodegraphDeletion(store, projectId) } }))
     routes.route('/', createMemoryProviderRoutes({ store, service: memoryProvider, origin }))
+    routes.route('/', createProjectMcpRoutes({ store, service: new ProjectMcpService(vault, dependencies.mcpRemote), origin }))
     routes.route('/', createMemoryRoutes({ store, service: memory, origin, resolveMessage: (...args) => resolveMessage(...args) }))
     routes.route('/', createCodegraphRoutes(graphOptions))
     const stopMemory = memory.start()

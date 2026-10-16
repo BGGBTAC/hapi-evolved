@@ -1,0 +1,121 @@
+{
+  "fixture": "Built UI, real isolated Hub/Vault/WebAuthn, injected synthetic remote discovery; no external MCP calls",
+  "checks": [
+    "Real Passkey, project-scoped encrypted creation, disabled until explicit discovery and grants",
+    "Explicit discovery, selected tool approval, read-only classification, untrusted descriptions as text",
+    "History loads on expansion and contains metadata only",
+    "Immediate disable during discovery wins both UI state and Hub/Vault CAS race",
+    "SPA project switching clears unsaved credentials and isolates connections",
+    "Deletion requires explicit confirmation and removes the connection"
+  ],
+  "views": [
+    {
+      "name": "mcp-tools",
+      "width": 1440,
+      "path": "mcp-tools-1440.png",
+      "height": 1100,
+      "scrollWidth": 1440,
+      "contentWidth": 1196,
+      "contentScrollWidth": 1196
+    },
+    {
+      "name": "mcp-grants",
+      "width": 1440,
+      "path": "mcp-grants-1440.png",
+      "height": 1100,
+      "scrollWidth": 1440,
+      "contentWidth": 1196,
+      "contentScrollWidth": 1196
+    },
+    {
+      "name": "mcp-tools",
+      "width": 390,
+      "path": "mcp-tools-390.png",
+      "height": 1100,
+      "scrollWidth": 390,
+      "contentWidth": 390,
+      "contentScrollWidth": 390
+    },
+    {
+      "name": "mcp-grants",
+      "width": 390,
+      "path": "mcp-grants-390.png",
+      "height": 1100,
+      "scrollWidth": 390,
+      "contentWidth": 390,
+      "contentScrollWidth": 390
+    },
+    {
+      "name": "mcp-tools",
+      "width": 320,
+      "path": "mcp-tools-320.png",
+      "height": 1100,
+      "scrollWidth": 320,
+      "contentWidth": 320,
+      "contentScrollWidth": 320
+    },
+    {
+      "name": "mcp-grants",
+      "width": 320,
+      "path": "mcp-grants-320.png",
+      "height": 1100,
+      "scrollWidth": 320,
+      "contentWidth": 320,
+      "contentScrollWidth": 320
+    },
+    {
+      "name": "mcp-overview",
+      "width": 1440,
+      "path": "mcp-overview-1440.png",
+      "height": 1100,
+      "scrollWidth": 1440,
+      "contentWidth": 1196,
+      "contentScrollWidth": 1196
+    },
+    {
+      "name": "mcp-overview",
+      "width": 390,
+      "path": "mcp-overview-390.png",
+      "height": 1100,
+      "scrollWidth": 390,
+      "contentWidth": 390,
+      "contentScrollWidth": 390
+    },
+    {
+      "name": "mcp-overview",
+      "width": 320,
+      "path": "mcp-overview-320.png",
+      "height": 1100,
+      "scrollWidth": 320,
+      "contentWidth": 320,
+      "contentScrollWidth": 320
+    }
+  ],
+  "failures": [],
+  "observations": {
+    "discoveries": 2,
+    "calls": 0,
+    "credentialAccepted": true,
+    "staleRejected": 1
+  },
+  "pageErrors": [],
+  "consoleErrors": [
+    {
+      "message": "SW registration error: TypeError: Cannot read properties of undefined (reading 'waiting')",
+      "path": "/assets/index-yeXSKbis.js"
+    },
+    {
+      "message": "SW registration error: TypeError: Cannot read properties of undefined (reading 'waiting')",
+      "path": "/assets/index-yeXSKbis.js"
+    }
+  ],
+  "failedResponses": [],
+  "unexpectedConsole": [],
+  "unexpectedResponses": [],
+  "externalRequests": 0,
+  "result": "PASS",
+  "notes": [
+    "Service-worker registration is stubbed by the isolated browser harness; the two recorded registration warnings are expected fixture behavior.",
+    "Subsequent unknown-outcome label covered by focused UI test; browser layout and interaction unchanged."
+  ]
+}

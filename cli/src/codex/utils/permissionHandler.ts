@@ -113,7 +113,12 @@ export class CodexPermissionHandler extends BasePermissionHandler<PermissionResp
         const mode = this.getPermissionMode() ?? 'default';
         const requiresPlanApproval = this.options?.getCollaborationMode?.() === 'plan'
             && (toolName === 'exit_plan_mode' || toolName === 'ExitPlanMode');
-        const autoDecision = requiresPlanApproval
+        // Native MCP approval metadata can omit the tool name (Codex 0.157).
+        // Its server/title fallback is not evidence that a tool is read-only.
+        const requiresMcpApproval = typeof input === 'object' && input !== null
+            && 'codexApprovalKind' in input && input.codexApprovalKind === 'mcp_tool_call'
+            && mode !== 'yolo' && mode !== 'safe-yolo';
+        const autoDecision = requiresPlanApproval || requiresMcpApproval
             ? null
             : this.resolveAutoApprovalDecision(mode, toolName, toolCallId);
         if (autoDecision) {

@@ -138,6 +138,28 @@ SSH-Schlüssel. Die Standard-Hub/Vault-Image enthält OpenSSH. Ergebnisse enthal
 Status/Exitcode, keine HTTP-Antworttexte oder SSH-Ausgaben. Wiederholungen verwenden dieselbe
 Idempotenz-ID; unklare Ergebnisse werden nicht automatisch erneut ausgeführt.
 
+## Projekt-MCPs aktualisieren
+
+Der [MCP-Shop](MCP_SHOP.md) benötigt dieselbe Softwareversion in Hub, Vault,
+Weboberfläche und Runner-Proxy. Aktualisiere den Vault vor dem Hub oder beide
+im gemeinsamen Wartungsfenster; ein älterer Vault lehnt die neue Operation sicher
+ab. Baue auch das Runner-Image neu. Bereits laufende Agentenprozesse müssen einmal
+neu gestartet oder fortgesetzt werden, damit die vier Gateway-Werkzeuge verfügbar
+sind. Nutzerkonten, Provideranmeldungen und Projektordner werden dafür nicht ersetzt.
+
+Der Hub verbindet sich direkt zu geprüften öffentlichen HTTPS-Adressen. Die
+gepinnten Bun-1.3.14-Transporte übernehmen Umgebungsproxies trotz der üblichen
+Node-Agent-Option. Deshalb lehnt HAPI MCP-Anfragen vor dem Netzwerkzugriff ab,
+wenn `HTTP_PROXY`, `HTTPS_PROXY` oder `ALL_PROXY` (auch kleingeschrieben) einen
+nichtleeren Wert enthalten. `NO_PROXY` hebt diesen Schutz nicht auf. Die
+mitgelieferte Compose-Konfiguration setzt keine dieser Variablen im Hub.
+Proxyadressen und Zugangsdaten werden bei der Fehlermeldung nicht ausgegeben.
+
+Die Runtime-Prüfung `hub/src/evolved/mcpTransport.tls.test.ts` verwendet einen
+echten lokalen TLS-Server und eine synthetische Test-CA. Sie prüft numerisches
+Socketziel, SNI/Host und Zertifikatsablehnung; Unit-Fakes allein belegen diese
+Runtimegrenze nicht.
+
 ## Persistentes Memory und Codegraph
 
 Lokale Quellen, Vorschläge, Verifikation und Volltextsuche funktionieren ohne Cloudkonfiguration.

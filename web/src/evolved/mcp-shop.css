@@ -1,0 +1,30 @@
+.ev-mcp-catalog { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(270px, 100%), 1fr)); gap: 14px; }
+.ev-mcp-template { display: flex; flex-direction: column; justify-content: space-between; gap: 14px; min-width: 0; padding: 16px; border: 1px solid var(--ev-line); border-radius: 12px; }
+.ev-mcp-template h3 { margin-top: 6px; }
+.ev-mcp-template p { margin: 6px 0 !important; }
+.ev-mcp-template small, .ev-mcp-meta, .ev-mcp-date { color: var(--app-hint); font-size: .8125rem; }
+.ev-mcp-template a { color: var(--ev-accent); text-decoration: underline; }
+.ev-mcp-connections { display: grid; gap: 16px; }
+.ev-mcp-connection { min-width: 0; border: 1px solid var(--ev-line); border-radius: 12px; padding: 16px; overflow-wrap: anywhere; }
+.ev-mcp-connection header { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+.ev-mcp-connection header > div { min-width: 0; }
+.ev-mcp-endpoint { font-size: .8125rem; margin-top: 4px !important; color: var(--app-hint); }
+.ev-mcp-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 12px; }
+.ev-mcp-date { display: block; margin-top: 4px; }
+.ev-mcp-connection > .ev-actions { margin-top: 12px; }
+.ev-mcp-editor { border-top: 1px solid var(--ev-line); padding-top: 18px; margin-top: 16px; gap: 14px; }
+.ev-mcp-tools { display: grid; gap: 10px; max-height: 32rem; overflow-y: auto; overscroll-behavior: contain; }
+.ev-mcp-tool { min-width: 0; padding: 12px; border: 1px solid var(--ev-line); border-radius: 8px; }
+.ev-mcp-tool p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; font-size: .8125rem; }
+.ev-mcp-description { white-space: pre-wrap; margin-top: 10px; font-size: .8125rem; }
+.ev-mcp-tool strong { overflow-wrap: anywhere; }
+.ev-mcp-tool pre { max-height: 16rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .75rem; }
+.ev-mcp-readonly { font-size: .8125rem; }
+.ev-mcp-history { border-top: 1px solid var(--ev-line); padding-top: 12px; }
+.ev-mcp-history-list { list-style: none; padding: 0; max-height: 20rem; overflow-y: auto; }
+.ev-mcp-history-list li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; padding: 10px 0; border-bottom: 1px solid var(--ev-line); }
+.ev-mcp-history-list li > div { min-width: 0; }
+.ev-mcp-history-list small { display: block; color: var(--app-hint); }
+.ev-mcp-shop .ev-check { align-items: flex-start; padding-block: 9px; min-width: 0; }
+.ev-mcp-shop .ev-check input { margin-top: 2px; }
+@media (max-width: 580px) { .ev-mcp-connection { padding: 12px; } .ev-mcp-connection > .ev-actions > button { flex: 1 1 auto; } .ev-mcp-connection header { flex-wrap: wrap; } }

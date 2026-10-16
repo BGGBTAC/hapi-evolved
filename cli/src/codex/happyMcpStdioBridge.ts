@@ -13,7 +13,7 @@ import { githubPrEnabled, registerGithubPrTool } from '@/modules/githubPr';
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { registerEvolvedTools } from '@/evolved/mcp';
+import { EVOLVED_TOOL_NAMES, registerEvolvedTools } from '@/evolved/mcp';
 import { evolvedClientFromEnvironment } from '@/evolved/client';
 import { getEvolvedOperatingContext } from '@/evolved/operatingContext';
 import { initializePeerToolsPolicy, isEvolvedPeerMode, peerScopeAllowed } from '@/modules/pingPeer/evolvedPeer';
@@ -32,15 +32,18 @@ const DEFAULT_TOOL_NAMES = ['change_title', 'display_image', 'display_video', 'd
 
 function parseArgs(argv: string[]): { url: string | null; toolNames: Set<string> } {
   let url: string | null = null;
-  let toolNames = new Set([...DEFAULT_TOOL_NAMES, ...(isEvolvedPeerMode() ? ['spawn_peer', 'archive_peer'] : [])]);
+  let toolNames = new Set([...DEFAULT_TOOL_NAMES, ...EVOLVED_TOOL_NAMES, 'link_pr', ...(isEvolvedPeerMode() ? ['spawn_peer', 'archive_peer'] : [])]);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--url' && i + 1 < argv.length) {
       url = argv[i + 1];
       i++;
-    } else if (a === '--tools' && i + 1 < argv.length) {
+    } else if (a === '--tools') {
+      if (i + 1 >= argv.length) throw new Error('--tools requires a comma-separated list (use an empty string for no tools)');
       toolNames = new Set(argv[i + 1].split(',').map((name) => name.trim()).filter(Boolean));
       i++;
+    } else if (a.startsWith('--tools=')) {
+      toolNames = new Set(a.slice('--tools='.length).split(',').map((name) => name.trim()).filter(Boolean));
     } else if (a === '--hapi-session-id' && i + 1 < argv.length) {
       // Orphan-reap stamp only (#2003); consume so the value is not left as a stray argv token.
       i++;
@@ -89,7 +92,7 @@ export async function runHappyMcpStdioBridge(argv: string[]): Promise<void> {
       name: 'HAPI MCP Bridge',
       version: '1.0.0',
     }, { instructions: getEvolvedOperatingContext() || undefined });
-    if (process.env.HAPI_EVOLVED_CAPABILITY_FILE || process.env.HAPI_EVOLVED_PROXY === '1') registerEvolvedTools(server, evolvedClientFromEnvironment());
+    if (process.env.HAPI_EVOLVED_CAPABILITY_FILE || process.env.HAPI_EVOLVED_PROXY === '1') registerEvolvedTools(server, evolvedClientFromEnvironment(), toolNames);
 
     // Register tools and forward to HTTP MCP
     const changeTitleInputSchema: z.ZodTypeAny = z.object({
@@ -381,7 +384,7 @@ export async function runHappyMcpStdioBridge(argv: string[]): Promise<void> {
 
     // Start STDIO transport
     const stdio = new StdioServerTransport();
-    if (await githubPrEnabled()) registerGithubPrTool(server);
+    if (toolNames.has('link_pr') && await githubPrEnabled()) registerGithubPrTool(server);
     await server.connect(stdio);
   } catch (err) {
     try {

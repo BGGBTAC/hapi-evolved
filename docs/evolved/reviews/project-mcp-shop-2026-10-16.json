@@ -1,0 +1,203 @@
+{
+  "review": "project-mcp-shop",
+  "date": "2026-10-16",
+  "baseCommit": "78ac8aecc4ff55e41ffdf8884a07b2430e04749a",
+  "reviewers": [
+    {
+      "requested": "Fable",
+      "reportedModel": "claude-fable-5-1",
+      "method": "Actual local Claude CLI, safe-mode, read-only Read/Glob/Grep, no MCP servers or hooks",
+      "resultSha256": "6818f60659b6abc51cd949c94490cc5b700a1a61062191979db47f1d4c2d6cb8"
+    },
+    {
+      "requested": "Opus5.5",
+      "reportedModel": "claude-opus-5-5",
+      "method": "Actual local Claude CLI, safe-mode, read-only Read/Glob/Grep",
+      "resultSha256": "6d0d318fb72f62a359158b0a74dcbebba31313bdbc6cd3ea13b4f944fd606e64"
+    }
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "decision": "Fix agent knowledge status downgrades; retain deliberate project-scoped memory:write forgetting, bounded by existing ACL/budget lifecycle."
+    },
+    {
+      "id": "F2",
+      "decision": "Keep existing preconfigured actionIds broker authority and clean/idempotent repository sync. New external MCP calls explicitly distinguish administrator-classified read-only query from normal approval call."
+    },
+    {
+      "id": "F3",
+      "decision": "Human-only Codegraph reindex; exact method-bound GET routes in runner proxy."
+    },
+    {
+      "id": "F4",
+      "decision": "Explicit Codex tool filter now applies to Evolved tools and link_pr. Direct capabilities accept existing Git scopes with restricted-profile write denial. Vault UI/public API both use name100, so internal Vault120 ceiling is not a public mismatch."
+    },
+    {
+      "id": "S1",
+      "decision": "Runner authorization follows bounded body reading; logout during body I/O cannot create a permanent lease."
+    },
+    {
+      "id": "S2",
+      "decision": "Local Claude MCP enforces Host/Origin and SDK DNS-rebinding protection."
+    },
+    {
+      "id": "U1",
+      "decision": "Specialist/plugin load failures display errors rather than empty results."
+    }
+  ],
+  "features": [
+    {
+      "name": "Project MCP catalog, Context7 and custom HTTPS",
+      "functionality": 6,
+      "feasibility": 4,
+      "decision": "implemented"
+    },
+    {
+      "name": "Connection discovery without tool invocation",
+      "functionality": 5,
+      "feasibility": 5,
+      "decision": "implemented"
+    },
+    {
+      "name": "Admin-owned read-only tool classification",
+      "functionality": 5,
+      "feasibility": 5,
+      "decision": "implemented"
+    },
+    {
+      "name": "Bounded metadata-only call history",
+      "functionality": 4,
+      "feasibility": 5,
+      "decision": "implemented; no invented session identity"
+    },
+    {
+      "name": "Concurrency/rate/size/time limits and connection status",
+      "functionality": 4,
+      "feasibility": 5,
+      "decision": "implemented"
+    },
+    {
+      "name": "Separate composer /docs shortcut",
+      "functionality": 2,
+      "feasibility": 4,
+      "decision": "Deferred after gateway implementation: the agent already resolves libraries and queries docs in every supported project session; a second manual composer flow has limited additional value."
+    }
+  ],
+  "validation": {
+    "fullTypecheck": "passed seven packages",
+    "fullSuite": {
+      "passed": 9993,
+      "skipped": 13,
+      "failed": 0
+    },
+    "lateChanges": "Final all-package check is recorded in the pull request; final focused and real-runtime evidence below covers the last review fixes.",
+    "nativeCodex": "Actual Codex0.157.0, localhost model stub only: four gateway tools available after cold resume, compaction and child delegation.",
+    "context7": {
+      "anonymous": true,
+      "results": [
+        {
+          "name": "resolve-library-id",
+          "isError": false,
+          "contentBlocks": 1,
+          "textBytes": 1647,
+          "mentionsReact": true,
+          "mentionsCleanup": false
+        },
+        {
+          "name": "query-docs",
+          "isError": false,
+          "contentBlocks": 1,
+          "textBytes": 5580,
+          "mentionsReact": true,
+          "mentionsCleanup": true
+        }
+      ]
+    },
+    "browser": "Real Chromium, synthetic private Hub/Vault/passkey flow, 320/390/1440, no external MCP requests; final browser report recorded separately.",
+    "browserReport": "browser-mcp-2026-10-16.json",
+    "nativeCodexApproval": "Actual Codex0.157.0 with local stub: default and read-only modes, genuine name-less approval metadata, deny causes zero fixture calls, approve causes exactly one.",
+    "securityDelta": {
+      "checkedAt": "2026-10-16T21:15:05.795011+00:00",
+      "result": "passed",
+      "sourceHashes": {
+        "hub/src/evolved/mcpVault.ts": "b0069b7106bba12a12fd1855abdc3f1d0cd068eb57b61fa0f45684219b705cc6",
+        "hub/src/evolved/mcpVault.test.ts": "65114727e9da73c88141727042c864485d308b199deb109d4f66f05d1fcc70b1",
+        "hub/src/evolved/mcpTransport.ts": "5125633c753f856ff814fe28616b5c91bce4a7fae5b032fc3fdbf4b4d2b67513",
+        "hub/src/evolved/mcpTransport.test.ts": "749180bbc44f56e564025a1081bce6a8f29b28275357fdc75c8da11f9757b46a",
+        "hub/src/evolved/mcpTransport.tls.test.ts": "6708c5bc78858f6508ca0918b8bc4d620315716f3b18087d3240e323230fab0e",
+        "hub/src/evolved/vault.ts": "75511c04badf6ac21a424fc8109c19e2203c3e277286eb79e6d643aa2a55474e",
+        "hub/src/evolved/runner.ts": "7136ef8e4462c1765e6c0357419db527f1f259bd6fa7966ead6602fbc7d3cd3f",
+        "hub/src/evolved/runner.test.ts": "f2425d61d05b3b81386d3b7022376bb80f5af167315609ebe9c0d3569786b7c9",
+        "hub/src/evolved/memory.ts": "faac7766dad5b3bd2d42e523e3408bcc9f0bcd3de96c0ccca4973a1cff3d6f81",
+        "hub/src/evolved/memory.test.ts": "5a5096d02bf65077d64d0ab2fbc3807a89afbbb0de7a8d1ac717d238b0f718d0"
+      },
+      "checks": {
+        "hubTargetedTests": 77,
+        "assertions": 498,
+        "failed": 0,
+        "hubTypecheck": "passed",
+        "diffCheck": "passed"
+      },
+      "dispositions": {
+        "M1": "Actual tools/call dispatch marker before req.end; every subsequent error becomes mcp_outcome_unknown/502, including post-response ACL, timeout and output rejection. Pre-dispatch stale catalog remains409. Injected fetch has explicit dispatch callback and regression.",
+        "M2": "Creation fingerprint uses HMAC-SHA256 under the encrypted project key and a distinct domain; restart/idempotence/project-isolation tests pass.",
+        "M3": "Actual Bun1.3.14 client and isolated Node TLS fixture prove pinned target, preserved Host/SNI, one lookup, rejected wrong hostname and untrusted CA. Bun ignores proxy opt-out; therefore six proxy environment names fail closed before any DNS/socket request, including NO_PROXY=*.",
+        "IPClassification": "Standard and local NAT64 plus IPv4-compatible and mapped IPv6 ranges are rejected.",
+        "MetadataGet": "Project-scoped metadata-only get avoids listing all connectors for every revalidation.",
+        "CredentialEcho": "Decoded strings and object keys are checked, including quote/backslash credentials.",
+        "MemoryStatus": "All verification status changes require a human; scoped deletion remains unchanged."
+      },
+      "runtimeEvidence": {
+        "bunVersion": "1.3.14",
+        "testLogSha256": "cb4fc74d3015c54ca99ff2d4900f6d46e1c1c218fd14d98f34be4389c15ca14b",
+        "earlierProxyFailure": "Confirmed before fix: node:https inherited HTTPS_PROXY despite agent:false; no production request was performed.",
+        "officialReference": "https://bun.com/docs/runtime/networking/fetch",
+        "versionLimit": "Current Bun docs describe proxy:false, but the pinned1.3.14 runtime probe shows this override does not work. Implementation intentionally refuses proxy environment."
+      },
+      "remainingLimits": [
+        "POST SSE responses must end within30seconds and fit512KiB before SDK delivery.",
+        "Already dispatched remote actions cannot be undone; uncertain outcomes must not be automatically repeated.",
+        "Arbitrarily transformed or partial secrets cannot generally be recognized.",
+        "Proxy-configured Hub environments cannot use project remote MCP on the pinned Bun release."
+      ]
+    }
+  },
+  "limits": [
+    "Supported Evolved agent integrations: Claude and Codex. Older live processes must restart/resume once for the new gateway tools.",
+    "Remote public HTTPS443 StreamableHTTP only. No stdio/npx, private destinations, OAuth, remote sampling/roots/elicitation, redirects or automatic tool-call retries.",
+    "Completed POST response required within30s; a server keeping its SSE response open indefinitely times out.",
+    "Read-only is a human grant, not a guarantee of privacy or zero provider charges. Generic call uses ordinary agent approval policy, including user-selected unattended modes.",
+    "Disabling cannot undo externally started actions. Credentials are encrypted in isolated Vault; signed Hub resolves transiently.",
+    "MCP provider charges are not covered by HAPI memory budgets; no user provider keys used during validation.",
+    "On Bun1.3.14, a Hub with HTTP_PROXY/HTTPS_PROXY/ALL_PROXY (or lowercase variants) refuses remote MCP before networking. The Hub must have direct HTTPS egress."
+  ],
+  "opusFindings": [
+    {
+      "id": "B1",
+      "decision": "Fix both native Codex permission adapters so explicit MCP tool approval reaches policy handling before plain HAPI elicitation fallback."
+    },
+    {
+      "id": "B2",
+      "decision": "Treat evolved_mcp_call as sensitive in read-only approval policy; preserve explicit user-selected unattended modes."
+    },
+    {
+      "id": "M1",
+      "decision": "Separate pre-send denial from post-dispatch unknown outcomes; never recommend replaying an externally started operation. Record unknown status and prevent late journal resurrection after disconnect."
+    },
+    {
+      "id": "M2",
+      "decision": "Key create-idempotency fingerprint with project-key HMAC; no plaintext-token password oracle in a stolen Vault database."
+    },
+    {
+      "id": "M3",
+      "decision": "Passed actual Bun1.3.14 TLS tests for numerical destination, preserved Host/SNI and certificate validation. This Bun ignores proxy opt-out: reject all six nonempty proxy environment variables before DNS/network; do not mutate process environment."
+    }
+  ],
+  "followups": [
+    "No new native per-server MCP endpoints or tools/list_changed dependency; four gateway tools deliberately keep dynamic project discovery centralized.",
+    "Fresh passkey remains required for connection changes, including disable, as the documented administration policy.",
+    "Deleted connection IDs remain tombstoned to prevent stale creation replay.",
+    "External tool content remains untrusted; arbitrary semantic prompt injection cannot be removed with string filtering."
+  ]
+}

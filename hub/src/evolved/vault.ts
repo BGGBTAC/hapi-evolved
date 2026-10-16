@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { createCipheriv, createDecipheriv, createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomUUID, sign, verify } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHash, createHmac, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomUUID, sign, verify } from 'node:crypto'
 import { constants, closeSync, fstatSync, mkdirSync, openSync, readFileSync, realpathSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative } from 'node:path'
@@ -8,6 +8,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { EvolvedError, hashToken, privateFile, type AgentProfile } from './store'
 import { GithubBroker } from './githubBroker'
+import { McpVault } from './mcpVault'
 import { GIT_TIMEOUT_MS, type GitCredentialRequest } from './githubProtocol'
 import { memoryProviderConfigSchema, type MemoryProviderConfig } from './memoryProvider'
 
@@ -17,7 +18,7 @@ export type ResourceAction = {
     timeoutSeconds?: number
 } & ({ type: 'http'; url: string; method: 'GET' | 'HEAD' | 'POST'; secretId?: string; header?: string; prefix?: string; expectedStatus?: number }
     | { type: 'ssh'; host: string; port?: number; user: string; command: string; secretId: string; knownHostsFile: string })
-export type VaultRequest = { userId: string; projectId: string; operation: 'list' | 'set' | 'delete' | 'resources' | 'invoke' | 'purgeProject' | 'github' | 'githubGit' | 'memoryProvider'; payload: Record<string, unknown> }
+export type VaultRequest = { userId: string; projectId: string; operation: 'list' | 'set' | 'delete' | 'resources' | 'invoke' | 'purgeProject' | 'github' | 'githubGit' | 'memoryProvider' | 'mcp'; payload: Record<string, unknown> }
 export interface VaultClient { request(input: VaultRequest): Promise<unknown>; git?(input: GitCredentialRequest, body: Uint8Array, signal?: AbortSignal): Promise<Response> }
 type Envelope = VaultRequest & { expiresAt: number; nonce: string }
 type CipherRow = { id: string; project_id: string; name: string; version: number; nonce: Uint8Array; ciphertext: Uint8Array; tag: Uint8Array; created_at: number; updated_at: number }
@@ -43,6 +44,7 @@ export class EvolvedVault implements VaultClient {
     private readonly masterKey: Buffer
     private readonly actions: ResourceAction[]
     private readonly github: GithubBroker
+    private readonly mcp: McpVault
     constructor(options: { dbPath: string; masterKeyFile: string; workspaceRoot?: string; actions?: ResourceAction[]; githubFetcher?: typeof fetch }) {
         if (!isAbsolute(options.masterKeyFile)) throw new EvolvedError('key_path', 'Vault master key path must be absolute.', 500)
         mkdirSync(dirname(options.masterKeyFile), { recursive: true, mode: 0o700 })
@@ -78,6 +80,20 @@ export class EvolvedVault implements VaultClient {
                 try { return decrypted(key, value, JSON.stringify(['hapi-evolved-github-v1', projectId, generation])) } finally { key.fill(0) }
             },
         }, options.githubFetcher)
+        this.mcp = new McpVault(this.db, {
+            creationFingerprint: (projectId, value) => {
+                const key = this.projectKey(projectId)
+                try { return createHmac('sha256', key).update('hapi-evolved-mcp-create-v1\0').update(value).digest('hex') } finally { key.fill(0) }
+            },
+            encrypt: (projectId, id, version, value) => {
+                const key = this.projectKey(projectId)
+                try { return encrypted(key, value, JSON.stringify(['hapi-evolved-mcp-v1', projectId, id, version])) } finally { key.fill(0) }
+            },
+            decrypt: (projectId, id, version, value) => {
+                const key = this.projectKey(projectId)
+                try { return decrypted(key, value, JSON.stringify(['hapi-evolved-mcp-v1', projectId, id, version])) } finally { key.fill(0) }
+            },
+        })
         this.actions = options.actions ?? []
         const ids = new Set<string>()
         for (const action of this.actions) {
@@ -116,6 +132,7 @@ export class EvolvedVault implements VaultClient {
                 this.db.prepare('INSERT OR IGNORE INTO revoked_projects VALUES(?,?)').run(projectId, Date.now())
                 this.db.prepare('DELETE FROM secrets WHERE project_id=?').run(projectId)
                 this.github.purge(projectId)
+                this.mcp.purge(projectId)
                 this.db.prepare('DELETE FROM memory_providers WHERE project_id=?').run(projectId)
                 this.db.prepare('DELETE FROM project_keys WHERE project_id=?').run(projectId)
                 this.db.prepare('INSERT INTO audit(user_id,project_id,operation,target_id,at) VALUES(?,?,?,?,?)').run(userId, projectId, 'project.purged', projectId, Date.now())
@@ -124,6 +141,7 @@ export class EvolvedVault implements VaultClient {
         }
         if (this.db.prepare('SELECT 1 FROM revoked_projects WHERE project_id=?').get(projectId)) throw new EvolvedError('project_revoked', 'Project has been deleted.', 403)
         if (operation === 'github') return this.github.request(userId, projectId, payload)
+        if (operation === 'mcp') return this.mcp.request(userId, projectId, payload)
         if (operation === 'memoryProvider') return this.memoryProvider(userId, projectId, payload)
         if (operation === 'list') return { secrets: (this.db.prepare('SELECT * FROM secrets WHERE project_id=? ORDER BY name').all(projectId) as CipherRow[]).map(metadata) }
         if (operation === 'resources') return { resources: this.actions.filter(a => a.projectId === projectId).map(a => ({ id: a.id, name: a.name, type: a.type, actions: ['execute'], profiles: a.profiles })) }

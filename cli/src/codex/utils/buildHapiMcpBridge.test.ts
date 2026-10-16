@@ -5,6 +5,7 @@ import { HAPI_SESSION_ID_ENV } from '@/agent/hapiSessionEnv'
 const harness = vi.hoisted(() => ({
     startOptions: null as unknown,
     cliArgs: [] as string[],
+    mcpShop: false,
     materialize: vi.fn(async () => true)
 }))
 
@@ -13,9 +14,9 @@ vi.mock('@/claude/utils/startHappyServer', () => ({
         harness.startOptions = options
         return {
             url: 'http://127.0.0.1:43006/',
-            toolNames: options.skillLookup
+            toolNames: [...(options.skillLookup
                 ? ['change_title', 'display_image', 'display_video', 'display_media', 'list_peers', 'search_peers', 'ping_peer', 'inspect_peer', 'skill_lookup']
-                : ['change_title', 'display_image', 'display_video', 'display_media', 'list_peers', 'search_peers', 'ping_peer', 'inspect_peer'],
+                : ['change_title', 'display_image', 'display_video', 'display_media', 'list_peers', 'search_peers', 'ping_peer', 'inspect_peer']), ...(harness.mcpShop ? ['evolved_mcp_servers', 'evolved_mcp_tools', 'evolved_mcp_query', 'evolved_mcp_call'] : [])],
             stop: vi.fn()
         }
     })
@@ -49,6 +50,7 @@ describe('buildHapiMcpBridge skill lookup config', () => {
     beforeEach(() => {
         harness.startOptions = null
         harness.cliArgs = []
+        harness.mcpShop = false
         harness.materialize.mockReset()
         harness.materialize.mockResolvedValue(true)
         delete process.env[HAPI_SESSION_ID_ENV]
@@ -106,6 +108,14 @@ describe('buildHapiMcpBridge skill lookup config', () => {
             list_peers: { approval_mode: 'approve' },
             search_peers: { approval_mode: 'approve' }
         })
+    })
+
+    it('keeps arbitrary project MCP calls subject to approval in the native Codex bridge', async () => {
+        harness.mcpShop = true
+        const bridge = await buildHapiMcpBridge(createClient())
+        expect(bridge.mcpServers.hapi.tools?.evolved_mcp_call).toEqual({ approval_mode: 'prompt' })
+        expect(bridge.mcpServers.hapi.tools?.evolved_mcp_query).toEqual({ approval_mode: 'approve' })
+        expect(harness.cliArgs[4]).toContain('evolved_mcp_servers,evolved_mcp_tools,evolved_mcp_query,evolved_mcp_call')
     })
 
     it('materializes pending lazy sessions before starting the MCP server', async () => {

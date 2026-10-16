@@ -202,6 +202,7 @@ function buildMcpToolApprovalInput(
     const toolTitle = asString(meta.tool_title);
     const toolName = asString(meta.tool_name) ?? toolTitle ?? serverName ?? 'MCP tool';
     const input: Record<string, unknown> = {
+        codexApprovalKind: 'mcp_tool_call',
         message: asString(request.message) ?? 'Allow MCP tool call?'
     };
 
@@ -371,9 +372,14 @@ function buildElicitationContent(params: unknown, answers: UserInputAnswer): Rec
     return content;
 }
 
-function isHapiBridgeElicitation(params: unknown): boolean {
+export function isHapiBridgeElicitation(params: unknown): boolean {
     const record = asRecord(params);
-    return record?.serverName === 'hapi';
+    const request = unwrapElicitationRequest(params);
+    // Native tool approvals can target our own bridge too. Only legacy forms
+    // without any approval marker may use HAPI's safe-default shortcut.
+    return record?.serverName === 'hapi'
+        && ![record?._meta, request._meta].some(meta =>
+            Object.prototype.hasOwnProperty.call(asRecord(meta) ?? {}, 'codex_approval_kind'));
 }
 
 export function registerAppServerPermissionHandlers(args: {
@@ -483,15 +489,6 @@ export function registerAppServerPermissionHandlers(args: {
         const record = asRecord(params) ?? {};
         const request = unwrapElicitationRequest(params);
 
-        // HAPI's own bridge only asks for values whose safe defaults are defined by HAPI.
-        if (isHapiBridgeElicitation(params)) {
-            return {
-                action: 'accept',
-                content: buildAcceptedElicitationContent(request),
-                _meta: null
-            };
-        }
-
         const approvalMeta = getMcpToolApprovalMeta(params);
         if (approvalMeta) {
             const requestId = asString(request.elicitationId) ?? randomUUID();
@@ -502,6 +499,15 @@ export function registerAppServerPermissionHandlers(args: {
                 approval.input
             ) as PermissionResult;
             return mapMcpToolApprovalDecision(result.decision, approvalMeta);
+        }
+
+        // This applies only to legacy HAPI forms, never native tool approvals.
+        if (isHapiBridgeElicitation(params)) {
+            return {
+                action: 'accept',
+                content: buildAcceptedElicitationContent(request),
+                _meta: null
+            };
         }
 
         const input = buildElicitationUserInput(params);

@@ -6,6 +6,8 @@ import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { getEvolvedOperatingContext } from '@/evolved/operatingContext';
+import { registerEvolvedTools } from '@/evolved/mcp';
+import { EvolvedClient } from '@/evolved/client';
 import { CodexAppServerClient } from '../codexAppServerClient';
 import { initializeSharedClient } from '../shared/launch';
 import { record } from '../shared/gateway';
@@ -17,8 +19,13 @@ function hasMcpOperatingInstructions(request: Record<string, unknown> | undefine
     const tools = Array.isArray(request.tools) ? request.tools.map(record) : [];
     // Codex presents MCP initialize.instructions as the namespace description
     // on every model request, independently of its persisted developer prompt.
-    return Boolean(context) && tools.some(tool => tool.type === 'namespace' && tool.name === 'mcp__hapi'
-        && typeof tool.description === 'string' && tool.description.includes(context));
+    return Boolean(context) && tools.some(tool => {
+        const definitions = Array.isArray(tool.tools) ? tool.tools.map(record) : [];
+        return tool.type === 'namespace' && tool.name === 'mcp__hapi'
+            && typeof tool.description === 'string' && tool.description.includes(context)
+            && ['evolved_mcp_servers', 'evolved_mcp_tools', 'evolved_mcp_query', 'evolved_mcp_call']
+                .every(name => definitions.some(definition => definition.name === name));
+    });
 }
 
 // Uses the installed engine with isolated history and a localhost-only model.
@@ -34,9 +41,9 @@ describe.skipIf(process.env.HAPI_RUN_SHARED_CODEX_TESTS !== '1')('native Evolved
         const mcpServers = new Set<McpServer>();
         const mcpHttp = createServer(async (request, response) => {
             const server = new McpServer({ name: 'hapi-context-test', version: '1' }, { instructions: getEvolvedOperatingContext() });
-            server.registerTool('evolved_context', { description: 'Read the platform operating rules.', inputSchema: {} }, async () => ({
-                content: [{ type: 'text', text: getEvolvedOperatingContext() }]
-            }));
+            registerEvolvedTools(server, new EvolvedClient('context-test', 'http://runner-proxy:3010', '', (async () => {
+                throw new Error('Native discovery must not call the Hub or an external MCP server');
+            }) as unknown as typeof fetch));
             const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
             mcpServers.add(server);
             response.once('close', () => { mcpServers.delete(server); void server.close(); });

@@ -73,6 +73,7 @@ it('standalone MCP sends the operating instructions on every new connection', as
             await caller.connect(transport)
             expect(caller.getInstructions()).toBe(buildEvolvedOperatingContext())
             expect((await caller.listTools()).tools.map(tool => tool.name)).toContain('evolved_context')
+            expect((await caller.listTools()).tools.map(tool => tool.name)).toEqual(expect.arrayContaining(['evolved_mcp_servers', 'evolved_mcp_tools', 'evolved_mcp_query', 'evolved_mcp_call']))
             const result = await caller.callTool({ name: 'evolved_context', arguments: {} })
             expect(JSON.parse((result.content as Array<{ text: string }>)[0].text)).toEqual({ version: EVOLVED_OPERATING_CONTEXT_VERSION, instructions: buildEvolvedOperatingContext() })
         } finally { await caller.close(); await transport.close() }

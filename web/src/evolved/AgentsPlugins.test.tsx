@@ -307,3 +307,11 @@ it.each([['repository_read_busy', false, false], ['repository_checkout_unavailab
     expect((screen.getByLabelText('Aufgabe') as HTMLTextAreaElement).disabled).toBe(uncertain)
     expect(Boolean(screen.queryByText(/Die Startbestätigung fehlt/))).toBe(uncertain)
 })
+
+it('does not claim empty plugins or a missing runner when the corresponding catalog failed', async () => {
+    context.api.request.mockRejectedValue(new Error('Catalog unavailable'))
+    mount()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Catalog unavailable')
+    expect(screen.queryByText('Noch keine Plugins installiert.')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Noch kein ausführender Runner/)).not.toBeInTheDocument()
+})

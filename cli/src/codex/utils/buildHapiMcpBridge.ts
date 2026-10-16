@@ -106,6 +106,12 @@ export async function buildHapiMcpBridge(
             approval_mode: 'prompt'
         }
     };
+    if (happyServer.toolNames.includes('evolved_mcp_call')) {
+        tools.evolved_mcp_call = { approval_mode: 'prompt' };
+    }
+    if (happyServer.toolNames.includes('evolved_mcp_query')) {
+        tools.evolved_mcp_query = { approval_mode: 'approve' };
+    }
     if (options.enableChangeTitle !== false) {
         tools.change_title = {
             approval_mode: 'approve'

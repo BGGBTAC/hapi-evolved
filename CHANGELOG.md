@@ -6,6 +6,14 @@ or container image.
 
 ## Unreleased
 
+- Project MCP shop with Context7 and custom public HTTPS Streamable HTTP servers,
+  encrypted credentials, connection checks, explicit tool grants, read-only access
+  and bounded call diagnostics shared by Claude and Codex.
+- Fresh authorization after runner request-body reads, local Claude MCP Host/Origin
+  validation, human-only knowledge status changes and Codegraph reindexing, and
+  consistent explicit tool filtering in the Codex bridge.
+- Failed specialist/plugin loading now shows an error instead of an empty catalog.
+
 ## [0.1.0-preview.2](https://github.com/BGGBTAC/hapi-evolved/releases/tag/v0.1.0-preview.2) — 2026-10-16
 
 Community source preview from commit

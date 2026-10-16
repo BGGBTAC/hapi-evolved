@@ -60,9 +60,14 @@ export function createRunnerRoutes(store: EvolvedStore): Hono<EvolvedEnv> {
         return c.json({ leases: rows.map(publicLease) })
     })
     app.post('/projects/:id/runner-leases', async c => {
+        // This router precedes the generic body-before-auth middleware. Finish
+        // request I/O before checking the current session, role and project profile.
+        await c.req.text()
         const principal = await human(c.req.raw); requireFreshPasskey(c, store, principal)
-        const project = store.requireProject(principal.user.id, c.req.param('id'), 'admin')
+        let project = store.requireProject(principal.user.id, c.req.param('id'), 'admin')
         const body = await parseBody(c, z.object({ name: z.string().trim().min(1).max(120), scopes: z.array(scopeSchema).min(1).max(10).default(['runner:connect', 'git:read', ...(project.profile === 'restricted' ? [] : ['git:write'])] as z.infer<typeof scopeSchema>[]), actionIds: z.array(z.string().min(1).max(128)).max(50).default([]), expiresInSeconds: z.number().int().min(60).max(7 * 86400).nullable().default(86400) }).strict())
+        const current = await human(c.req.raw); requireFreshPasskey(c, store, current)
+        project = store.requireProject(current.user.id, c.req.param('id'), 'admin')
         if (project.profile === 'restricted' && body.scopes.includes('git:write')) throw new EvolvedError('profile_denied', 'Restricted runners cannot receive Git push permission.', 403)
         const id = randomUUID(), token = randomToken(), now = store.now(), expiresAt = body.expiresInSeconds === null ? null : now + body.expiresInSeconds * 1000
         store.db.prepare('INSERT INTO evolved_runner_leases VALUES(?,?,?,?,?,?,?,?,?,?,NULL)').run(id, body.name, hashToken(token), principal.user.id, project.id, JSON.stringify([...new Set(body.scopes)]), JSON.stringify([...new Set(body.actionIds)]), project.profile, now, expiresAt)

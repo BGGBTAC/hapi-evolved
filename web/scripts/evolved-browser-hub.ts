@@ -145,7 +145,8 @@ if (process.env.EVOLVED_TEST_MEMORY === '1') {
     } })
     Object.assign(process.env, { EVOLVED_MEMORY_URL: `http://127.0.0.1:${memoryServer.port}`, EVOLVED_SERVICE_TOKEN_FILE: tokenFile })
 }
-const hub=await startHub({args:['--no-relay']})
+const evolvedMcpRemote = process.env.EVOLVED_TEST_MCP === '1' ? (await import('./evolved-mcp-fixture.ts')).createMcpFixture(tmp) : undefined
+const hub=await startHub({args:['--no-relay'], evolvedMcpRemote})
 const stopWorkflow = process.env.EVOLVED_TEST_WORKFLOW === '1' ? (await import('./evolved-workflow-fixture.ts')).startWorkflowFixture(tmp, origin) : undefined
 const stop=async()=>{stopWorkflow?.();codegraphProcess?.kill('SIGTERM');await hub.stop();vaultServer.stop(true);sideProvider.stop(true);memoryServer?.stop(true);vault.close();process.exit(0)}
 process.on('SIGINT',stop);process.on('SIGTERM',stop)

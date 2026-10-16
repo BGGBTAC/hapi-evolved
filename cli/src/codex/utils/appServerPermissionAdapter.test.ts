@@ -191,6 +191,31 @@ describe('registerAppServerPermissionHandlers', () => {
         });
     });
 
+    it.each([false, true])('routes native HAPI tool approval through the permission handler (nested=%s)', async nested => {
+        const { client, handlers } = createClient();
+        const permissionHandler = { handleToolCall: vi.fn(async () => ({ decision: 'denied' as const })) };
+        registerAppServerPermissionHandlers({ client, permissionHandler });
+        const request = { mode: 'form', message: 'Approve external action?', elicitationId: 'approval-1',
+            _meta: { codex_approval_kind: 'mcp_tool_call', tool_name: 'evolved_mcp_call', tool_params: { toolName: 'remote.write' } },
+            requestedSchema: { type: 'object', properties: {} } };
+        const params = { serverName: 'hapi', ...(nested ? { request } : request) };
+        await expect(handlers.get('mcpServer/elicitation/request')!(params)).resolves.toEqual({ action: 'decline', content: null, _meta: null });
+        expect(permissionHandler.handleToolCall).toHaveBeenCalledWith('approval-1', 'evolved_mcp_call', expect.objectContaining({ serverName: 'hapi' }));
+    });
+
+    it.each(['mcp_tool_call', 'future_approval_kind', null])('never uses safe defaults for a HAPI form carrying approval marker %s', async kind => {
+        const { client, handlers } = createClient();
+        const permissionHandler = { handleToolCall: vi.fn() };
+        const onUserInputRequest = vi.fn(async () => ({ decision: 'decline' as const }));
+        registerAppServerPermissionHandlers({ client, permissionHandler, onUserInputRequest });
+        await expect(handlers.get('mcpServer/elicitation/request')!({ serverName: 'hapi',
+            _meta: { codex_approval_kind: kind }, request: { mode: 'form', message: 'Approval?', _meta: {},
+                requestedSchema: { type: 'object', properties: { approval: { type: 'string', enum: ['allow', 'deny'] } }, required: ['approval'] } }
+        })).resolves.toEqual({ action: 'decline', content: null, _meta: null });
+        expect(onUserInputRequest).toHaveBeenCalledOnce();
+        expect(permissionHandler.handleToolCall).not.toHaveBeenCalled();
+    });
+
     it('keeps structured MCP tool approval forms interactive even in yolo mode', async () => {
         const { client, handlers } = createClient();
         const permissionHandler = {
@@ -310,6 +335,7 @@ describe('registerAppServerPermissionHandlers', () => {
             'approval-1',
             'search_issues',
             {
+                codexApprovalKind: 'mcp_tool_call',
                 message: 'Allow GitHub search?',
                 serverName: 'github',
                 toolTitle: 'Search issues',

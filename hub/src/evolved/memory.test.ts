@@ -193,6 +193,19 @@ describe('Memory and codegraph authorization', () => {
         expect((await request(`/projects/${project.id}/memory/settings`, 'alice', { enabled: true }, 'PATCH', capability.token)).status).toBe(403)
         expect((await request(`/projects/${project.id}/codegraph/status`, 'alice', undefined, 'GET', capability.token)).status).toBe(403)
     })
+    test('only a person can downgrade verified knowledge; rejected agent writes leave status and audit unchanged', async () => {
+        const { store, project, service, request } = setup()
+        const item = service.ledger.create(project.id, 'alice', 'Reviewed fact', 'A reviewed observation.', [{ kind: 'manual', projectId: project.id, hash: 'synthetic' }])
+        const path = `/projects/${project.id}/memory/${item.id}`
+        expect((await request(path, 'alice', { status: 'verified' }, 'PATCH')).status).toBe(200)
+        const before = store.db.query('SELECT COUNT(*) AS n FROM evolved_audit WHERE action=?').get('memory.status')
+        const capability = store.issueCapability('alice', project.id, ['memory:read', 'memory:write'], [], 300)
+        expect((await request(path, 'alice', { status: 'proposed' }, 'PATCH', capability.token)).status).toBe(403)
+        expect(service.ledger.get(project.id, item.id)?.status).toBe('verified')
+        expect(store.db.query('SELECT COUNT(*) AS n FROM evolved_audit WHERE action=?').get('memory.status')).toEqual(before)
+        expect((await request(path, 'alice', { status: 'proposed' }, 'PATCH')).status).toBe(200)
+        expect(service.ledger.get(project.id, item.id)?.status).toBe('proposed')
+    })
     test('ACL is checked before any backend search', async () => {
         let calls = 0
         const backend: MemoryBackend = { available: async () => true, request: async () => { calls++; return { spentMicros: 0, results: [] } } }
