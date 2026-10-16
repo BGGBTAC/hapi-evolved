@@ -1,9 +1,24 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildEvolvedOperatingContext, getEvolvedOperatingContext, withEvolvedOperatingContext } from './operatingContext'
+import { EVOLVED_CAPABILITIES, EVOLVED_CAPABILITY_TOPICS, getEvolvedCapability } from './capabilities'
 
 afterEach(() => vi.unstubAllEnvs())
 
 describe('Evolved operating context boundaries', () => {
+    it('automatically supplies every feature summary without embedding the full reference library', () => {
+        const context = getEvolvedOperatingContext({ HAPI_EVOLVED_PROXY: '1' })
+        for (const topic of EVOLVED_CAPABILITY_TOPICS) {
+            const capability = EVOLVED_CAPABILITIES[topic]
+            expect(capability.id).toBe(topic)
+            expect(context).toContain(`- ${topic} [${capability.access}]: ${capability.summary}`)
+            expect(context).not.toContain(capability.details)
+        }
+        // Instructions are repeated across lifecycle/connection boundaries. Keep
+        // the always-present rules/index bounded; details stay in the lookup tool.
+        expect(context.length).toBeLessThan(10_000)
+        expect(getEvolvedCapability('__proto__')).toBeUndefined()
+        expect(getEvolvedCapability('constructor')).toBeUndefined()
+    })
     it('resolves managed capability mode at call time without reading credentials or project text', () => {
         vi.stubEnv('HAPI_EVOLVED_PROXY', '')
         vi.stubEnv('HAPI_EVOLVED_CAPABILITY_FILE', '')

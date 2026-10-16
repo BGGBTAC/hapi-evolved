@@ -42,6 +42,7 @@ Start with the task's files; read only relevant sections of these references, no
 
 - CLI↔hub uses Socket.IO `/cli` with the CLI access token. Web terminals use `/terminal` with a client JWT; ordinary web/native updates use REST + SSE. Preserve namespace isolation (`CLI_API_TOKEN:<namespace>`).
 - Metadata/state updates are versioned; preserve stale-update rejection. Permission controls use per-flavor catalogs in `shared/src/modes.ts`, further constrained by session capabilities.
+- When adding or changing an Evolved feature, update the agent capability reference in `cli/src/evolved/capabilities.ts`, including legitimate entry points and permission limits. Its source inventory test covers feature modules, workspace pages and MCP tools; changes inside existing features still need a semantic review. See [agent context](docs/evolved/AGENT_CONTEXT.md).
 - `shared/fixtures/**` is generated from the web chat pipeline, the source of truth for native conformance. Never hand-edit fixtures. For changes to fixture inputs or generation (paths in [.github/workflows/fixtures.yml](.github/workflows/fixtures.yml)), run `bun run gen:fixtures` and include any generated changes in the deliverable. CI checks drift and runs native conformance on fixture changes.
 
 ## Verification and completion

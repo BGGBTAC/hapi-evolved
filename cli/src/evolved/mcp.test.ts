@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { EvolvedClient } from './client'
 import { registerEvolvedTools } from './mcp'
 import { buildEvolvedOperatingContext, EVOLVED_OPERATING_CONTEXT_VERSION } from './operatingContext'
+import { EVOLVED_CAPABILITY_TOPICS, getEvolvedCapability } from './capabilities'
 const directories: string[] = []
 afterEach(() => { for (const path of directories.splice(0)) rmSync(path, { recursive: true, force: true }) })
 function setup(respond: () => Response | Promise<Response> = () => Response.json({ results: [{ id: 'symbol' }] })) {
@@ -77,6 +78,29 @@ it('standalone MCP sends the operating instructions on every new connection', as
         } finally { await caller.close(); await transport.close() }
     }
 }, 15_000)
+it('discovers every feature topic and returns its offline guidance while rejecting unknown topics before any API access', async () => {
+    const t = setup(() => { throw new Error('Feature guidance must work with the Hub offline') })
+    const server = new McpServer({ name: 'test', version: '1' }), caller = new Client({ name: 'test', version: '1' })
+    registerEvolvedTools(server, t.client)
+    const [a, b] = InMemoryTransport.createLinkedPair()
+    await server.connect(a); await caller.connect(b)
+    try {
+        const tool = (await caller.listTools()).tools.find(tool => tool.name === 'evolved_context')!
+        expect(tool.inputSchema.properties?.topic).toMatchObject({ enum: [...EVOLVED_CAPABILITY_TOPICS] })
+        for (const topic of EVOLVED_CAPABILITY_TOPICS) {
+            const result = await caller.callTool({ name: 'evolved_context', arguments: { topic } })
+            expect(result.isError).not.toBe(true)
+            const payload = JSON.parse((result.content as Array<{ text: string }>)[0].text)
+            expect(payload).toEqual({ version: EVOLVED_OPERATING_CONTEXT_VERSION, topic, instructions: getEvolvedCapability(topic)!.details })
+            expect(JSON.stringify(result)).not.toContain(t.tokenFile)
+            expect(JSON.stringify(result)).not.toContain(t.token)
+        }
+        for (const topic of ['missing-feature', '__proto__', '', { peers: true }]) {
+            expect((await caller.callTool({ name: 'evolved_context', arguments: { topic } })).isError).toBe(true)
+        }
+        expect(t.calls).toHaveLength(0)
+    } finally { await caller.close(); await server.close() }
+})
 it('repository discovery needs no resource execution, returns exact granted identities and optionally inspects the workspace', async () => {
     const catalog = { connected: true, rootPath: '/work/project-one', canSync: true, canPush: false, runner: { status: 'ready' }, repositories: [{ id: '42', owner: 'granted-owner', name: 'project', fullName: 'granted-owner/project', cloneUrl: 'https://github.com/granted-owner/project.git', path: '/work/project-one/repositories/granted-owner/project', permission: 'read', local: { state: 'unknown', branch: null, dirty: null } }] }
     const t = setup(() => Response.json(catalog)), server = new McpServer({ name: 'test', version: '1' }), caller = new Client({ name: 'test', version: '1' })

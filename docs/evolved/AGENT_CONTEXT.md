@@ -6,7 +6,10 @@ Nachricht kopieren noch pro Projekt einen Spezialisten konfigurieren. Normale
 Sitzungen und Spezialisten verwenden dieselbe Grundlage.
 
 Der versionierte Text in
-[`operatingContext.ts`](../../cli/src/evolved/operatingContext.ts) erklärt:
+[`operatingContext.ts`](../../cli/src/evolved/operatingContext.ts) erklärt die
+Grundregeln. Ab Version 2 enthält er zusätzlich den Funktionskatalog aus
+[`capabilities.ts`](../../cli/src/evolved/capabilities.ts). Dieser Überblick wird
+automatisch übergeben; der Agent muss ihn nicht erst selbst entdecken.
 
 - den zugewiesenen Projektordner und die maßgebliche Repository-Dokumentation;
 - lokale persistente Wissenssuche, Quellen und Wissensvorschläge;
@@ -17,9 +20,92 @@ Der versionierte Text in
 - Ressourcenaktionen, Geheimnisse, Anbieteranmeldungen und Grenzen der Rechte;
 - die Übergabe dieser Regeln und relevanter Projektinformationen an Unteragenten.
 
+Der Katalog ergänzt die übrigen Produktbereiche: Sitzungen und Entwürfe,
+Kommunikation zwischen Projekt-Agenten, Spezialisten, Plugins und Skills,
+Anbieteranmeldung und Modellkatalog, Abo-Kapazität, Automatisierung, Vorschauen,
+Teams und Konto, Runner, Darstellung, Anhänge sowie Nebenkanal und Diktat.
+Jeder Bereich nennt seinen Zweck und unterscheidet Agentenwerkzeuge, gemischte
+Zugänge und reine Browserfunktionen.
+
 Der Text enthält keine Geheimnisse, Projektinhalte oder gespeicherten
 Verfügbarkeitsaussagen. Aktuelle Informationen werden mit den freigegebenen
 Werkzeugen gelesen. Die Hinweise verleihen keine zusätzlichen Rechte.
+
+## Details zu jeder Funktion
+
+Der kurze Überblick bleibt immer im Betriebskontext. Vor Verwendung einer
+unbekannten Funktion lädt der Agent deren ausführliche Bedienhinweise:
+
+```json
+{"topic":"peers"}
+```
+
+Dies ist das Argument für `evolved_context`; ein Anbieter kann den Werkzeugnamen
+um seinen HAPI-Präfix ergänzen. Ohne Argument liefert das Werkzeug die gesamten
+Grundregeln und den Überblick. Verfügbare Themen:
+
+| Themen | Inhalt |
+| --- | --- |
+| `context`, `workspace`, `sessions` | Betriebswissen, Projektordner/Profile, Sitzungen und Bedienung |
+| `github`, `memory`, `codegraph`, `resources` | Repositorys/PRs, Wissen, Codeindex, Tresor/Broker |
+| `peers`, `agents`, `plugins` | Agentenkommunikation, Spezialisten, Erweiterungen/Skills |
+| `providers`, `capacity`, `runner` | Abos/Modelle, gemeldete Nutzungslimits, Arbeitsdienst/Zugang |
+| `automation`, `previews`, `account` | Zeitpläne, Vorschauen/Freigaben, Konto/Team |
+| `appearance`, `media`, `sidechannel` | Darstellung, Dateien/Anhänge, `/btw`/Diktat |
+
+Auch die Shell liefert dieselben statischen Hinweise:
+
+```bash
+hapi evolved context
+hapi evolved context peers
+```
+
+Beide Zugänge benötigen für den Inhalt weder einen erreichbaren Hub noch einen
+Graphdienst. Die Shell-Referenz liest auch keine Capability-Datei. Die Angaben
+beschreiben die installierte CLI-Fassung; sie behaupten keine aktuelle
+Verfügbarkeit oder zusätzliche Berechtigung. Beispielsweise kann ein Agent
+die Browser-Anmeldung erklären, aber daraus keinen Zugriff auf Browsercookies
+oder die Verwaltung von Anbieterzugängen ableiten. Standalone-Evolved-MCP und
+die vollständige HAPI-Bridge bieten nicht zwangsläufig dieselben Werkzeuge an.
+
+## Kommunikation zwischen Agenten
+
+Der Überblick weist ausdrücklich auf die Peer-Werkzeuge hin. Ihre Detailhilfe
+erklärt Finden, Lesen, Beauftragen, Antworten und Abschließen:
+
+- `list_peers`, `search_peers` und `inspect_peer` lesen freigegebene
+  Projektsitzungen; ein Verweis `/sessions/<id>` ist kein lokaler Dateipfad.
+- `ping_peer` benötigt eine stabile `deliveryId`. Wiederholungen verwenden
+  dieselbe ID und unveränderte Argumente. Eine Zustellbestätigung belegt noch
+  keinen erfolgreichen Auftrag.
+- `spawn_peer` und `archive_peer` verwenden eine stabile `operationId` und
+  verwalten registrierte Projekt-Worker. Normale menschliche Sitzungen sind
+  dadurch nicht zur Archivierung freigegeben.
+- Native Unteragenten und Hub-Peers haben verschiedene IDs und Lebenszyklen.
+  Isolierte Aufträge müssen die Betriebsgrundlagen, überprüften Projektkontext
+  und die erwarteten Ergebnisbelege mitbekommen.
+
+Peer-Policy, `peers:read`, `peers:send` und `peers:manage` begrenzen die tatsächlich
+angebotenen Aktionen. Automatische Berichte benötigen zusätzliche Bedingungen,
+die in `peers` beschrieben sind. Peer-Nachrichten bestätigen die Projektherkunft,
+aber keine neue menschliche Freigabe oder sicher attestierte Modellidentität.
+Der Browser-Nebenkanal `/btw` ist eine getrennte Textfrage und kein Peerchat.
+
+## Pflege und Abdeckung
+
+Neue Funktionen müssen ihren Katalogeintrag und gegebenenfalls die
+Bedienhinweise aktualisieren. Ein unabhängiger Test liest die tatsächlichen
+Hub-Route-Factory-Importe, Workspace-Navigation und MCP-Registrierungen aus dem
+Quellcode. Neue Funktionsmodule, Seiten oder Werkzeuge ohne Katalogzuordnung
+lassen ihn fehlschlagen. Unaufgelöste dynamische Namen in `registerTool`-Aufrufen
+werden nicht stillschweigend übersprungen. Neue Registrierungsverfahren oder
+weitere Anbieteradapter müssen auch den Inventurtest erweitern.
+
+Diese Prüfung ersetzt keine inhaltliche Prüfung neuer Einzelrouten innerhalb
+bestehender Module oder geänderter Funktionssemantik. Die detaillierte
+Inventur und das Review müssen solche Änderungen abgleichen. Ein Größenlimit
+hält den automatisch wiederholten Überblick kompakt; ausführliche Texte
+werden nur für das angeforderte Thema geladen.
 
 ## Wissensdatenbank bei ausgefallener Graphsuche
 
@@ -97,4 +183,6 @@ und Broker durchgesetzt.
 
 Architektur und Umsetzung wurden mit Claude Opus 5.5 sowie einem unabhängigen
 Code-Review geprüft. Befunde und Korrekturen stehen im
-[Reviewprotokoll](reviews/agent-operating-context-2026-10-16.json).
+[Reviewprotokoll](reviews/agent-operating-context-2026-10-16.json). Die Erweiterung
+zum vollständigen Funktionskatalog hat ein eigenes
+[Reviewprotokoll](reviews/agent-capabilities-2026-10-16.json).
