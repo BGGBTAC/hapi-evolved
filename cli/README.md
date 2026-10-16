@@ -16,9 +16,13 @@ constrain session start, resume, native configuration and protected operations.
 
 Scoped Claude/Codex sessions automatically receive the shared
 [Evolved operating context](../docs/evolved/AGENT_CONTEXT.md). It covers project
-paths, persistent knowledge, graph availability, GitHub and broker permissions.
+paths, persistent knowledge, graph availability, GitHub and broker permissions,
+plus an index of all Evolved feature areas, including peer communication.
 The same versioned reference is available through MCP initialization and the
 read-only `evolved_context` tool; no per-project instruction file is required.
+Pass a topic such as `{"topic":"peers"}` for detailed instructions, or use
+`hapi evolved context [topic]` for the same static reference offline. The catalog
+distinguishes agent tools from human browser controls; it grants no new access.
 
 For development and manual runners, follow the
 [operator guide](../docs/evolved/DEPLOYMENT.md). Browser-created manual access alone

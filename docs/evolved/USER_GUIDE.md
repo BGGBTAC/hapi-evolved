@@ -55,8 +55,13 @@ Cloudverarbeitung und Budget werden durch diese Aktionen nicht eingeschaltet.
 Plan und Grenzen: [Integrierter Projektablauf](PROJECT_WORKFLOW.md).
 
 Die Agenten erhalten die [gemeinsamen Betriebsgrundlagen](AGENT_CONTEXT.md)
-automatisch: Projektordner, GitHub-Zugang, Wissen und Codegraph müssen nicht in
-jeder Sitzung erneut erklärt werden. Ein Ausfall der optionalen Graphsuche
+automatisch, einschließlich eines Überblicks über alle Funktionsbereiche:
+Projektordner, GitHub-Zugang, Wissen, Codegraph, Agentenkommunikation,
+Spezialisten, Plugins, Abos und die weiteren Browserfunktionen. Mit
+`evolved_context` können sie zu jedem Bereich genaue Bedienhinweise abrufen;
+bereits bekannte Grundlagen müssen nicht in jeder Sitzung erneut erklärt
+werden. Beschriebene Funktionen verleihen keine zusätzlichen Rechte.
+Ein Ausfall der optionalen Graphsuche
 bedeutet nicht, dass lokale Wissenssuche oder Speicherung ausgefallen sind.
 
 ## Erstes Konto und Wiederherstellung

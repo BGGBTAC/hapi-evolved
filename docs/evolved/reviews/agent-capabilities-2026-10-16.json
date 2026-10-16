@@ -1,0 +1,66 @@
+{
+  "date": "2026-10-16",
+  "baseCommit": "5912d09c3f7a935cc62c07027ea23295fc52e62b",
+  "scope": "Complete installed-feature awareness in operating context v2; 19 topic references, offline MCP/CLI lookup and source inventory regression checks",
+  "reviewer": {
+    "interface": "Claude Code CLI, tool-free source review",
+    "requestedModel": "claude-opus-5-5",
+    "observedCanonicalModel": "claude-opus-5-5",
+    "passes": [
+      "architecture",
+      "adversarial implementation review",
+      "focused peer-scope wording follow-up"
+    ],
+    "implementationConclusion": "No substantiated material defect in the supplied implementation and source evidence."
+  },
+  "reviewInputs": {
+    "implementationSnapshotDiffSha256": "d9b1ac2e89cac418b9428affd11b44fd040c864cbec7701647d692a331075727",
+    "capabilitiesSourceSha256": "5790a4ee18f42dfafa9d93f7f539295d7ec6db8d1dbe8a5c3bab1135ae61c3f1",
+    "architectureResponseSha256": "eed3d274205c33aacf564cc1106837136cc87121a1d93749232f7f2d20a155ee",
+    "implementationResponseSha256": "3fceeb203aae8a2584de237c645f204b87d995f4cf74190fd3d45644b1c77b22",
+    "scopeClarificationSourceSha256": "e5617cd3f7dff02d75379bada71c68f538d7eefc63be02b0a0b5255845ca3da5",
+    "scopeClarificationResponseSha256": "8d4b9bf6c72ed7a1c5d3b154f99456b232670dca55e0f569e055d08b406c412e"
+  },
+  "disposition": [
+    {
+      "finding": "Feature awareness must distinguish advertised agent tools from human browser controls, project grants and optional features.",
+      "resolution": "Typed agent/mixed/browser entries explain legitimate entry points, no permission bypass, actual peer IDs and scopes, idempotency, optional PR awareness and standalone-versus-full MCP tool sets. Independent inventory reconciled 29 feature areas into 19 topics."
+    },
+    {
+      "finding": "A source inventory of feature modules does not prove completeness of individual API routes or feature semantics.",
+      "resolution": "Tests independently read called route-factory imports, workspace pages and registerTool sites. Documentation and test naming state the exact guarantee; additions inside existing modules and new registration mechanisms still need review. Avoided unrelated Hub router refactoring and a duplicate endpoint manifest."
+    },
+    {
+      "finding": "Repeated automatic delivery can increase prompt size; the reviewer raised an unconfirmed provider hook-size concern.",
+      "resolution": "Automatic context is 8125 characters; detailed topic texts are loaded on demand. Tightened the local maintenance budget from 12000 to 10000 characters after review and reran its regression tests. This is a project budget, not a verified provider truncation limit. No lookup or injection logic changed after implementation review; subsequent peer-scope wording received a focused review."
+    },
+    {
+      "finding": "Knowing a feature does not establish live availability, successful execution or model compliance.",
+      "resolution": "Static guidance contains no credentials, project content or health snapshots. Actual tool results remain authoritative. Peer delivery is acceptance only; automatic reports are best-effort; native children and Hub peers are distinguished."
+    },
+    {
+      "finding": "GitHub review identified an ambiguous cumulative reading of the peer scope description.",
+      "resolution": "Clarified independent Hub API scopes and the separate Evolved MCP exposure gate requiring read access. Ordinary spawn/archive require no send scope; autoReport additionally requires send, project administrator rights and Codex. Source checks and focused Claude Opus 5.5 review confirmed the wording. The final Evolved-mode qualifier was independently verified against initialization code. No authorization logic changed."
+    }
+  ],
+  "independentReviews": [
+    "Browser/Hub inventory checked against source, including cloud budgets, provider/runner access, plugin format, review checkout behavior, settings, notifications and sidechannel limits.",
+    "Peer communication examples independently checked against real schemas, reply journal semantics, permissions, worker lifecycle and report delivery."
+  ],
+  "verification": {
+    "cliTypecheck": "passed",
+    "cliSuite": "3291 passed, 13 skipped; 281 files passed, 5 skipped",
+    "nativeCodex": "5 passed using Codex 0.157.0 and isolated localhost mock model endpoints; no paid provider calls",
+    "nativeContextCoverage": "Full v2 namespace instructions after process restart/resume, successful compaction and isolated native child creation",
+    "offlineLookup": "All 19 topics through actual in-memory MCP and CLI command tests; unknown topics rejected; no API calls, credential reads or client initialization for CLI context",
+    "inventory": "6 passing checks for module/navigation/tool coverage, collector behavior and browser sidechannel separation",
+    "afterReviewBudgetCheck": "3 passed",
+    "documentation": "Local links and git diff --check passed",
+    "scopeClarification": "60 focused MCP, context, source inventory, CLI and peer tests passed; Opus follow-up found no remaining material defect."
+  },
+  "limits": [
+    "Supported Evolved providers are Claude and Codex; inherited adapters do not imply parity.",
+    "Native execution proof covers Codex; Claude lifecycle hooks and prompt composition have regression tests but no paid live-model run for this change.",
+    "Runner image rollout is required. The existing test runner still has an active Claude process; it was not restarted or interrupted."
+  ]
+}
