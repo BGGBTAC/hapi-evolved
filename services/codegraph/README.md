@@ -44,10 +44,40 @@ Dateideskriptoren in seinen Spiegel. SDK und SQLite erhalten ausschließlich die
 `deleted/<Projekt-ID>` hält Löschmarkierungen dauerhaft über Dienstneustarts hinweg.
 Ein Worker pro Projekt isoliert die SDK-Konfiguration und begrenzt den JS-Heap auf 512 MB.
 Eine Kapazitätsüberschreitung liefert 503 und wird nicht als leerer Graph dargestellt.
+Der Adapter begrenzt den SDK-Parserpool auf einen Worker und deaktiviert den zusätzlichen
+Resolverpool. Die Gesamtgrenze des Containers bleibt unverändert. SQLite bleibt auch
+beim Neuaufbau im dauerhaften Journalmodus; der SDK-Schnellstart mit Speicherjournal ist aus.
+
+Die Statusabfrage liest einen Zustandsbericht im HTTP-Prozess, ohne auf die Indexierung
+zu warten. Eine abgelaufene einzelne Suchanfrage beendet den Index-Worker nicht.
+Ein Worker-Absturz bleibt dagegen ein sichtbarer Fehler mit festem Fehlercode. Statuspolls
+starten danach keine endlosen Neuaufbauten: **Neu indizieren** startet nach einer Wartezeit
+von zunächst 60 Sekunden erneut; wiederholte Abstürze verlängern sie auf maximal 15 Minuten.
+Der alte Worker muss vollständig beendet sein, bevor ein neuer denselben Index öffnet.
+Ohne Indexfortschritt für fünf Minuten, ohne Lebenszeichen eines bereiten Workers für
+90 Sekunden oder nach insgesamt 60 Minuten Indexlauf beendet der Adapter den festhängenden
+Worker und meldet den jeweiligen Fehler. Reine Lebenszeichen zählen nicht als Indexfortschritt.
+
+`codegraph_worker_out_of_memory`, `codegraph_worker_failed`, `codegraph_worker_timeout`
+und `codegraph_index_timeout` unterscheiden Arbeitsspeicher-, Absturz- und Fristfehler.
+Die Dienstlogs enthalten ausschließlich feste Ereigniscodes, Projekt-ID, Generation und
+gegebenenfalls den numerischen Exitcode; keine Exceptiontexte, Pfade, Schlüssel oder Quelldateien.
+`codegraph_index_locked` bedeutet, dass eine aktuelle Indexsperre den Neuaufbau verhindert.
+Ein blockierter SDK-Aufruf darf weder den zuletzt bestätigten Dateistand übernehmen noch
+einen leeren Index als erfolgreich melden. Eine bestehende Sperre wird vor dem Leeren geprüft.
+
+Das Datenverzeichnis gehört exklusiv zu **einer** Adapterinstanz. Niemals zwischen gleichzeitig
+laufenden Replikaten teilen. Nur in diesem privaten Verzeichnis darf der Adapter eine
+eigene PID-Sperre vor dem Start eines Workers entfernen; ein vorheriger Worker muss bereits
+beendet sein. Fremde PID-Sperren und Symlinks werden nicht automatisch entfernt.
 
 Vor der Indexierung werden nur unterstützte Code-Endungen ausgewählt. Symlinks, Secret-Verzeichnisse,
 Credential-Dateien, `.env`, `.git`, Abhängigkeiten und Build-Ausgaben werden ausgeschlossen.
 Alle drei Sekunden erfolgt ein begrenzter Dateiabgleich; nur geänderte/gelöschte Pfade gehen an das SDK.
+Der Erstaufbau, ausdrücklich angeforderte Neuaufbauten und große Änderungen (mehr als
+100 Pfade oder 4 MiB geänderter Quelltext) verwenden die SDK-Vollindexierung mit paketweiser
+Referenzauflösung. Vor deren Scan wird der private Spiegel vollständig mit den aktuell
+freigegebenen Dateien abgeglichen; alte ausgeschlossene Dateien werden nicht erneut indiziert.
 Maximal 50.000 Dateien, 10.000 Verzeichnisse und 1 MiB pro Quelldatei werden verarbeitet.
 Die Anzeige meldet Indexierungszustand, ausstehende Änderungen und Fehler.
 Ein leerer Projektordner ist ein erfolgreicher leerer Index: `graph` liefert
@@ -76,6 +106,9 @@ node --liftoff-only --test services/codegraph/test/*.test.mjs
 
 Der Integrationstest baut einen echten temporären Index, prüft Aufrufkanten, Quelltextvorschau,
 Secret-Ausschluss und automatische Aktualisierung. Er benötigt keine Produktionsdaten oder Cloudzugänge.
+Weitere Regressionen prüfen mit dem echten SDK eine zurückgebliebene PID-Sperre und die
+Erholung ohne falschen Leerzustand. HTTP-Tests prüfen Status während blockierender Arbeit,
+Fehlerdiagnosen, Wartezeiten und die Reihenfolge von Worker-Ende und Neustart.
 Das SDK ist MIT-lizenziert; die mitgelieferten Lizenzhinweise und Drittanbieterhinweise bleiben im Paket.
 
 Der HTTP-Abnahmelauf im isolierten Compose-Teststack erzeugt und entfernt nur sein eigenes Testworkspace:

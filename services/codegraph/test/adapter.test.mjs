@@ -18,8 +18,8 @@ test('real Codegraph indexes calls, excludes secret source, and updates incremen
         await writeFile(join(indexRoot, 'stale.ts'), 'export function stalePrivateFact() { return true }');
         await mkdir(join(root, 'secrets'));
         await writeFile(join(root, 'secrets', 'hidden.ts'), 'export function privateCredentialSymbol() { return "synthetic" }');
-        worker = new Worker(new URL('../worker.mjs', import.meta.url), { workerData: { root, indexRoot }, env: {
-            ...process.env, DO_NOT_TRACK: '1', CODEGRAPH_TELEMETRY: '0', CODEGRAPH_NO_UPDATE_CHECK: '1', CODEGRAPH_NO_DOWNLOAD: '1', CODEGRAPH_DIR: '.codegraph-evolved-test'
+        worker = new Worker(new URL('../worker.mjs', import.meta.url), { workerData: { root, indexRoot }, resourceLimits: { maxOldGenerationSizeMb: 512 }, env: {
+            ...process.env, DO_NOT_TRACK: '1', CODEGRAPH_TELEMETRY: '0', CODEGRAPH_NO_UPDATE_CHECK: '1', CODEGRAPH_NO_DOWNLOAD: '1', CODEGRAPH_DIR: '.codegraph-evolved-test', CODEGRAPH_PARSE_WORKERS: '1', CODEGRAPH_RESOLVE_WORKERS: '0', CODEGRAPH_NO_FAST_INIT: '1'
         } });
         let serial = 0;
         const pending = new Map();
@@ -67,7 +67,10 @@ test('real Codegraph indexes calls, excludes secret source, and updates incremen
         let updated = false;
         for (let attempt = 0; attempt < 60; attempt++) {
             await new Promise(resolve => setTimeout(resolve, 150));
-            const results = await call('search', { q: 'replacement' });
+            const results = await call('search', { q: 'replacement' }).catch(error => {
+                if (error.message === 'Code index is not ready') return { nodes: [] };
+                throw error;
+            });
             if (results.nodes.some(node => node.name === 'replacement')) { updated = true; break; }
         }
         assert.equal(updated, true);
@@ -78,8 +81,8 @@ test('real Codegraph indexes calls, excludes secret source, and updates incremen
 test('empty workspaces return a usable empty graph and acquire a default seed after code is added', { timeout: 45_000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), 'evolved-codegraph-empty-'));
     const indexRoot = await mkdtemp(join(tmpdir(), 'evolved-codegraph-empty-index-'));
-    const worker = new Worker(new URL('../worker.mjs', import.meta.url), { workerData: { root, indexRoot }, env: {
-        ...process.env, DO_NOT_TRACK: '1', CODEGRAPH_TELEMETRY: '0', CODEGRAPH_NO_UPDATE_CHECK: '1', CODEGRAPH_NO_DOWNLOAD: '1', CODEGRAPH_DIR: '.codegraph-evolved-test'
+    const worker = new Worker(new URL('../worker.mjs', import.meta.url), { workerData: { root, indexRoot }, resourceLimits: { maxOldGenerationSizeMb: 512 }, env: {
+        ...process.env, DO_NOT_TRACK: '1', CODEGRAPH_TELEMETRY: '0', CODEGRAPH_NO_UPDATE_CHECK: '1', CODEGRAPH_NO_DOWNLOAD: '1', CODEGRAPH_DIR: '.codegraph-evolved-test', CODEGRAPH_PARSE_WORKERS: '1', CODEGRAPH_RESOLVE_WORKERS: '0', CODEGRAPH_NO_FAST_INIT: '1'
     } });
     let serial = 0;
     const pending = new Map();
