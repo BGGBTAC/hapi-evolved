@@ -65,21 +65,21 @@ function ready() {
 async function checkIndexLock() {
     // clear() does not acquire the SDK lock. Check before any destructive rebuild;
     // a terminated thread's PID can still belong to the live HTTP process.
-    const blocked = () => { const caught = new AdapterError('Code index is locked; retry indexing shortly', 503); caught.code = 'codegraph_index_locked'; throw caught; };
+    const blocked = () => { const caught = new AdapterError('Code index is locked; retry indexing shortly', 503); caught.code = 'codegraph_index_locked'; return caught; };
     const root = resolve(workerData.indexRoot);
     const path = resolve(root, indexDirectory, 'codegraph.lock');
-    if (!path.startsWith(root + sep)) blocked();
+    if (!path.startsWith(root + sep)) throw blocked();
     let handle;
     try { handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); }
-    catch (caught) { if (caught.code === 'ENOENT') return; blocked(); }
+    catch (caught) { if (caught.code === 'ENOENT') return; throw blocked(); }
     try {
         // Validate and read the same descriptor: replaced links/FIFOs must never
         // redirect a read or block the worker. The bounded read also handles a
         // regular file growing after fstat without allocating arbitrary memory.
         const info = await handle.stat();
-        if (!info.isFile() || info.nlink !== 1 || info.size > 32) blocked();
+        if (!info.isFile() || info.nlink !== 1 || info.size > 32) throw blocked();
         const opened = await realpath(process.platform === 'linux' ? `/proc/self/fd/${handle.fd}` : path);
-        if (opened !== path) blocked();
+        if (opened !== path) throw blocked();
         const buffer = Buffer.alloc(33);
         let total = 0;
         while (total < buffer.length) {
@@ -87,14 +87,14 @@ async function checkIndexLock() {
             if (!bytesRead) break;
             total += bytesRead;
         }
-        if (total > 32) blocked();
+        if (total > 32) throw blocked();
         const owner = buffer.subarray(0, total).toString('utf8').trim();
-        if (!/^[1-9][0-9]*$/.test(owner) || !Number.isSafeInteger(Number(owner))) blocked();
+        if (!/^[1-9][0-9]*$/.test(owner) || !Number.isSafeInteger(Number(owner))) throw blocked();
         // Match the pinned SDK's two-minute stale-lock contract. Do not delete locks.
         if (Date.now() - info.mtimeMs >= 120_000) return;
         try { process.kill(Number(owner), 0); }
-        catch (caught) { if (caught.code === 'ESRCH') return; blocked(); }
-        blocked();
+        catch (caught) { if (caught.code === 'ESRCH') return; throw blocked(); }
+        throw blocked();
     } finally { await handle.close(); }
 }
 
