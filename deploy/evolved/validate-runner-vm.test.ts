@@ -32,7 +32,7 @@ function container(plan: ReturnType<typeof validationPlan>, service: string) {
             'io.hapi.evolved.runner-validation': plan.projectId }, User: runner ? '0:0' : `${plan.config.EVOLVED_UID}:${plan.config.EVOLVED_GID}` },
         HostConfig: { Privileged: false, ReadonlyRootfs: true, NetworkMode: `${plan.stack}_project`, PidMode: '',
             CapDrop: ['ALL'], CapAdd: runner ? ['SETUID', 'SETGID', 'SETPCAP'] : [], SecurityOpt: ['no-new-privileges:true'], PortBindings: {}, Devices: [], DeviceRequests: [] },
-        NetworkSettings: { Networks: Object.fromEntries([`${plan.stack}_project`, ...(proxy ? [plan.backend] : runner ? [] : [`${plan.stack}_provider-egress`])].map(name => [name, {}])) },
+        NetworkSettings: { Networks: Object.fromEntries([`${plan.stack}_project`, proxy ? plan.backend : `${plan.stack}_provider-egress`].map(name => [name, {}])) },
         Mounts: runner ? [
             { Type: 'bind', Source: plan.config.EVOLVED_RUNNER_HOME, Destination: '/runner', RW: true },
             { Type: 'bind', Source: plan.config.EVOLVED_RUNNER_WORKSPACE, Destination: plan.root, RW: false, Propagation: 'rprivate' },
@@ -113,6 +113,20 @@ describe('isolated runner VM acceptance guard', () => {
         }
         expect(() => inspectTestContainer(container(plan, 'hub'), plan, 'hub')).toThrow('Unbekannter')
     })
+    test('requires the runner Internet network without admitting backend or another project', () => {
+        const { plan } = fixture()
+        const offline = container(plan, 'runner')
+        delete offline.NetworkSettings.Networks[`${plan.stack}_provider-egress`]
+        expect(() => inspectTestContainer(offline, plan, 'runner')).toThrow('Container-Netzwerke')
+        for (const network of [plan.backend, 'another-project_provider-egress']) {
+            const foreign = container(plan, 'runner')
+            foreign.NetworkSettings.Networks[network] = {}
+            expect(() => inspectTestContainer(foreign, plan, 'runner')).toThrow('Container-Netzwerke')
+        }
+        const proxy = container(plan, 'runner-proxy')
+        proxy.NetworkSettings.Networks[`${plan.stack}_provider-egress`] = {}
+        expect(() => inspectTestContainer(proxy, plan, 'runner-proxy')).toThrow('Container-Netzwerke')
+    })
     test('checks provider metadata without reading values and rejects inaccessible or linked paths', () => {
         const { directory, plan } = fixture(), home = plan.config.EVOLVED_RUNNER_HOME
         expect(() => inspectProviderCredentialAbsence(home)).not.toThrow()
@@ -163,6 +177,8 @@ describe('isolated runner VM acceptance guard', () => {
             expect(script).not.toContain('synthetic-lease-never-print')
             expect(script).toContain("writeError==='EROFS'")
             expect(script).toContain('169.254.169.254:443')
+            expect(script).not.toContain('unlisted.hapi-validation.invalid')
+            expect(script).toContain('testedProxyTargetsDenied:deniedTargets')
             expect(script).toContain('CapBnd')
         }
     })

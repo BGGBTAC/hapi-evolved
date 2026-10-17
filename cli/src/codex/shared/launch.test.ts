@@ -1,9 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sharedLaunchConfig, takeReservedSessionId, newSharedThreadParams } from './launch';
 import { parseCodexCliOverrides } from '../utils/codexCliOverrides';
 import { resolveCodexPermissionModeConfig } from '../utils/permissionModeConfig';
+afterEach(() => vi.unstubAllEnvs());
 
 describe('shared launch configuration', () => {
+    it.each(['restricted', 'workspace', 'extended'])('preserves %s file policy while enabling native launch networking', profile => {
+        vi.stubEnv('HAPI_EVOLVED_PROXY', '1'); vi.stubEnv('EVOLVED_RUNNER_PROFILE', profile);
+        const permissionMode = profile === 'restricted' ? 'read-only' : profile === 'workspace' ? 'default' : 'yolo';
+        const result = sharedLaunchConfig({ permissionMode, codexArgs: ['-c', 'sandbox_workspace_write.network_access=false'] }, '/tmp');
+        expect(result.threadParams.sandbox).toBe(profile === 'restricted' ? 'read-only' : profile === 'workspace' ? 'workspace-write' : 'danger-full-access');
+        expect(result.threadParams.config).toHaveProperty('sandbox_workspace_write.network_access', true);
+        expect(result.serverArgs).toContain('sandbox_workspace_write.network_access=true');
+        expect(result.serverArgs.lastIndexOf('sandbox_workspace_write.network_access=true')).toBeGreaterThan(result.serverArgs.lastIndexOf('sandbox_workspace_write.network_access=false'));
+    });
     it.each(['default', 'read-only', 'yolo'] as const)('keeps explicit %s authoritative over native permission flags', permissionMode => {
         for (const flags of [
             ['--yolo'], ['--dangerously-bypass-approvals-and-sandbox'], ['--full-auto'],

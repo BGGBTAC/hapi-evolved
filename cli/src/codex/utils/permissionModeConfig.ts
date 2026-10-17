@@ -1,5 +1,6 @@
 import type { CodexPermissionMode } from '@hapi/protocol/types';
 import type { ApprovalPolicyPreset, SandboxMode, SandboxPolicy } from '../appServerTypes';
+import { withEvolvedCodexNetworkAccess } from '@/evolved/codexPolicy';
 
 export type CodexPermissionModeConfig = {
     approvalPolicy: ApprovalPolicyPreset;
@@ -9,9 +10,11 @@ export type CodexPermissionModeConfig = {
 };
 
 export function resolveCodexPermissionModeConfig(mode: CodexPermissionMode): CodexPermissionModeConfig {
+    const workspacePolicy = withEvolvedCodexNetworkAccess({ type: 'workspaceWrite' } as const);
+    const readOnlyPolicy = withEvolvedCodexNetworkAccess({ type: 'readOnly' } as const);
     switch (mode) {
         case 'autoReview':
-            return { approvalPolicy: 'on-request', approvalsReviewer: 'auto_review', sandbox: 'workspace-write', sandboxPolicy: { type: 'workspaceWrite' } };
+            return { approvalPolicy: 'on-request', approvalsReviewer: 'auto_review', sandbox: 'workspace-write', sandboxPolicy: workspacePolicy };
         case 'default':
             return {
                 // Remote Codex sessions rely on HAPI's approval UI for sandbox escalation.
@@ -19,13 +22,13 @@ export function resolveCodexPermissionModeConfig(mode: CodexPermissionMode): Cod
                 // user-approvable elevation request when the model needs it.
                 approvalPolicy: 'on-request',
                 sandbox: 'workspace-write',
-                sandboxPolicy: { type: 'workspaceWrite' }
+                sandboxPolicy: workspacePolicy
             };
         case 'read-only':
             return {
                 approvalPolicy: 'never',
                 sandbox: 'read-only',
-                sandboxPolicy: { type: 'readOnly' }
+                sandboxPolicy: readOnlyPolicy
             };
         case 'safe-yolo':
             return {
@@ -34,7 +37,7 @@ export function resolveCodexPermissionModeConfig(mode: CodexPermissionMode): Cod
                 // requests in safe-yolo mode.
                 approvalPolicy: 'on-request',
                 sandbox: 'workspace-write',
-                sandboxPolicy: { type: 'workspaceWrite' }
+                sandboxPolicy: workspacePolicy
             };
         case 'yolo':
             return {

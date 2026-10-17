@@ -1,4 +1,5 @@
-import { assertEvolvedCodexFrontendMethod, assertEvolvedCodexNativePolicy } from '@/evolved/codexPolicy';
+import { assertEvolvedCodexFrontendMethod, assertEvolvedCodexNativePolicy, evolvedCodexInternetEnabled, evolvedCodexNetworkConfig, withEvolvedCodexNetworkAccess } from '@/evolved/codexPolicy';
+import type { SandboxPolicy } from '../appServerTypes';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
 import { mkdir, mkdtemp, chmod, rm, realpath } from 'node:fs/promises';
@@ -16,6 +17,7 @@ import { startCodexGateway, record, string, type Envelope } from './gateway';
 import { resolveSharedCodex, sharedLaunchConfig, initializeSharedClient, checkSharedCapabilities, takeReservedSessionId, newSharedThreadParams, type SharedLaunchOptions } from './launch';
 import { SharedCodexRoot } from './root';
 import { restoreControlSubscriptions } from './controlSubscriptions';
+import { settingsMatch } from './settings';
 
 export type RuntimeReady = { sessionId: string; runtime: CodexRuntimeRecord };
 type Reservation = { root: SharedCodexRoot; resumeId?: string };
@@ -86,6 +88,7 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
     // An independent observer preserves settings when a root's side-client
     // reconnects: native resume responses omit collaboration mode.
     const nativeSettings = new Map<string, Record<string, unknown>>();
+    const ephemeralSettingsListeners = new Set<(threadId: string, settings: Record<string, unknown>, connection: string) => void>();
     control.setNotificationHandler((method, params) => {
         if (method !== 'thread/settings/updated') return;
         const threadId = string(record(params).threadId);
@@ -97,6 +100,26 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
         const root = roots.get(threadId);
         if (root && !root.client.isInitialized()) root.acceptSettings(settings);
     });
+    const enableEphemeralInternet = async (threadId: string, snapshot: Record<string, unknown>, connection: string) => {
+        const current = record(snapshot.sandboxPolicy ?? snapshot.sandbox);
+        if (!['readOnly', 'workspaceWrite'].includes(String(current.type))) return;
+        const sandboxPolicy = withEvolvedCodexNetworkAccess(current as SandboxPolicy);
+        if (settingsMatch(current, sandboxPolicy)) return;
+        const expected = { sandboxPolicy };
+        let changed!: (id: string, settings: Record<string, unknown>, receivedConnection: string) => void;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const accepted = new Promise<void>((resolve, reject) => {
+            changed = (id, settings, receivedConnection) => { if (id === threadId && receivedConnection === connection && settingsMatch(settings, expected)) resolve(); };
+            ephemeralSettingsListeners.add(changed);
+            timer = setTimeout(() => reject(new Error('Native ephemeral network settings were not confirmed')), 15_000);
+        });
+        void accepted.catch(() => {});
+        try {
+            await control.request('thread/settings/update', { threadId, sandboxPolicy });
+            await accepted; assertRunning();
+            snapshot.sandbox = sandboxPolicy;
+        } finally { clearTimeout(timer); ephemeralSettingsListeners.delete(changed); }
+    };
     let reconnectingControl = false;
     const reconnectControl = () => {
         if (stopping || reconnectingControl) return;
@@ -282,6 +305,11 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
         let params = record(request.params);
         assertEvolvedCodexFrontendMethod(request.method);
         assertEvolvedCodexNativePolicy(params);
+        if (evolvedCodexInternetEnabled()) {
+            if (params.sandboxPolicy) params = { ...params, sandboxPolicy: withEvolvedCodexNetworkAccess(params.sandboxPolicy as SandboxPolicy) };
+            if (params.config) params = { ...params, config: { ...record(params.config), ...evolvedCodexNetworkConfig() } };
+            request = { ...request, params };
+        }
         if (request.method === 'thread/start' && params.ephemeral !== true) params = newSharedThreadParams(params, command.supportsHistoryMode);
         if (['thread/revert', 'thread/rollback'].includes(request.method ?? '')) {
             throw new Error('In-place rewind is unavailable with concurrent HAPI clients. Use /fork or Fork at message instead.');
@@ -363,10 +391,20 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
         }
         if (!response.error && ['thread/start', 'thread/resume', 'thread/fork'].includes(request.method ?? '')) {
             const threadId = string(record(record(response.result).thread).id);
+            const root = roots.get(threadId ?? '');
+            if (threadId && !root && evolvedCodexInternetEnabled() && request.method === 'thread/start' && record(request.params).ephemeral === true) {
+                await enableEphemeralInternet(threadId, record(response.result), connection);
+            }
+            // Newly bound roots already applied and observed their network policy
+            // during activate(). Their creation response is now an older snapshot.
+            if (root && !reservation && evolvedCodexInternetEnabled()) {
+                root.acceptSettings(record(response.result));
+                await root.initialSettings({});
+            }
             // Native 0.154 resume responses omit collaboration mode. Replay
             // the authoritative settings notification after the response so
             // a newly attached TUI doesn't reset a Web-selected Plan mode.
-            return roots.get(threadId ?? '')?.replaySettings();
+            return root?.replaySettings();
         }
         return undefined;
     });
@@ -396,7 +434,12 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
         await checkSharedCapabilities(control);
         assertRunning();
         gateway = await startCodexGateway({ upstream, upstreamToken, path: process.platform === 'win32' ? undefined : join(sockets, 'clients.sock'), token,
-            hooks: { before, after, disconnected: connection => {
+            hooks: { before, after, settingsNotification: (params, connection) => {
+                const threadId = string(record(params).threadId);
+                if (!threadId) return;
+                const settings = record(record(params).threadSettings);
+                for (const listener of ephemeralSettingsListeners) listener(threadId, settings, connection);
+            }, disconnected: connection => {
                 for (const [key, reservation] of reservations) {
                     if (!key.startsWith(`${connection}:`)) continue;
                     reservation.root.session.sendSessionEvent({ type: 'message', message: 'Native lifecycle outcome is unknown after transport loss. Do not retry blindly; inspect the shared runtime log.' });

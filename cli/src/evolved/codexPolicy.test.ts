@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertEvolvedCodexFrontendMethod, assertEvolvedCodexNativePolicy, assertEvolvedCodexPermission } from './codexPolicy';
+import { assertEvolvedCodexFrontendMethod, assertEvolvedCodexNativePolicy, assertEvolvedCodexPermission, evolvedCodexNetworkConfig, withEvolvedCodexNetworkAccess } from './codexPolicy';
 const env = (profile: string) => ({ EVOLVED_PROJECT_ID: 'project', EVOLVED_RUNNER_PROFILE: profile });
 describe('Evolved native Codex profile', () => {
     it('rejects slash/RPC permission escalation while preserving allowed settings', () => {
@@ -29,11 +29,34 @@ it('rejects conflicting aliases and untrusted native configuration before forwar
         { config: { profile: 'unsafe' } }, { profile: 'unsafe' },
         { sandboxPolicy: { type: 'workspaceWrite', writableRoots: ['/'], networkAccess: true } },
         { sandbox: 'read-only', sandboxPolicy: { type: 'workspaceWrite' }, approvalPolicy: 'never' },
-        { cwd: '/' }, { config: { 'sandbox_workspace_write.network_access': true } }
+        { cwd: '/' }, { config: { 'sandbox_workspace_write.network_access': 'true' } }
     ]) expect(() => assertEvolvedCodexNativePolicy(params, env('workspace'))).toThrow('profile');
     for (const method of ['config/value/write', 'config/batchWrite', 'command/exec', 'unknown/future']) {
         expect(() => assertEvolvedCodexFrontendMethod(method, env('workspace'))).toThrow('profile');
     }
     expect(() => assertEvolvedCodexFrontendMethod('thread/settings/update', env('workspace'))).not.toThrow();
     expect(() => assertEvolvedCodexNativePolicy({ sandbox: 'workspace-write', approvalPolicy: 'on-request', config: { model_reasoning_effort: 'high', 'sandbox_workspace_write.writable_roots': [], 'sandbox_workspace_write.network_access': false } }, env('workspace'))).not.toThrow();
+});
+
+it('permits Internet in every profile without opening filesystem or approval permissions', () => {
+    for (const profile of ['restricted', 'workspace']) {
+        const managed = { ...env(profile), HAPI_EVOLVED_PROXY: '1' };
+        expect(() => assertEvolvedCodexNativePolicy({ sandboxPolicy: { type: 'readOnly', networkAccess: true }, approvalPolicy: 'never' }, managed)).not.toThrow();
+        expect(() => assertEvolvedCodexNativePolicy({ config: { 'sandbox_workspace_write.network_access': true } }, managed)).not.toThrow();
+        expect(() => assertEvolvedCodexNativePolicy({ sandboxPolicy: { type: 'readOnly', networkAccess: true } }, env(profile))).toThrow();
+        expect(() => assertEvolvedCodexNativePolicy({ config: { 'sandbox_workspace_write.network_access': true } }, env(profile))).toThrow();
+        for (const networkAccess of ['true', 1, null, {}]) {
+            expect(() => assertEvolvedCodexNativePolicy({ sandboxPolicy: { type: 'readOnly', networkAccess } }, managed)).toThrow();
+        }
+    }
+    expect(() => assertEvolvedCodexNativePolicy({ sandboxPolicy: { type: 'workspaceWrite', networkAccess: true } }, env('restricted'))).toThrow();
+    const policy = { type: 'workspaceWrite' as const, writableRoots: ['/project'], networkAccess: false, excludeTmpdirEnvVar: true, excludeSlashTmp: true };
+    for (const profile of ['restricted', 'workspace', 'extended']) {
+        const managed = { ...env(profile), HAPI_EVOLVED_PROXY: '1' };
+        expect(withEvolvedCodexNetworkAccess(policy, managed)).toEqual({ ...policy, networkAccess: true });
+        expect(evolvedCodexNetworkConfig(managed)).toEqual({ 'sandbox_workspace_write.network_access': true });
+    }
+    expect(withEvolvedCodexNetworkAccess(policy, {})).toBe(policy);
+    expect(evolvedCodexNetworkConfig({})).toEqual({});
+    expect(policy.networkAccess).toBe(false);
 });

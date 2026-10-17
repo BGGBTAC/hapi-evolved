@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { WebSocket, WebSocketServer } from 'ws';
-import { startCodexGateway, type Envelope } from './gateway';
+import { startCodexGateway, type Envelope, type GatewayHooks } from './gateway';
 
-async function fixture(after: (request: Envelope, response: Envelope, connection: string) => Promise<void>) {
+async function fixture(after: (request: Envelope, response: Envelope, connection: string) => Promise<void>, settingsNotification?: GatewayHooks['settingsNotification']) {
     const engine = new WebSocketServer({ port: 0, host: '127.0.0.1' });
     await new Promise<void>(resolve => engine.once('listening', resolve));
     const connections = new Map<WebSocket, Envelope[]>();
@@ -17,20 +17,42 @@ async function fixture(after: (request: Envelope, response: Envelope, connection
     const port = (engine.address() as { port: number }).port;
     const before = vi.fn(async (value: Envelope) => value);
     const gateway = await startCodexGateway({ upstream: `ws://127.0.0.1:${port}`, token: 'secret', hooks: {
-        before, after, control: async () => ({})
+        before, after, settingsNotification, control: async () => ({})
     } });
     const clients: WebSocket[] = [];
     const connect = async () => {
         const client = new WebSocket(gateway.endpoint, { headers: { Authorization: 'Bearer secret' } }); clients.push(client);
         await new Promise<void>((resolve, reject) => { client.once('open', resolve); client.once('error', reject); }); return client;
     };
-    return { gateway, connect, before, async close() {
+    return { gateway, connect, before, notify(message: Envelope) { for (const client of engine.clients) client.send(JSON.stringify(message)); }, async close() {
         for (const client of clients) client.terminate(); await gateway.close();
         for (const client of engine.clients) client.terminate();
         await new Promise<void>(resolve => engine.close(() => resolve()));
     } };
 }
 describe('native gateway barriers', () => {
+    it('observes native settings during a pending lifecycle without reordering forwarded messages', async () => {
+        let release!: () => void;
+        const barrier = new Promise<void>(resolve => { release = resolve; });
+        const after = vi.fn(async () => { await barrier; });
+        const observer = vi.fn(() => release());
+        const f = await fixture(after, observer);
+        try {
+            const client = await f.connect(), replies: Envelope[] = [];
+            client.on('message', raw => replies.push(JSON.parse(raw.toString()) as Envelope));
+            client.send(JSON.stringify({ id: 1, method: 'thread/start', params: 'ephemeral' }));
+            await vi.waitFor(() => expect(after).toHaveBeenCalledOnce());
+            expect(replies).toHaveLength(0);
+            f.notify({ method: 'turn/started', params: { threadId: 'ephemeral' } });
+            await new Promise(resolve => setTimeout(resolve, 20));
+            expect(observer).not.toHaveBeenCalled(); expect(replies).toHaveLength(0);
+            const params = { threadId: 'ephemeral', threadSettings: { sandboxPolicy: { type: 'readOnly', networkAccess: true } } };
+            f.notify({ method: 'thread/settings/updated', params });
+            await vi.waitFor(() => expect(replies).toHaveLength(3));
+            expect(observer).toHaveBeenCalledWith(params, (after.mock.calls as unknown as Array<[Envelope, Envelope, string]>)[0][2]);
+            expect(replies.map(reply => reply.method ?? reply.id)).toEqual([1, 'turn/started', 'thread/settings/updated']);
+        } finally { release(); await f.close(); }
+    });
     it('namespaces colliding native request IDs by connection and withholds replies until binding', async () => {
         let release!: () => void; const barrier = new Promise<void>(resolve => { release = resolve; });
         const after = vi.fn(async () => { await barrier; }); const f = await fixture(after);

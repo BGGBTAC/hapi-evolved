@@ -6,6 +6,7 @@ import { parseCodexCliOverrides, stripCodexCliOverrides } from '../utils/codexCl
 import { resolveCodexPermissionModeConfig } from '../utils/permissionModeConfig';
 import { getCodexSystemPrompt } from '../utils/systemPrompt';
 import type { CodexAppServerClient } from '../codexAppServerClient';
+import { evolvedCodexNetworkConfig } from '@/evolved/codexPolicy';
 
 export const SharedLaunchSchema = z.object({
     startedBy: z.enum(['runner', 'terminal']).optional(),
@@ -131,6 +132,7 @@ export function sharedLaunchConfig(options: SharedLaunchOptions, cwd: string): {
     }
     if (extraDirs.length) config['sandbox_workspace_write.writable_roots'] = extraDirs.map(path => resolve(directory, path));
     if (provider) config.model_provider = provider;
+    Object.assign(config, evolvedCodexNetworkConfig());
     const permission = options.permissionMode ? resolveCodexPermissionModeConfig(options.permissionMode) : undefined;
     if (permission) {
         // Explicit HAPI permission selection wins on every launch surface:

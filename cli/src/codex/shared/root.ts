@@ -1,4 +1,4 @@
-import { assertEvolvedCodexNativePolicy, assertEvolvedCodexPermission } from '@/evolved/codexPolicy';
+import { assertEvolvedCodexNativePolicy, assertEvolvedCodexPermission, evolvedCodexInternetEnabled, evolvedCodexNetworkConfig, withEvolvedCodexNetworkAccess } from '@/evolved/codexPolicy';
 import { withEvolvedOperatingContext } from '@/evolved/operatingContext';
 import { getRuntimeAgentConfigDescriptor } from '@hapi/protocol';
 import { join } from 'node:path';
@@ -16,6 +16,7 @@ import { CodexAppServerClient, isIndeterminateError } from '../codexAppServerCli
 import { buildHapiMcpBridge, type HapiMcpBridge } from '../utils/buildHapiMcpBridge';
 import { buildUserInputFromMessage } from '../utils/appServerConfig';
 import { resolveCodexPermissionModeConfig } from '../utils/permissionModeConfig';
+import type { SandboxPolicy } from '../appServerTypes';
 import { resolveCodexSlashCommand } from '../utils/slashCommands';
 import { parseReasoningEffortValue } from '../utils/reasoningEffort';
 import { SharedCodexPermissions } from './permissions';
@@ -189,7 +190,7 @@ export class SharedCodexRoot {
             developerInstructions: typeof params.developerInstructions === 'string'
                 ? withEvolvedOperatingContext(params.developerInstructions)
                 : getCodexSystemPrompt(), config: {
-            ...record(params.config), 'mcp_servers.hapi': this.bridge.mcpServers.hapi,
+            ...record(params.config), ...evolvedCodexNetworkConfig(), 'mcp_servers.hapi': this.bridge.mcpServers.hapi,
             'shell_environment_policy.set.HAPI_SESSION_ID': this.session.sessionId
         } };
     }
@@ -402,6 +403,7 @@ export class SharedCodexRoot {
                     const observedSettings = this.settingsRevision !== settingsRevision;
                     this.acceptSettings(response);
                     if (!observedSettings) this.acceptSettings(this.host.settingsFor(this.threadId) ?? {});
+                    await this.initialSettings({});
                     this.projection.reset(); await this.refresh(); this.queue.replay(); await this.refreshChildren(true);
                     return;
                 } catch (error) {
@@ -422,7 +424,7 @@ export class SharedCodexRoot {
         const config = SettingsSchema.parse(raw);
         assertEvolvedCodexPermission(config.permissionMode);
         if (config.permissionMode === 'safe-yolo') throw new Error('safe-yolo is not a native shared permission mode; choose default, read-only, or yolo');
-        if (Object.keys(config).length === 0) return { applied: this.settings };
+        if (Object.keys(config).length === 0 && !evolvedCodexInternetEnabled()) return { applied: this.settings };
         if (typeof config.modelReasoningEffort === 'string') config.modelReasoningEffort = parseReasoningEffortValue(config.modelReasoningEffort);
         if (config.modelReasoningEffort === null) {
             // Native public null means "leave effort alone", not reset. Resolve
@@ -438,12 +440,18 @@ export class SharedCodexRoot {
         }
         const revision = this.settingsRevision;
         const permission = config.permissionMode && resolveCodexPermissionModeConfig(config.permissionMode);
+        // The native thread/start enum cannot express read-only + network. Apply
+        // the full policy before activating input, retaining every filesystem field.
+        const currentSandbox = record(this.settingsNative.sandboxPolicy);
+        const inheritedNetwork = evolvedCodexInternetEnabled() && ['readOnly', 'workspaceWrite'].includes(String(currentSandbox.type))
+            ? withEvolvedCodexNetworkAccess(currentSandbox as SandboxPolicy) : undefined;
         const params = { threadId: this.threadId,
             ...(config.model ? { model: config.model } : {}),
             ...(config.personality ? { personality: config.personality } : {}),
             ...(config.modelReasoningEffort !== undefined ? { effort: config.modelReasoningEffort } : {}),
             ...(config.serviceTier !== undefined ? { serviceTier: config.serviceTier === 'fast' ? 'priority' : null } : {}),
             ...(permission ? { approvalPolicy: permission.approvalPolicy, approvalsReviewer: permission.approvalsReviewer ?? 'user', sandboxPolicy: permission.sandboxPolicy } : {}),
+            ...(!permission && inheritedNetwork ? { sandboxPolicy: inheritedNetwork } : {}),
             ...(config.collaborationMode ? { collaborationMode: { mode: config.collaborationMode, settings: {
                 model: config.model ?? this.settings.model, reasoning_effort: config.modelReasoningEffort ?? this.settings.modelReasoningEffort,
                 developer_instructions: null
@@ -473,7 +481,7 @@ export class SharedCodexRoot {
     async initialSettings(options: SharedLaunchOptions): Promise<void> {
         // Subscription-only resumes can restore native defaults. Reapply an
         // explicit launch permission before controls or restored input are ready.
-        if (options.permissionMode || options.collaborationMode) await this.applySettings({
+        if (options.permissionMode || options.collaborationMode || evolvedCodexInternetEnabled()) await this.applySettings({
             ...(options.permissionMode ? { permissionMode: options.permissionMode } : {}),
             ...(options.collaborationMode ? { collaborationMode: options.collaborationMode } : {})
         });

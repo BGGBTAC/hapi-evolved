@@ -236,7 +236,7 @@ export type UserInput =
 
 export type SandboxPolicy =
     | { type: 'dangerFullAccess' }
-    | { type: 'readOnly' }
+    | { type: 'readOnly'; networkAccess?: boolean }
     | { type: 'externalSandbox'; networkAccess?: 'restricted' | 'enabled' }
     | {
         type: 'workspaceWrite';
