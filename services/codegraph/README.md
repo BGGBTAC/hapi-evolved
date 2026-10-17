@@ -30,12 +30,19 @@ Konfiguration:
 
 | Variable | Bedeutung |
 |---|---|
-| `EVOLVED_SERVICE_TOKEN_FILE` | Datei mit mindestens 32 Zeichen; alternativ `EVOLVED_SERVICE_TOKEN` |
+| `EVOLVED_SERVICE_TOKEN_FILE` | Absoluter Pfad zu einer regulären Datei mit höchstens 4096 Bytes und einem Token von mindestens 32 Zeichen; alternativ `EVOLVED_SERVICE_TOKEN` |
 | `EVOLVED_CODE_ROOTS` | JSON-Liste erlaubter absoluter Workspace-Verzeichnisse; Standard `[]` verweigert alles |
 | `EVOLVED_CODEGRAPH_HOST` | Standard `127.0.0.1`; im privaten Compose-Netz `0.0.0.0` |
-| `EVOLVED_CODEGRAPH_STATE_DIR` | Privates beschreibbares Datenverzeichnis außerhalb aller Workspace-Roots; Standard `/data` |
+| `EVOLVED_CODEGRAPH_STATE_DIR` | Absoluter Pfad zu einem privaten beschreibbaren Datenverzeichnis, das weder innerhalb eines Workspace-Roots liegt noch einen enthält; Standard `/data` |
 | `EVOLVED_CODEGRAPH_PORT` | Standard `8011` |
 | `EVOLVED_CODEGRAPH_MAX_PROJECTS` | Maximale gleichzeitig geladene Projekte; Standard `4` |
+
+Zustands- und Tokenpfade werden vor dem Zugriff kanonisiert; relative Pfade,
+`.`-/`..`-Komponenten, Backslashes und unauflösbare Symlinks werden abgewiesen.
+Bestehende konfigurierte Symlinks werden auf ihr tatsächliches Ziel aufgelöst.
+Die privaten Unterverzeichnisse `projects` und `deleted` müssen innerhalb des
+kanonischen Zustandsverzeichnisses bleiben. Diese Prüfungen erfolgen vor dem Anlegen
+von Verzeichnissen, damit eine ungültige Konfiguration keine Quelldaten verändert.
 
 Pro Projekt/Worktree entsteht unter `EVOLVED_CODEGRAPH_STATE_DIR` (Standard `/data`)
 `projects/<Projekt-ID>/workspace/` als privater Quellenspiegel mit eigenem SQLite-Index.

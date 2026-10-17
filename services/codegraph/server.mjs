@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
-import { readFileSync } from 'node:fs';
+import { constants, openSync, closeSync, fstatSync, lstatSync, readSync, realpathSync } from 'node:fs';
 import { mkdir, realpath, writeFile, access, rm } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { timingSafeEqual } from 'node:crypto';
 import { Worker } from 'node:worker_threads';
@@ -12,15 +12,70 @@ import { reclaimOwnedLock, WorkerLifecycle } from './lifecycle.mjs';
 Object.assign(process.env, { DO_NOT_TRACK: '1', CODEGRAPH_TELEMETRY: '0', CODEGRAPH_NO_UPDATE_CHECK: '1', CODEGRAPH_NO_DOWNLOAD: '1',
     CODEGRAPH_PARSE_WORKERS: '1', CODEGRAPH_RESOLVE_WORKERS: '0', CODEGRAPH_NO_FAST_INIT: '1' });
 
+function containedPath(directory, name) {
+    const path = resolve(directory, name);
+    if (path === directory || !path.startsWith(join(directory, sep))) throw new Error('Configured path escapes its directory');
+    return path;
+}
+
+/** Operator configuration only; HTTP input cannot replace the state or credential directory. */
+function canonicalConfigurationPath(value) {
+    if (typeof value !== 'string' || !isAbsolute(value) || value.includes('\0') || value.includes('\\')
+        || value.split('/').some(part => part === '.' || part === '..')) throw new Error('Configured paths must be absolute without traversal components');
+    let existing = resolve(value);
+    if (existing === sep) throw new Error('Configured path must not be the filesystem root');
+    const missing = [];
+    let canonical;
+    for (;;) {
+        try { canonical = realpathSync(existing); break; }
+        catch (error) {
+            if (error.code !== 'ENOENT' || dirname(existing) === existing) throw error;
+            if (lstatSync(containedPath(dirname(existing), basename(existing)), { throwIfNoEntry: false })?.isSymbolicLink()) {
+                throw new Error('Configured paths must not contain unresolved symbolic links');
+            }
+            missing.unshift(basename(existing)); existing = dirname(existing);
+        }
+    }
+    for (const part of missing) canonical = containedPath(canonical, part);
+    // The existing ancestor may itself be a configured symlink. Bind subsequent
+    // accesses to its canonical parent, retaining custom absolute operator paths.
+    return containedPath(dirname(canonical), basename(canonical));
+}
+
+export function readServiceTokenFile(configuredPath) {
+    const path = canonicalConfigurationPath(configuredPath);
+    const descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try {
+        const info = fstatSync(descriptor);
+        if (!info.isFile() || info.size > 4096) throw new Error('Service token file must be a regular file of at most 4096 bytes');
+        const buffer = Buffer.alloc(4097);
+        let size = 0;
+        while (size < buffer.length) {
+            const bytes = readSync(descriptor, buffer, size, buffer.length - size, size);
+            if (!bytes) break;
+            size += bytes;
+        }
+        if (size > 4096) throw new Error('Service token file exceeds 4096 bytes');
+        return buffer.subarray(0, size).toString('utf8').trim();
+    } finally { closeSync(descriptor); }
+}
+
 export async function createCodegraphService({ token, roots, stateRoot, maxWorkers = 4, createWorker, log, lifecycle = {} }) {
     if (!token || token.length < 32) throw new Error('EVOLVED_SERVICE_TOKEN must contain at least 32 characters');
     if (!Array.isArray(roots) || roots.some(root => typeof root !== 'string')) throw new Error('EVOLVED_CODE_ROOTS must be a JSON string array');
-    await mkdir(join(stateRoot, 'projects'), { recursive: true, mode: 0o700 });
-    await mkdir(join(stateRoot, 'deleted'), { recursive: true, mode: 0o700 });
-    const canonicalState = await realpath(stateRoot);
+    const canonicalState = canonicalConfigurationPath(stateRoot);
     for (const root of roots) {
-        if (within(await realpath(root), canonicalState)) throw new Error('Codegraph state must be outside source workspaces');
+        const canonicalSource = await realpath(root);
+        if (within(canonicalSource, canonicalState) || within(canonicalState, canonicalSource)) {
+            throw new Error('Codegraph state must be separate from source workspaces');
+        }
     }
+    // Reject overlap and escaped private subdirectories before creating anything.
+    const directories = ['projects', 'deleted'].map(name => canonicalConfigurationPath(containedPath(canonicalState, name)));
+    for (const directory of directories) {
+        if (!directory.startsWith(join(canonicalState, sep))) throw new Error('Codegraph private directories must remain inside its state directory');
+    }
+    for (const directory of directories) await mkdir(directory, { recursive: true, mode: 0o700 });
     const workers = new WorkerLifecycle({ maxWorkers, log, ...lifecycle,
         createWorker: ({ projectId, root, generation }) => {
             const indexRoot = join(canonicalState, 'projects', projectId, 'workspace'), codegraphDir = `.codegraph-evolved-${projectId}`;
@@ -82,7 +137,7 @@ export async function createCodegraphService({ token, roots, stateRoot, maxWorke
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
-    const token = process.env.EVOLVED_SERVICE_TOKEN_FILE ? readFileSync(process.env.EVOLVED_SERVICE_TOKEN_FILE, 'utf8').trim() : process.env.EVOLVED_SERVICE_TOKEN;
+    const token = process.env.EVOLVED_SERVICE_TOKEN_FILE ? readServiceTokenFile(process.env.EVOLVED_SERVICE_TOKEN_FILE) : process.env.EVOLVED_SERVICE_TOKEN;
     const service = await createCodegraphService({ token, roots: JSON.parse(process.env.EVOLVED_CODE_ROOTS ?? '[]'),
         stateRoot: process.env.EVOLVED_CODEGRAPH_STATE_DIR ?? '/data', maxWorkers: Number(process.env.EVOLVED_CODEGRAPH_MAX_PROJECTS ?? 4) });
     service.server.listen(Number(process.env.EVOLVED_CODEGRAPH_PORT ?? 8011), process.env.EVOLVED_CODEGRAPH_HOST ?? '127.0.0.1');

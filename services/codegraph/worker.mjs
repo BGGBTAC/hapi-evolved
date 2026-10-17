@@ -1,5 +1,6 @@
-import { mkdir, writeFile, rename, rm, readdir, lstat, readFile } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { mkdir, writeFile, rename, rm, readdir, open, realpath } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { join, dirname, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { parentPort, workerData } from 'node:worker_threads';
 import codegraphPackage from '@colbymchenry/codegraph';
@@ -23,7 +24,7 @@ let progress = { current: 0, total: 0 };
 let lastPublished = 0;
 let watchTimer;
 const indexDirectory = process.env.CODEGRAPH_DIR ?? '.codegraph';
-if (!/^\.codegraph(?:-[A-Za-z0-9_-]+)?$/.test(indexDirectory)) throw new Error('Invalid private index directory');
+if (!/^\.codegraph(?:-[A-Za-z0-9_-]+)?$/.test(indexDirectory) || indexDirectory.trim() !== indexDirectory) throw new Error('Invalid private index directory');
 
 function status() {
     return { available: state === 'ready', state, version: '1.6.0', error, code,
@@ -64,18 +65,37 @@ function ready() {
 async function checkIndexLock() {
     // clear() does not acquire the SDK lock. Check before any destructive rebuild;
     // a terminated thread's PID can still belong to the live HTTP process.
-    const path = join(workerData.indexRoot, indexDirectory, 'codegraph.lock');
-    let info;
-    try { info = await lstat(path); } catch (caught) { if (caught.code === 'ENOENT') return; throw caught; }
     const blocked = () => { const caught = new AdapterError('Code index is locked; retry indexing shortly', 503); caught.code = 'codegraph_index_locked'; throw caught; };
-    if (!info.isFile() || info.isSymbolicLink() || info.size > 32) blocked();
-    const owner = (await readFile(path, 'utf8')).trim();
-    if (!/^[1-9][0-9]*$/.test(owner)) blocked();
-    // Match the pinned SDK's two-minute stale-lock contract. Do not delete locks.
-    if (Date.now() - info.mtimeMs >= 120_000) return;
-    try { process.kill(Number(owner), 0); }
-    catch (caught) { if (caught.code === 'ESRCH') return; blocked(); }
-    blocked();
+    const root = resolve(workerData.indexRoot);
+    const path = resolve(root, indexDirectory, 'codegraph.lock');
+    if (!path.startsWith(root + sep)) blocked();
+    let handle;
+    try { handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); }
+    catch (caught) { if (caught.code === 'ENOENT') return; blocked(); }
+    try {
+        // Validate and read the same descriptor: replaced links/FIFOs must never
+        // redirect a read or block the worker. The bounded read also handles a
+        // regular file growing after fstat without allocating arbitrary memory.
+        const info = await handle.stat();
+        if (!info.isFile() || info.nlink !== 1 || info.size > 32) blocked();
+        const opened = await realpath(process.platform === 'linux' ? `/proc/self/fd/${handle.fd}` : path);
+        if (opened !== path) blocked();
+        const buffer = Buffer.alloc(33);
+        let total = 0;
+        while (total < buffer.length) {
+            const { bytesRead } = await handle.read(buffer, total, buffer.length - total, total);
+            if (!bytesRead) break;
+            total += bytesRead;
+        }
+        if (total > 32) blocked();
+        const owner = buffer.subarray(0, total).toString('utf8').trim();
+        if (!/^[1-9][0-9]*$/.test(owner) || !Number.isSafeInteger(Number(owner))) blocked();
+        // Match the pinned SDK's two-minute stale-lock contract. Do not delete locks.
+        if (Date.now() - info.mtimeMs >= 120_000) return;
+        try { process.kill(Number(owner), 0); }
+        catch (caught) { if (caught.code === 'ESRCH') return; blocked(); }
+        blocked();
+    } finally { await handle.close(); }
 }
 
 async function scrubMirror(allowed) {

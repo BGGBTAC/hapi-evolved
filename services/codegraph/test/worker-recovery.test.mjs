@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile, link } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -147,6 +148,45 @@ test('more than 100 changed paths use bulk indexing and remove deleted symbols',
         assert.ok((await client.call('search', { q: 'updatedBulkSymbol99' })).nodes.some(node => node.name === 'updatedBulkSymbol99'));
         assert.equal((await client.call('search', { q: 'originalBulkSymbol' })).nodes.length, 0);
         await assert.rejects(readFile(join(indexRoot, 'example-100.ts')), { code: 'ENOENT' });
+    } finally {
+        if (client) await client.worker.terminate();
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
+test('unsafe lock entries fail promptly without touching an existing index or their targets', { timeout: 45_000 }, async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'evolved-codegraph-unsafe-lock-'));
+    const root = join(directory, 'source');
+    const indexRoot = join(directory, 'mirror');
+    const lockPath = join(indexRoot, dataDirectory, 'codegraph.lock');
+    const external = join(directory, 'external');
+    let client;
+    try {
+        await mkdir(root); await mkdir(indexRoot);
+        const content = 'export const preservedLockSymbol = 1;\n';
+        await writeFile(join(root, 'example.ts'), content);
+        await writeFile(join(indexRoot, 'example.ts'), content);
+        await seedIndex(indexRoot);
+        const before = await databaseDigest(indexRoot);
+        await writeFile(external, 'synthetic-sensitive-content');
+        const fixtures = [
+            () => symlink(external, lockPath),
+            () => link(external, lockPath),
+            () => writeFile(lockPath, '9'.repeat(4096)),
+            () => mkdir(lockPath),
+            ...(process.platform === 'linux' ? [() => execFileSync('mkfifo', [lockPath])] : []),
+        ];
+        for (const fixture of fixtures) {
+            await fixture();
+            client = startWorker(root, indexRoot);
+            const blocked = await waitForState(client, 'error');
+            assert.equal(blocked.code, 'codegraph_index_locked');
+            assert.equal(await databaseDigest(indexRoot), before);
+            assert.equal(await readFile(external, 'utf8'), 'synthetic-sensitive-content');
+            assert.equal(JSON.stringify(blocked).includes('synthetic-sensitive-content'), false);
+            await client.worker.terminate(); client = undefined;
+            await rm(lockPath, { recursive: true, force: true });
+        }
     } finally {
         if (client) await client.worker.terminate();
         await rm(directory, { recursive: true, force: true });
