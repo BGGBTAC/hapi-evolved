@@ -385,7 +385,9 @@ export function odooTestArgv(paths: Layout, major: 19 | 20, repository: string, 
     const odoo = paths.odoo(major)
     const addonsPath = [...addons.map(path => path === '.' ? repository : join(repository, path)), join(odoo.source, 'addons')].join(',')
     return [join(odoo.venv, 'bin/python'), join(odoo.source, 'odoo-bin'), `--addons-path=${addonsPath}`, `--data-dir=${odoo.data}`,
-        `--db_host=${paths.pg.run}`, `--db_port=${port}`, '--db_user=odoo', '-d', database, '-i', modules.join(','),
+        // -i installs modules still 'uninstalled', -u updates those already 'installed' (odoo/modules/loading.py,
+        // 19.0 and 20.0): a repeat run on the same hapi_test_ database therefore loads and tests them again.
+        `--db_host=${paths.pg.run}`, `--db_port=${port}`, '--db_user=odoo', '-d', database, '-i', modules.join(','), '-u', modules.join(','),
         '--test-tags', modules.map(module => `/${module}`).join(','), '--stop-after-init', '--log-level=test', '--max-cron-threads=0', `--http-port=${httpPort}`]
 }
 
@@ -410,12 +412,20 @@ async function odooTest(runtime: Runtime, paths: Layout, flags: Flags) {
     if (!runtime.dryRun) {
         const text = readRegularFile(log, 64 * 1024 * 1024) ?? ''
         const summary = { exitCode: code, database, modules, major, failedLines: (text.match(/^.* (?:ERROR|CRITICAL) .*$/gm) ?? []).length,
-            result: text.match(/[0-9]+ failed, [0-9]+ error\(s\) of [0-9]+ tests[^\n]*/g)?.slice(-1)[0] ?? null }
+            result: text.match(/[0-9]+ failed, [0-9]+ error\(s\) of [0-9]+ tests[^\n]*/g)?.slice(-1)[0] ?? null,
+            testsRun: odooTestCount(text) }
         writeManagedFile(paths, join(artifacts, 'summary.json'), JSON.stringify(summary, null, 2) + '\n')
         runtime.out(`Ergebnis: ${summary.result ?? 'keine Testzusammenfassung im Log'}; Exit-Code ${code}.`)
+        if (summary.testsRun === 0) runtime.out(`Hinweis: Es wurden keine Tests ausgeführt (0 Tests). Exit 0 belegt hier keine Testabdeckung; prüfen, ob ${modules.join(', ')} Tests enthält und die Testtags passen.`)
     }
     await writeChecksums(runtime, artifacts)
     return code
+}
+
+/** Number of tests from Odoo's final "N failed, M error(s) of T tests" line; null if absent. */
+export function odooTestCount(log: string): number | null {
+    const match = [...log.matchAll(/[0-9]+ failed, [0-9]+ error\(s\) of ([0-9]+) tests/g)].at(-1)
+    return match ? Number(match[1]) : null
 }
 
 async function odooUpgradeDryRun(runtime: Runtime, paths: Layout, flags: Flags) {

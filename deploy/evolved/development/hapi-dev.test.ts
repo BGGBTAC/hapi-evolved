@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { resolveSwiftBinary } from '../../../cli/src/evolved/development/swiftToolchain'
-import { acceptableSocket, ANDROID_CMDLINE_TOOLS, apkOutputDirectories, defaultRuntime, javaHome, openManagedAppend, systemTool, upgradeDryRunOutcome, gradleTask, insideProject, layout, main, managedDirectory, odooTestArgv, parse, postgresConfig, postgresEnvironment, postgresServerOptions, projectRoot, swiftPlatform, swiftUrls, UsageError, writeManagedFile, type Runtime, type Step } from './hapi-dev'
+import { acceptableSocket, odooTestCount, ANDROID_CMDLINE_TOOLS, apkOutputDirectories, defaultRuntime, javaHome, openManagedAppend, systemTool, upgradeDryRunOutcome, gradleTask, insideProject, layout, main, managedDirectory, odooTestArgv, parse, postgresConfig, postgresEnvironment, postgresServerOptions, projectRoot, swiftPlatform, swiftUrls, UsageError, writeManagedFile, type Runtime, type Step } from './hapi-dev'
 
 const directories: string[] = []
 afterEach(() => { for (const path of directories.splice(0)) rmSync(path, { recursive: true, force: true }) })
@@ -64,7 +64,7 @@ describe('hapi-dev Odoo and PostgreSQL plans', () => {
         expect(odooTestArgv(paths, 20, repository, ['addons', '.'], ['sale_ext', 'stock_ext'], 'hapi_test_dev', 5432)).toEqual([
             `${root}/.hapi/.cache/toolchain/odoo/20/venv/bin/python`, `${root}/.hapi/.cache/toolchain/odoo/20/src/odoo-bin`,
             `--addons-path=${repository}/addons,${repository},${root}/.hapi/.cache/toolchain/odoo/20/src/addons`, `--data-dir=${root}/.hapi/.cache/toolchain/odoo/20/data`,
-            `--db_host=${root}/.hapi/.cache/toolchain/postgresql/run`, '--db_port=5432', '--db_user=odoo', '-d', 'hapi_test_dev', '-i', 'sale_ext,stock_ext',
+            `--db_host=${root}/.hapi/.cache/toolchain/postgresql/run`, '--db_port=5432', '--db_user=odoo', '-d', 'hapi_test_dev', '-i', 'sale_ext,stock_ext', '-u', 'sale_ext,stock_ext',
             '--test-tags', '/sale_ext,/stock_ext', '--stop-after-init', '--log-level=test', '--max-cron-threads=0', '--http-port=8069',
         ])
         const fake = fakeRuntime()
@@ -491,7 +491,7 @@ describe('hapi-dev PostgreSQL socket leaf', () => {
         const linked = project(); symlinkSync(outside, linked.socket)
         const fake = fakeRuntime()
         await expect(main(odooTest(linked.root), fake.factory)).rejects.toThrow(/kein Unix-Socket dieses Benutzers/)
-        const plain = project(); writeFileSync(plain.socket, '')
+        const plain = project(); writeFileSync(plain.socket, '', { flag: 'wx', mode: 0o600 })
         await expect(main(odooTest(plain.root), fake.factory)).rejects.toThrow(/kein Unix-Socket/)
         if (existsSync('/usr/lib/postgresql')) await expect(main(['--project-root', linked.root, 'db', 'list'], fake.factory)).rejects.toThrow(/kein Unix-Socket/)
         expect(fake.steps).toEqual([])
@@ -524,6 +524,44 @@ describe('hapi-dev PostgreSQL socket leaf', () => {
             const fake = fakeRuntime()
             expect(await main(odooTest(root), fake.factory)).toBe(0)
             expect(fake.steps[0].argv).toContain(`--db_host=${paths.pg.run}`)
+        } finally { await new Promise(resolve => server.close(resolve)) }
+    })
+})
+
+describe('hapi-dev Odoo repeat test runs', () => {
+    test('install and update the same modules so a repeat run on an initialised hapi_test_ DB retests them', () => {
+        const root = temp(), repository = join(root, 'repositories/acme/erp')
+        const argv = odooTestArgv(layout(root), 20, repository, ['.'], ['mod_a', 'mod_b'], 'hapi_test_dev', 5432)
+        const value = (flag: string) => argv[argv.indexOf(flag) + 1]
+        expect(value('-i')).toBe('mod_a,mod_b')
+        expect(value('-u')).toBe('mod_a,mod_b')
+        expect(value('--test-tags')).toBe('/mod_a,/mod_b')
+        expect(value('-d')).toBe('hapi_test_dev')
+        expect(argv).toContain(`--db_host=${layout(root).pg.run}`)
+        // Identical argv for the first and every later run: no state-dependent switch between install and update.
+        expect(odooTestArgv(layout(root), 20, repository, ['.'], ['mod_a', 'mod_b'], 'hapi_test_dev', 5432)).toEqual(argv)
+    })
+
+    test('test count is read from the final summary; 0 tests is reported as no coverage', async () => {
+        expect(odooTestCount("odoo.tests.result: 0 failed, 0 error(s) of 0 tests when loading database 'hapi_test_x'")).toBe(0)
+        expect(odooTestCount('0 failed, 0 error(s) of 0 tests\n... 1 failed, 0 error(s) of 12 tests when loading')).toBe(12)
+        expect(odooTestCount('no summary')).toBeNull()
+        const fake = fakeRuntime({ log: "WARNING odoo.tests.result: 0 failed, 0 error(s) of 0 tests when loading database 'hapi_test_dev'\n" })
+        const factory = (dryRun: boolean) => {
+            const runtime = fake.factory(dryRun)
+            return { ...runtime, run: async (step: Step) => { if (step.log) writeFileSync(step.log, "WARNING odoo.tests.result: 0 failed, 0 error(s) of 0 tests when loading database 'hapi_test_dev'\n"); fake.steps.push(step); return 0 } }
+        }
+        const root = temp(), paths = layout(root)
+        mkdirSync(join(root, 'repo'), { recursive: true })
+        const server = (await import('node:net')).createServer()
+        mkdirSync(paths.pg.run, { recursive: true })
+        const listening = await new Promise<boolean>(resolve => { server.once('error', () => resolve(false)); server.listen(join(paths.pg.run, '.s.PGSQL.5432'), () => resolve(true)) })
+        if (!listening) return // Unix socket bind forbidden in this sandbox; the pure counter checks above still run.
+        try {
+            expect(await main(['--project-root', root, 'odoo', 'test', '--major', '19', '--repository', 'repo', '--modules', 'mod_a'], factory)).toBe(0)
+            expect(fake.lines.join('\n')).toMatch(/keine Tests ausgeführt \(0 Tests\)/)
+            const base = join(paths.artifacts, 'odoo'), run = readdirSync(base)[0]
+            expect(JSON.parse(readFileSync(join(base, run, 'summary.json'), 'utf8')).testsRun).toBe(0)
         } finally { await new Promise(resolve => server.close(resolve)) }
     })
 })

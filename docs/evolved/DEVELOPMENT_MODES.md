@@ -184,6 +184,10 @@ hapi-dev odoo upgrade-dry-run --repository repositories/acme/erp \
 hapi-dev postgres stop
 ```
 
+`odoo test` übergibt die Module mit `-i` und `-u`: neue Module werden installiert, bereits installierte
+aktualisiert, sodass auch ein wiederholter Lauf auf derselben Datenbank die Tests erneut ausführt. Meldet
+Odoo 0 Tests, weist der Helper ausdrücklich darauf hin (`summary.json`: `testsRun`).
+
 Tests laufen gegen die Wegwerf-Datenbank `hapi_test_<slug>` im Projekt-Cluster
 (Unix-Socket `.hapi/.cache/toolchain/postgresql/run` (bei zu langem Projektpfad ein privater Ordner `/tmp/hapi-pg-…` im Runner), `fsync` aus – nur für Testdaten). Log und
 `summary.json` liegen unter `.hapi/.cache/artifacts/odoo/<zeit>/`. Eine Datenbank wird nur
