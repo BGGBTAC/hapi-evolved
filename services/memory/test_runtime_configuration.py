@@ -466,6 +466,100 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
             await resources.aclose()
         self.assertTrue(all(client.is_closed for client in resources.clients))
 
+    async def test_role_timeouts_reach_the_real_prepaid_http_transport(self):
+        from test_providers import mixed_config
+        supplied = browser_config(maxOutputTokens=16384)
+        supplied["reranker"] = {**supplied["llm"]}
+        for index, config in enumerate((provider_config(supplied), provider_config(mixed_config()))):
+            operation = "timeouts-" + str(index)
+            self.app.ledger.begin(operation, "project", 0, "synthetic", 20000000)
+            with patch("graphiti_core.driver.neo4j_driver.Neo4jDriver.build_indices_and_constraints", AsyncMock()):
+                graph, resources = await self.app.graph_client(operation, config)
+            captured = []
+            def handle(request):
+                captured.append(request.extensions["timeout"])
+                return httpx.Response(400, json={"error": "synthetic"})
+            try:
+                for client, role in zip(resources.clients, (config.llm, config.embedding, config.reranker)):
+                    await client._transport.inner.aclose()
+                    client._transport.inner = httpx.MockTransport(handle)
+                    expected = {"connect": 40, "read": 600 if role.role == "llm" or (role.role == "reranker" and role.provider == "openai") else 40, "write": 40, "pool": 40}
+                    self.assertEqual(client.timeout.as_dict(), expected)
+                    body = {"model": role.model}
+                    if role.role == "embedding":
+                        path = "embeddings"
+                        body.update(input=["synthetic"])
+                        if role.provider == "voyage":
+                            body.update(output_dimension=role.dimensions, output_dtype="float", truncation=False)
+                    elif role.provider == "voyage":
+                        path = "rerank"
+                        body.update(query="q", documents=["d"], truncation=False, return_documents=False)
+                    elif role.provider == "anthropic":
+                        path = "messages"
+                        body.update(system="Extract", messages=[{"role": "user", "content": "synthetic"}], max_tokens=role.max_output_tokens,
+                            tools=[{"name": "graphiti_output", "description": "Schema", "input_schema": {"type": "object"}}],
+                            tool_choice={"type": "auto", "disable_parallel_tool_use": True})
+                    else:
+                        path = "responses"
+                        body.update(input="synthetic", max_output_tokens=role.max_output_tokens)
+                    self.assertEqual((await client.post(path, json=body)).status_code, 400)
+                    self.assertEqual(captured[-1], expected)
+                self.assertEqual(len(captured), 3)
+                if config.llm.provider == "openai":
+                    self.assertEqual(graph.llm_client.client.max_retries, 0)
+                    self.assertEqual(graph.cross_encoder.client.max_retries, 0)
+            finally:
+                await resources.aclose()
+            self.assertTrue(all(client.is_closed for client in resources.clients))
+
+    async def test_prepaid_high_limit_timeout_and_cancellation_keep_receipts_and_close_resources(self):
+        from graphiti_core.prompts.models import Message
+        from test_providers import Extraction, mixed_config
+        original = self.app.graph_client
+        for index, error in enumerate((httpx.ReadTimeout("private-upstream-diagnostic"), asyncio.CancelledError())):
+            supplied = mixed_config()
+            supplied["llm"].update(maxOutputTokens=16384, inputUsdPerMTok="4", outputUsdPerMTok="20")
+            payload = self.operation(operationId="interrupted-" + str(index), budgetMicros=20000000, providerConfig=supplied)
+            created, calls, prepaid = [], [], []
+            async def create(operation, config):
+                with patch("graphiti_core.driver.neo4j_driver.Neo4jDriver.build_indices_and_constraints", AsyncMock()):
+                    graph, resources = await original(operation, config)
+                created.append(resources)
+                def handle(request):
+                    calls.append(request)
+                    self.assertEqual(request.extensions["timeout"], {"connect": 40, "read": 600, "write": 40, "pool": 40})
+                    prepaid.append(self.app.ledger.spent(operation))
+                    raise error
+                for client in resources.clients:
+                    await client._transport.inner.aclose()
+                    client._transport.inner = httpx.MockTransport(handle)
+                async def extract(**_):
+                    await graph.llm_client.generate_response([Message(role="system", content="Extract"), Message(role="user", content="Synthetic")], Extraction)
+                    return SimpleNamespace(edges=[])
+                graph.build_indices_and_constraints = AsyncMock()
+                graph.search_ = extract
+                return graph, resources
+            with patch.object(self.app, "graph_client", AsyncMock(side_effect=create)) as factory:
+                if isinstance(error, asyncio.CancelledError):
+                    request = SimpleNamespace(json=AsyncMock(return_value=json.loads(json.dumps(payload))), state=SimpleNamespace())
+                    with self.assertRaises(asyncio.CancelledError):
+                        await self.app.execute(request, "search")
+                else:
+                    result = await self.client.post("/search", json=payload)
+                    self.assertEqual(result.status_code, 422)
+                    self.assertEqual(result.json()["errorCode"], "graph_operation_failed")
+                    self.assertNotIn("private-upstream-diagnostic", result.text)
+                row = self.app.ledger.db.execute("SELECT status,spent,result FROM operations WHERE id=?", (payload["operationId"],)).fetchone()
+                self.assertEqual(row["status"], "running" if isinstance(error, asyncio.CancelledError) else "failed")
+                self.assertEqual(row["spent"], prepaid[0])
+                self.assertGreater(row["spent"], 16384 * 20)
+                self.assertTrue(all(client.is_closed for resources in created for client in resources.clients))
+                replay = await self.client.post("/search", json=payload)
+                self.assertEqual(replay.status_code, 409)
+                self.assertEqual(replay.json()["spentMicros"], prepaid[0])
+                factory.assert_awaited_once()
+                self.assertEqual(len(calls), 1)
+
     async def test_partial_graph_construction_closes_every_created_resource_exactly_once(self):
         from test_providers import mixed_config
         original = httpx.AsyncClient

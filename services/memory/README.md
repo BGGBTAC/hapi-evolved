@@ -86,6 +86,17 @@ vor jedem Aufruf vollständig im vorhandenen Auftragsbudget reserviert; reichen 
 Mittel nicht, wird kein Anbieteraufruf gesendet. Monats-/Auftragsbudgets werden nicht
 erhöht und fehlgeschlagene Aufträge nicht automatisch wiederholt.
 
+Sprachmodellaufrufe einschließlich des OpenAI-Rerankers erlauben bis zu `600`
+Sekunden Lesewartezeit. Verbindungsaufbau, Poolwartezeit und Schreiben bleiben auf
+`40` Sekunden begrenzt; Embeddings und Voyage-Reranking behalten auch beim Lesen
+`40` Sekunden. Das gilt ebenfalls für den bisherigen OpenAI-Betreiberpfad.
+Zusätzlich gilt pro Anbieteranfrage eine feste Gesamtfrist von `600` Sekunden,
+damit auch kontinuierlich eintreffende Antwortteile die Wartezeit nicht unbegrenzt verlängern.
+Ein Timeout lässt die konservative Reservierung bestehen und führt keinen neuen
+Anbieteraufruf aus. Der Hub kann seinen kürzeren HTTP-Aufruf beenden, während der
+bereits angenommene Backendauftrag weiterläuft; Folgeabfragen verwenden dieselbe
+Operations-ID und den vorhandenen Beleg.
+
 Erreichbarkeit des Backends bestätigt noch keine erfolgreiche Indexierung. Bei
 fehlgeschlagenen Operationen enthalten die internen Belege einen festen `errorCode`
 und die Verarbeitungsphase `stage`, bei abgelehnten Claude-Anfragen zusätzlich den

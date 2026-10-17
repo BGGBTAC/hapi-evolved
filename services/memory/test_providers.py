@@ -1,5 +1,6 @@
 """Real Graphiti interfaces over mocked, budgeted provider HTTP; no live API calls."""
 import json
+import asyncio
 import traceback
 import unittest
 from unittest.mock import patch
@@ -110,6 +111,33 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
                 await llm.generate_response(messages, Extraction, max_tokens=100000)
             self.assertEqual(len(calls), 1)
             self.assertEqual(self.ledger.spent("op"), 0)
+
+    async def test_total_deadline_stops_continuous_response_chunks_and_closes_without_refunding(self):
+        class SlowResponse(httpx.AsyncByteStream):
+            closed = 0
+            async def __aiter__(self):
+                yield b'{'
+                while True:
+                    await asyncio.sleep(0.005)
+                    yield b' '
+            async def aclose(self):
+                self.closed += 1
+        stream, calls, prepaid = SlowResponse(), [], []
+        supplied = mixed_config()
+        supplied["llm"]["maxOutputTokens"] = 16384
+        role = provider_config(supplied).llm
+        def handle(request):
+            calls.append(request)
+            prepaid.append(self.ledger.spent("op"))
+            return httpx.Response(200, stream=stream)
+        http = await self.client(role, handle)
+        llm = AnthropicSchemaClient(LLMConfig(model=role.model, max_tokens=16384), http)
+        with patch("transport.PROVIDER_REQUEST_TIMEOUT_SECONDS", 0.03), self.assertRaises(TimeoutError):
+            await asyncio.wait_for(llm.generate_response([Message(role="system", content="Extract"), Message(role="user", content="Synthetic")], Extraction), 1)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(stream.closed, 1)
+        self.assertGreater(prepaid[0], 16384 * 2)
+        self.assertEqual(self.ledger.spent("op"), prepaid[0])
 
     async def test_auto_tool_choice_supports_nonempty_real_graphiti_schema_and_ignores_companion_blocks(self):
         from graphiti_core.prompts.extract_nodes import ExtractedEntities

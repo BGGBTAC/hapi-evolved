@@ -233,6 +233,47 @@ describe('Memory and codegraph authorization', () => {
         expect(service.ledger.budget(project.id).reservedMicros).toBe(20)
         expect(service.ledger.search([project.id], 'ledger')).toHaveLength(1)
     })
+    test('a timed-out index request completes from the same receipt after cost reconciliation', async () => {
+        const receipts = new Map<string, { projectId: string; spentMicros: number; ok: boolean }>()
+        const ingests: Record<string, unknown>[] = []
+        let providerCalls = 0
+        const { service, store, project } = setup({ available: async () => true, request: async (path, input) => {
+            const operationId = String(input.operationId)
+            if (path === '/receipt') {
+                const receipt = receipts.get(operationId)
+                expect(receipt).toBeDefined()
+                return { projectId: receipt!.projectId, final: true, spentMicros: receipt!.spentMicros }
+            }
+            expect(path).toBe('/ingest')
+            ingests.push({ ...input })
+            const existing = receipts.get(operationId)
+            if (existing) return existing
+            providerCalls++
+            receipts.set(operationId, { projectId: String(input.projectId), spentMicros: 7, ok: true })
+            // The backend finishes after the Hub's connection has timed out.
+            // Its durable receipt survives; another HTTP request must replay it.
+            throw new DOMException('Synthetic response timeout', 'TimeoutError')
+        } })
+        service.ledger.configure(project.id, { enabled: true, cloudAllowed: true, monthlyBudgetMicros: 100, jobBudgetMicros: 20 })
+        const item = service.ledger.create(project.id, 'alice', 'Delayed index', 'Synthetic fact.', [{ kind: 'manual', projectId: project.id, hash: 'synthetic' }])
+        expect(await service.processOne()).toBe(false)
+        expect(service.ledger.budget(project.id)).toMatchObject({ spentMicros: 0, reservedMicros: 20 })
+        expect(service.ledger.get(project.id, item.id)?.indexState).toBe('pending')
+        await service.reconcileReservations()
+        expect(service.ledger.budget(project.id)).toMatchObject({ spentMicros: 7, reservedMicros: 0 })
+        store.db.query("UPDATE evolved_memory_tasks SET lease_until=0 WHERE item_id=? AND state='queued'").run(item.id)
+        expect(await service.processOne()).toBe(true)
+        expect(ingests).toHaveLength(2)
+        expect(ingests[1]).toEqual(ingests[0])
+        expect(providerCalls).toBe(1)
+        expect(store.db.query('SELECT id,state,spent_micros,reserved_micros FROM evolved_memory_reservations').all()).toEqual([
+            { id: ingests[0]!.operationId, state: 'settled', spent_micros: 7, reserved_micros: 20 }
+        ])
+        expect(store.db.query('SELECT state,reservation_id,attempts FROM evolved_memory_tasks WHERE item_id=?').get(item.id))
+            .toEqual({ state: 'complete', reservation_id: ingests[0]!.operationId, attempts: 2 })
+        expect(service.ledger.get(project.id, item.id)?.indexState).toBe('indexed')
+        expect(service.ledger.budget(project.id)).toMatchObject({ spentMicros: 7, reservedMicros: 0 })
+    })
     test('secret files and obvious credential content are never ingested', async () => {
         const root = mkdtempSync(join(tmpdir(), 'evolved-source-')); resources.push(() => rmSync(root, { recursive: true, force: true }))
         writeFileSync(join(root, '.env'), 'secret')
