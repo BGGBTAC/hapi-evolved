@@ -12,7 +12,7 @@ vi.mock('@/hooks/useServerUrl', () => ({ useServerUrl: () => ({ baseUrl: 'https:
 vi.mock('./webauthn', () => ({ authenticatePasskey: vi.fn(), createPasskey: vi.fn() }))
 const llmKey = 'SYNTHETIC-memory-save-llm-key', embeddingKey = 'SYNTHETIC-memory-save-embedding-key'
 const config: MemoryProviderConfig = { schemaVersion: 2,
-    llm: { provider: 'anthropic', model: 'synthetic-claude', inputUsdPerMTok: '1', outputUsdPerMTok: '2', maxOutputTokens: 2048 },
+    llm: { provider: 'anthropic', model: 'synthetic-claude', inputUsdPerMTok: '1', outputUsdPerMTok: '2', maxOutputTokens: 16384 },
     embedding: { provider: 'voyage', model: 'synthetic-voyage', dimensions: 1024, inputUsdPerMTok: '0.1' }, reranker: { provider: 'rrf' } }
 const user = { id: 'user-1', displayName: 'Memory test user', isAdmin: true }
 const project = { id: 'project-1', teamId: 'team-1', name: 'Project', role: 'admin', profile: 'restricted' }
@@ -83,6 +83,7 @@ function expectDraft() {
     expect(screen.getByLabelText('Sprachmodell: Modell')).toHaveValue(config.llm.model)
     expect(screen.getByLabelText('Embeddings: Modell')).toHaveValue(config.embedding.model)
     expect(screen.getByLabelText('Sprachmodell: Eingabe')).toHaveValue(Number(config.llm.inputUsdPerMTok))
+    expect(screen.getByLabelText('Sprachmodell: Maximale Ausgabetokens')).toHaveValue(config.llm.maxOutputTokens)
     expect(screen.getByLabelText('Embeddings: Eingabe')).toHaveValue(Number(config.embedding.inputUsdPerMTok))
 }
 
