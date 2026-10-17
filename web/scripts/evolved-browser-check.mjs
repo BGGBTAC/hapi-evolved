@@ -7,6 +7,7 @@ import { seedLongHistory, checkLongHistory } from './evolved-long-history-check.
 import { seedSearchSession, checkSearch } from './evolved-search-check.mjs';
 import { checkCodegraph } from './evolved-codegraph-check.mjs';
 import { checkGithub } from './evolved-github-check.mjs';
+import { checkDevelopment } from './evolved-development-check.mjs';
 import { readFileSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -73,6 +74,7 @@ try {
  await page.waitForFunction(()=>document.querySelector('select[aria-label="Aktives Projekt"]')?.selectedOptions[0]?.textContent==='Browsercheck');
  console.log('PASS automatic per-project directory and explicit server-side manual directory selection');
  await checkGithub(page);
+ await checkDevelopment(page);
  if (process.env.EVOLVED_TEST_CODEGRAPH === '1') await checkCodegraph(page, join(state, 'workspace'));
  execFileSync('bun',['-e',`import {Database} from 'bun:sqlite';const db=new Database(process.argv[1]);db.prepare('UPDATE evolved_sessions SET created_at=?').run(Date.now()-6*60_000);db.close()`,join(state,'evolved.db')]);
  await workspaceArea(page,'Tresor');

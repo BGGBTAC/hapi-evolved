@@ -9,6 +9,7 @@ import { createSavedPromptRoutes } from './savedPrompts'
 import { browseWorkspaces } from './workspaces'
 import { createCredentialGrantRoutes, revokeCredentialLeases, withCredentialProjectLock } from './credentialGrants'
 import type { AgentCredentialGrant } from './agentCredentialVault'
+import { developmentCreation } from './development'
 
 const role = z.enum(['viewer', 'member', 'admin'])
 const profile = z.enum(['restricted', 'workspace', 'extended'])
@@ -88,14 +89,16 @@ export function createEvolvedRoutes(config: EvolvedRoutesConfig): Hono<EvolvedEn
     })
     app.post('/projects', async c => {
         const principal = c.get('principal'); requireHuman(principal)
-        const body = await parseBody(c, z.object({ teamId: identifier, name, rootPath: z.string().max(4096).optional(), root: z.string().max(4096).optional() }).strict())
+        const body = await parseBody(c, z.object({ teamId: identifier, name, rootPath: z.string().max(4096).optional(), root: z.string().max(4096).optional(), development: z.unknown().optional() }).strict())
         if (body.rootPath !== undefined && body.root !== undefined && body.rootPath !== body.root) throw new EvolvedError('invalid_workspace', 'Specify only one workspace path.')
+        // Optional creation mode: validated completely before the project exists, persisted in the same transaction.
+        const development = developmentCreation(body.development)
         if (body.rootPath || body.root) {
             if (!principal.user.isAdmin) throw new EvolvedError('workspace_admin_required', 'Only the installation administrator can attach a workspace.', 403)
             requireFreshPasskey(c, store, principal)
         }
         const root = canonicalWorkspace(body.rootPath ?? body.root ?? '', config.allowedWorkspaceRoots ?? [])
-        return c.json({ project: store.createProject(principal.user.id, body.teamId, body.name, root) }, 201)
+        return c.json({ project: store.createProject(principal.user.id, body.teamId, body.name, root, development?.(store, principal.user.id)) }, 201)
     })
     app.delete('/projects/:id', async c => {
         const principal = c.get('principal'); requireFreshPasskey(c, store, principal)

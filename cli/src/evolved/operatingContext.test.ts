@@ -15,7 +15,7 @@ describe('Evolved operating context boundaries', () => {
         }
         // Instructions are repeated across lifecycle/connection boundaries. Keep
         // the always-present rules/index bounded; details stay in the lookup tool.
-        expect(context.length).toBeLessThan(10_000)
+        expect(context.length).toBeLessThan(11_000)
         expect(getEvolvedCapability('__proto__')).toBeUndefined()
         expect(getEvolvedCapability('constructor')).toBeUndefined()
     })

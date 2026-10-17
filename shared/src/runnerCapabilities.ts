@@ -35,6 +35,8 @@ export const MACHINE_CAPABILITIES = {
     EvolvedRepositories: RPC_METHODS.EvolvedRepositories,
     // Versioned action support on the existing EvolvedRepositories RPC.
     EvolvedRepositoryWorktree: 'evolvedRepositories.worktree.v1',
+    // Optional: development doctor/inspect. Older runners report upgrade_required.
+    EvolvedDevelopment: RPC_METHODS.EvolvedDevelopment,
 } as const
 
 export type MachineCapability =
@@ -47,6 +49,7 @@ export const CURRENT_MACHINE_CAPABILITIES: readonly MachineCapability[] = [
     MACHINE_CAPABILITIES.StopRunner,
     MACHINE_CAPABILITIES.EvolvedRepositories,
     MACHINE_CAPABILITIES.EvolvedRepositoryWorktree,
+    MACHINE_CAPABILITIES.EvolvedDevelopment,
 ]
 
 /**

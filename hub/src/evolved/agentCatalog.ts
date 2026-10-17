@@ -13,6 +13,8 @@ import { agentAssignment, agentInstructionsFit, MAX_AGENT_PROMPT_BYTES, agentDef
 import { RepoImpactRequestSchema, RepositoryIdSchema, type RepoImpactRequest } from '@hapi/protocol/evolvedWorkspace'
 import type { RepositoryAuthority, RepositoryStartResolver } from './repositoryWorkflow'
 import type { PluginService } from './plugins'
+import { DevelopmentTaskStartSchema } from '@hapi/protocol/evolvedDevelopment'
+import type { DevelopmentService } from './development'
 
 type Source = { pluginId: string; repository: string; commitSha: string }
 export type CatalogAgent = AgentDefinition & { id: string; origin: 'builtin' | 'custom' | 'plugin'; source?: Source; available: boolean; invalid?: true }
@@ -68,7 +70,7 @@ export class AgentCatalog {
     }
 }
 
-export function createAgentCatalogRoutes(config: { store: EvolvedStore; plugins: PluginService; origin: string; getSyncEngine: () => Engine | null; repositoryStart?: RepositoryStartResolver; repositoryReview?: (authority: RepositoryAuthority, repositoryId: string, machineId: string, request: RepoImpactRequest) => Promise<string> }): Hono {
+export function createAgentCatalogRoutes(config: { store: EvolvedStore; plugins: PluginService; origin: string; getSyncEngine: () => Engine | null; repositoryStart?: RepositoryStartResolver; repositoryReview?: (authority: RepositoryAuthority, repositoryId: string, machineId: string, request: RepoImpactRequest) => Promise<string>; development?: Pick<DevelopmentService, 'resolveTask'> }): Hono {
     const { store, plugins, origin } = config, catalog = new AgentCatalog(store, plugins), app = new Hono()
     for (const path of ['/agent-catalog', '/agent-catalog/*', '/projects/:id/agent-catalog', '/projects/:id/agent-catalog/*']) {
         app.use(path, createEvolvedRequestGuard(origin))
@@ -115,7 +117,7 @@ export function createAgentCatalogRoutes(config: { store: EvolvedStore; plugins:
         }).immediate()
         return c.json({ ok: true })
     })
-    const startSchema = z.object({ operationId: z.string().uuid(), machineId: z.string().min(1).max(200), task: z.string().trim().min(1).max(24_576), provider: z.enum(['claude', 'codex']).optional(), model: modelPreferenceSchema.optional(), repositoryId: RepositoryIdSchema.optional(), review: RepoImpactRequestSchema.optional() }).strict()
+    const startSchema = z.object({ operationId: z.string().uuid(), machineId: z.string().min(1).max(200), task: z.string().trim().min(1).max(24_576), provider: z.enum(['claude', 'codex']).optional(), model: modelPreferenceSchema.optional(), repositoryId: RepositoryIdSchema.optional(), review: RepoImpactRequestSchema.optional(), development: DevelopmentTaskStartSchema.optional() }).strict()
     app.post('/projects/:id/agent-catalog/:agentId/start', async c => {
         let reserved = false
         try {
@@ -137,6 +139,11 @@ export function createAgentCatalogRoutes(config: { store: EvolvedStore; plugins:
                 if (previous.state === 'done' && previous.session_id && engine.getSessionByNamespace(previous.session_id, project.namespace)) return c.json({ sessionId: previous.session_id, operationId: body.operationId, acknowledged: 'persisted' })
                 throw new EvolvedError('agent_start_indeterminate', 'Inspect existing project sessions before starting again. This start cannot be repeated safely.', 409)
             }
+            // Development tasks resolve a static pack recipe against the current config revision; the bound repository is the default checkout.
+            if (body.development && !config.development) throw new EvolvedError('development_unavailable', 'Entwicklungsaufgaben sind nicht verfügbar.', 409)
+            const development = body.development ? config.development!.resolveTask(project, agentId, body.development) : undefined
+            const repositoryId = body.repositoryId ?? development?.repositoryId ?? undefined
+            if (development?.task.requiresRepository && !repositoryId) throw new EvolvedError('development_repository_required', 'Für diese Aufgabe zuerst ein freigegebenes Projekt-Repository wählen.', 409)
             const snapshot = catalog.snapshot(agentId), provider = body.provider ?? (snapshot.agent.providerPreference === 'either' ? 'claude' : snapshot.agent.providerPreference)
             const model = body.model ?? (snapshot.agent.providerPreference !== 'either' && (!body.provider || snapshot.agent.providerPreference === body.provider) ? snapshot.agent.model : undefined)
             let root: string
@@ -146,14 +153,16 @@ export function createAgentCatalogRoutes(config: { store: EvolvedStore; plugins:
             if (!machine?.active) throw new EvolvedError('runner_unavailable', 'Choose an online runner in this project.', 409)
             if (!machine.metadata?.capabilities?.includes(MACHINE_CAPABILITIES.AgentAvailability)) throw new EvolvedError('runner_upgrade_required', 'Upgrade this runner before starting an agent.', 409)
             const authority: RepositoryAuthority = { principal, project, valid: () => { try { current(); return true } catch { return false } } }
-            if (body.repositoryId && !config.repositoryStart) throw new EvolvedError('repository_unavailable', 'Repository starts are unavailable.', 409)
-            const repository = body.repositoryId ? await config.repositoryStart!(authority, body.repositoryId, body.machineId) : undefined
+            if (repositoryId && !config.repositoryStart) throw new EvolvedError('repository_unavailable', 'Repository starts are unavailable.', 409)
+            const repository = repositoryId ? await config.repositoryStart!(authority, repositoryId, body.machineId) : undefined
             let context = ''
             if (body.review) {
                 if (!config.repositoryReview) throw new EvolvedError('review_unavailable', 'Review context is unavailable.', 409)
                 context = await config.repositoryReview(authority, body.repositoryId!, body.machineId, body.review)
             }
-            const prompt = agentAssignment(snapshot.agent, snapshot.skills, body.task) + context
+            // An explicit current grant may differ from the configured default (multi-repository projects); the assignment names the effective checkout.
+            const developmentData = development?.assignment(repository ? { repositoryId: repository.repositoryId, fullName: repository.fullName, directory: repository.directory } : { repositoryId: null, directory: root }) ?? ''
+            const prompt = agentAssignment(snapshot.agent, snapshot.skills, body.task) + developmentData + context
             if (Buffer.byteLength(prompt) > MAX_AGENT_PROMPT_BYTES) throw new EvolvedError('agent_prompt_limit', 'Agent instructions, skills and task exceed 64 KiB.', 400)
             store.db.transaction(() => {
                 current()
@@ -169,14 +178,16 @@ export function createAgentCatalogRoutes(config: { store: EvolvedStore; plugins:
             const stillAllowed = () => {
                 const live = current()
                 if (live.profile !== project.profile || live.rootPath !== project.rootPath || live.namespace !== project.namespace || catalog.snapshot(agentId).hash !== snapshot.hash) throw new EvolvedError('agent_start_changed', 'Project or agent definition changed during start.', 409)
+                development?.verify()
                 return live
             }
+            const onReserved = repository || development ? (sessionId: string) => { development?.verify(); repository?.onReserved(sessionId) } : undefined
             let childId: string | undefined
             try {
                 stillAllowed()
                 if (repository) { await repository.recheck(); stillAllowed() }
                 const spawned = await engine.spawnSession(body.machineId, repository?.directory ?? root, provider, model, undefined, false, 'simple', undefined, undefined, undefined,
-                    projectPermissionMode(project, provider, agentId === 'builtin:review' ? provider === 'codex' ? 'read-only' : 'plan' : undefined), undefined, undefined, undefined, undefined, 'remote', project.namespace, false, repository?.onReserved)
+                    projectPermissionMode(project, provider, agentId === 'builtin:review' ? provider === 'codex' ? 'read-only' : 'plan' : undefined), undefined, undefined, undefined, undefined, 'remote', project.namespace, false, onReserved)
                 if (spawned.type !== 'success') throw new EvolvedError('agent_start_indeterminate', 'Runner did not confirm the start. Inspect project sessions before trying again.', 409)
                 childId = spawned.sessionId; stillAllowed()
                 if (repository) { await repository.recheck(); stillAllowed() }

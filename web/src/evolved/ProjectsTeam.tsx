@@ -4,6 +4,10 @@ import { useEvolved, enrollPasskey, RecoveryCodes } from './auth'
 import { isProjectAdmin, projectPath, type ExecutionProfile, type ProjectRole, type Team, type TeamMember } from './api'
 import { ActionStatus, ConfirmButton, Empty, ErrorNotice, Field, Loading, Panel, formatDate, submit, useAction } from './ui'
 import { CapacityPanel } from './Capacity'
+import { defaultDevelopmentSettings, DEVELOPMENT_MODES, ODOO_MAJORS, type DevelopmentMode, type OdooMajor } from '@hapi/protocol/evolvedDevelopment'
+import { SegmentedChoice } from './DevelopmentModePicker'
+import { DevelopmentOverviewCard } from './ProjectDevelopment'
+import { modeHints, modeLabels } from './developmentApi'
 
 const profiles: { id: ExecutionProfile; label: string; description: string }[] = [
     { id: 'restricted', label: 'Eingeschränkt', description: 'Schreib- und Ausführungsrechte bleiben eng begrenzt.' },
@@ -75,6 +79,8 @@ function ProjectsForUser({ onSelectProject }: { onSelectProject?: (id: string) =
     const [showPicker, setShowPicker] = useState(false)
     const [teamId, setTeamId] = useState('')
     const [projectFilter, setProjectFilter] = useState('')
+    const [developmentMode, setDevelopmentMode] = useState<DevelopmentMode>('none')
+    const [odooMajor, setOdooMajor] = useState<OdooMajor>(20)
     const creating = useRef(false)
     const creation = useRef<AbortController | null>(null)
     useEffect(() => () => creation.current?.abort(), [])
@@ -94,9 +100,12 @@ function ProjectsForUser({ onSelectProject }: { onSelectProject?: (id: string) =
         void action.run(async () => {
             if (!name.trim() || !selectedTeam || teams.error) throw new Error('Bitte Projektname und ein verwaltbares Team wählen.')
             if (useManualPath && !rootPath.trim()) throw new Error('Bitte einen Projektordner angeben oder die manuelle Auswahl ausschalten.')
-            await api.request('/projects', { method: 'POST', body: { name: name.trim(), teamId: selectedTeam, ...(useManualPath ? { rootPath: rootPath.trim() } : {}) }, signal: controller.signal })
+            // Creation mode is validated by the hub before the project exists; repositories are bound later.
+            const settings = defaultDevelopmentSettings(developmentMode)
+            if (settings.odoo) settings.odoo = { ...settings.odoo, major: odooMajor }
+            await api.request('/projects', { method: 'POST', body: { name: name.trim(), teamId: selectedTeam, ...(useManualPath ? { rootPath: rootPath.trim() } : {}), ...(developmentMode !== 'none' ? { development: { settings } } : {}) }, signal: controller.signal })
             controller.signal.throwIfAborted()
-            setName(''); setRootPath(''); setManual(false); setShowPicker(false); setTeamId('')
+            setName(''); setRootPath(''); setManual(false); setShowPicker(false); setTeamId(''); setDevelopmentMode('none'); setOdooMajor(20)
             await refresh()
         }, 'Projekt angelegt.').finally(() => { creating.current = false; if (creation.current === controller) creation.current = null })
     }
@@ -110,10 +119,16 @@ function ProjectsForUser({ onSelectProject }: { onSelectProject?: (id: string) =
     {project && <Panel title="Ausführungsprofil" description="Das Profil gilt für das gesamte Projekt. Ein Wechsel verändert die Schreib- und Ausführungsrechte und macht alle bisherigen Runner-Zugänge ungültig. Stelle danach neue Zugänge aus und richte die Runner mit dem passenden Profil ein. Gespeicherte GitHub-Repository-Freigaben bleiben erhalten; Push benötigt zusätzlich ein schreibfähiges Profil, Runner-Schreibrechte und passende GitHub-Tokenrechte. Nur Projektadministratoren können das Profil ändern."><div className="ev-profile-grid">{profiles.map(profile => <button key={profile.id} className={`ev-profile ${project.profile === profile.id ? 'ev-selected' : ''}`} aria-pressed={project.profile === profile.id} disabled={!isProjectAdmin(project.role) || action.busy || project.profile === profile.id} onClick={() => void action.run(async () => {
         await api.request(`${projectPath(project.id)}/profile`, { method: 'PUT', body: { profile: profile.id } }); await refresh()
     }, 'Profil gespeichert.')}><strong>{profile.label}</strong><small>{profile.description}</small></button>)}</div></Panel>}
+    {project && me.accessibleProjects.some(item => item.id === project.id) && <DevelopmentOverviewCard key={`${project.id}:${project.role}:${project.profile}`} />}
     <ErrorNotice error={teams.error} />
     {teams.isPending ? <Loading /> : !teams.error && adminTeams.length > 0 && <Panel title="Projekt anlegen"><form className="ev-form-grid" onSubmit={submit(createProject)}>
         <Field label="Projektname"><input value={name} onChange={event => setName(event.target.value)} maxLength={100} required disabled={action.busy} /></Field>
         <Field label="Team"><select value={selectedTeam} onChange={event => setTeamId(event.target.value)} disabled={action.busy}>{adminTeams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></Field>
+        <div className="ev-form-wide"><span className="ev-dev-field-label">Entwicklungsmodus</span>
+            <SegmentedChoice legend="Entwicklungsmodus" variant="modes" options={DEVELOPMENT_MODES.map(mode => ({ id: mode, label: modeLabels[mode] }))} value={developmentMode} disabled={action.busy} onChange={setDevelopmentMode} />
+            {developmentMode === 'odoo' && <div style={{ marginTop: 10 }}><span className="ev-dev-field-label">Odoo-Version</span><SegmentedChoice legend="Odoo-Version" options={ODOO_MAJORS.map(major => ({ id: String(major) as `${OdooMajor}`, label: `${major}.0` }))} value={String(odooMajor) as `${OdooMajor}`} disabled={action.busy} onChange={major => setOdooMajor(Number(major) as OdooMajor)} /></div>}
+            <p className="ev-dev-mode-hint">{modeHints[developmentMode]} Repository und Details legst du später unter „Entwicklung“ fest. Der Modus ändert keine Rechte und installiert nichts.</p>
+        </div>
         <p className="ev-muted ev-form-wide">Für jedes neue Projekt wird automatisch ein eigener Ordner angelegt.</p>
         {me.user.isAdmin && <div className="ev-form-wide">
             <label className="ev-check"><input type="checkbox" checked={manual} disabled={action.busy} onChange={event => { setManual(event.target.checked); setRootPath(''); setShowPicker(false); action.clear() }} />Ordner manuell festlegen oder wählen</label>

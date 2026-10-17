@@ -4737,6 +4737,10 @@ export class SyncEngine {
         return this.rpcGateway.evolvedRepositories(machineId, params, timeoutMs)
     }
 
+    async evolvedDevelopment(machineId: string, params: unknown, timeoutMs?: number): Promise<unknown> {
+        return this.rpcGateway.evolvedDevelopment(machineId, params, timeoutMs)
+    }
+
     async getGitStatus(sessionId: string, cwd?: string): Promise<RpcCommandResponse> {
         return await this.rpcGateway.getGitStatus(sessionId, cwd)
     }

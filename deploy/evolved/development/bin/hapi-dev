@@ -1,0 +1,8 @@
+#!/bin/sh
+# Reviewed development-mode helpers; see deploy/evolved/development/README.md.
+# Resolve a symlink such as /usr/local/bin/hapi-dev to this file's real directory.
+self=$(readlink -f -- "$0") || exit 2
+here=$(dirname -- "$self")
+bun=/usr/local/bin/bun
+[ -x "$bun" ] || bun=bun
+exec "$bun" "$here/../hapi-dev.ts" "$@"

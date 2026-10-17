@@ -12,6 +12,8 @@ export const RPC_METHODS = {
     PathExists: 'path-exists',
     AgentAvailability: 'agent-availability',
     EvolvedRepositories: 'evolved-repositories',
+    /** Fixed read-only development doctor/inspection (project runners). */
+    EvolvedDevelopment: 'evolved-development',
     CursorChatStoreStatus: 'cursor-chat-store-status',
     GitStatus: 'git-status',
     GitDiffNumstat: 'git-diff-numstat',

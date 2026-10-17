@@ -505,3 +505,68 @@ test('a permanent lease never permits missing, permanent or overlong exchanged c
     expect((await fetch(new URL('/cli/sessions', proxy.server.url))).status).toBe(200)
     expect(forwarded).toBe(1)
 })
+
+test('development proxy admits only exact agent reads and the two fixed runner checks', () => {
+    const base = '/api/evolved/projects/a/development'
+    for (const [path, method, query] of [
+        [`${base}/context`, 'GET', ''],
+        [`${base}/knowledge`, 'GET', ''], [`${base}/knowledge`, 'GET', '?topic=odoo-orm'], [`${base}/knowledge`, 'GET', '?q=record%20rules&limit=5'],
+        [`${base}/knowledge`, 'GET', '?limit=20'], [`${base}/knowledge`, 'GET', '?q=a+b'],
+        [`${base}/build-status`, 'GET', ''], [`${base}/build-status`, 'GET', '?ref=main'], [`${base}/build-status`, 'GET', `?ref=${'a'.repeat(40)}`],
+        [`${base}/build-status`, 'GET', '?ref=feature%2Flogin'],
+        // Same branch rules as the shared contract (non-ASCII, + and @ are valid Git branch characters).
+        [`${base}/build-status`, 'GET', `?${new URLSearchParams({ ref: 'release+next' })}`], [`${base}/build-status`, 'GET', `?${new URLSearchParams({ ref: 'feature/änderung' })}`],
+        [`${base}/build-status`, 'GET', `?${new URLSearchParams({ ref: 'release@next' })}`],
+        [`${base}/doctor`, 'POST', ''], [`${base}/inspect`, 'POST', ''],
+    ] as const) expect(allowedProxyPath(path, method, query)).toBe(true)
+    for (const [path, method, query] of [
+        // Configuration and licence acknowledgement stay browser-only.
+        [base, 'GET', ''], [base, 'PUT', ''], [base, 'POST', ''], [`${base}/`, 'GET', ''],
+        [`${base}/context`, 'POST', ''], [`${base}/context`, 'PUT', ''], [`${base}/context`, 'GET', '?x=1'], [`${base}/context`, 'HEAD', ''],
+        [`${base}/knowledge`, 'POST', ''], [`${base}/knowledge`, 'GET', '?topic=a&q=b'], [`${base}/knowledge`, 'GET', '?topic=a&topic=b'],
+        [`${base}/knowledge`, 'GET', '?q=a&q=b'], [`${base}/knowledge`, 'GET', '?limit=0'], [`${base}/knowledge`, 'GET', '?limit=21'], [`${base}/knowledge`, 'GET', '?limit=1e1'],
+        [`${base}/knowledge`, 'GET', '?topic=../secret'], [`${base}/knowledge`, 'GET', '?topic=UPPER'], [`${base}/knowledge`, 'GET', '?q='], [`${base}/knowledge`, 'GET', '?q=%20%20'],
+        [`${base}/knowledge`, 'GET', `?q=${'x'.repeat(201)}`], [`${base}/knowledge`, 'GET', '?q=%00'], [`${base}/knowledge`, 'GET', '?q=%E0%A4%A'], [`${base}/knowledge`, 'GET', '?url=https://x'],
+        [`${base}/knowledge`, 'GET', '?'], [`${base}/knowledge`, 'GET', '?&'],
+        [`${base}/build-status`, 'GET', '?ref=main&ref=dev'], [`${base}/build-status`, 'GET', '?ref=-x'], [`${base}/build-status`, 'GET', '?ref=a..b'],
+        [`${base}/build-status`, 'GET', '?ref=main&repo=other%2Frepo'], [`${base}/build-status`, 'GET', '?repositoryId=42'], [`${base}/build-status`, 'POST', ''],
+        [`${base}/build-status`, 'GET', '?ref=a%20b'],
+        [`${base}/build-status`, 'GET', '?ref=HEAD'], [`${base}/build-status`, 'GET', '?ref=a@{1}'], [`${base}/build-status`, 'GET', '?ref=x.lock'],
+        [`${base}/doctor`, 'GET', ''], [`${base}/doctor`, 'POST', '?checks=all'], [`${base}/inspect`, 'PUT', ''], [`${base}/inspect`, 'POST', '?path=/etc'],
+        [`${base}/setup`, 'POST', ''], [`${base}/licenses`, 'POST', ''], [`${base}/doctor/extra`, 'POST', ''], [`${base}/context/`, 'GET', ''],
+        ['/api/evolved/projects/a%2fb/development/context', 'GET', ''], ['/api/evolved/projects/../development/context', 'GET', ''],
+        ['/api/evolved/projects/a/developmentx/context', 'GET', ''],
+    ] as const) expect(allowedProxyPath(path, method, query)).toBe(false)
+})
+
+test('development requests keep project isolation, broker credentials and empty action bodies', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'evolved-development-proxy-')), leaseFile = join(directory, 'lease')
+    cleanup.push(() => rmSync(directory, { recursive: true, force: true }))
+    writeFileSync(leaseFile, 'synthetic-lease', { mode: 0o600 })
+    const forwarded: Array<{ path: string; method: string; authorization: string | null; cookie: string | null; body: string }> = []
+    const hub = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(request) {
+        const url = new URL(request.url)
+        if (url.pathname === '/api/evolved/runner/token') return Response.json({ token: 'x'.repeat(43), projectId: 'a', expiresAt: Date.now() + 900_000 })
+        forwarded.push({ path: url.pathname + url.search, method: request.method, authorization: request.headers.get('authorization'), cookie: request.headers.get('cookie'), body: await request.text() })
+        return Response.json({ mode: 'odoo' })
+    } })
+    cleanup.push(() => hub.stop(true))
+    const proxy = createRunnerProxy({ hubUrl: hub.url.toString(), leaseFile, projectId: 'a', port: 0 })
+    cleanup.push(proxy.close)
+    const base = '/api/evolved/projects/a/development'
+    expect((await fetch(new URL(`${base}/context`, proxy.server.url), { headers: { authorization: 'Bearer attacker', cookie: 'session=bad' } })).status).toBe(200)
+    expect(forwarded[0]).toEqual({ path: `${base}/context`, method: 'GET', authorization: `Bearer ${'x'.repeat(43)}`, cookie: null, body: '' })
+    expect((await fetch(new URL(`${base}/knowledge?q=record%20rules&limit=3`, proxy.server.url))).status).toBe(200)
+    expect(forwarded[1].path).toBe(`${base}/knowledge?q=record%20rules&limit=3`)
+    expect((await fetch(new URL(`${base}/doctor`, proxy.server.url), { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(200)
+    expect(forwarded[2]).toMatchObject({ path: `${base}/doctor`, method: 'POST', body: '{}' })
+    for (const [path, options, status] of [
+        ['/api/evolved/projects/b/development/context', {}, 403],
+        [base, { method: 'PUT', body: '{}' }, 403],
+        [base, {}, 403],
+        [`${base}/inspect`, { method: 'POST', body: JSON.stringify({ checkout: '/etc' }) }, 400],
+        [`${base}/doctor`, { method: 'POST', body: `{}${' '.repeat(80)}x` }, 400],
+        [`${base}/context`, { headers: { origin: 'https://browser.test' } }, 403],
+    ] as const) expect((await fetch(new URL(path, proxy.server.url), options)).status).toBe(status)
+    expect(forwarded).toHaveLength(3)
+})

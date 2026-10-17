@@ -1,0 +1,83 @@
+/* Project development modes. Shared controls/tokens live in evolved.css. */
+.ev-dev { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.ev-dev-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; }
+.ev-dev-summary > div { min-width: 0; }
+.ev-dev-summary h2 { margin-bottom: 4px; }
+.ev-dev-summary p { color: var(--app-hint); font-size: .8125rem; overflow-wrap: anywhere; }
+.ev-dev-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.ev-dev-pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border: 1px solid var(--ev-line); border-radius: 999px; font-size: .75rem; font-weight: 600; color: var(--ev-muted); background: var(--ev-surface); overflow-wrap: anywhere; max-width: 100%; }
+.ev-dev-pill[data-tone="accent"] { color: var(--ev-accent); border-color: color-mix(in srgb, var(--ev-accent) 35%, transparent); background: var(--ev-accent-soft); }
+.ev-dev-pill[data-tone="warn"] { color: #93370d; border-color: #fec84b; background: color-mix(in srgb, #fdb022 12%, var(--ev-surface)); }
+[data-theme="dark"] .ev-dev-pill[data-tone="warn"], [data-theme="oled"] .ev-dev-pill[data-tone="warn"] { color: #fec84b; }
+
+/* Compact segmented mode picker: one row on desktop, two columns on phones. */
+.ev-dev-modes { display: grid; grid-template-columns: repeat(var(--ev-dev-mode-count, 4), minmax(0, 1fr)); gap: 4px; padding: 4px; border: 1px solid var(--ev-line); border-radius: 12px; background: var(--ev-bg); max-width: 640px; margin: 0; min-width: 0; }
+.ev-dev-modes legend, .ev-dev-segment legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.ev-dev-mode { position: relative; display: flex; align-items: center; justify-content: center; min-height: 44px; padding: 6px 10px; border-radius: 9px; cursor: pointer; font-weight: 600; text-align: center; color: var(--ev-muted); overflow-wrap: anywhere; }
+.ev-dev-mode input { position: absolute; inset: 0; width: 100% !important; height: 100% !important; opacity: 0; margin: 0; cursor: pointer; }
+.ev-dev-mode:has(input:checked) { background: var(--ev-surface); color: var(--ev-text); box-shadow: 0 1px 3px #0002; }
+.ev-dev-mode:has(input:focus-visible) { outline: 3px solid var(--ev-accent); outline-offset: 1px; }
+.ev-dev-mode:has(input:disabled) { cursor: not-allowed; opacity: .55; }
+.ev-dev-mode-hint { color: var(--app-hint); font-size: .8125rem; margin-top: 8px; max-width: 76ch; }
+
+/* Smaller inline segment for version/edition/target choices. */
+.ev-dev-segment { display: inline-grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 3px; padding: 3px; border: 1px solid var(--ev-line); border-radius: 10px; background: var(--ev-bg); margin: 0; min-width: 0; max-width: 100%; }
+.ev-dev-segment .ev-dev-mode { min-height: 38px; font-size: .8125rem; padding: 4px 12px; }
+.ev-dev-field-label { display: block; font-weight: 550; margin-bottom: 6px; }
+
+.ev-dev-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 16px; align-items: start; margin-top: 18px; }
+.ev-dev-form > .ev-dev-wide { grid-column: 1 / -1; min-width: 0; }
+.ev-dev-form details > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 600; }
+.ev-dev-form details > .ev-dev-form { margin-top: 6px; }
+.ev-dev-invalid { color: #b42318; font-size: .8125rem; }
+[data-theme="dark"] .ev-dev-invalid, [data-theme="oled"] .ev-dev-invalid { color: #fda29b; }
+.ev-dev-license { padding: 14px 16px; border: 1px solid var(--ev-line); border-radius: 10px; background: var(--ev-bg); }
+.ev-dev-license a, .ev-dev-links a, .ev-dev-topic a { color: var(--ev-accent); text-decoration: underline; overflow-wrap: anywhere; }
+
+/* Save bar stays reachable on long forms, above the mobile bottom navigation. */
+.ev-dev-savebar { position: sticky; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin: 20px -24px -24px; padding: 14px 24px; border-top: 1px solid var(--ev-line); border-radius: 0 0 var(--ev-radius) var(--ev-radius); background: var(--ev-surface); }
+.ev-dev-savebar p { flex: 1 1 260px; min-width: 0; font-size: .8125rem; color: var(--app-hint); overflow-wrap: anywhere; }
+.ev-dev-savebar p[data-state="dirty"] { color: var(--ev-text); font-weight: 600; }
+
+/* Check results, module inventory, build status. */
+.ev-dev-checks { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; }
+.ev-dev-checks li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 12px 0; border-bottom: 1px solid var(--ev-line); }
+.ev-dev-checks li:last-child { border-bottom: 0; }
+.ev-dev-checks li > div { min-width: 0; overflow-wrap: anywhere; }
+.ev-dev-checks small { display: block; color: var(--app-hint); }
+.ev-dev-state { align-self: start; padding: 2px 9px; border-radius: 999px; font-size: .75rem; font-weight: 650; border: 1px solid var(--ev-line); white-space: nowrap; }
+.ev-dev-state[data-state="ready"], .ev-dev-state[data-state="success"] { color: var(--ev-accent); background: var(--ev-accent-soft); border-color: transparent; }
+.ev-dev-state[data-state="missing"], .ev-dev-state[data-state="failure"], .ev-dev-state[data-state="error"], .ev-dev-state[data-state="permission_missing"] { color: #b42318; border-color: #fda29b; }
+.ev-dev-state[data-state="pending"] { color: #93370d; border-color: #fec84b; }
+[data-theme="dark"] .ev-dev-state[data-state="missing"], [data-theme="dark"] .ev-dev-state[data-state="failure"], [data-theme="dark"] .ev-dev-state[data-state="error"], [data-theme="dark"] .ev-dev-state[data-state="permission_missing"] { color: #fda29b; }
+.ev-dev-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--app-hint); font-size: .8125rem; margin-top: 10px; overflow-wrap: anywhere; }
+.ev-dev-scroll { max-height: 28rem; overflow-y: auto; overscroll-behavior: contain; }
+
+/* Handbook and recipe cards keep a modest size. */
+.ev-dev-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin-top: 12px; }
+.ev-dev-toolbar .ev-field { flex: 1 1 220px; }
+.ev-dev-topics { display: grid; gap: 10px; margin-top: 12px; }
+.ev-dev-topic { min-width: 0; border: 1px solid var(--ev-line); border-radius: 10px; padding: 0 14px; }
+.ev-dev-topic > summary { min-height: 44px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; cursor: pointer; font-weight: 600; padding-block: 8px; }
+.ev-dev-topic > summary small { font-weight: 400; color: var(--app-hint); }
+.ev-dev-topic > div { padding-bottom: 14px; overflow-wrap: anywhere; }
+.ev-dev-topic p { white-space: pre-line; margin-bottom: 8px; }
+.ev-dev-links { padding-left: 18px; margin: 6px 0; display: grid; gap: 4px; font-size: .8125rem; }
+.ev-dev-recipes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 12px; margin-top: 12px; }
+.ev-dev-recipe { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 14px; border: 1px solid var(--ev-line); border-radius: 12px; background: var(--ev-surface); overflow-wrap: anywhere; }
+.ev-dev-recipe header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; }
+.ev-dev-recipe p { font-size: .8125rem; color: var(--app-hint); }
+.ev-dev-recipe ul { margin: 0; padding-left: 18px; font-size: .8125rem; }
+.ev-dev-recipe > button { margin-top: auto; align-self: flex-start; }
+.ev-dev-folder { display: flex; flex-direction: column; gap: 4px; margin: 0; min-width: 0; }
+.ev-dev-folder span { font-weight: 550; }
+.ev-dev-folder code { overflow-wrap: anywhere; padding: 6px 8px; border-radius: 6px; background: var(--app-subtle-bg, var(--ev-bg)); }
+.ev-dev-start { border: 2px solid var(--ev-accent); border-radius: 12px; padding: 16px; margin-top: 14px; display: grid; gap: 14px; min-width: 0; }
+
+@media (max-width: 640px) {
+    .ev-dev-modes { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: none; }
+    .ev-dev-segment { display: grid; width: 100%; }
+    .ev-dev-savebar { margin: 16px -18px -18px; padding: 12px 18px; }
+    .ev-dev-savebar > .ev-actions, .ev-dev-savebar > .ev-actions > button { flex: 1 1 auto; }
+    .ev-dev-recipe > button { align-self: stretch; }
+}

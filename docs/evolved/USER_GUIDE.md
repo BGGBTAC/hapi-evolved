@@ -22,7 +22,9 @@ Projektadministratoren. Der normale Einrichtungsweg ist **Abos verbinden**.
 
 Unter **GitHub** kannst du ein freigegebenes Repository ins Projekt klonen.
 Beim Start einer normalen Sitzung oder eines Spezialisten wählst du optional
-dieses Repository. Ohne Auswahl bleibt der gespeicherte Projektordner das Ziel.
+dieses Repository. Unter **Entwicklung** kannst du ein Standard-Repository für
+neue Sitzungen festlegen. Ohne Standard bleibt der gespeicherte Projektordner
+das Ziel; eine ausdrückliche Ordner- oder Repositoryauswahl hat Vorrang.
 Ein nicht vorhandener Checkout wird beim Sitzungsstart nicht still angelegt;
 eine entfernte Freigabe führt zu einer verständlichen Ablehnung.
 
@@ -63,6 +65,24 @@ bereits bekannte Grundlagen müssen nicht in jeder Sitzung erneut erklärt
 werden. Beschriebene Funktionen verleihen keine zusätzlichen Rechte.
 Ein Ausfall der optionalen Graphsuche
 bedeutet nicht, dass lokale Wissenssuche oder Speicherung ausgefallen sind.
+
+## Odoo-, iOS- und Android-Projekte
+
+Wähle den Entwicklungsmodus beim Anlegen eines Projekts oder später unter
+**Entwicklung**; auf dem Smartphone liegt der Bereich unter **Mehr**.
+Für Odoo stehen Version 19 und 20 zur Wahl. Verbinde und klone das Repository
+unter **GitHub**, bevor du es als Standard für die Entwicklung auswählst.
+
+Im Entwicklungsbereich findest du ein passendes Handbuch, eine Werkzeugprüfung,
+eine statische Projektprüfung und vorbereitete Aufgaben für Agentensitzungen.
+Das Handbuch funktioniert auch bei abgeschaltetem Graph-Gedächtnis. Speichere
+geänderte Einstellungen vor dem Start; Anbieter, Modell und der tatsächliche
+Arbeitsordner bleiben im Startformular sichtbar.
+
+Odoo.sh-Buildmeldungen kommen über GitHub. Native iOS-Builds benötigen einen Mac
+oder einen eingerichteten Cloud-Ablauf; Android benötigt eine passende SDK- und
+JDK-Einrichtung. Die Einzelheiten und ausführbaren Einrichtungswege beschreibt
+[Entwicklungsmodi](DEVELOPMENT_MODES.md).
 
 ## Erstes Konto und Wiederherstellung
 

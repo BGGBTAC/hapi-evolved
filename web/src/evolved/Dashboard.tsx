@@ -8,6 +8,7 @@ import { canWriteProject, isProjectAdmin } from './api'
 import { ErrorNotice, Loading, formatDate } from './ui'
 import { CapacityPanel } from './Capacity'
 import { ProjectReadinessPanel } from './ProjectReadiness'
+import { DevelopmentOverviewCard } from './ProjectDevelopment'
 import { WorkspaceIcon, WorkspaceLink } from './workspaceNavigation'
 
 export function summarizeSessions(sessions: SessionSummary[]) {
@@ -56,6 +57,7 @@ function ProjectDashboard() {
         <dl className="ew-metrics" aria-label="Projektstatus"><div><dt>Aktive Sitzungen</dt><dd>{summary?.active ?? '—'}</dd><span>{sessions.isPending ? 'Wird geladen' : sessions.error ? 'Nicht verfügbar' : 'Mit dem Hub verbunden'}</span></div><div><dt>Offene Freigaben & Antworten</dt><dd>{summary?.pending ?? '—'}</dd><span>{sessions.isPending ? 'Wird geladen' : sessions.error ? 'Nicht verfügbar' : summary?.pending ? 'Deine Aufmerksamkeit ist gefragt' : 'Keine offenen Anfragen'}</span></div><div><dt>Runner online</dt><dd>{runners?.length ?? '—'}</dd><span>{machines.isPending ? 'Wird geladen' : machines.error ? 'Nicht verfügbar' : 'In diesem Projekt verbunden'}</span></div></dl>
         <CapacityPanel compact />
         <ProjectReadinessPanel />
+        <DevelopmentOverviewCard />
         <section className="ev-panel"><div className="ew-section-heading"><div><h2>{summary?.attention.length ? 'Benötigt Aufmerksamkeit' : 'Letzte Sitzungen'}</h2><p>{summary?.attention.length ? 'Öffne eine Sitzung, um die Anfrage im Kontext zu prüfen.' : 'Steige dort wieder ein, wo du zuletzt gearbeitet hast.'}</p></div><Link to="/sessions" className="ew-text-link">Alle anzeigen</Link></div>
             <ErrorNotice error={sessions.error} />{sessions.isPending && <Loading />}
             {summary && (summary.attention.length || summary.recent.length ? <div className="ew-session-list">{(summary.attention.length ? summary.attention.slice(0, 5) : summary.recent).map(session => <SessionRow key={session.id} session={session} />)}</div> : <div className="ew-empty-state"><WorkspaceIcon name="sessions" /><h3>Noch keine Sitzung in diesem Projekt</h3><p>{runners?.length ? 'Ein Runner ist bereit. Starte eine Sitzung, um mit deinem Agenten zu arbeiten.' : 'Richte zuerst den Projektdienst unter „Abos verbinden“ ein. Danach kannst du hier Agentensitzungen starten.'}</p>{admin && !runners?.length && <WorkspaceLink tab="providers" projectId={project!.id} className="ew-button">Projektdienst einrichten</WorkspaceLink>}{!admin && !runners?.length && <p>Dein Projektadministrator kann einen Runner-Zugang anlegen.</p>}</div>)}

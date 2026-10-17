@@ -5,8 +5,10 @@ import type { ReactNode } from 'react'
 import { EvolvedApiError, type EvolvedProject } from './api'
 import { AgentsPluginsPanel } from './AgentsPlugins'
 import { ProjectWorkflowProvider, useProjectWorkflow } from './ProjectWorkflowContext'
+import { defaultDevelopmentSettings } from '@hapi/protocol/evolvedDevelopment'
+import { developmentCatalog } from '@hapi/protocol/developmentPacks'
 
-const repositoryChoices = vi.hoisted(() => ({ items: [] as Array<{ id: string; fullName: string; local: { state: string } }> }))
+const repositoryChoices = vi.hoisted(() => ({ items: [] as Array<{ id: string; fullName: string; path?: string; local: { state: string } }> }))
 const context = vi.hoisted(() => ({ api: { baseUrl: '', request: vi.fn() }, me: { user: { id: 'human', isAdmin: true } }, project: null as EvolvedProject | null }))
 vi.mock('./auth', () => ({ useEvolved: () => context }))
 vi.mock('./repositoryCatalog', () => ({ useProjectRepositories: () => ({ current: { runner: { status: 'ready' }, repositories: repositoryChoices.items }, error: null, isFetching: false, refetch: vi.fn() }) }))
@@ -18,14 +20,20 @@ const installed = { id: 'plugin-1', repository: 'example/plugin', repositoryId: 
 const preview = { ...installed, id: undefined, previewId: 'preview-1', pluginId: null, expiresAt: Date.now() + 600000 }
 let canManage = true, agents = [agent], plugins: typeof installed[] = []
 const catalog = () => ({ agents, skills: [], themes: [], canManage, machines: [{ id: 'machine-1', name: 'Projekt-Runner' }] })
+// Development configuration of the project; `null` repository = no bound default.
+let developmentDefault: string | null = null
+const fallback = (path: string) => path === '/plugins' ? { plugins } : path === '/projects/project-1/development'
+    ? { config: { projectId: 'project-1', revision: 1, settings: { ...defaultDevelopmentSettings('odoo'), repositoryId: developmentDefault }, savedPackRevision: null, updatedAt: 1, updatedBy: null, androidSdkLicenseAcknowledgement: null }, catalog: developmentCatalog(), canEdit: true }
+    : catalog()
+const readyStart = async () => { const button = screen.getByRole('button', { name: 'Jetzt starten' }); await waitFor(() => expect(button).toBeEnabled()); return button }
 function mount() {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
     return { ...render(<QueryClientProvider client={client}><AgentsPluginsPanel /></QueryClientProvider>), client }
 }
 beforeEach(() => {
-    canManage = true; agents = [agent]; plugins = []; repositoryChoices.items = []
+    canManage = true; agents = [agent]; plugins = []; repositoryChoices.items = []; developmentDefault = null
     context.project = { id: 'project-1', name: 'Projekt Alpha', teamId: 'team', role: 'admin', profile: 'restricted' }
-    context.api.request.mockReset().mockImplementation(async (path: string) => path === '/plugins' ? { plugins } : catalog())
+    context.api.request.mockReset().mockImplementation(async (path: string) => fallback(path))
 })
 
 it('global catalog stays available without a project; only explicit project context enables a launch', async () => {
@@ -50,7 +58,7 @@ it('viewer cannot start or manage global definitions and readonly builtins canno
 it('custom agent creation sends only supported fields and refreshes the catalog', async () => {
     context.api.request.mockImplementation(async (path: string, options: { method?: string; body?: unknown }) => {
         if (options?.method === 'POST') return { agent: { ...agent, id: 'created' } }
-        return path === '/plugins' ? { plugins } : catalog()
+        return fallback(path)
     })
     mount()
     fireEvent.click(await screen.findByRole('button', { name: 'Agent erstellen' }))
@@ -66,7 +74,7 @@ it('a disabled plugin skill blocks launch and can be explicitly removed from a c
     agents = [{ ...agent, origin: 'custom', available: false, skills: ['disabled-plugin:skill'] }]
     context.api.request.mockImplementation(async (path: string, options: { method?: string }) => {
         if (options?.method === 'PUT') return { agent: { ...agent, origin: 'custom' } }
-        return path === '/plugins' ? { plugins } : catalog()
+        return fallback(path)
     })
     mount()
     fireEvent.click(await screen.findByRole('button', { name: 'Bearbeiten' }))
@@ -79,7 +87,7 @@ it('a disabled plugin skill blocks launch and can be explicitly removed from a c
 it('agent starts submit the selected dynamic model and provider changes clear the previous model', async () => {
     context.api.request.mockImplementation(async (path: string, options: { body?: Record<string, unknown> }) => {
         if (path.endsWith('/start')) return { sessionId: 'model-session', operationId: options.body!.operationId, acknowledged: 'persisted' }
-        return path === '/plugins' ? { plugins } : catalog()
+        return fallback(path)
     })
     mount()
     fireEvent.click(await screen.findByRole('button', { name: 'Aufgabe starten' }))
@@ -90,7 +98,7 @@ it('agent starts submit the selected dynamic model and provider changes clear th
     expect(screen.getByLabelText('Modell für diesen Start (optional)')).toHaveValue('')
     fireEvent.change(screen.getByLabelText('Modell für diesen Start (optional)'), { target: { value: 'future-dynamic-model' } })
     fireEvent.change(screen.getByLabelText('Aufgabe'), { target: { value: 'Prüfe das neue Modell.' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Jetzt starten' }))
+    fireEvent.click(await readyStart())
     await screen.findByRole('link', { name: 'Sitzung öffnen' })
     expect(context.api.request).toHaveBeenCalledWith('/projects/project-1/agent-catalog/specialist/start', expect.objectContaining({ body: expect.objectContaining({ provider: 'codex', model: 'future-dynamic-model' }) }))
 })
@@ -103,12 +111,12 @@ it('uncertain start retains exact operation ID and payload; confirmed replay ope
             if (starts.length === 1) throw new Error('Antwort verloren')
             return { sessionId: 'session-1', operationId: options.body!.operationId, acknowledged: 'persisted' }
         }
-        return path === '/plugins' ? { plugins } : catalog()
+        return fallback(path)
     })
     mount()
     fireEvent.click(await screen.findByRole('button', { name: 'Aufgabe starten' }))
     fireEvent.change(screen.getByLabelText('Aufgabe'), { target: { value: 'Prüfe den GitHub-Zugriff.' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Jetzt starten' }))
+    fireEvent.click(await readyStart())
     expect(await screen.findByText(/Die Startbestätigung fehlt/)).toBeInTheDocument()
     expect(screen.getByLabelText('Aufgabe')).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Aufgabe starten' })).toBeDisabled()
@@ -122,12 +130,12 @@ it('uncertain start retains exact operation ID and payload; confirmed replay ope
 it('preflight rejection allows correcting a task without trapping the user in uncertain-start recovery', async () => {
     context.api.request.mockImplementation(async (path: string) => {
         if (path.endsWith('/start')) throw new EvolvedApiError('Auftrag ist zu lang', 400, 'agent_prompt_limit', false)
-        return path === '/plugins' ? { plugins } : catalog()
+        return fallback(path)
     })
     mount()
     fireEvent.click(await screen.findByRole('button', { name: 'Aufgabe starten' }))
     fireEvent.change(screen.getByLabelText('Aufgabe'), { target: { value: 'Prüfe das Projekt.' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Jetzt starten' }))
+    fireEvent.click(await readyStart())
     expect(await screen.findByRole('alert')).toHaveTextContent('Auftrag ist zu lang')
     expect(screen.getByLabelText('Aufgabe')).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Abbrechen' })).toBeEnabled()
@@ -142,12 +150,12 @@ it('a later preflight error cannot unlock an already uncertain operation or repl
             if (starts.length === 1) throw new Error('Antwort verloren')
             throw new EvolvedApiError('Runner nicht erreichbar', 409, 'runner_unavailable', false)
         }
-        return path === '/plugins' ? { plugins } : catalog()
+        return fallback(path)
     })
     mount()
     fireEvent.click(await screen.findByRole('button', { name: 'Aufgabe starten' }))
     fireEvent.change(screen.getByLabelText('Aufgabe'), { target: { value: 'Prüfe das Projekt.' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Jetzt starten' }))
+    fireEvent.click(await readyStart())
     fireEvent.click(await screen.findByRole('button', { name: 'Startbestätigung erneut prüfen' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Runner nicht erreichbar')
     expect(starts).toHaveLength(2)
@@ -161,12 +169,12 @@ it('an uncertain start gets a new operation ID only after explicit recovery conf
     const starts: Record<string, unknown>[] = []
     context.api.request.mockImplementation(async (path: string, options: { body?: Record<string, unknown> }) => {
         if (path.endsWith('/start')) { starts.push(options.body!); throw new EvolvedApiError('Ausgang unklar', 409, 'agent_start_indeterminate') }
-        return path === '/plugins' ? { plugins } : catalog()
+        return fallback(path)
     })
     mount()
     fireEvent.click(await screen.findByRole('button', { name: 'Aufgabe starten' }))
     fireEvent.change(screen.getByLabelText('Aufgabe'), { target: { value: 'Prüfe das Projekt.' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Jetzt starten' }))
+    fireEvent.click(await readyStart())
     const recovery = await screen.findByRole('button', { name: 'Nach Sitzungsprüfung neuen Auftrag vorbereiten' })
     fireEvent.click(recovery); fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }))
     expect(starts).toHaveLength(1)
@@ -175,7 +183,7 @@ it('an uncertain start gets a new operation ID only after explicit recovery conf
     fireEvent.click(screen.getByRole('button', { name: 'Bestätigen' }))
     expect(starts).toHaveLength(1)
     expect(screen.getByLabelText('Aufgabe')).toBeEnabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Jetzt starten' }))
+    fireEvent.click(await readyStart())
     await waitFor(() => expect(starts).toHaveLength(2))
     expect(starts[1].operationId).not.toBe(starts[0].operationId)
 })
@@ -184,7 +192,7 @@ it('plugin preview renders untrusted instructions only as text and installs exac
     context.api.request.mockImplementation(async (path: string, options: { method?: string; body?: unknown }) => {
         if (path === '/plugins/preview') return { preview }
         if (path === '/plugins' && options?.method === 'POST') { plugins = [installed]; return { plugin: installed } }
-        return path === '/plugins' ? { plugins } : catalog()
+        return fallback(path)
     })
     mount()
     fireEvent.change(await screen.findByLabelText(/^GitHub-Repository/), { target: { value: 'example/plugin' } })
@@ -203,7 +211,7 @@ it('plugin update requires a fresh explicit preview, and uninstallation needs co
     context.api.request.mockImplementation(async (path: string, options: { method?: string }) => {
         if (path.endsWith('/preview-update')) return { preview: { ...preview, pluginId: 'plugin-1', commitSha: 'c'.repeat(40) } }
         if (options?.method === 'DELETE') { plugins = []; return { ok: true } }
-        return path === '/plugins' ? { plugins } : catalog()
+        return fallback(path)
     })
     mount()
     fireEvent.click(await screen.findByRole('button', { name: 'Update prüfen' }))
@@ -222,7 +230,7 @@ it('a lost mutation response reloads persisted plugin state instead of reporting
     plugins = [installed]
     context.api.request.mockImplementation(async (path: string, options: { method?: string }) => {
         if (options?.method === 'PUT') { plugins = [{ ...installed, enabled: false }]; throw new Error('Verbindung unterbrochen') }
-        return path === '/plugins' ? { plugins } : catalog()
+        return fallback(path)
     })
     mount()
     fireEvent.click(await screen.findByRole('button', { name: 'Deaktivieren' }))
@@ -235,7 +243,7 @@ it('context switch aborts in-flight mutations and old responses never populate t
     let signal: AbortSignal | undefined, finish: ((result: unknown) => void) | undefined
     context.api.request.mockImplementation(async (path: string, options: { method?: string; signal?: AbortSignal }) => {
         if (path === '/plugins/preview') { signal = options.signal; return new Promise(resolve => { finish = resolve }) }
-        return path === '/plugins' ? { plugins } : catalog()
+        return fallback(path)
     })
     const view = mount()
     fireEvent.change(await screen.findByLabelText(/^GitHub-Repository/), { target: { value: 'example/plugin' } })
@@ -253,12 +261,12 @@ it('an explicit repository selection is retained unchanged across an uncertain s
     const starts: Record<string, unknown>[] = []
     context.api.request.mockImplementation(async (path, options) => {
         if (path.endsWith('/start')) { starts.push(options.body); throw new Error('Lost response') }
-        return path === '/plugins' ? { plugins } : catalog()
+        return fallback(path)
     })
     mount(); fireEvent.click(await screen.findByRole('button', { name: 'Aufgabe starten' }))
     fireEvent.change(screen.getByLabelText(/^Arbeitsort/), { target: { value: '101' } })
     fireEvent.change(screen.getByLabelText('Aufgabe'), { target: { value: 'Check scoped code' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Jetzt starten' }))
+    fireEvent.click(await readyStart())
     await screen.findByText(/Die Startbestätigung fehlt/)
     expect(screen.getByLabelText(/^Arbeitsort/)).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Startbestätigung erneut prüfen' }))
@@ -276,7 +284,7 @@ it('review context prefills only the builtin reviewer and requires explicit star
     expect(await screen.findByLabelText(/^Arbeitsort/)).toHaveValue('101')
     expect(screen.getByLabelText(/^Arbeitsort/)).toBeDisabled()
     expect(context.api.request.mock.calls.some(([path]) => path.endsWith('/start'))).toBe(false)
-    fireEvent.click(screen.getByRole('button', { name: 'Jetzt starten' }))
+    fireEvent.click(await readyStart())
     await waitFor(() => expect(context.api.request).toHaveBeenCalledWith('/projects/project-1/agent-catalog/builtin%3Areview/start', expect.objectContaining({ body: expect.objectContaining({ repositoryId: '101', review: { snapshotId: 'b'.repeat(64), paths: ['src/a,b.ts'] } }) })))
 })
 
@@ -298,11 +306,11 @@ it('shows a scoped repository start intent before selecting a specialist without
 it.each([['repository_read_busy', false, false], ['repository_checkout_unavailable', false, false], ['repository_access_changed', false, false], ['repository_access_changed', true, true], ['worktree_changed', undefined, true]])('uses the explicit reservation marker for %s rather than guessing from the code', async (code, reserved, uncertain) => {
     context.api.request.mockImplementation(async (path: string) => {
         if (path.endsWith('/start')) throw new EvolvedApiError('Repository check failed', 409, code as string, reserved as boolean | undefined)
-        return path === '/plugins' ? { plugins } : catalog()
+        return fallback(path)
     })
     mount(); fireEvent.click(await screen.findByRole('button', { name: 'Aufgabe starten' }))
     fireEvent.change(screen.getByLabelText('Aufgabe'), { target: { value: 'Check repository' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Jetzt starten' }))
+    fireEvent.click(await readyStart())
     await screen.findByText('Repository check failed')
     expect((screen.getByLabelText('Aufgabe') as HTMLTextAreaElement).disabled).toBe(uncertain)
     expect(Boolean(screen.queryByText(/Die Startbestätigung fehlt/))).toBe(uncertain)
@@ -314,4 +322,103 @@ it('does not claim empty plugins or a missing runner when the corresponding cata
     expect(await screen.findByRole('alert')).toHaveTextContent('Catalog unavailable')
     expect(screen.queryByText('Noch keine Plugins installiert.')).not.toBeInTheDocument()
     expect(screen.queryByText(/Noch kein ausführender Runner/)).not.toBeInTheDocument()
+})
+
+const twoRepositories = () => { repositoryChoices.items = ['101', '102'].map(id => ({ id, fullName: `example/app${id}`, path: `/work/alpha/repositories/example/app${id}`, local: { state: 'ready' } })) }
+function startBodies() { return context.api.request.mock.calls.filter(([path]) => String(path).endsWith('/start')).map(([, options]) => options.body as Record<string, unknown>) }
+function acceptStarts() {
+    context.api.request.mockImplementation(async (path: string, options: { body?: Record<string, unknown> }) => path.endsWith('/start')
+        ? { sessionId: 'session-1', operationId: options.body!.operationId, acknowledged: 'persisted' } : fallback(path))
+}
+
+it('preselects the development default repository visibly and sends it explicitly', async () => {
+    twoRepositories(); developmentDefault = '101'; acceptStarts()
+    mount(); fireEvent.click(await screen.findByRole('button', { name: 'Aufgabe starten' }))
+    await waitFor(() => expect(screen.getByLabelText(/^Arbeitsort/)).toHaveValue('101'))
+    expect(screen.getByRole('option', { name: 'example/app101 · Standard' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Arbeitsordner')).toHaveTextContent('/work/alpha/repositories/example/app101')
+    fireEvent.change(screen.getByLabelText('Aufgabe'), { target: { value: 'Use the default' } })
+    fireEvent.click(await readyStart())
+    await waitFor(() => expect(startBodies()).toHaveLength(1))
+    expect(startBodies()[0]).toMatchObject({ repositoryId: '101' })
+})
+
+it.each([['', undefined], ['102', '102']])('an explicit choice (%s) overrides the development default', async (choice, expected) => {
+    twoRepositories(); developmentDefault = '101'; acceptStarts()
+    context.project = { ...context.project!, rootPath: '/work/alpha' }
+    mount(); fireEvent.click(await screen.findByRole('button', { name: 'Aufgabe starten' }))
+    await waitFor(() => expect(screen.getByLabelText(/^Arbeitsort/)).toHaveValue('101'))
+    fireEvent.change(screen.getByLabelText(/^Arbeitsort/), { target: { value: choice } })
+    expect(screen.getByLabelText('Arbeitsordner')).toHaveTextContent(choice ? `/work/alpha/repositories/example/app${choice}` : '/work/alpha')
+    fireEvent.change(screen.getByLabelText('Aufgabe'), { target: { value: 'Explicit target' } })
+    fireEvent.click(await readyStart())
+    await waitFor(() => expect(startBodies()).toHaveLength(1))
+    expect(startBodies()[0].repositoryId).toBe(expected)
+})
+
+it('a workflow repository selection takes precedence over the development default', async () => {
+    twoRepositories(); developmentDefault = '101'
+    function Trigger() { const workflow = useProjectWorkflow()!; return <><button onClick={() => workflow.setRepositoryId('102')}>Repo intent</button><AgentsPluginsPanel /></> }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><ProjectWorkflowProvider><Trigger /></ProjectWorkflowProvider></QueryClientProvider>)
+    await screen.findByText('Prüfer'); fireEvent.click(screen.getByRole('button', { name: 'Repo intent' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Aufgabe starten' }))
+    await waitFor(() => expect(context.api.request.mock.calls.some(([path]) => path === '/projects/project-1/development')).toBe(true))
+    expect(screen.getByLabelText(/^Arbeitsort/)).toHaveValue('102')
+})
+
+it('an initial configuration failure never silently selects the project folder', async () => {
+    twoRepositories(); developmentDefault = '101'
+    let failing = true
+    context.api.request.mockImplementation(async (path: string, options: { body?: Record<string, unknown> }) => {
+        if (path === '/projects/project-1/development' && failing) throw new EvolvedApiError('upstream', 503)
+        return path.endsWith('/start') ? { sessionId: 'session-1', operationId: options.body!.operationId, acknowledged: 'persisted' } : fallback(path)
+    })
+    mount(); fireEvent.click(await screen.findByRole('button', { name: 'Aufgabe starten' }))
+    fireEvent.change(screen.getByLabelText('Aufgabe'), { target: { value: 'Needs a target' } })
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Standard-Repository unbekannt')
+    expect(screen.getByRole('button', { name: 'Jetzt starten' })).toBeDisabled()
+    expect(screen.getByRole('option', { name: 'Arbeitsort wählen …' })).toBeDisabled()
+    failing = false
+    fireEvent.click(screen.getByRole('button', { name: 'Erneut laden' }))
+    await waitFor(() => expect(screen.getByLabelText(/^Arbeitsort/)).toHaveValue('101'))
+    fireEvent.change(screen.getByLabelText(/^Arbeitsort/), { target: { value: '' } })
+    fireEvent.click(await readyStart())
+    await waitFor(() => expect(startBodies()).toHaveLength(1))
+    expect(startBodies()[0]).not.toHaveProperty('repositoryId')
+})
+
+it('the explicit project folder can be chosen while the configuration is unavailable', async () => {
+    context.api.request.mockImplementation(async (path: string, options: { body?: Record<string, unknown> }) => {
+        if (path === '/projects/project-1/development') throw new EvolvedApiError('upstream', 503)
+        return path.endsWith('/start') ? { sessionId: 'session-1', operationId: options.body!.operationId, acknowledged: 'persisted' } : fallback(path)
+    })
+    mount(); fireEvent.click(await screen.findByRole('button', { name: 'Aufgabe starten' }))
+    await screen.findByRole('alert')
+    fireEvent.change(screen.getByLabelText(/^Arbeitsort/), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText('Aufgabe'), { target: { value: 'Root on purpose' } })
+    fireEvent.click(await readyStart())
+    await waitFor(() => expect(startBodies()).toHaveLength(1))
+    expect(startBodies()[0]).not.toHaveProperty('repositoryId')
+})
+
+it('freezes the resolved default into an uncertain operation so a retry sends the same body', async () => {
+    twoRepositories(); developmentDefault = '101'
+    let attempts = 0
+    context.api.request.mockImplementation(async (path: string) => {
+        if (path.endsWith('/start')) { attempts++; throw new Error('Lost response') }
+        return fallback(path)
+    })
+    const { client } = mount(); fireEvent.click(await screen.findByRole('button', { name: 'Aufgabe starten' }))
+    await waitFor(() => expect(screen.getByLabelText(/^Arbeitsort/)).toHaveValue('101'))
+    fireEvent.change(screen.getByLabelText('Aufgabe'), { target: { value: 'Retry safely' } })
+    fireEvent.click(await readyStart())
+    await screen.findByText(/Die Startbestätigung fehlt/)
+    developmentDefault = '102'
+    await act(async () => { await client.invalidateQueries({ queryKey: ['evolved', 'development'] }) })
+    fireEvent.click(screen.getByRole('button', { name: 'Startbestätigung erneut prüfen' }))
+    await waitFor(() => expect(attempts).toBe(2))
+    expect(startBodies()[1]).toEqual(startBodies()[0])
+    expect(startBodies()[1].repositoryId).toBe('101')
 })

@@ -6,6 +6,7 @@ import { ProjectsPanel } from './ProjectsTeam'
 const context = vi.hoisted(() => ({ api: { request: vi.fn(), baseUrl: 'https://hub.example' }, me: { user: { id: 'user-1', isAdmin: false }, accessibleProjects: [] as EvolvedProject[] }, project: null as EvolvedProject | null, selectProject: vi.fn(), refresh: vi.fn() }))
 vi.mock('./auth', () => ({ useEvolved: () => context }))
 vi.mock('./Capacity', () => ({ CapacityPanel: () => <p>Selected project capacity</p> }))
+vi.mock('./ProjectDevelopment', () => ({ DevelopmentOverviewCard: () => <p>Development overview</p> }))
 const projects: EvolvedProject[] = ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'].map((name, index) => ({ id: `project-${index}`, teamId: 'team-1', name, role: 'viewer', profile: 'restricted', rootPath: `/work/${name}` }))
 function mount(onSelectProject?: (id: string) => void) {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -68,5 +69,28 @@ describe('project overview', () => {
         context.me.user.id = 'another-user'; context.me.accessibleProjects = [...projects]
         rerenderPanel()
         expect(screen.getByLabelText('Projekte durchsuchen')).toHaveValue('')
+    })
+    it('creates a project with an explicit development mode and Odoo version but no repository', async () => {
+        context.me.user.isAdmin = false
+        context.api.request.mockImplementation(async (path: string) => path === '/teams' ? { teams: [{ id: 'team-1', name: 'Team', role: 'admin' }] } : { project: { id: 'new' } })
+        mount()
+        fireEvent.change(await screen.findByLabelText('Projektname'), { target: { value: 'ERP' } })
+        expect(screen.getByRole('radio', { name: 'Allgemein' })).toBeChecked()
+        fireEvent.click(screen.getByRole('radio', { name: 'Odoo' }))
+        fireEvent.click(screen.getByRole('radio', { name: '19.0' }))
+        expect(screen.getByText(/Der Modus ändert keine Rechte und installiert nichts/)).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Projekt anlegen' }))
+        await waitFor(() => expect(context.api.request).toHaveBeenCalledWith('/projects', expect.objectContaining({ method: 'POST' })))
+        const body = context.api.request.mock.calls.find(([path, options]) => path === '/projects' && options?.method === 'POST')![1].body
+        expect(body).toMatchObject({ name: 'ERP', teamId: 'team-1', development: { settings: { mode: 'odoo', repositoryId: null, odoo: { major: 19, enterpriseRepositoryId: null } } } })
+        expect(body.development.settings.ios).toBeNull()
+    })
+    it('omits the development field for a general project', async () => {
+        context.api.request.mockImplementation(async (path: string) => path === '/teams' ? { teams: [{ id: 'team-1', name: 'Team', role: 'admin' }] } : { project: { id: 'new' } })
+        mount()
+        fireEvent.change(await screen.findByLabelText('Projektname'), { target: { value: 'Plain' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Projekt anlegen' }))
+        await waitFor(() => expect(context.api.request.mock.calls.some(([path, options]) => path === '/projects' && options?.method === 'POST')).toBe(true))
+        expect(context.api.request.mock.calls.find(([path, options]) => path === '/projects' && options?.method === 'POST')![1].body).not.toHaveProperty('development')
     })
 })

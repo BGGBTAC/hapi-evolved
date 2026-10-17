@@ -15,6 +15,7 @@ vi.mock('./ProjectsTeam', () => ({ ProjectsPanel: ({ onSelectProject }: { onSele
 vi.mock('./Dashboard', () => ({ Dashboard: () => <p>Dashboard {state.value.project?.id ?? 'onboarding'}</p> }))
 vi.mock('./Capacity', () => ({ CapacityPanel: () => <p>Capacity {state.value.project?.id}</p> }))
 vi.mock('./Github', () => ({ GithubPanel: () => <p>GitHub {state.value.project?.id}</p> }))
+vi.mock('./ProjectDevelopment', () => ({ ProjectDevelopmentPanel: () => <p>Development {state.value.project?.id}</p> }))
 vi.mock('./Vault', () => ({ VaultPanel: () => <p>Vault content</p> }))
 vi.mock('./McpShop', () => ({ McpShopPanel: () => <p>MCP shop {state.value.project?.id}</p> }))
 vi.mock('./Memory', () => ({ MemoryPanel: () => <p>Memory content</p> }))
@@ -57,7 +58,9 @@ describe('workspace navigation', () => {
     it('supports browser back and forward between links and keeps every tool reachable', async () => {
         const { history } = await mount('/evolved?tab=overview&project=project-1')
         const nav = screen.getByRole('navigation', { name: 'Arbeitsbereich' })
-        for (const label of ['Projekte', 'Agenten & Plugins', 'Kapazität', 'GitHub', 'MCP-Shop', 'Gedächtnis', 'Codegraph', 'Vorschauen', 'Automatisierung', 'Runner', 'Abos verbinden', 'Tresor', 'Team & Konto', 'Sessions']) expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument()
+        for (const label of ['Projekte', 'Agenten & Plugins', 'Kapazität', 'Entwicklung', 'GitHub', 'MCP-Shop', 'Gedächtnis', 'Codegraph', 'Vorschauen', 'Automatisierung', 'Runner', 'Abos verbinden', 'Tresor', 'Team & Konto', 'Sessions']) expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument()
+        fireEvent.click(within(nav).getByRole('link', { name: 'Entwicklung' }))
+        await screen.findByText('Development project-1')
         fireEvent.click(within(nav).getByRole('link', { name: 'Gedächtnis' }))
         await screen.findByText('Memory content')
         fireEvent.click(within(nav).getByRole('link', { name: 'Kapazität' }))
