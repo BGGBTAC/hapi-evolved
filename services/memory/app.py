@@ -320,6 +320,7 @@ async def execute(request: Request, kind: str):
             return JSONResponse({"error": "Operation conflict"}, 409)
         graph = None; http = None
         success = False
+        result = {}
         stage = "client_setup"
         try:
             graph, http = await graph_client(operation, config)

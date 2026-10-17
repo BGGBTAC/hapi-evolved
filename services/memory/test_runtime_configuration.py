@@ -81,6 +81,19 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(b"private-secret-and-knowledge", filename.read_bytes())
             self.assertNotIn(b"private-cleanup-secret", filename.read_bytes())
 
+    async def test_cancellation_with_cleanup_failure_remains_uncertain_without_masking_cancellation(self):
+        graph, resources = self.graph()
+        graph.search_.side_effect = asyncio.CancelledError()
+        resources.aclose.side_effect = RuntimeError("private-cleanup-secret")
+        request = SimpleNamespace(json=AsyncMock(return_value=self.operation()), state=SimpleNamespace())
+        with patch.object(self.app, "graph_client", AsyncMock(return_value=(graph, resources))):
+            with self.assertRaises(asyncio.CancelledError):
+                await self.app.execute(request, "search")
+        resources.aclose.assert_awaited_once()
+        row = self.app.ledger.db.execute("SELECT status,result FROM operations WHERE id='op-project-a'").fetchone()
+        self.assertEqual(row["status"], "running")
+        self.assertIsNone(row["result"])
+
     async def test_empty_binding_accepts_failed_and_purged_history_without_changing_receipts(self):
         run = self.graph_counts()
         for state in ["failed", "purged"]:
