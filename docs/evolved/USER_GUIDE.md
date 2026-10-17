@@ -224,6 +224,18 @@ Für den Wissensgraphen öffnet ein Projektadministrator **Gedächtnis → Graph
 **Claude + Voyage + lokale Rangfusion funktioniert ohne OpenAI-Key.** Claude-/Codex-Abos
 unter „Abos verbinden“ ersetzen keine API-Keys für den Wissensgraphen.
 
+**Speichern:** „Einrichtung speichern“ sichert API-Keys, Modelle und Preise gemeinsam.
+Fehlende Pflichtangaben stehen direkt über dem Knopf; ein Klick auf einen Hinweis
+führt zum zugehörigen Feld. Bei einem Speicherfehler bleiben die Eingaben in der
+offenen Ansicht erhalten. Nach erfolgreichem Speichern sind die Passwortfelder leer
+und zeigen „Schlüssel gespeichert“; zum Beibehalten nicht erneut eingeben.
+„Cloud und Budget speichern“ sichert nur die Freigabe und Ausgabenlimits und lässt
+die noch ungespeicherte Einrichtung unverändert. „Stand neu laden“ fragt vor dem
+Verwerfen solcher Eingaben nach. Ungespeicherte Schlüssel werden nicht im
+Browser-Speicher abgelegt und gehen beim Verlassen der Ansicht oder Wechsel des
+Kontos/Projekts verloren.
+
+
 Schlüssel werden getrennt je Funktion verschlüsselt im Projekt-Tresor gespeichert und
 weder Agenten noch beim erneuten Öffnen dem Browser ausgegeben. Ein leeres Schlüsselfeld
 behält nur den bereits gespeicherten Schlüssel derselben Funktion beim selben Anbieter.

@@ -156,12 +156,14 @@ function EvolvedSessionProvider({ baseUrl, authenticated, onboarding }: {
     const [token, setToken] = useState<string | null>(null)
     const [tokenProjectId, setTokenProjectId] = useState<string | null>(null)
     const tokenRef = useRef<string | null>(null)
+    const tokenRequest = useRef(0)
     const principalRef = useRef<string | null>(null)
     const authEpoch = useRef(0)
     const projectRef = useRef(projectId)
     projectRef.current = projectId
     const [error, setError] = useState<unknown>(null)
     const [bridgeError, setBridgeError] = useState<unknown>(null)
+    const [bridgeRefreshFailed, setBridgeRefreshFailed] = useState(false)
     const refresh = useCallback(async () => {
         const epoch = authEpoch.current
         const status = await api.request<{ initialized: boolean; authenticated: boolean; enrollment?: PendingEnrollment | null }>('/auth/status')
@@ -178,6 +180,7 @@ function EvolvedSessionProvider({ baseUrl, authenticated, onboarding }: {
             setProjectId(null)
             setMe(null)
             setToken(null)
+            setBridgeRefreshFailed(false)
             tokenRef.current = null
             setReady(true)
             return
@@ -196,6 +199,7 @@ function EvolvedSessionProvider({ baseUrl, authenticated, onboarding }: {
             setToken(null)
             setTokenProjectId(null)
             setBridgeError(null)
+            setBridgeRefreshFailed(false)
         }
         principalRef.current = next.user.id
         projectRef.current = nextProject
@@ -213,6 +217,7 @@ function EvolvedSessionProvider({ baseUrl, authenticated, onboarding }: {
         tokenRef.current = null
         setToken(null)
         setBridgeError(null)
+        setBridgeRefreshFailed(false)
         projectRef.current = id
         setProjectId(id)
         try { localStorage.setItem(`hapi.evolved.project:${baseUrl}:${me.user.id}`, id) } catch { /* storage optional */ }
@@ -220,20 +225,34 @@ function EvolvedSessionProvider({ baseUrl, authenticated, onboarding }: {
     const issueToken = useCallback(async (): Promise<string | null> => {
         if (!projectId) return null
         const epoch = authEpoch.current
+        const request = ++tokenRequest.current
         try {
             const result = await api.request<{ token: string }>(`/session-token?projectId=${encodeURIComponent(projectId)}`)
             if (projectRef.current !== projectId || epoch !== authEpoch.current) return null
+            // Concurrent callers may each use their successful renewal, but an
+            // older response must not overwrite the newest connection state.
+            if (request !== tokenRequest.current) return result.token
             tokenRef.current = result.token
             setToken(result.token)
             setTokenProjectId(projectId)
             setBridgeError(null)
+            setBridgeRefreshFailed(false)
             return result.token
         } catch (failure) {
-            if (projectRef.current !== projectId || epoch !== authEpoch.current) return null
+            if (projectRef.current !== projectId || epoch !== authEpoch.current || request !== tokenRequest.current) return null
+            const temporary = failure instanceof TypeError || failure instanceof EvolvedApiError && (failure.status === 429 || failure.status >= 500)
+            if (temporary && tokenRef.current) {
+                // A failed renewal does not revoke the current project authority.
+                // Keep drafts mounted, but never report the stale token as a
+                // successful refresh to API clients that might replay a request.
+                setBridgeRefreshFailed(true)
+                return null
+            }
+            authEpoch.current++
+            setBridgeRefreshFailed(false)
             tokenRef.current = null
             setToken(null)
             if (failure instanceof EvolvedApiError && failure.status === 401) {
-                authEpoch.current++
                 queryClient.clear()
                 clearAllMessageWindows()
             revokeBrowserCloudConsent()
@@ -271,6 +290,7 @@ function EvolvedSessionProvider({ baseUrl, authenticated, onboarding }: {
             revokeBrowserCloudConsent()
             tokenRef.current = null
             setToken(null)
+            setBridgeRefreshFailed(false)
             await refresh()
             throw new Error('Du hast ein anderes Konto gewählt. Prüfe das aktive Projekt und starte die Aktion erneut.')
         }
@@ -294,6 +314,7 @@ function EvolvedSessionProvider({ baseUrl, authenticated, onboarding }: {
         setProjectId(null)
         tokenRef.current = null
         setToken(null)
+        setBridgeRefreshFailed(false)
         setMe(null)
     }
     if (error) return <main lang="de" className="evolved ev-login"><ErrorNotice error={error} /><button onClick={() => void refresh().catch(setError)}>Erneut versuchen</button></main>
@@ -302,6 +323,9 @@ function EvolvedSessionProvider({ baseUrl, authenticated, onboarding }: {
     const project = me.accessibleProjects.find(item => item.id === projectId) ?? null
     return <EvolvedContext.Provider value={{ api, me, project, selectProject, refresh: reloadContext, logout, reauthenticate }}>
         <PluginThemeSync key={`${api.baseUrl}:${me.user.id}`} api={api} userId={me.user.id} />
-        {!project ? onboarding : bridgeError ? <main lang="de" className="evolved ev-login"><ErrorNotice error={bridgeError} /><button onClick={() => void issueToken()}>Projekt erneut öffnen</button><button onClick={() => void logout()}>Abmelden</button></main> : !token || tokenProjectId !== projectId ? <main lang="de" className="evolved ev-login"><Loading /></main> : authenticated({ api: hubApi, token, projectId: project.id })}
+        {!project ? onboarding : bridgeError ? <main lang="de" className="evolved ev-login"><ErrorNotice error={bridgeError} /><button onClick={() => void issueToken()}>Projekt erneut öffnen</button><button onClick={() => void logout()}>Abmelden</button></main> : !token || tokenProjectId !== projectId ? <main lang="de" className="evolved ev-login"><Loading /></main> : <>
+            {bridgeRefreshFailed && <aside lang="de" className="evolved ev-auth-refresh-warning" role="status"><p>Die Verbindung konnte gerade nicht erneuert werden. Deine offenen Eingaben bleiben erhalten.</p><button onClick={() => void issueToken()}>Verbindung erneut prüfen</button></aside>}
+            {authenticated({ api: hubApi, token, projectId: project.id })}
+        </>}
     </EvolvedContext.Provider>
 }

@@ -31,7 +31,7 @@ function BudgetSettings({ data, save, busy }: { data: MemorySettings; save: (val
         <label className="ev-check"><input type="checkbox" checked={enabled} onChange={event => setEnabled(event.target.checked)} />Gespeichertes Wissen im Graph verarbeiten</label>
         <label className="ev-check"><input type="checkbox" checked={cloud} onChange={event => setCloud(event.target.checked)} />Cloud-Verarbeitung für dieses Projekt erlauben</label>
         <div className="ev-form-grid"><Field label="Monatslimit (USD)"><input type="number" min="0" step="0.000001" required value={monthly} onChange={event => setMonthly(event.target.value)} /></Field><Field label="Limit je Auftrag (USD)"><input type="number" min="0" step="0.000001" required value={perJob} onChange={event => setPerJob(event.target.value)} /></Field></div>
-        <p className="ev-muted">Verarbeitet ausdrücklich gespeicherte Erkenntnisse und Quellen. Gespräche werden nicht automatisch übernommen. 0 bedeutet kein Ausgabenbudget. Eine Cloud-Freigabe allein löst keinen Auftrag aus.</p><button className="ev-primary" disabled={busy}>Einstellungen speichern</button>
+        <p className="ev-muted">Dieser Bereich speichert nur Cloud-Freigabe und Budget. API-Keys, Modelle und Preise oben mit „Einrichtung speichern“ sichern. Noch nicht gespeicherte Eingaben dort bleiben erhalten.</p><p className="ev-muted">Verarbeitet ausdrücklich gespeicherte Erkenntnisse und Quellen. Gespräche werden nicht automatisch übernommen. 0 bedeutet kein Ausgabenbudget. Eine Cloud-Freigabe allein löst keinen Auftrag aus.</p><button className="ev-primary" disabled={busy}>Cloud und Budget speichern</button>
     </form>
 }
 export function MemoryPanel() {
@@ -94,6 +94,6 @@ function ProjectMemoryPanel() {
         </div><button className="ev-primary" disabled={action.busy || !title.trim() || !body.trim()}>Vorschlag speichern</button>
     </form></Panel>}
     {budget && <div id="memory-budget"><Panel title="Verarbeitung und Budget"><p>Zeitraum: {budget.period}</p><div className="ev-budget" role="meter" aria-label="Verbrauchtes und reserviertes Monatsbudget" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(usage)}><span style={{ width: `${usage}%` }} /></div><p>{(budget.spentMicros / 1_000_000).toFixed(4)} USD verbraucht · {(budget.reservedMicros / 1_000_000).toFixed(4)} USD reserviert · {(budget.limitMicros / 1_000_000).toFixed(2)} USD Limit</p>
-        {admin && memory.data && <BudgetSettings data={memory.data.settings} busy={action.busy} save={settings => void action.run(async () => { await api.request(`${path}/settings`, { method: 'PATCH', body: settings }); await memory.refetch() }, 'Gedächtniseinstellungen gespeichert.')} />}
+        {admin && memory.data && <BudgetSettings data={memory.data.settings} busy={action.busy} save={settings => void action.run(async () => { await api.request(`${path}/settings`, { method: 'PATCH', body: settings }); await memory.refetch() }, 'Cloud-Freigabe und Budget gespeichert.')} />}
     </Panel></div>}</>}<ActionStatus action={action} /></div>
 }

@@ -38,6 +38,8 @@
 .ev-muted { margin: 8px 0 16px !important; }
 .ev-error, .ev-success, .ev-callout { padding: 13px 16px; border-radius: 10px; margin: 10px 0; overflow-wrap: anywhere; }
 .ev-error { border: 1px solid #fda29b; background: color-mix(in srgb, #f04438 8%, var(--app-bg, #fff)); }
+.ev-auth-refresh-warning { position: fixed; z-index: 80; top: max(12px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); width: min(560px, calc(100% - 24px)); padding: 12px 16px; border: 1px solid var(--ev-line); border-radius: 10px; background: var(--ev-surface); box-shadow: 0 4px 20px #0002; }
+.ev-auth-refresh-warning p { margin: 0 0 8px; }
 .ev-success, .ev-callout { background: var(--ev-accent-soft); border: 1px solid color-mix(in srgb, var(--ev-accent) 25%, transparent); }
 .ev-empty { padding: 22px 0; color: var(--app-hint, #64716f); }
 .ev-stack { display: flex; flex-direction: column; gap: 20px; }
