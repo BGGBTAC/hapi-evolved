@@ -5,6 +5,7 @@ import { privateFile } from '../../hub/src/evolved/store'
 import { SOCKET_MAX_HTTP_BUFFER_SIZE } from '../../hub/src/socket/socketLimits'
 import { boundedGitResponse, GIT_TIMEOUT_MS, gitPath } from '../../hub/src/evolved/githubProtocol'
 import { parseRunnerGitRequest, readRunnerGitBody } from './gitRequest'
+import { readCredentialResponse } from '../../shared/src/credentialTransport'
 
 type Grant = { token: string; expiresAt: number; projectId: string }
 const MAX_PENDING_BYTES = 8 * 1024 * 1024
@@ -30,6 +31,7 @@ export function queuedPacketBytes(value: unknown, depth = 0): number {
     return 8
 }
 export function allowedProxyPath(path: string, method = 'GET', search = ''): boolean {
+    if (/^\/api\/evolved\/projects\/[A-Za-z0-9_-]{1,80}\/agent-credentials$/.test(path)) return method === 'GET' && search === ''
     const mcp = /^\/api\/evolved\/projects\/[A-Za-z0-9_-]{1,80}\/mcp\/servers(?:\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\/(tools|query|call))?$/.exec(path)
     if (mcp) return search === '' && method === (mcp[2] === 'call' || mcp[2] === 'query' ? 'POST' : 'GET')
     if (/^\/api\/evolved\/projects\/[^/]+\/codegraph(?:\/|$)/.test(path)) {
@@ -201,6 +203,35 @@ export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; p
                     controller.abort(); finish()
                     return new Response('Git operation denied or interrupted; inspect remote refs before retrying a push.', { status: 502 })
                 }
+            }
+            if (url.pathname === '/evolved-runner-environment') {
+                if (request.method !== 'POST' || url.search || request.headers.has('cookie')) return new Response('Endpoint denied', { status: 403 })
+                try {
+                    // Only the literal empty body is admitted; never proxy caller-supplied scope.
+                    const reader = request.body?.getReader()
+                    if (!reader) return new Response('Invalid request', { status: 400 })
+                    let body = ''
+                    try {
+                        for (;;) {
+                            const { done, value } = await reader.read()
+                            if (done) break
+                            if (value.length + body.length > 2) return new Response('Invalid request', { status: 400 })
+                            body += new TextDecoder().decode(value)
+                        }
+                    } finally { await reader.cancel().catch(() => {}); reader.releaseLock() }
+                    if (body !== '{}') return new Response('Invalid request', { status: 400 })
+                    const lease = privateFile(config.leaseFile).toString('utf8').trim()
+                    const response = await fetch(new URL('/api/evolved/runner/environment', hub), {
+                        method: 'POST', headers: { authorization: `Bearer ${lease}`, 'content-type': 'application/json' }, body: '{}',
+                        redirect: 'error', signal: AbortSignal.timeout(10_000)
+                    })
+                    if (response.status === 429) {
+                        await response.body?.cancel()
+                        return new Response('Project credential delivery busy', { status: 429, headers: { 'cache-control': 'no-store', 'retry-after': '1' } })
+                    }
+                    const bundle = await readCredentialResponse(response, config.projectId)
+                    return Response.json({ projectId: config.projectId, ...bundle }, { headers: { 'cache-control': 'no-store' } })
+                } catch { return new Response('Project credential delivery unavailable', { status: 503, headers: { 'cache-control': 'no-store' } }) }
             }
             if (url.pathname === '/evolved-runner-authority' && request.method === 'GET') {
                 try {

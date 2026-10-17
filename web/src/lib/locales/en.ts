@@ -1192,6 +1192,9 @@ export default {
   'misc.contextUsed': 'Used: {value} ({percent}%)',
   'misc.contextUsedTokens': 'Used: {value}',
   'misc.contextRemaining': 'Remaining: {value} ({percent}%)',
+  'misc.contextWindowKnown': 'Session limit: {value} tokens (reported by agent)',
+  'misc.contextWindowUnknown': 'The agent has not reported this session’s context limit yet.',
+  'misc.contextWindowNote': 'Automatic compaction may happen before this limit. The model’s advertised maximum can differ from the session limit.',
 
   // Web Share Target picker
   'share.title': 'Share to HAPI-eVolved',

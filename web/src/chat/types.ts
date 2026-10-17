@@ -25,6 +25,9 @@ export type RoundSummary = {
     provider?: 'codex'
     usage?: UsageData
     modelUsage: Record<string, RoundModelUsage>
+    /** Provider-reported model limits, separate from cumulative turn usage. */
+    contextWindows?: Record<string, number>
+    contextModel?: string
     totalCostUsd?: number
     numTurns?: number
     durationMs?: number

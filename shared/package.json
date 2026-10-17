@@ -17,6 +17,8 @@
         "./runnerCapabilities": "./src/runnerCapabilities.ts",
         "./evolvedSourcePolicy": "./src/evolvedSourcePolicy.ts",
         "./evolvedWorkspace": "./src/evolvedWorkspace.ts",
+        "./credentialEnv": "./src/credentialEnv.ts",
+        "./credentialTransport": "./src/credentialTransport.ts",
         "./schemas": "./src/schemas.ts",
         "./sessionCitation": "./src/sessionCitation.ts",
         "./sessionExport": "./src/sessionExport.ts",

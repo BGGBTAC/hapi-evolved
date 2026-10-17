@@ -7,6 +7,8 @@ import type { VaultClient } from './vault'
 import { createRunnerRoutes } from './runner'
 import { createSavedPromptRoutes } from './savedPrompts'
 import { browseWorkspaces } from './workspaces'
+import { createCredentialGrantRoutes, revokeCredentialLeases, withCredentialProjectLock } from './credentialGrants'
+import type { AgentCredentialGrant } from './agentCredentialVault'
 
 const role = z.enum(['viewer', 'member', 'admin'])
 const profile = z.enum(['restricted', 'workspace', 'extended'])
@@ -31,7 +33,7 @@ export function createEvolvedRoutes(config: EvolvedRoutesConfig): Hono<EvolvedEn
         return c.json({ error: 'Request could not be completed.', code: 'internal_error' }, 500)
     })
     app.route('/auth', createAuthRoutes(config))
-    app.route('/', createRunnerRoutes(store))
+    app.route('/', createRunnerRoutes(store, vault))
     app.use('*', async (c, next) => {
         // Finish bounded request-body I/O before deciding authorization; a client
         // must not hold an authorized mutation open while its session is revoked.
@@ -42,6 +44,7 @@ export function createEvolvedRoutes(config: EvolvedRoutesConfig): Hono<EvolvedEn
         return next()
     })
     app.route('/saved-prompts', createSavedPromptRoutes(store))
+    app.route('/', createCredentialGrantRoutes(store, vault))
     app.get('/me', c => c.json(c.get('principal')))
     app.get('/teams', c => {
         const principal = c.get('principal'); requireHuman(principal)
@@ -175,7 +178,7 @@ export function createEvolvedRoutes(config: EvolvedRoutesConfig): Hono<EvolvedEn
         const body = await parseBody(c, z.object({ name, value: z.string().min(1).max(64 * 1024) }).strict())
         return c.json(await vault.request({ userId: principal.user.id, projectId: c.req.param('id'), operation: 'set', payload: body }), 201)
     })
-    app.put('/projects/:id/secrets/:secretId', async c => {
+    app.put('/projects/:id/secrets/:secretId', async c => withCredentialProjectLock(store, c.req.param('id'), async () => {
         const principal = c.get('principal'); requireFreshPasskey(c, store, principal)
         store.requireProject(principal.user.id, c.req.param('id'), 'admin')
         const body = await parseBody(c, z.object({ name: name.optional(), value: z.string().min(1).max(64 * 1024) }).strict())
@@ -185,17 +188,25 @@ export function createEvolvedRoutes(config: EvolvedRoutesConfig): Hono<EvolvedEn
             secretName = listed.secrets.find(s => s.id === c.req.param('secretId'))?.name
         }
         if (!secretName) throw new EvolvedError('not_found', 'Secret not found.', 404)
+        requireFreshPasskey(c, store, principal)
+        store.requireProject(principal.user.id, c.req.param('id'), 'admin')
+        const grants = await vault.request({ userId: principal.user.id, projectId: c.req.param('id'), operation: 'agentCredentials', payload: { action: 'list' } }) as { grants: AgentCredentialGrant[] }
         // Metadata lookup crossed a service boundary; revalidate before signing a
         // write capability in case account/project access changed meanwhile.
         requireFreshPasskey(c, store, principal)
         store.requireProject(principal.user.id, c.req.param('id'), 'admin')
+        revokeCredentialLeases(store, c.req.param('id'), (grants.grants ?? []).filter(grant => grant.secretId === c.req.param('secretId')))
         return c.json(await vault.request({ userId: principal.user.id, projectId: c.req.param('id'), operation: 'set', payload: { id: c.req.param('secretId'), name: secretName, value: body.value } }))
-    })
-    app.delete('/projects/:id/secrets/:secretId', async c => {
+    }))
+    app.delete('/projects/:id/secrets/:secretId', async c => withCredentialProjectLock(store, c.req.param('id'), async () => {
         const principal = c.get('principal'); requireFreshPasskey(c, store, principal)
         store.requireProject(principal.user.id, c.req.param('id'), 'admin')
+        const grants = await vault.request({ userId: principal.user.id, projectId: c.req.param('id'), operation: 'agentCredentials', payload: { action: 'list' } }) as { grants: AgentCredentialGrant[] }
+        requireFreshPasskey(c, store, principal)
+        store.requireProject(principal.user.id, c.req.param('id'), 'admin')
+        revokeCredentialLeases(store, c.req.param('id'), (grants.grants ?? []).filter(grant => grant.secretId === c.req.param('secretId')))
         return c.json(await vault.request({ userId: principal.user.id, projectId: c.req.param('id'), operation: 'delete', payload: { id: c.req.param('secretId') } }))
-    })
+    }))
     app.get('/projects/:id/resources', async c => {
         const principal = c.get('principal')
         store.requireProject(principal.user.id, c.req.param('id'))

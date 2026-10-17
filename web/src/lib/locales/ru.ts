@@ -1167,6 +1167,9 @@ export default {
   'misc.contextCache': 'Кэш: {value}',
   'misc.contextUsed': 'Использовано: {value} ({percent}%)',
   'misc.contextUsedTokens': 'Использовано: {value}',
+  'misc.contextWindowKnown': 'Лимит сессии: {value} токенов (сообщён агентом)',
+  'misc.contextWindowUnknown': 'Агент ещё не сообщил лимит контекста этой сессии.',
+  'misc.contextWindowNote': 'Автоматическое сжатие может начаться раньше этого лимита. Заявленный максимум модели может отличаться от лимита сессии.',
   'misc.contextRemaining': 'Осталось: {value} ({percent}%)',
 
   // Выбор цели Web Share

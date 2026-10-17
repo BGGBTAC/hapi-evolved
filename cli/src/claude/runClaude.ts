@@ -177,10 +177,6 @@ export async function runClaude(options: StartOptions = {}): Promise<void> {
             const currentSession = currentSessionRef.current;
             currentSession?.localPermissionBridge.onHook(data);
             localActivity.onHook(sessionId, data);
-            if (currentSession?.mode === 'local' && currentSession.sessionId === sessionId && data.hook_event_name === 'PostModelSwitch') {
-                currentSession.localContextModel = typeof data.to_model === 'string' ? data.to_model : undefined;
-                currentSession.localContextModelObserved = true;
-            }
             if (currentSession && (data.hook_event_name === 'SessionStart' || data.hook_event_name === undefined)) {
                 const previousSessionId = currentSession.sessionId;
                 if (previousSessionId !== sessionId) {

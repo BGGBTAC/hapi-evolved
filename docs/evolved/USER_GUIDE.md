@@ -99,6 +99,16 @@ nicht allein für das Projekt. Fehlende Werte bleiben unbekannt; veraltete
 Fenster werden gekennzeichnet. Datenquellen, Aktualisierung und API erklärt
 [Gemeldete Abo-Kapazität](CAPACITY.md).
 
+Die **Kontextanzeige in einer Session** ist davon unabhängig: Sie zeigt den
+Tokenverbrauch des letzten gemeldeten Turns und die vom laufenden Agenten
+gemeldete Kontextgrenze. Der Modellkatalog kommt aus der Anbieter-CLI; eine dort
+optional genannte Modellgrenze ist nicht automatisch das verfügbare Fenster
+dieser Session. Fehlt die Laufzeitangabe, steht dort „unbekannt“ statt einer
+geschätzten Prozentzahl. Claude kann die Grenze erst beim Abschluss eines Turns
+melden. Codex-Abrechnungssummen über mehrere Turns zählen nicht als aktuelle
+Kontextbelegung. Automatische Komprimierung kann bereits vor Erreichen der
+vollen Grenze einsetzen.
+
 Teamadministratoren können Personen einladen, deren Teamrolle ändern oder sie
 aus dem Team entfernen. Unter „Projektrollen“ lassen sich abweichende Rollen
 für vorhandene Teammitglieder setzen. „Teamrolle verwenden“ entfernt eine solche
@@ -163,14 +173,43 @@ Als Projektadministrator öffnest du „Tresor“, vergibst einen Namen und trä
 den geheimen Wert ein. „Verschlüsselt speichern“ legt ihn im separaten lokalen
 Vault ab. Nach dem Speichern zeigt die Übersicht nur Name, Version und
 Änderungszeit. Das Eingabefeld wird geleert. Gespeicherte Werte lassen sich nicht
-im Browser zurücklesen.
+im Browser zurücklesen. **Speichern allein erlaubt einer Session noch keinen Zugriff.**
+
+Unter **Agentenzugriff** wählst du einen gespeicherten Wert und einen Namen wie
+`PROJECT_SECRET_ODOO_API_KEY`. Für Odoo kannst du beispielsweise API-Key,
+Benutzer, URL und Datenbankname einzeln freigeben. HAPI schlägt den Variablennamen
+aus dem Eintragsnamen vor. Bestätige ausdrücklich, dass die Agenten diesen Wert
+lesen und für deine Aufgaben verwenden dürfen, und speichere mit frischem Passkey.
+Die Freigabe gilt für alle neu gestarteten Agentenprozesse des aktuellen
+verwalteten Projektdienstes und seines Projektprofils. Ein solcher Dienst muss
+bereits unter **Abos verbinden** eingerichtet sein.
+
+Starte danach einen neuen Agentenprozess. Eine laufende Session vollständig
+stoppen und neu starten; bloßes Fortsetzen oder `/new` innerhalb einer bestehenden
+Laufzeit übernimmt neue Variablen nicht. Agenten entdecken die freigegebenen
+Variablennamen über HAPI und können den Wert im Prozess für API-Aufrufe verwenden.
+Werte sollen weder im Chat noch in Logs, Dateien, Gedächtnis oder Toolausgaben
+erscheinen. Die Freigabe schafft keine zusätzlichen Netzwerkrechte.
+
+Das ist eine echte Vertrauensentscheidung: Ein Agent mit Prozesszugriff kann
+einen freigegebenen Wert lesen und weitergeben. Verwende möglichst eng begrenzte
+Schlüssel. **Bereits gelesene Werte lassen sich nicht zurückholen.** Zum Entziehen
+des Zugriffs **Freigabe widerrufen** wählen; bei möglicher Offenlegung den Schlüssel
+zusätzlich beim Anbieter ändern.
+
+Widerruf, Rotation oder Löschen eines für Agenten freigegebenen Werts widerruft
+den betreffenden Projektdienst. Seine Sessions werden beendet. Danach den Dienst
+unter **Abos verbinden** erneut verbinden und benötigte Werte ausdrücklich neu
+freigeben. Eine neue Dienstberechtigung erbt keine alten Freigaben. Die Übersicht
+kennzeichnet solche bisherigen Freigaben als inaktiv.
 
 „Rotieren“ ersetzt einen Wert; „Löschen“ entfernt ihn nach Bestätigung.
 Unter „Freigegebene Ressourcen“ stehen die vom Betreiber vorkonfigurierten
 Aktionen. „Ausführen“ verwendet die benötigten Zugangsdaten im Broker und liefert
 einen Status zurück. Agenten und Browser erhalten dabei keine Geheimwerte oder
 beliebigen Antwortinhalte. Ein leerer Ressourcenbereich bedeutet, dass für das
-Projekt noch keine Aktion eingerichtet wurde.
+Projekt noch keine solche Brokeraktion eingerichtet wurde; er sagt nichts über
+die getrennten Freigaben unter **Agentenzugriff** aus.
 
 ## Persistentes Gedächtnis
 

@@ -35,6 +35,7 @@ export function ModelCatalogInput(props: {
     const disabled = props.disabled || pending
     const data = catalog.data
     const models = data?.status === 'ready' ? data.models : []
+    const selected = models.find(model => model.id === props.value || (props.value === defaultValue && model.isDefault))
     const outsideCatalog = props.value !== defaultValue && !models.some(model => model.id === props.value)
     return <div lang="de" className="flex min-w-0 flex-col gap-2 px-3 py-3 text-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -46,8 +47,10 @@ export function ModelCatalogInput(props: {
             onChange={event => void change(event.target.value)}>
             <option value={defaultValue}>Standard des Anbieters</option>
             {outsideCatalog && <option value={props.value}>{props.value} (eigene / bisherige Auswahl)</option>}
-            {models.filter(model => model.id !== defaultValue).map(model => <option key={model.id} value={model.id}>{model.label}{model.resolvedModel && model.resolvedModel !== model.id ? ` · ${model.resolvedModel}` : ''}</option>)}
+            {models.filter(model => model.id !== defaultValue).map(model => <option key={model.id} value={model.id}>{model.label}{model.resolvedModel && model.resolvedModel !== model.id ? ` · ${model.resolvedModel}` : ''}{model.contextWindow ? ` · ${model.contextWindow.toLocaleString('de-DE')} Token` : ''}</option>)}
         </SelectControl>
+        {selected?.description && <p className="text-xs text-[var(--app-hint)]">{selected.description}</p>}
+        <p className="text-xs text-[var(--app-hint)]">Das tatsächliche Kontextfenster meldet der laufende Agent in der Session. Modellmaximum, nutzbares Sessionfenster und automatische Komprimierung können voneinander abweichen.</p>
         <p id={`${id}-status`} role="status" className="text-xs text-[var(--app-hint)]">
             {!catalog.enabled ? 'Projektmitglieder können den Anbieter-Katalog ihres Projekts lesen.'
                 : catalog.error && !data ? `Modellliste nicht verfügbar: ${catalog.error}`

@@ -8,6 +8,8 @@ export const providerModelCatalogSchema = z.object({
     catalogOrigin: z.literal('native-reported'), entitlementVerified: z.literal(false), upstreamRefresh: z.literal('unknown'),
     checkedAt: z.number().int().nonnegative().nullable(), expiresAt: z.number().int().nonnegative().nullable(),
     models: z.array(z.object({ id: modelId, label, resolvedModel: modelId.optional(), isDefault: z.boolean().optional(),
+        description: z.string().trim().min(1).max(500).refine(value => !/[\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}]/u.test(value)).optional(),
+        contextWindow: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
         reasoningEfforts: z.array(z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/)).max(8).optional(),
     }).strict()).max(100), message: z.string().max(300).optional(),
 }).strict().superRefine((value, context) => {

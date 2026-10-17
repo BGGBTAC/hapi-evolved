@@ -6,11 +6,6 @@ const harness = vi.hoisted(() => ({
     scannerOnMessage: null as ((message: Record<string, unknown>) => void) | null
 }))
 
-vi.mock('./utils/localContextWindow', async importOriginal => ({
-    ...await importOriginal<typeof import('./utils/localContextWindow')>(),
-    resolveLocalClaudeModel: async (options: { model?: string }) => options.model
-}));
-
 vi.mock('./claudeLocal', () => ({
     claudeLocal: async (opts: Record<string, unknown>) => {
         harness.launches.push(opts)
@@ -77,6 +72,21 @@ function createSessionStub() {
 }
 
 describe('claudeLocalLauncher message filtering', () => {
+    it('preserves native context windows without inferring a limit from a selected 1M alias or large usage', async () => {
+        const { session, sentMessages } = createSessionStub()
+        session.getModel = () => 'opus[1m]'
+        await claudeLocalLauncher(session as any)
+        const message = { type: 'assistant', uuid: 'native-context', message: {
+            model: 'claude-opus-5-5', content: [], usage: { input_tokens: 900_000, output_tokens: 10 }
+        } }
+        harness.scannerOnMessage!(message)
+        expect(sentMessages[0]).toBe(message)
+        expect((sentMessages[0].message as typeof message.message).usage).not.toHaveProperty('context_window')
+        const explicit = { ...message, uuid: 'reported-context', message: { ...message.message, usage: { ...message.message.usage, context_window: 1_000_000 } } }
+        harness.scannerOnMessage!(explicit)
+        expect(sentMessages[1]).toBe(explicit)
+        expect((sentMessages[1].message as typeof explicit.message).usage.context_window).toBe(1_000_000)
+    })
     afterEach(() => {
         harness.launches = []
         harness.scannerOnMessage = null

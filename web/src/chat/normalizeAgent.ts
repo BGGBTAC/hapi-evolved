@@ -62,9 +62,12 @@ function normalizeRoundSummary(value: unknown): RoundSummary | undefined {
     if (!isObject(value)) return undefined
 
     const parsedModelUsage: Array<[string, RoundModelUsage]> = []
+    const contextWindows: Array<[string, number]> = []
     if (isObject(value.modelUsage)) {
         for (const [model, rawUsage] of Object.entries(value.modelUsage)) {
             if (!isObject(rawUsage)) continue
+            const contextWindow = nonNegativeSafeInteger(rawUsage.contextWindow)
+            if (contextWindow !== undefined && contextWindow > 0) contextWindows.push([model, contextWindow])
             const usage: RoundModelUsage = {
                 inputTokens: nonNegativeSafeInteger(rawUsage.inputTokens),
                 outputTokens: nonNegativeSafeInteger(rawUsage.outputTokens),
@@ -82,13 +85,15 @@ function normalizeRoundSummary(value: unknown): RoundSummary | undefined {
     const totalCostUsd = nonNegativeNumber(value.total_cost_usd)
     const numTurns = nonNegativeSafeInteger(value.num_turns)
     const durationMs = nonNegativeNumber(value.duration_ms)
-    if (!usage && Object.keys(modelUsage).length === 0 && totalCostUsd === undefined && numTurns === undefined && durationMs === undefined) {
+    if (!usage && Object.keys(modelUsage).length === 0 && contextWindows.length === 0 && totalCostUsd === undefined && numTurns === undefined && durationMs === undefined) {
         return undefined
     }
 
     return {
         usage,
         modelUsage,
+        ...(contextWindows.length ? { contextWindows: Object.fromEntries(contextWindows) } : {}),
+        ...(typeof value.contextModel === 'string' ? { contextModel: value.contextModel } : {}),
         totalCostUsd: totalCostUsd && totalCostUsd > 0 ? totalCostUsd : undefined,
         numTurns: numTurns && numTurns > 0 ? numTurns : undefined,
         durationMs
@@ -128,23 +133,18 @@ function normalizeCodexTokenUsage(value: unknown, data?: Record<string, unknown>
     // Codex reports both:
     // - `total`: cumulative usage for the whole session (can be millions).
     // - `last`: current turn/request usage, which matches the live context bar.
-    // Prefer `last`; falling back to `total` keeps older payloads working.
+    // Cumulative totals cannot establish current context, especially after compaction.
     const usageSource = isObject(info.last)
         ? info.last
         : isObject(info.lastTokenUsage)
             ? info.lastTokenUsage
             : isObject(info.last_token_usage)
                 ? info.last_token_usage
-                : isObject(info.total)
-                    ? info.total
-                    : isObject(info.totalTokenUsage)
-                        ? info.totalTokenUsage
-                        : isObject(info.total_token_usage)
-                            ? info.total_token_usage
-                            : info
-    const inputTokens = asNumber(usageSource.inputTokens ?? usageSource.input_tokens)
-    const outputTokens = asNumber(usageSource.outputTokens ?? usageSource.output_tokens)
-    if (inputTokens === null || outputTokens === null) return null
+                : info
+    const explicitContext = nonNegativeSafeInteger(info.contextTokens ?? info.context_tokens ?? usageSource.contextTokens ?? usageSource.context_tokens)
+    const inputTokens = nonNegativeSafeInteger(usageSource.inputTokens ?? usageSource.input_tokens) ?? explicitContext
+    const outputTokens = nonNegativeSafeInteger(usageSource.outputTokens ?? usageSource.output_tokens) ?? (explicitContext === undefined ? undefined : 0)
+    if (inputTokens === undefined || outputTokens === undefined) return null
 
     return {
         input_tokens: inputTokens,
@@ -158,13 +158,11 @@ function normalizeCodexTokenUsage(value: unknown, data?: Record<string, unknown>
             ?? usageSource.cacheReadInputTokens
             ?? usageSource.cache_read_input_tokens
         ) ?? undefined,
-        context_tokens: asNumber(
-            info.contextTokens
-            ?? info.context_tokens
-            ?? usageSource.contextTokens
-            ?? usageSource.context_tokens
-        ) ?? inputTokens,
-        context_window: asNumber(info.modelContextWindow ?? info.model_context_window) ?? undefined,
+        context_tokens: explicitContext ?? inputTokens,
+        context_window: (() => {
+            const window = nonNegativeSafeInteger(info.modelContextWindow ?? info.model_context_window)
+            return window && window > 0 ? window : undefined
+        })(),
         thread_id: asString(
             data?.thread_id
             ?? data?.threadId
