@@ -1,7 +1,7 @@
 import { constants, type Stats } from 'node:fs'
 import { lstat, open, opendir, realpath } from 'node:fs/promises'
 import { isAbsolute, normalize } from 'node:path'
-import { isSafeSourcePath } from '@hapi/protocol/evolvedSourcePolicy'
+import { excludedSourcePath, isSafeSourcePath } from '@hapi/protocol/evolvedSourcePolicy'
 
 export type SafeReadFailure = 'missing' | 'symlink' | 'special' | 'too_large' | 'hardlink' | 'unsafe_path' | 'unavailable'
 export type SafeRead = { ok: true; data: Buffer; size: number } | { ok: false; reason: SafeReadFailure }
@@ -23,6 +23,9 @@ export class SafeTree {
     private readonly deadline: number
     /** Set once the time budget stopped further I/O; results are then incomplete. */
     timedOut = false
+    // Unique relative paths; bounded by the entry and read budgets.
+    private readonly seenFiles = new Set<string>()
+    private readonly seenDirectories = new Set<string>()
     private constructor(readonly root: string, private readonly rootStat: Stats, limits: SafeTreeLimits) {
         this.budget = { reads: limits.reads, bytes: limits.bytes, entries: limits.entries }
         this.deadline = limits.deadline ?? Number.POSITIVE_INFINITY
@@ -37,6 +40,16 @@ export class SafeTree {
         if (await realpath(root).catch(() => '') !== root) return 'unsafe_path'
         return new SafeTree(root, stat, limits)
     }
+
+    /**
+     * Unique regular files whose entry a successful list() returned or whose content read()
+     * returned, and unique directories list() enumerated (the root included). stat()/kind()
+     * metadata checks, failed reads, symbolic links, special files and source-policy excluded paths
+     * (e.g. `.git`) are not counted; repeated reads or listings of a path count once.
+     */
+    get scanned(): { files: number; directories: number } { return { files: this.seenFiles.size, directories: this.seenDirectories.size } }
+
+    private note(seen: Set<string>, relative: string) { if (relative === '' || !excludedSourcePath(relative)) seen.add(relative) }
 
     get exhausted(): boolean { return this.budget.reads <= 0 || this.budget.bytes <= 0 || this.budget.entries <= 0 || this.expired() }
 
@@ -109,6 +122,7 @@ export class SafeTree {
             // The ancestors must still be the directories that were walked.
             const after = await this.stat(relative)
             if (typeof after === 'string' || after.dev !== before.dev || after.ino !== before.ino) return { ok: false, reason: 'unsafe_path' }
+            this.note(this.seenFiles, relative)
             return { ok: true, data: buffer.subarray(0, length), size: length }
         } catch { return { ok: false, reason: 'unavailable' } } finally { await handle.close() }
     }
@@ -145,6 +159,8 @@ export class SafeTree {
             }
         } catch { return 'unavailable' } finally { await closeDirectory(directory) }
         this.budget.entries -= collected.length
+        this.note(this.seenDirectories, relative)
+        for (const entry of collected) if (entry.kind === 'file') this.note(this.seenFiles, joinRelative(relative, entry.name))
         const entries = collected.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)
         return { entries, truncated }
     }

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -200,10 +200,60 @@ describe('Odoo version, XML and redaction rules', () => {
         if (typeof expired === 'string') throw new Error(expired)
         expect(await expired.list('')).toBe('unavailable')
         expect(expired.timedOut).toBe(true)
+        expect(expired.scanned).toEqual({ files: 0, directories: 0 })
+    })
+
+    it('counts unique regular files listed or read and unique listed directories, within the budgets', async () => {
+        const root = temp(), outside = temp()
+        write(outside, 'target.txt', 'x')
+        write(root, 'a.txt', 'a')
+        write(root, 'sub/b.txt', 'b')
+        write(root, '.git/HEAD', 'ref: refs/heads/main\n')
+        write(root, '.env', 'X=1')
+        symlinkSync(join(outside, 'target.txt'), join(root, 'link.txt'))
+        symlinkSync(outside, join(root, 'linkdir'))
+        const tree = await SafeTree.open(root, { reads: 3, bytes: 1024, entries: 100 })
+        if (typeof tree === 'string') throw new Error(tree)
+        expect(tree.scanned).toEqual({ files: 0, directories: 0 })
+        // Repeated listings and reads of the same paths count once; links, .git and .env never.
+        await tree.list(''); await tree.list('')
+        expect((await tree.read('a.txt', 10)).ok).toBe(true)
+        expect((await tree.read('a.txt', 10)).ok).toBe(true)
+        expect((await tree.read('link.txt', 10)).ok).toBe(false)
+        expect(await tree.list('linkdir')).toBe('symlink')
+        expect((await tree.read('missing.txt', 10)).ok).toBe(false)
+        expect((await tree.read('.git/HEAD', 100)).ok).toBe(true)
+        expect(tree.scanned).toEqual({ files: 1, directories: 1 })
+        // A read refused by the read budget is not counted; stat/kind alone never count.
+        expect((await tree.read('sub/b.txt', 10)).ok).toBe(false)
+        expect(await tree.kind('sub/b.txt')).toBe('file')
+        expect(tree.scanned).toEqual({ files: 1, directories: 1 })
+        await tree.list('sub')
+        expect(tree.scanned).toEqual({ files: 2, directories: 2 })
+        // Entries cut off by the entry budget are not counted.
+        const limited = await SafeTree.open(root, { reads: 10, bytes: 1024, entries: 1 })
+        if (typeof limited === 'string') throw new Error(limited)
+        const listing = await limited.list('')
+        if (typeof listing === 'string') throw new Error(listing)
+        expect(listing.truncated).toBe(true)
+        expect(limited.scanned.files).toBeLessThanOrEqual(1)
     })
 })
 
 describe('static Android and iOS inspection', () => {
+    it('does not read protected files disguised as workflow YAML', async () => {
+        const root = temp(), path = '.github/workflows/.env.yml'
+        write(root, path, 'name: PRIVATE_FIXTURE_VALUE\njobs:\n  build:\n    runs-on: private-runner\n')
+        const reads = vi.spyOn(SafeTree.prototype, 'read')
+        try {
+            const result = await inspectRepository({ checkout: root, repositoryId: '3', mode: 'android', settings: defaultDevelopmentSettings('android') })
+            expect(reads.mock.calls.map(([relative]) => relative)).not.toContain(path)
+            expect(result.buildFiles.some(file => file.path === path)).toBe(false)
+            expect(JSON.stringify(result)).not.toContain('PRIVATE_FIXTURE_VALUE')
+            expect(result.scanned.files).toBe(0)
+        } finally { reads.mockRestore() }
+    })
+
     it('reads Gradle facts statically and never runs the wrapper or build scripts', async () => {
         const root = temp(), marker = join(root, 'wrapper-ran')
         write(root, 'android/settings.gradle.kts', 'rootProject.name = "Demo"\ninclude(":app")\ninclude(":feature:login")\n')
@@ -227,6 +277,39 @@ describe('static Android and iOS inspection', () => {
         expect(result.buildFiles).toContainEqual({ path: '.github/workflows/android.yml', kind: 'ci_workflow', facts: { name: 'Android CI', runsOn: 'ubuntu-latest' } })
         expect(result.warnings.join('\n')).toMatch(/nicht von https:\/\/services\.gradle\.org/)
         expect(result.warnings.join('\n')).toMatch(/applicationId im Build \(com.example.demo\) weicht/)
+        // settings, app build, wrapper properties, catalog, manifest, workflow (listed and read once); gradlew is never touched.
+        expect(result.scanned).toEqual({ files: 6, directories: 1, limitReached: false })
+    })
+
+    it('counts Android and shared workflow files honestly for missing, empty and link-laden projects', async () => {
+        const root = temp(), outside = temp()
+        git(root)
+        write(outside, 'settings.gradle', 'include(":evil")\n')
+        write(outside, 'evil.yml', 'name: Evil\n')
+        write(root, 'settings.gradle.kts', 'include(":app")\n')
+        symlinkSync(join(outside, 'settings.gradle'), join(root, 'settings.gradle'))
+        write(root, 'app/build.gradle.kts', 'android { compileSdk = 35 }\n')
+        write(root, 'gradle/wrapper/gradle-wrapper.properties', 'distributionUrl=https\\://services.gradle.org/distributions/gradle-8.9-bin.zip\n')
+        write(root, 'gradle/wrapper/gradle-wrapper.jar', 'jar')
+        write(root, '.github/workflows/ci.yml', 'name: CI\n')
+        symlinkSync(join(outside, 'evil.yml'), join(root, '.github/workflows/linked.yml'))
+        spawnSync('mkfifo', [join(root, '.github/workflows/pipe.yml')]) // special file, where mkfifo exists
+        const android = defaultDevelopmentSettings('android')
+        const result = await inspectRepository({ checkout: root, repositoryId: '3', mode: 'android', settings: android })
+        DevelopmentInspectResultSchema.parse(result)
+        expect(result.warnings.join('\n')).toMatch(/settings.gradle ist eine symbolische Verknüpfung/)
+        // Symlinks, the FIFO, .git metadata and the existence-checked wrapper jar are not counted.
+        expect(result.scanned).toEqual({ files: 4, directories: 1, limitReached: false })
+
+        android.android!.projectDirectory = 'absent'
+        expect((await inspectRepository({ checkout: root, repositoryId: '3', mode: 'android', settings: android })).scanned).toEqual({ files: 1, directories: 1, limitReached: false })
+        const empty = temp()
+        expect((await inspectRepository({ checkout: empty, repositoryId: '3', mode: 'android', settings: defaultDevelopmentSettings('android') })).scanned).toEqual({ files: 0, directories: 0, limitReached: false })
+        expect((await inspectRepository({ checkout: empty, repositoryId: '3', mode: 'ios', settings: defaultDevelopmentSettings('ios') })).scanned).toEqual({ files: 0, directories: 1, limitReached: false })
+        const ios = defaultDevelopmentSettings('ios')
+        ios.ios!.projectDirectory = 'absent'
+        expect((await inspectRepository({ checkout: empty, repositoryId: '3', mode: 'ios', settings: ios })).scanned).toEqual({ files: 0, directories: 0, limitReached: false })
+        expect((await inspectRepository({ checkout: join(empty, 'absent'), repositoryId: '3', mode: 'ios', settings: ios })).scanned).toEqual({ files: 0, directories: 0, limitReached: false })
     })
 
     it('marks UIKit/SwiftUI targets as not Linux-testable and reads Xcode metadata', async () => {
@@ -247,5 +330,22 @@ describe('static Android and iOS inspection', () => {
         expect(result.buildFiles).toContainEqual({ path: 'App/PrivacyInfo.xcprivacy', kind: 'privacy_manifest' })
         expect(result.warnings.join('\n')).toMatch(/unter Linux nicht baubar oder testbar: AppUI/)
         expect(result.warnings.join('\n')).toMatch(/Scheme AppTests ist nicht als geteiltes Scheme/)
+        // Root, Sources and Swift targets are walked by several scans and counted once each:
+        // Package.swift, three Swift files, project.pbxproj, App.xcscheme, PrivacyInfo.xcprivacy;
+        // ., Sources(/Core,/AppUI), Tests(/CoreTests), App, App.xcodeproj(/xcshareddata(/xcschemes)).
+        expect(result.scanned).toEqual({ files: 7, directories: 10, limitReached: false })
+    })
+
+    it('does not count symlinked Swift sources or linked directories of an iOS project', async () => {
+        const root = temp(), outside = temp()
+        write(outside, 'Evil.swift', 'import UIKit\n')
+        write(outside, 'Dir/More.swift', 'import UIKit\n')
+        write(root, 'Package.swift', '// swift-tools-version: 6.0\n')
+        write(root, 'Sources/Core/Model.swift', 'import Foundation\n')
+        symlinkSync(join(outside, 'Evil.swift'), join(root, 'Sources/Core/Evil.swift'))
+        symlinkSync(join(outside, 'Dir'), join(root, 'Sources/Linked'))
+        const result = await inspectRepository({ checkout: root, repositoryId: '9', mode: 'ios', settings: defaultDevelopmentSettings('ios') })
+        expect(result.buildFiles).toContainEqual({ path: 'Package.swift', kind: 'swiftpm', facts: { toolsVersion: '6.0', linuxCandidateTargets: 'Core' } })
+        expect(result.scanned).toEqual({ files: 2, directories: 3, limitReached: false })
     })
 })

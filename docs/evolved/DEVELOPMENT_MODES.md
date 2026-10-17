@@ -119,6 +119,9 @@ Rohquelltext wird nie zurückgegeben.
   `Package.swift` mit Plattformen und Targets, die UIKit/SwiftUI/AppKit importieren
   (unter Linux nicht baubar), Privacy-Manifeste.
 - **Alle:** GitHub-Actions-Workflows (Name, Runner).
+- **Zählung** (`scanned`): eindeutige reguläre Dateien, die eine Auflistung lieferte oder
+  deren Inhalt gelesen wurde, und eindeutige aufgelistete Ordner; reine Existenzprüfungen,
+  symbolische Verknüpfungen, Sonderdateien und geschützte Pfade (auch `.git`) zählen nicht.
 
 ## Einrichtung durch den Betreiber: Development-Image
 

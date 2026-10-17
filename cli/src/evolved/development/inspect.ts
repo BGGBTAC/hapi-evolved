@@ -41,8 +41,8 @@ const text = (value: string, max: number) => value.replace(/[\u0000-\u0008\u000b
 
 class Collector {
     readonly warnings: string[] = []
-    files = 0
-    directories = 0
+    /** Files classified by countModuleFiles, for its total limit; reported counts come from SafeTree.scanned. */
+    moduleFiles = 0
     limitReached = false
     warn(message: string) {
         if (this.warnings.length < INSPECT_LIMITS.warnings) this.warnings.push(text(message, 300))
@@ -111,12 +111,11 @@ async function countModuleFiles(tree: SafeTree, modulePath: string, collector: C
         const listing = await tree.list(relative, 2000)
         if (typeof listing === 'string') return
         if (listing.truncated) collector.limitReached = true
-        collector.directories++
         for (const entry of listing.entries) {
             const path = joinRelative(relative, entry.name)
             if (excludedSourcePath(path) || entry.kind === 'symlink' || entry.kind === 'special') continue
             if (entry.kind === 'directory') { await visit(path, depth + 1); continue }
-            if (++files > INSPECT_LIMITS.filesPerModule || ++collector.files > INSPECT_LIMITS.totalFiles) { collector.limitReached = true; return }
+            if (++files > INSPECT_LIMITS.filesPerModule || ++collector.moduleFiles > INSPECT_LIMITS.totalFiles) { collector.limitReached = true; return }
             const name = entry.name.toLowerCase()
             if (name.endsWith('.py')) {
                 counts.python++
@@ -532,6 +531,7 @@ async function inspectWorkflows(tree: SafeTree, buildFiles: BuildFile[]) {
     for (const entry of listing.entries) {
         if (entry.kind !== 'file' || !/\.ya?ml$/.test(entry.name)) continue
         const path = `.github/workflows/${entry.name}`
+        if (excludedSourcePath(path)) continue
         const content = await tree.readText(path, INSPECT_LIMITS.textBytes)
         const facts: Facts = {}
         if (content.ok) {
@@ -587,5 +587,5 @@ export async function inspectRepository(input: InspectInput): Promise<Developmen
     if (tree.exhausted) collector.limitReached = true
     if (collector.limitReached) collector.warn('Analysegrenze erreicht; das Ergebnis ist unvollständig.')
     return { ...base, head: git.head, branch: git.branch ? text(git.branch, 255) : null, odooModules, buildFiles, warnings: collector.warnings,
-        scanned: { files: collector.files, directories: collector.directories, limitReached: collector.limitReached } }
+        scanned: { ...tree.scanned, limitReached: collector.limitReached } }
 }
