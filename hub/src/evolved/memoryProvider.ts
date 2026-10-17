@@ -64,6 +64,39 @@ export function storedMemoryProviderConfig(value: unknown): MemoryProviderConfig
         reranker: { provider: 'rrf' },
     }
 }
+const version = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER - 1)
+const optionalKey = z.union([z.literal(''), memoryProviderKeySchema]).optional()
+const inputSchema = memoryProviderPublicSchema.extend({
+    version, llm: llmPublicSchema.extend({ apiKey: optionalKey }),
+    embedding: z.discriminatedUnion('provider', [openaiEmbeddingSchema.extend({ apiKey: optionalKey }), voyageEmbeddingSchema.extend({ apiKey: optionalKey })]),
+    reranker: z.discriminatedUnion('provider', [rrfSchema, openaiRerankerSchema.extend({ apiKey: optionalKey }), voyageRerankerSchema.extend({ apiKey: optionalKey })]),
+}).strict()
+const catalogInputSchema = z.discriminatedUnion('component', [
+    z.object({ component: z.literal('llm'), provider: z.enum(['openai', 'anthropic']), apiKey: optionalKey }).strict(),
+    z.object({ component: z.literal('embedding'), provider: z.enum(['openai', 'voyage']), apiKey: optionalKey }).strict(),
+    z.object({ component: z.literal('reranker'), provider: z.enum(['openai', 'voyage']), apiKey: optionalKey }).strict(),
+])
+
+/** OpenAI's catalog mixes model capabilities. Keep provider-discovered embedding IDs,
+ * not a frozen list of versions, and never interpret a chat model as an embedder. */
+export function memoryModelMatchesComponent(component: MemoryProviderComponent, provider: CloudProvider, model: string): boolean {
+    if (provider !== 'openai') return true
+    return component === 'embedding' ? model.startsWith('text-embedding-') : !model.startsWith('text-embedding-')
+}
+export function validateMemoryModelRoles(config: MemoryProviderPublic): void {
+    // Known API constraints, not a model availability list. Future provider IDs remain discoverable.
+    const embedding = config.embedding
+    if (embedding.provider === 'openai' && (embedding.model === 'text-embedding-3-small' && embedding.dimensions > 1536
+        || embedding.model === 'text-embedding-ada-002' && embedding.dimensions !== 1536)) {
+        throw new EvolvedError('memory_provider_embedding_dimensions', 'text-embedding-3-small supports at most 1536 dimensions; text-embedding-ada-002 requires exactly 1536.', 400)
+    }
+    for (const component of ['llm', 'embedding', 'reranker'] as const) {
+        const slot = config[component]
+        if (slot.provider !== 'rrf' && !memoryModelMatchesComponent(component, slot.provider, slot.model)) {
+            throw new EvolvedError('memory_provider_model_role', 'Select a text-embedding model for OpenAI embeddings and a language model for text processing.', 400)
+        }
+    }
+}
 export type MemoryProviderResolver = (projectId: string) => Promise<MemoryProviderConfig | null | undefined>
 export type MemoryProviderOperation = <T>(projectId: string, operation: () => Promise<T>) => Promise<T>
 
@@ -145,6 +178,7 @@ export class MemoryProviderService {
         return { models: [...new Set(parsed.data.models)].sort(), verified: parsed.data.verified }
     }
     async verifyModels(config: MemoryProviderConfig, reauthorize: () => Promise<unknown>): Promise<MemoryProviderComponent[]> {
+        validateMemoryModelRoles(config)
         const catalogs = new Map<string, { models: string[]; verified: boolean }>()
         const unverified: MemoryProviderComponent[] = []
         for (const component of ['llm', 'embedding', 'reranker'] as const) {
@@ -162,7 +196,55 @@ export class MemoryProviderService {
         }
         return unverified
     }
+    /** Shared browser/operator path: credentials never leave this service's execution. */
+    async savePublic(projectId: string, userId: string, value: unknown, reauthorize: () => Promise<unknown>): Promise<MemoryProviderRecord> {
+        const parsed = inputSchema.safeParse(value)
+        if (!parsed.success) throw new EvolvedError('memory_provider_invalid', 'Invalid memory provider configuration.', 400)
+        const input = parsed.data
+        validateMemoryModelRoles(input)
+        return this.changing(projectId, async () => {
+            await reauthorize()
+            const current = await this.record(projectId, userId)
+            if (current.version !== input.version) throw new EvolvedError('memory_provider_conflict', 'Configuration changed. Reload before saving.', 409)
+            const existing = await this.resolve(projectId)
+            const credentials = (component: MemoryProviderComponent) => {
+                const slot = input[component], prior = existing?.[component]
+                if (slot.provider === 'rrf') return { provider: 'rrf' }
+                const apiKey = slot.apiKey || (prior?.provider === slot.provider ? prior.apiKey : undefined)
+                if (!apiKey) throw new EvolvedError('memory_provider_key_required', 'An API key is required for each new provider component.', 400)
+                return { ...slot, apiKey }
+            }
+            const config = memoryProviderConfigSchema.parse({ schemaVersion: 2, llm: credentials('llm'), embedding: credentials('embedding'), reranker: credentials('reranker') })
+            await this.verifyModels(config, reauthorize)
+            await reauthorize()
+            // Confirm even unchanged selections: a Python bind may have succeeded before a Vault CAS failure.
+            const binding = await this.request('/configuration/binding', { projectId: projectId, embeddingProvider: config.embedding.provider, embeddingModel: config.embedding.model, embeddingDimensions: config.embedding.dimensions })
+            if (binding.bound !== true) throw new EvolvedError('memory_embedding_locked', 'Existing graph data or processing tasks prevent changing the embedding configuration.', 409)
+            await reauthorize()
+            await this.vault.request({ userId: userId, projectId: projectId, operation: 'memoryProvider', payload: { action: 'set', version: input.version, config } })
+            await reauthorize()
+            this.store.audit(userId, projectId, 'memory.provider.updated')
+            return this.record(projectId, userId)
+        })
+    }
+    /** Metadata only; stored component credentials are resolved solely inside the service. */
+    async modelsForProject(projectId: string, value: unknown, reauthorize: () => Promise<unknown>): Promise<{ models: string[]; verified: boolean }> {
+        const parsed = catalogInputSchema.safeParse(value)
+        if (!parsed.success) throw new EvolvedError('memory_provider_invalid', 'Invalid model catalog request.', 400)
+        const body = parsed.data
+        return this.using(projectId, async () => {
+            await reauthorize()
+            const prior = body.apiKey ? undefined : (await this.resolve(projectId))?.[body.component]
+            const apiKey = body.apiKey || (prior?.provider === body.provider ? prior.apiKey : undefined)
+            if (!apiKey) throw new EvolvedError('memory_provider_key_required', 'Enter an API key for this provider component or save it first.', 400)
+            await reauthorize()
+            const catalog = await this.models(body.provider, apiKey)
+            await reauthorize()
+            return { ...catalog, models: catalog.models.filter(model => memoryModelMatchesComponent(body.component, body.provider, model)) }
+        })
+    }
     async check(config: MemoryProviderConfig): Promise<void> {
+        validateMemoryModelRoles(config)
         const result = await this.request('/configuration/check', { providerConfig: config })
         if (result.ok !== true) throw new EvolvedError('memory_provider_check_failed', 'Memory configuration or database is unavailable.', 503)
     }
@@ -208,39 +290,13 @@ export function createMemoryProviderRoutes(options: { store: EvolvedStore; servi
             boundEmbeddingDimensions: record.embeddingDimensions, embeddingLocked: service.embeddingLocked(project.id, record.embeddingModel !== null), canManage: project.role === 'admin' }
     }
     app.get(path, async c => c.json(await status(c)))
-    const version = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER - 1)
-    const optionalKey = z.union([z.literal(''), memoryProviderKeySchema]).optional()
-    const inputSchema = memoryProviderPublicSchema.extend({
-        version, llm: llmPublicSchema.extend({ apiKey: optionalKey }),
-        embedding: z.discriminatedUnion('provider', [openaiEmbeddingSchema.extend({ apiKey: optionalKey }), voyageEmbeddingSchema.extend({ apiKey: optionalKey })]),
-        reranker: z.discriminatedUnion('provider', [rrfSchema, openaiRerankerSchema.extend({ apiKey: optionalKey }), voyageRerankerSchema.extend({ apiKey: optionalKey })]),
-    }).strict()
     app.put(path, async c => {
         const { principal, project } = await authorize(c, true)
         const input = await parseBody(c, inputSchema)
-        return bounded(principal.user.id, project.id, () => service.changing(project.id, async () => {
-            const current = await service.record(project.id, principal.user.id)
-            if (current.version !== input.version) throw new EvolvedError('memory_provider_conflict', 'Configuration changed. Reload before saving.', 409)
-            const existing = await service.resolve(project.id)
-            const credentials = (component: MemoryProviderComponent) => {
-                const slot = input[component], prior = existing?.[component]
-                if (slot.provider === 'rrf') return { provider: 'rrf' }
-                const apiKey = slot.apiKey || (prior?.provider === slot.provider ? prior.apiKey : undefined)
-                if (!apiKey) throw new EvolvedError('memory_provider_key_required', 'An API key is required for each new provider component.', 400)
-                return { ...slot, apiKey }
-            }
-            const config = memoryProviderConfigSchema.parse({ schemaVersion: 2, llm: credentials('llm'), embedding: credentials('embedding'), reranker: credentials('reranker') })
-            await service.verifyModels(config, () => authorize(c, true))
-            await authorize(c, true)
-            // Confirm even unchanged selections: a Python bind may have succeeded before a Vault CAS failure.
-            const binding = await service.request('/configuration/binding', { projectId: project.id, embeddingProvider: config.embedding.provider, embeddingModel: config.embedding.model, embeddingDimensions: config.embedding.dimensions })
-            if (binding.bound !== true) throw new EvolvedError('memory_embedding_locked', 'Existing graph data or processing tasks prevent changing the embedding configuration.', 409)
-            await authorize(c, true)
-            await service.vault.request({ userId: principal.user.id, projectId: project.id, operation: 'memoryProvider', payload: { action: 'set', version: input.version, config } })
-            await authorize(c, true)
-            store.audit(principal.user.id, project.id, 'memory.provider.updated')
+        return bounded(principal.user.id, project.id, async () => {
+            await service.savePublic(project.id, principal.user.id, input, () => authorize(c, true))
             return c.json(await status(c))
-        }))
+        })
     })
     app.delete(path, async c => {
         const { principal, project } = await authorize(c, true), body = await parseBody(c, z.object({ version }).strict())
@@ -254,20 +310,9 @@ export function createMemoryProviderRoutes(options: { store: EvolvedStore; servi
     })
     app.post(`${path}/models`, async c => {
         const { principal, project } = await authorize(c, true)
-        const body = await parseBody(c, z.discriminatedUnion('component', [
-            z.object({ component: z.literal('llm'), provider: z.enum(['openai', 'anthropic']), apiKey: optionalKey }).strict(),
-            z.object({ component: z.literal('embedding'), provider: z.enum(['openai', 'voyage']), apiKey: optionalKey }).strict(),
-            z.object({ component: z.literal('reranker'), provider: z.enum(['openai', 'voyage']), apiKey: optionalKey }).strict(),
-        ]))
-        return bounded(principal.user.id, project.id, async () => {
-            const prior = body.apiKey ? undefined : (await service.resolve(project.id))?.[body.component]
-            const apiKey = body.apiKey || (prior?.provider === body.provider ? prior.apiKey : undefined)
-            if (!apiKey) throw new EvolvedError('memory_provider_key_required', 'Enter an API key for this provider component or save it first.', 400)
-            await authorize(c, true)
-            const catalog = await service.models(body.provider, apiKey)
-            await authorize(c, true)
-            return c.json(catalog)
-        })
+        const body = await parseBody(c, catalogInputSchema)
+        return bounded(principal.user.id, project.id, async () => c.json(
+            await service.modelsForProject(project.id, body, () => authorize(c, true))))
     })
     app.post(`${path}/test`, async c => {
         const { principal, project } = await authorize(c, true)

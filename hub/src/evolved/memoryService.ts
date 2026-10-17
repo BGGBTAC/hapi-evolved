@@ -5,7 +5,7 @@ import { isAbsolute, relative, resolve, sep, extname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { MemoryError, MemoryLedger, memoryHash, type MemorySource } from './memoryStore'
 import { EvolvedStore, EvolvedError } from './store'
-import type { MemoryProviderOperation, MemoryProviderResolver } from './memoryProvider'
+import { validateMemoryModelRoles, type MemoryProviderOperation, type MemoryProviderResolver } from './memoryProvider'
 
 function legacyExcludedMemoryPath(path: string): boolean {
     return path.split(/[\\/]/).some(part => /^(?:\.env(?:\..*)?|secrets?|credentials?|\.ssh|\.aws|\.gnupg|\.git|\.codegraph.*|node_modules)$/i.test(part))
@@ -83,6 +83,7 @@ export class HttpMemoryBackend implements MemoryBackend {
         try {
             const config = projectId && this.provider ? await this.provider(projectId) : undefined
             if (config === null) return false
+            if (config) validateMemoryModelRoles(config)
             const response = await fetch(`${this.url}${config ? '/configuration/check' : '/health'}`, {
                 method: config ? 'POST' : 'GET', redirect: 'error',
                 headers: { authorization: `Bearer ${this.token}`, ...(config ? { 'content-type': 'application/json' } : {}) },
@@ -113,6 +114,7 @@ export class HttpMemoryBackend implements MemoryBackend {
                 const run = async () => {
                     const config = await this.provider!(projectId)
                     if (config === null) throw new MemoryError('Project memory provider is disabled', 503)
+                    if (config) validateMemoryModelRoles(config)
                     if (revalidate) await revalidate()
                     const { providerConfig: _untrusted, ...base } = payload
                     return send({ ...base, ...(config ? { providerConfig: config } : {}) })
