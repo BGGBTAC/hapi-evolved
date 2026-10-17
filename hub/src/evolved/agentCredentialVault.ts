@@ -13,6 +13,10 @@ const scope = { leaseId: z.string().uuid(), profile: z.enum(['restricted', 'work
 const grantSchema = z.object({ action: z.literal('grant'), id: z.string().uuid(), secretId: z.string().uuid(), ...scope, envName: z.string().refine(isCredentialEnvName) }).strict()
 const resolveSchema = z.object({ action: z.enum(['resolve', 'metadata']), ...scope }).strict()
 const metadata = (row: GrantRow): AgentCredentialGrant => ({ id: row.id, secretId: row.secret_id, leaseId: row.lease_id, profile: row.profile, envName: row.env_name, secretVersion: row.version, createdAt: row.created_at })
+function credentialText(clear: Uint8Array): string {
+    try { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(clear) }
+    catch { throw new EvolvedError('invalid_credential_value', 'Der Wert muss gültiger UTF-8-Text sein, um als Umgebungsvariable bereitgestellt zu werden.') }
+}
 
 /** Plaintext resolution is an internal, signed Hub-to-runner operation, never a public API. */
 export class AgentCredentialVault {
@@ -51,6 +55,7 @@ export class AgentCredentialVault {
             if (this.rows(projectId).filter(row => row.lease_id === input.leaseId).length >= MAX_AGENT_CREDENTIALS) throw new EvolvedError('credential_grant_limit', 'Für diesen Projektdienst sind bereits zu viele Zugangsdaten freigegeben.', 409)
             const clear = this.reveal(projectId, input.secretId)
             try {
+                credentialText(clear)
                 if (clear.includes(0)) throw new EvolvedError('invalid_credential_value', 'Dieser Wert kann nicht als Umgebungsvariable bereitgestellt werden.')
                 const used = this.db.prepare('SELECT COALESCE(SUM(length(s.ciphertext)+length(g.env_name)+2),0) AS bytes FROM agent_credential_grants g JOIN secrets s ON s.id=g.secret_id AND s.project_id=g.project_id WHERE g.project_id=? AND g.lease_id=?').get(projectId, input.leaseId) as { bytes: number }
                 if (used.bytes + clear.length + Buffer.byteLength(input.envName) + 2 > MAX_AGENT_CREDENTIAL_BYTES) throw new EvolvedError('credential_bundle_limit', 'Die freigegebenen Zugangsdaten überschreiten insgesamt 64 KiB.', 409)
@@ -75,7 +80,7 @@ export class AgentCredentialVault {
             try {
                 bytes += clear.length + Buffer.byteLength(row.env_name) + 2
                 if (clear.includes(0) || bytes > MAX_AGENT_CREDENTIAL_BYTES || rows.length > MAX_AGENT_CREDENTIALS) throw new EvolvedError('credential_bundle_limit', 'Die freigegebenen Zugangsdaten überschreiten die Grenzen für die Agentenumgebung.', 409)
-                environment[row.env_name] = clear.toString('utf8')
+                environment[row.env_name] = credentialText(clear)
             } finally { clear.fill(0) }
         }
         for (const row of rows) this.audit(userId, projectId, 'resolved', row.id)

@@ -113,8 +113,13 @@ werden nicht automatisch freigegeben. Höchstens 32 Variablen mit insgesamt
 lassen sich durch das Pflichtpräfix nicht überschreiben.
 
 Die interne Auflösung läuft über signierte Vault-Anfragen und den privaten
-Runner-Proxy. `/api/evolved/runner/environment` akzeptiert nur die aktuelle
-verwaltete Lease, keine Browsercookies, Origin-Header oder Agenten-Capabilities.
+Runner-Proxy. `/api/evolved/runner/environment` liefert Geheimwerte nur für die
+aktuelle, bereite verwaltete Lease. Gültige manuelle Runner erhalten ein leeres
+Bundle ohne Vault-Abfrage; eine widerrufene Lease bleibt gesperrt. Browsercookies,
+Origin-Header und Agenten-Capabilities sind ausgeschlossen. Der private
+Proxy-Endpunkt prüft die tatsächliche Socketadresse gegen den festen Docker-DNS-Namen
+`runner` im eigenen Projektnetz; andere Dienste im gemeinsamen Backend-Netz
+erhalten keinen Zugang. Forwarded-Header haben darauf keinen Einfluss.
 Es gibt keine allgemeine Secret-Lesefunktion. Die Agenten-Discovery liefert
 ausschließlich freigegebene Variablennamen, Versionen und eine Metadatenrevision.
 Der Vault protokolliert Auflösungen mit Freigabe-IDs, niemals Werten.

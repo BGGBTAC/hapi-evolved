@@ -1,6 +1,8 @@
 import { Server as Engine } from '@socket.io/bun-engine'
 import { Server } from 'socket.io'
 import { io as connect } from 'socket.io-client'
+import { lookup } from 'node:dns/promises'
+import { BlockList, isIP } from 'node:net'
 import { privateFile } from '../../hub/src/evolved/store'
 import { SOCKET_MAX_HTTP_BUFFER_SIZE } from '../../hub/src/socket/socketLimits'
 import { boundedGitResponse, GIT_TIMEOUT_MS, gitPath } from '../../hub/src/evolved/githubProtocol'
@@ -51,11 +53,34 @@ export function allowedProxyPath(path: string, method = 'GET', search = ''): boo
         || /^\/api\/evolved\/github-pr\/(?:features|link)$/.test(path)
         || /^\/api\/evolved\/(memory\/search|projects\/[^/]+\/(memory(?:\/.*)?|resources(?:\/.*)?))$/.test(path)
 }
-export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; projectId: string; host?: string; port?: number }) {
+export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; projectId: string; host?: string; port?: number; credentialRunnerLookup?: () => Promise<readonly string[]> }) {
     const hub = new URL(config.hubUrl)
     if (hub.username || hub.password || !['http:', 'https:'].includes(hub.protocol)) throw new Error('Invalid Hub URL')
     let grant: Grant | null = null, renewing: Promise<Grant> | null = null
     const gitTransfers = new Set<AbortController>()
+    // The runner joins only this proxy's private project network, never the shared
+    // backend network. Docker's fixed `runner` alias therefore identifies our own
+    // project container. No request/header/environment variable selects this host.
+    // The function override is exclusively an in-process test dependency.
+    const lookupCredentialRunner = config.credentialRunnerLookup ?? (async () => (await lookup('runner', { all: true, verbatim: true })).map(peer => peer.address))
+    let credentialPeerLookup: Promise<readonly string[]> | null = null
+    const isCredentialRunner = async (address: string | undefined): Promise<boolean> => {
+        const family = address && isIP(address)
+        if (!address || !family) return false
+        if (!credentialPeerLookup) credentialPeerLookup = lookupCredentialRunner().catch(() => []).finally(() => { credentialPeerLookup = null })
+        let timeout: ReturnType<typeof setTimeout> | undefined
+        try {
+            const addresses = await Promise.race([credentialPeerLookup, new Promise<readonly string[]>(resolve => { timeout = setTimeout(() => resolve([]), 1500) })])
+            if (!addresses.length || addresses.length > 16) return false
+            const peers = new BlockList()
+            for (const candidate of addresses) {
+                const candidateFamily = isIP(candidate)
+                if (candidateFamily) peers.addAddress(candidate, candidateFamily === 6 ? 'ipv6' : 'ipv4')
+            }
+            // BlockList performs exact address matching, including IPv4-mapped IPv6.
+            return peers.check(address, family === 6 ? 'ipv6' : 'ipv4')
+        } catch { return false } finally { if (timeout) clearTimeout(timeout) }
+    }
     async function current(minRemainingMs = 30_000): Promise<Grant> {
         if (grant && grant.expiresAt > Date.now() + minRemainingMs) return grant
         if (renewing) return renewing
@@ -206,6 +231,7 @@ export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; p
             }
             if (url.pathname === '/evolved-runner-environment') {
                 if (request.method !== 'POST' || url.search || request.headers.has('cookie')) return new Response('Endpoint denied', { status: 403 })
+                if (!await isCredentialRunner(server.requestIP(request)?.address)) return new Response('Runner peer denied', { status: 403, headers: { 'cache-control': 'no-store' } })
                 try {
                     // Only the literal empty body is admitted; never proxy caller-supplied scope.
                     const reader = request.body?.getReader()

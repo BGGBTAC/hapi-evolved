@@ -117,16 +117,27 @@ describe('explicit project credential delegation', () => {
         }
         expect((await f.environment({}, { projectId: 'other', leaseId: f.leaseId })).status).toBe(400)
     })
-    test.each(['unmanaged', 'not-ready', 'profile', 'scope', 'other-project'] as const)('private runner transport rejects %s authority', async reason => {
+    test.each(['not-ready', 'profile', 'scope'] as const)('private runner transport rejects %s authority', async reason => {
         const f = await setup(); await f.grant()
-        if (reason === 'unmanaged') f.store.db.query('DELETE FROM evolved_managed_runners').run()
         if (reason === 'not-ready') f.store.db.query('UPDATE evolved_managed_runners SET ready=0').run()
         if (reason === 'profile') f.store.db.query("UPDATE evolved_runner_leases SET profile='workspace'").run()
         if (reason === 'scope') f.store.db.query("UPDATE evolved_runner_leases SET scopes='[]'").run()
-        if (reason === 'other-project') f.store.db.query('UPDATE evolved_managed_runners SET project_id=?').run(randomUUID())
         const response = await f.environment()
         expect(response.status).toBe(403)
         expect(await response.text()).not.toContain(secretValue)
+    })
+    test.each(['no-table', 'unmanaged', 'other-project', 'replaced'] as const)('valid %s runner starts without Vault dependency and never receives former grants', async reason => {
+        const f = await setup(); await f.grant()
+        if (reason === 'no-table') f.store.db.query('DROP TABLE evolved_managed_runners').run()
+        if (reason === 'unmanaged') f.store.db.query('DELETE FROM evolved_managed_runners').run()
+        if (reason === 'other-project') f.store.db.query('UPDATE evolved_managed_runners SET project_id=?').run(randomUUID())
+        if (reason === 'replaced') f.store.db.query('UPDATE evolved_managed_runners SET lease_id=?').run(randomUUID())
+        f.hook(async () => { throw new Error('Manual runner must not contact Vault') })
+        const response = await f.environment()
+        expect(response.status).toBe(200)
+        expect(await response.json()).toMatchObject({ projectId: f.project.id, environment: {} })
+        f.store.db.query('UPDATE evolved_runner_leases SET revoked_at=?').run(f.store.now())
+        expect((await f.environment()).status).toBe(401)
     })
     test('private runner transport rechecks revocation after the Vault response', async () => {
         const f = await setup(); await f.grant()

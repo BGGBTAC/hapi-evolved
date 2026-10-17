@@ -50,6 +50,17 @@ export function createRunnerRoutes(store: EvolvedStore, vault?: VaultClient): Ho
         const authorization = c.req.header('authorization') ?? ''
         if (!authorization.startsWith('Bearer ')) throw new EvolvedError('invalid_lease', 'Runner lease required.', 401)
         const token = authorization.slice(7)
+        const initial = currentLease(store, token)
+        if (!(JSON.parse(initial.lease.scopes) as string[]).includes('runner:connect')) throw new EvolvedError('scope_denied', 'Runner connection scope required.', 403)
+        const hasManagedRunners = store.db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='evolved_managed_runners'").get()
+        const mapping = hasManagedRunners ? store.db.query('SELECT lease_id FROM evolved_managed_runners WHERE project_id=?').get(initial.project.id) as { lease_id: string } | null : null
+        if (mapping?.lease_id !== initial.lease.id) {
+            // Manually provisioned runners cannot receive Vault grants. Preserve
+            // their existing spawn path without depending on Vault availability.
+            // A superseded managed lease also receives no former grant values.
+            c.header('Cache-Control', 'no-store')
+            return c.json({ projectId: initial.project.id, revision: hashToken(`unmanaged:${initial.lease.id}:${initial.project.profile}`), environment: {} })
+        }
         const authorized = () => {
             const state = currentLease(store, token)
             if (!(JSON.parse(state.lease.scopes) as string[]).includes('runner:connect') || getManagedCredentialLease(store, state.project)?.id !== state.lease.id) {

@@ -6,7 +6,7 @@ import { createRunnerProxy, allowedProxyPath } from './server'
 
 const cleanup: Array<() => void> = []
 afterEach(() => { for (const f of cleanup.splice(0).reverse()) f() })
-function setup() {
+function setup(credentialRunnerLookup: () => Promise<readonly string[]> = async () => ['127.0.0.1']) {
     const dir = mkdtempSync(join(tmpdir(), 'credential-proxy-'))
     cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
     const leaseFile = join(dir, 'lease'), lease = 'a'.repeat(43)
@@ -18,7 +18,7 @@ function setup() {
         return answer()
     } })
     cleanup.push(() => { hub.stop(true) })
-    const proxy = createRunnerProxy({ hubUrl: hub.url.toString(), projectId: 'project-a', leaseFile, port: 0, host: '127.0.0.1' })
+    const proxy = createRunnerProxy({ hubUrl: hub.url.toString(), projectId: 'project-a', leaseFile, port: 0, host: '127.0.0.1', credentialRunnerLookup })
     cleanup.push(proxy.close)
     const call = (path = '/evolved-runner-environment', init: RequestInit = {}) => fetch(new URL(path, proxy.server.url), { method: 'POST', body: '{}', ...init })
     return { calls, lease, call, answer: (fn: typeof answer) => { answer = fn } }
@@ -68,4 +68,48 @@ test('admission contention remains retryable without forwarding upstream details
     expect(response.status).toBe(429)
     expect(response.headers.get('retry-after')).toBe('1')
     expect(await response.text()).not.toContain('synthetic-secret')
+})
+test('a foreign socket peer cannot obtain project credentials by spoofing forwarding or authorization headers', async () => {
+    // The actual loopback socket is 127.0.0.1; this project's runner is 127.0.0.2.
+    let addresses = ['127.0.0.2']
+    const f = setup(async () => addresses)
+    const response = await f.call(undefined, { headers: { 'x-forwarded-for': '127.0.0.2', 'x-real-ip': '127.0.0.2', forwarded: 'for=127.0.0.2', authorization: 'Bearer caller-controlled' } })
+    expect(response.status).toBe(403)
+    expect(await response.text()).not.toContain('synthetic-secret')
+    expect(f.calls).toHaveLength(0)
+    addresses = ['127.0.0.1']
+    expect((await f.call()).status).toBe(200)
+})
+test('the exact runner peer accepts IPv4-mapped IPv6 without trusting a foreign address', async () => {
+    const f = setup(async () => ['::ffff:127.0.0.1'])
+    expect((await f.call()).status).toBe(200)
+    const foreign = setup(async () => ['::ffff:127.0.0.2'])
+    expect((await foreign.call()).status).toBe(403)
+    expect(foreign.calls).toHaveLength(0)
+    expect(f.calls).toHaveLength(1)
+})
+test('missing or failed runner DNS denies delivery before reading credentials or contacting the Hub', async () => {
+    for (const lookup of [async () => [] as string[], async () => { throw new Error('Synthetic DNS failure') }, async () => ['not-an-address'], async () => ['127.0.0.2']]) {
+        const f = setup(lookup)
+        const response = await f.call(undefined, { headers: { 'x-forwarded-for': '127.0.0.2' } })
+        expect(response.status).toBe(403)
+        expect(f.calls).toHaveLength(0)
+    }
+})
+test('Hub redirects cannot forward the lease or disclose credential responses to another endpoint', async () => {
+    let redirected = 0
+    const other = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: () => { redirected++; return new Response('unexpected') } })
+    cleanup.push(() => { other.stop(true) })
+    const f = setup()
+    f.answer(() => new Response(null, { status: 307, headers: { location: other.url.toString() } }))
+    expect((await f.call()).status).toBe(503)
+    expect(redirected).toBe(0)
+})
+test('a stalled runner lookup is shared and fails closed within a bounded wait', async () => {
+    let lookups = 0
+    const f = setup(() => { lookups++; return new Promise(() => {}) })
+    const replies = await Promise.all([f.call(), f.call()])
+    expect(replies.map(response => response.status)).toEqual([403, 403])
+    expect(lookups).toBe(1)
+    expect(f.calls).toHaveLength(0)
 })

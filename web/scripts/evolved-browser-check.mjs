@@ -79,7 +79,7 @@ try {
  await page.getByLabel('Name',{exact:true}).fill('SYNTHETIC_UI_KEY');
  await page.getByLabel('Geheimer Wert',{exact:true}).fill('synthetic-value-never-render');
  await page.getByRole('button',{name:'Verschlüsselt speichern',exact:true}).click();
- await page.getByText('SYNTHETIC_UI_KEY',{exact:true}).waitFor();
+ await page.locator('.ev-row').getByText('SYNTHETIC_UI_KEY',{exact:true}).waitFor();
  if((await page.locator('body').innerText()).includes('synthetic-value-never-render'))throw Error('Secret rendered');
  if(await page.getByLabel('Geheimer Wert',{exact:true}).inputValue())throw Error('Secret input not cleared');
  await workspaceArea(page,'Gedächtnis');
