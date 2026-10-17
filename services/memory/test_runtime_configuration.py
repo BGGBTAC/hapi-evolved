@@ -40,10 +40,10 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
                 "operationId": "op-" + project, "budgetMicros": 100000, "providerConfig": browser_config(), **changes}
 
     def graph(self):
-        return SimpleNamespace(build_indices_and_constraints=AsyncMock(), search=AsyncMock(return_value=[]), close=AsyncMock()), SimpleNamespace(aclose=AsyncMock())
+        return SimpleNamespace(build_indices_and_constraints=AsyncMock(), search_=AsyncMock(return_value=SimpleNamespace(edges=[])), close=AsyncMock()), SimpleNamespace(aclose=AsyncMock())
 
     def binding_request(self, project="project-a", **changes):
-        return {"projectId": project, "embeddingModel": "text-embedding-3-small", "embeddingDimensions": 1536, **changes}
+        return {"projectId": project, "embeddingProvider": "openai", "embeddingModel": "text-embedding-3-small", "embeddingDimensions": 1536, **changes}
 
     def graph_counts(self, nodes=0, relationships=0):
         run = AsyncMock(return_value=SimpleNamespace(single=AsyncMock(return_value={"nodes": nodes, "relationships": relationships})))
@@ -63,7 +63,7 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"bound": True})
         self.assertEqual([dict(row) for row in self.app.ledger.db.execute("SELECT * FROM operations ORDER BY id")], before)
-        self.assertEqual(self.app.ledger.binding("project-a"), ("text-embedding-3-small", 1536))
+        self.assertEqual(self.app.ledger.binding("project-a"), ("openai", "text-embedding-3-small", 1536))
         pattern = run.call_args.kwargs["pattern"]
         import re
         for group in ["hapi_project_a_0", "hapi_project_a_1", "hapi_project_a_999"]:
@@ -87,7 +87,7 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
         denied = await self.client.post("/configuration/binding", json=self.binding_request(), headers={"authorization": "Bearer wrong"})
         self.assertEqual(denied.status_code, 401)
         for body in [[], {}, {"projectId": ""}, {"projectId": "a_1"}, {"projectId": "a", "generation": 0},
-                     self.binding_request(embeddingModel="invalid/model"), self.binding_request(embeddingDimensions=3072)]:
+                     self.binding_request(embeddingModel="invalid/model"), self.binding_request(embeddingDimensions=3073)]:
             self.assertEqual((await self.client.post("/configuration/binding", json=body)).status_code, 400)
         run.assert_not_called()
         for error in [RuntimeError("private database diagnostic"), TimeoutError()]:
@@ -97,7 +97,7 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.json(), {"bound": False, "error": "Memory graph binding could not be verified"})
 
     async def test_identical_durable_binding_is_confirmed_with_graph_data_without_claiming_empty(self):
-        self.app.ledger.bind("project-a", "text-embedding-3-small", 1536)
+        self.app.ledger.bind("project-a", "openai", "text-embedding-3-small", 1536)
         run = self.graph_counts(nodes=5, relationships=3)
         before = self.app.ledger.db.total_changes
         response = await self.client.post("/configuration/binding", json=self.binding_request())
@@ -108,7 +108,7 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
         incompatible = await self.client.post("/configuration/binding", json=self.binding_request(embeddingModel="text-embedding-3-large"))
         self.assertEqual(incompatible.json(), {"bound": False})
         run.assert_awaited_once()
-        self.assertEqual(self.app.ledger.binding("project-a"), ("text-embedding-3-small", 1536))
+        self.assertEqual(self.app.ledger.binding("project-a"), ("openai", "text-embedding-3-small", 1536))
         self.app.ledger.begin("uncertain", "project-a", 0, "synthetic", 100)
         self.app.ledger.db.execute("UPDATE operations SET status='indeterminate' WHERE id='uncertain'")
         run.reset_mock()
@@ -129,7 +129,7 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
             filename = str(Path(self.directory.name) / "operations.db")
             self.app.ledger.db.close()
             self.app.ledger = self.app.OperationLedger(filename)
-            self.assertEqual(self.app.ledger.binding("project-a"), ("text-embedding-3-large", 1536))
+            self.assertEqual(self.app.ledger.binding("project-a"), ("openai", "text-embedding-3-large", 1536))
             replay = await self.client.post("/search", json=self.operation())
             self.assertEqual(replay.json(), original.json())
             late = await self.client.post("/search", json=self.operation(operationId="late-old-snapshot"))
@@ -148,17 +148,17 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first.json(), {"bound": True})
         retry = await self.client.post("/configuration/binding", json=self.binding_request(embeddingModel="text-embedding-3-large"))
         self.assertEqual(retry.json(), {"bound": True})
-        self.assertEqual(self.app.ledger.binding("project-a"), ("text-embedding-3-large", 1536))
+        self.assertEqual(self.app.ledger.binding("project-a"), ("openai", "text-embedding-3-large", 1536))
         self.graph_counts(nodes=1)
         failed = await self.client.post("/configuration/binding", json=self.binding_request())
         self.assertEqual(failed.json(), {"bound": False})
-        self.assertEqual(self.app.ledger.binding("project-a"), ("text-embedding-3-large", 1536))
+        self.assertEqual(self.app.ledger.binding("project-a"), ("openai", "text-embedding-3-large", 1536))
         # The Hub still has A if its Vault save of B failed. Saving that same
         # visible A must restore the Python binding while the graph is empty.
         self.graph_counts()
         restore = await self.client.post("/configuration/binding", json=self.binding_request())
         self.assertEqual(restore.json(), {"bound": True})
-        self.assertEqual(self.app.ledger.binding("project-a"), ("text-embedding-3-small", 1536))
+        self.assertEqual(self.app.ledger.binding("project-a"), ("openai", "text-embedding-3-small", 1536))
 
     async def test_binding_detects_new_operation_waiting_behind_its_database_read(self):
         run = self.graph_counts()
@@ -236,7 +236,7 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_invalid_configuration_cannot_touch_database_provider_or_operation_ledger(self):
         with patch.object(self.app, "graph_client", AsyncMock()) as graph:
-            for supplied in [None, browser_config(apiKey="secret\r\nheader"), browser_config(embeddingDimensions=3072), browser_config(inputUsdPerMTok="NaN"), {**browser_config(), "base": "http://internal"}]:
+            for supplied in [None, browser_config(apiKey="secret\r\nheader"), browser_config(embeddingDimensions=3073), browser_config(inputUsdPerMTok="NaN"), {**browser_config(), "base": "http://internal"}]:
                 check = await self.client.post("/configuration/check", json={"providerConfig": supplied})
                 search = await self.client.post("/search", json=self.operation(providerConfig=supplied))
                 ingest = await self.client.post("/ingest", json={"projectId": "project-a", "generation": 0,
@@ -249,28 +249,28 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.app.ledger.db.execute("SELECT COUNT(*) FROM operations").fetchone()[0], 0)
 
     async def test_check_database_error_and_model_errors_do_not_disclose_details(self):
-        key = browser_config()["apiKey"]
+        key = browser_config()["llm"]["apiKey"]
         self.driver.verify_connectivity.side_effect = RuntimeError(key)
         response = await self.client.post("/configuration/check", json={"providerConfig": browser_config()})
         self.assertEqual(response.status_code, 503)
         self.assertNotIn(key, response.text)
         for error, status in [(self.app.ProviderUnauthorized(), 401), (self.app.CatalogUnavailable(), 503)]:
             with patch.object(self.app, "list_models", AsyncMock(side_effect=error)):
-                response = await self.client.post("/configuration/models", json={"apiKey": key})
+                response = await self.client.post("/configuration/models", json={"provider": "openai", "apiKey": key})
                 self.assertEqual(response.status_code, status)
                 self.assertNotIn(key, response.text)
 
     async def test_configuration_routes_require_service_auth_and_exact_body(self):
-        for path, body in [("/configuration/check", {"providerConfig": browser_config()}), ("/configuration/models", {"apiKey": browser_config()["apiKey"]})]:
+        for path, body in [("/configuration/check", {"providerConfig": browser_config()}), ("/configuration/models", {"provider": "openai", "apiKey": browser_config()["llm"]["apiKey"]})]:
             denied = await self.client.post(path, json=body, headers={"authorization": "Bearer wrong"})
             self.assertEqual(denied.status_code, 401)
             for invalid in [[], None, {}, {**body, "url": "https://private.invalid"}]:
                 self.assertEqual((await self.client.post(path, json=invalid)).status_code, 400)
             self.assertEqual((await self.client.post(path, content=b"invalid-json")).status_code, 400)
-        with patch.object(self.app, "list_models", AsyncMock(return_value=["model-a", "model-b"])) as catalog:
-            response = await self.client.post("/configuration/models", json={"apiKey": browser_config()["apiKey"]})
-            self.assertEqual(response.json(), {"models": ["model-a", "model-b"]})
-            catalog.assert_awaited_once_with(browser_config()["apiKey"])
+        with patch.object(self.app, "list_models", AsyncMock(return_value={"models": ["model-a", "model-b"], "verified": True})) as catalog:
+            response = await self.client.post("/configuration/models", json={"provider": "openai", "apiKey": browser_config()["llm"]["apiKey"]})
+            self.assertEqual(response.json(), {"models": ["model-a", "model-b"], "verified": True})
+            catalog.assert_awaited_once_with("openai", browser_config()["llm"]["apiKey"])
 
     async def test_concurrent_projects_keep_credentials_models_prices_and_budgets_isolated(self):
         environment = dict(os.environ)
@@ -281,7 +281,7 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
             if len(started) == 2:
                 ready.set()
             await ready.wait()
-            self.app.ledger.charge(operation, 11 if config.model == "model-a" else 22)
+            self.app.ledger.charge(operation, 11 if config.llm.model == "model-a" else 22)
             return self.graph()
         a = browser_config(apiKey="synthetic-private-key-a", model="model-a", inputUsdPerMTok="1")
         b = browser_config(apiKey="synthetic-private-key-b", model="model-b", inputUsdPerMTok="3")
@@ -291,13 +291,13 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
                 self.client.post("/search", json=self.operation("b", providerConfig=b))), 3)
         self.assertEqual([r.status_code for r in results], [200, 200])
         self.assertEqual([r.json()["spentMicros"] for r in results], [11, 22])
-        received = {op: (config.api_key, config.model, config.input_rate) for op, config in started}
-        self.assertEqual(received, {"op-a": (a["apiKey"], "model-a", "1"), "op-b": (b["apiKey"], "model-b", "3")})
+        received = {op: (config.llm.api_key, config.llm.model, config.llm.input_rate) for op, config in started}
+        self.assertEqual(received, {"op-a": (a["llm"]["apiKey"], "model-a", "1"), "op-b": (b["llm"]["apiKey"], "model-b", "3")})
         self.assertEqual(dict(os.environ), environment)
         dump = "\n".join(self.app.ledger.db.iterdump())
         for config in (a, b):
-            self.assertNotIn(config["apiKey"], dump)
-            self.assertNotIn(config["apiKey"], "".join(r.text for r in results))
+            self.assertNotIn(config["llm"]["apiKey"], dump)
+            self.assertNotIn(config["llm"]["apiKey"], "".join(r.text for r in results))
 
     async def test_real_sdk_clients_send_their_own_snapshot_credentials_and_account_separately(self):
         configs = [provider_config(browser_config(apiKey="synthetic-sdk-key-a", embeddingUsdPerMTok="1")),
@@ -316,18 +316,17 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
                     self.app.ledger.begin(operation, "project-" + str(i), 0, "synthetic-fingerprint", 100000)
                     graph, http = await self.app.graph_client(operation, config)
                     clients.append((graph, http))
-                    await http._transport.inner.aclose()
-                    http._transport.inner = httpx.MockTransport(handle)
-                    self.assertIs(graph.llm_client.client, graph.embedder.client)
-                    self.assertIs(graph.llm_client.client, graph.cross_encoder.client)
+                    for client in http.clients:
+                        await client._transport.inner.aclose()
+                        client._transport.inner = httpx.MockTransport(handle)
+                    self.assertIsNot(graph.llm_client.client, graph.embedder.client)
                 await asyncio.gather(*(graph.embedder.create("synthetic") for graph, _ in clients))
-            self.assertEqual({request[0] for request in requests}, {"Bearer " + config.api_key for config in configs})
+            self.assertEqual({request[0] for request in requests}, {"Bearer " + config.llm.api_key for config in configs})
             self.assertTrue(all(request[1]["dimensions"] == 1536 for request in requests))
             self.assertEqual([self.app.ledger.spent("sdk-" + str(i)) for i in range(2)], [2, 6])
             self.assertNotIn("OPENAI_API_KEY", os.environ)
         finally:
             for graph, http in clients:
-                await graph.close()
                 await http.aclose()
 
     async def test_changed_configuration_reuses_receipt_without_reissuing_or_hashing_configuration(self):
@@ -350,7 +349,7 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
             create.assert_awaited_once()
         self.assertTrue(hashed)
         self.assertTrue(all(b"providerConfig" not in value for value in hashed))
-        for key in [first["apiKey"], rotated["apiKey"]]:
+        for key in [first["llm"]["apiKey"], rotated["llm"]["apiKey"]]:
             self.assertTrue(all(key.encode() not in value for value in hashed))
             for filename in Path(self.directory.name).glob("operations.db*"):
                 self.assertNotIn(key.encode(), filename.read_bytes())
@@ -368,8 +367,91 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
             "EVOLVED_MEMORY_OUTPUT_USD_PER_MTOK": "2", "EVOLVED_MEMORY_EMBEDDING_USD_PER_MTOK": "0.1"}
         with patch.dict(os.environ, env), patch.object(self.app, "graph_client", AsyncMock(side_effect=lambda operation, config: self.graph())) as graph:
             self.assertEqual((await self.client.post("/search", json=payload)).status_code, 200)
-            self.assertEqual(graph.call_args.args[1].api_key, env["OPENAI_API_KEY"])
+            self.assertEqual(graph.call_args.args[1].llm.api_key, env["OPENAI_API_KEY"])
             self.assertEqual((await self.client.post("/search", json=self.operation("other", providerConfig=None))).status_code, 400)
+
+    async def test_provider_is_part_of_binding_even_when_model_and_dimensions_match(self):
+        self.app.ledger.bind("project-a", "openai", "same-model", 1024)
+        self.graph_counts(nodes=1)
+        change = self.binding_request(embeddingProvider="voyage", embeddingModel="same-model", embeddingDimensions=1024)
+        self.assertEqual((await self.client.post("/configuration/binding", json=change)).json(), {"bound": False})
+        value = browser_config()
+        value["embedding"].update(provider="voyage", model="same-model", dimensions=1024)
+        with patch.object(self.app, "graph_client", AsyncMock()) as create:
+            response = await self.client.post("/search", json=self.operation(providerConfig=value))
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["spentMicros"], 0)
+        create.assert_not_called()
+
+    async def test_selected_reranker_controls_actual_search_and_keeps_shared_recipe_immutable(self):
+        from graphiti_core.search.search_config_recipes import EDGE_HYBRID_SEARCH_RRF
+        from graphiti_core.search.search_config import EdgeReranker
+        original = EDGE_HYBRID_SEARCH_RRF.model_dump()
+        for index, provider in enumerate(("rrf", "openai", "voyage")):
+            value = browser_config()
+            if provider == "openai":
+                value["reranker"] = {**value["llm"], "model": "rerank-model"}
+            elif provider == "voyage":
+                value["reranker"] = {"provider": "voyage", "apiKey": "synthetic-rerank-key", "model": "rerank-3", "inputUsdPerMTok": "1"}
+            graph, resources = self.graph()
+            with patch.object(self.app, "graph_client", AsyncMock(return_value=(graph, resources))):
+                result = await self.client.post("/search", json=self.operation(operationId="ranking-" + str(index), providerConfig=value, limit=7))
+            self.assertEqual(result.status_code, 200)
+            search = graph.search_.call_args.kwargs
+            self.assertEqual(search["group_ids"], ["hapi_project_a_0"])
+            self.assertEqual(search["config"].limit, 7)
+            self.assertEqual(search["config"].edge_config.reranker, EdgeReranker.rrf if provider == "rrf" else EdgeReranker.cross_encoder)
+            self.assertEqual(search["config"].edge_config.search_methods, EDGE_HYBRID_SEARCH_RRF.edge_config.search_methods)
+            resources.aclose.assert_awaited_once()
+        self.assertEqual(EDGE_HYBRID_SEARCH_RRF.model_dump(), original)
+
+    async def test_mixed_clients_keep_per_role_keys_and_need_no_openai_environment(self):
+        from test_providers import mixed_config
+        from providers import AnthropicSchemaClient, VoyageReranker
+        value = provider_config(mixed_config())
+        with patch("graphiti_core.driver.neo4j_driver.Neo4jDriver.build_indices_and_constraints", AsyncMock()):
+            graph, resources = await self.app.graph_client("mixed", value)
+        try:
+            self.assertIsInstance(graph.llm_client, AnthropicSchemaClient)
+            self.assertIsInstance(graph.cross_encoder, VoyageReranker)
+            self.assertEqual([client._transport.config["role"] for client in resources.clients], ["llm", "embedding", "reranker"])
+            self.assertEqual(resources.clients[0].headers["x-api-key"], value.llm.api_key)
+            self.assertEqual(resources.clients[1].headers["authorization"], "Bearer " + value.embedding.api_key)
+            self.assertEqual(resources.clients[2].headers["authorization"], "Bearer " + value.reranker.api_key)
+            self.assertNotIn("authorization", resources.clients[0].headers)
+            self.assertNotIn("OPENAI_API_KEY", os.environ)
+            self.assertEqual(graph.llm_client.small_model, value.llm.model)
+        finally:
+            await resources.aclose()
+        self.assertTrue(all(client.is_closed for client in resources.clients))
+
+    async def test_partial_graph_construction_closes_every_created_resource_exactly_once(self):
+        from test_providers import mixed_config
+        original = httpx.AsyncClient
+        clients = []
+        def create_http(**kwargs):
+            client = original(**kwargs)
+            client.aclose = AsyncMock(wraps=client.aclose)
+            clients.append(client)
+            return client
+        graph_driver = SimpleNamespace(close=AsyncMock())
+        with patch("httpx.AsyncClient", side_effect=create_http), patch("graphiti_core.driver.neo4j_driver.Neo4jDriver", return_value=graph_driver), patch("graphiti_core.Graphiti", side_effect=RuntimeError("construction failed")):
+            with self.assertRaisesRegex(RuntimeError, "construction failed"):
+                await self.app.graph_client("partial", provider_config(mixed_config()))
+        self.assertEqual(len(clients), 3)
+        self.assertTrue(all(client.is_closed for client in clients))
+        for client in clients:
+            client.aclose.assert_awaited_once()
+        graph_driver.close.assert_awaited_once()
+
+    async def test_cleanup_failure_still_finishes_the_durable_receipt(self):
+        graph, resources = self.graph()
+        resources.aclose.side_effect = RuntimeError("private cleanup diagnostic")
+        with patch.object(self.app, "graph_client", AsyncMock(return_value=(graph, resources))):
+            result = await self.client.post("/search", json=self.operation())
+        self.assertEqual(result.status_code, 422)
+        self.assertEqual(result.json(), {"error": "Graph operation cleanup failed", "spentMicros": 0})
+        self.assertTrue((await self.client.post("/receipt", json={"operationId": "op-project-a"})).json()["final"])
 
 
 if __name__ == "__main__": unittest.main()

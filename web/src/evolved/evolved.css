@@ -221,3 +221,9 @@
 .ev-memory-steps li[data-complete="true"] > span { background: var(--ev-accent-soft); border-color: var(--ev-accent); }
 .ev-memory-disconnect { margin-top: .75rem; }
 #memory-provider, #memory-budget { scroll-margin-top: 5rem; }
+
+.ev-memory-component { display: grid; gap: 12px; min-width: 0; margin: 0; padding: 16px; border: 1px solid var(--ev-line); border-radius: 12px; }
+.ev-memory-component > legend { padding-inline: 6px; font-weight: 650; }
+.ev-memory-component > p { margin: 0; }
+.ev-memory-component .ev-actions { flex-wrap: wrap; }
+.ev-memory-component a { overflow-wrap: anywhere; }

@@ -127,9 +127,13 @@ Connecting GitHub or a coding subscription does not authorize cloud memory spend
 
 Local knowledge/search need no cloud provider. Extraction and hybrid search
 require a provider, current prices and an explicit project budget. In current builds,
-a project admin opens **Memory → Graph-Memory setup** to enter the encrypted OpenAI
-API key, fetch available models, save prices and test connectivity without paid
-inference. Then enable cloud processing and set a budget in the same page.
+a project admin opens **Memory → Graph-Memory setup** to configure the language model
+(Claude/Anthropic or OpenAI), embeddings (Voyage AI or OpenAI), and ranking (local RRF,
+Voyage AI or OpenAI) separately. Claude with Voyage and local ranking needs no OpenAI
+key. Keys are encrypted per component. Fetch live OpenAI/Anthropic model catalogs;
+Voyage IDs and dimensions are entered from provider documentation. Save current prices
+and test connectivity without paid inference. The test explicitly leaves Voyage keys
+and models unverified. Then enable cloud processing and set a budget in the same page.
 This browser setup requires an updated Hub, Vault and Memory service; older preview
 releases use the operator configuration. See the [memory configuration](https://github.com/BGGBTAC/hapi-evolved/blob/main/services/memory/README.md).
 

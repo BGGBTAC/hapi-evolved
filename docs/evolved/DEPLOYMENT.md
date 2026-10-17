@@ -164,14 +164,25 @@ Runtimegrenze nicht.
 
 Lokale Quellen, Vorschläge, Verifikation und Volltextsuche funktionieren ohne Cloudkonfiguration.
 Graphiti und Neo4j bilden den zusätzlichen Wissensgraphen. Ein Projektadministrator richtet
-**Gedächtnis → Graph-Memory einrichten** im Browser ein: OpenAI-API-Key, live geladene Modelle,
-aktuelle Tokenpreise und Verbindungstest. Der Vault speichert den Key projektbezogen verschlüsselt;
-Konfiguration und Schlüsselwechsel werden ohne Neustart übernommen. Der Test nutzt nur den
-Modellkatalog und die Datenbank, keine kostenpflichtige Inferenz. Eine bestehende Betreiberkonfiguration
-über `credentials/memory/provider.key` und `compose.env` bleibt als Standard für noch nicht
-projektbezogen konfigurierte Projekte verwendbar. Explizites Entfernen der Projektverbindung sperrt
-diesen Rückfall. Unterstützt wird im Browser der feste OpenAI-Endpunkt. Alle Variablen und Kostenregeln
-stehen in [services/memory/README.md](https://github.com/BGGBTAC/hapi-evolved/blob/main/services/memory/README.md).
+**Gedächtnis → Graph-Memory einrichten** im Browser ein: Sprachmodell (Claude/Anthropic
+oder OpenAI), Embeddings (Voyage AI oder OpenAI), Suchtrefferbewertung (lokale RRF,
+Voyage oder OpenAI), getrennte Schlüssel und aktuelle Tokenpreise. Der Vault speichert
+Schlüssel projektbezogen verschlüsselt; Änderungen gelten ohne Neustart. OpenAI- und
+Anthropic-Modellkataloge werden live geladen. Voyage-Modell-IDs stammen aus der verlinkten
+Anbieterdokumentation; der kostenfreie Verbindungstest lässt deren Schlüssel und Modelle
+explizit ungeprüft. Er führt bei keinem Anbieter kostenpflichtige Inferenz aus.
+Eine bestehende OpenAI-Betreiberkonfiguration über `credentials/memory/provider.key`
+und `compose.env` bleibt für noch nicht projektbezogen konfigurierte Projekte verwendbar.
+Explizites Entfernen der Projektverbindung sperrt diesen Rückfall. Browserkonfigurationen
+verwenden feste Anbieterendpunkte. Details stehen in
+[services/memory/README.md](https://github.com/BGGBTAC/hapi-evolved/blob/main/services/memory/README.md).
+
+Beim Upgrade werden alte verschlüsselte OpenAI-Konfigurationen ohne Umschreiben lesbar
+normalisiert. Die SQLite-Vektorbindung erhält zusätzlich den Anbieter. Vor dem Upgrade
+Hub, Runner und Memory-Dienst geordnet stoppen und konsistent sichern. Ein Rollback auf
+eine Version ohne dieses Schema benötigt auch die vorherigen Vault-/Memory-SQLite-Dateien;
+nach dem Upgrade entstandene Änderungen dürfen dabei nicht überschrieben werden. Ein
+bloßer Image-Rollback reicht für neue Konfigurationen und Vektorbindungen nicht aus.
 Ein menschlicher Projektadmin aktiviert anschließend Cloudverarbeitung und Projektbudget im Browser.
 Ohne diese Freigabe entstehen keine Modellaufrufe. Preise müssen bei Anbieteränderungen gepflegt werden.
 

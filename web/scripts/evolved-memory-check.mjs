@@ -12,6 +12,9 @@ const mark = message => { report.checks.push(message); console.log(`PASS ${messa
 const check = (condition, message) => { if (!condition) throw Error(message); };
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const initialKey = 'synthetic-memory-browser-initial-key', reconnectedKey = 'synthetic-memory-browser-reconnected-key';
+const embeddingKey = 'synthetic-memory-browser-embedding-key', openaiEmbeddingKey = 'synthetic-memory-browser-openai-embedding-key';
+const reconnectedEmbeddingKey = 'synthetic-memory-browser-reconnected-embedding-key', rerankerKey = 'synthetic-memory-browser-reranker-key';
+const allKeys = [initialKey, reconnectedKey, embeddingKey, openaiEmbeddingKey, reconnectedEmbeddingKey, rerankerKey];
 const dynamicModel = `synthetic-browser-model-${state.split('-').at(-1).toLowerCase()}`;
 writeFileSync(join(state, 'memory-catalog.json'), JSON.stringify(['gpt-4.1-mini', 'text-embedding-3-small', 'text-embedding-3-large', dynamicModel]), { mode: 0o600 });
 async function port() { const server = createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); const p = server.address().port; await new Promise(resolve => server.close(resolve)); return p; }
@@ -50,33 +53,39 @@ try {
     const observations = () => JSON.parse(readFileSync(join(state, 'memory-observed.json'), 'utf8'));
     mark('Real Passkey registration, team and independent projects');
     const provider = () => page.locator('#memory-provider');
-    const keyField = () => provider().getByLabel('OpenAI-API-Key', { exact: true });
+    const keyField = () => provider().getByLabel('Sprachmodell: API-Key', { exact: true });
     async function navigate(id) {
         await page.goto(`${origin}/evolved?tab=memory&project=${id}`);
         await keyField().waitFor();
     }
     async function assertNoStoredKey() {
         const browserStorage = await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }));
-        check(!browserStorage.includes(initialKey) && !browserStorage.includes(reconnectedKey), 'API key appeared in browser storage');
-        check(await keyField().inputValue() === '', 'API key remained in input');
+        check(allKeys.every(key => !browserStorage.includes(key)), 'API key appeared in browser storage');
+        for (const field of await provider().locator('input[type=password]').all()) check(await field.inputValue() === '', 'API key remained in input');
     }
     async function capture(name, width) {
         await assertNoStoredKey();
         await page.setViewportSize({ width, height: 1600 });
-        const details = provider().locator('details');
-        if (await details.evaluate(element => element.open)) await details.locator('summary').click();
+        for (const details of await provider().locator('details').all()) {
+            if (await details.evaluate(element => element.open)) await details.locator('summary').click();
+        }
         await provider().evaluate(element => element.scrollIntoView({ block: 'start', inline: 'nearest' })); await delay(100);
         const layout = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, scrollWidth: document.documentElement.scrollWidth }));
         check(layout.scrollWidth <= layout.width + 1, `${name}/${width}: horizontal overflow`);
-        const path = join(output, `${name}-${width}.png`); await provider().screenshot({ path });
+        // The workspace scrolls inside its own pane. An element screenshot would
+        // include a large blank area beneath the clipped pane on mobile screens.
+        const path = join(output, `${name}-${width}.png`); await page.screenshot({ path });
         report.views.push({ name, width, path, ...layout });
     }
-    async function loadAndSelect(key) {
+    async function loadAndSelect(key, vectorKey, vectorProvider) {
         await keyField().fill(key);
-        await provider().getByRole('button', { name: 'Modelle vom Anbieter laden', exact: true }).click();
+        await provider().getByRole('button', { name: 'Sprachmodell: Modelle laden', exact: true }).click();
         await provider().getByText('4 Modelle direkt vom Anbieter geladen.', { exact: false }).waitFor();
-        await provider().getByLabel('Sprachmodell', { exact: true }).selectOption(dynamicModel);
-        await provider().getByLabel('Embedding-Modell', { exact: true }).selectOption('text-embedding-3-small');
+        await provider().getByLabel('Sprachmodell: Modell', { exact: true }).fill(dynamicModel);
+        await provider().getByLabel('Embeddings: Anbieter', { exact: true }).selectOption(vectorProvider);
+        await provider().getByLabel('Embeddings: API-Key', { exact: true }).fill(vectorKey);
+        await provider().getByLabel('Embeddings: Modell', { exact: true }).fill(vectorProvider === 'voyage' ? 'synthetic-voyage-embedding' : 'text-embedding-3-small');
+        await provider().getByLabel('Embeddings: Dimensionen', { exact: true }).fill(vectorProvider === 'voyage' ? '1024' : '1536');
         await provider().getByLabel('Sprachmodell: Eingabe', { exact: true }).fill('0.12');
         await provider().getByLabel('Sprachmodell: Ausgabe', { exact: true }).fill('0.34');
         await provider().getByLabel('Embeddings: Eingabe', { exact: true }).fill('0.02');
@@ -85,36 +94,50 @@ try {
         const response = page.waitForResponse(value => new URL(value.url()).pathname === `/api/evolved/projects/${project.id}/memory/provider` && value.request().method() === 'PUT');
         await provider().getByRole('button', { name: 'Einrichtung speichern', exact: true }).click();
         const saved = await response; check(saved.ok(), 'Memory setup save failed');
-        const body = await saved.text(); check(!body.includes(initialKey) && !body.includes(reconnectedKey) && !Object.hasOwn(JSON.parse(body), 'apiKey'), 'Save response disclosed a key');
+        const body = await saved.text(); check(allKeys.every(key => !body.includes(key)) && !body.includes('"apiKey"'), 'Save response disclosed a key');
         await provider().getByText('Einrichtung verschlüsselt gespeichert.', { exact: false }).waitFor();
         await assertNoStoredKey();
     }
     await navigate(project.id);
     check(await provider().getByRole('button', { name: 'Verbindung testen', exact: true }).isDisabled(), 'Unconfigured provider can be tested');
     const providerWindowStarted = Date.now();
-    await loadAndSelect(initialKey); await save();
+    await loadAndSelect(initialKey, embeddingKey, 'voyage'); await save();
     const configured = await api(`/projects/${project.id}/memory/provider`);
-    check(configured.configured && configured.apiKeyConfigured && configured.config.model === dynamicModel, 'Dynamic provider model was not persisted');
-    check(!Object.hasOwn(configured.config, 'apiKey'), 'Status returned a plaintext API key');
+    check(configured.configured && configured.apiKeyConfigured && configured.config.llm.model === dynamicModel && configured.config.llm.provider === 'anthropic' && configured.config.embedding.provider === 'voyage' && configured.config.reranker.provider === 'rrf', 'Dynamic provider model was not persisted');
+    check(!JSON.stringify(configured).includes('"apiKey"'), 'Status returned a plaintext API key');
     check(observations().bindings.length === 1 && observations().bindings[0].projectId === project.id
-        && observations().bindings[0].embeddingModel === 'text-embedding-3-small', 'First setup skipped the project embedding binding');
-    mark('Dynamic provider catalog, explicit model/prices, encrypted Vault save and cleared key input');
+        && observations().bindings[0].embeddingProvider === 'voyage' && observations().bindings[0].embeddingModel === 'synthetic-voyage-embedding' && observations().bindings[0].embeddingDimensions === 1024, 'First setup skipped the project embedding binding');
+    mark('Claude + Voyage + local RRF without OpenAI: dynamic LLM catalog, manual embeddings, explicit prices, encrypted Vault save and separate cleared keys');
+    await provider().getByRole('button', { name: 'Verbindung testen', exact: true }).click();
+    await provider().getByText('Für Embeddings gibt es keinen Modellkatalog: API-Key und Modell bleiben ungeprüft.', { exact: false }).waitFor();
+    check(await provider().getByText('Verbindung prüfen', { exact: false }).getAttribute('data-complete') === 'false', 'Partial connection check incorrectly marked all keys verified');
+    mark('Voyage connection check reports the unverified credential/model and keeps step three incomplete');
     for (const width of [1440, 390, 320]) await capture('memory-setup-compact', width);
-    for (const embeddingModel of ['text-embedding-3-large', 'text-embedding-3-small']) {
+    for (const [embeddingProvider, embeddingModel, dimensions] of [
+        ['voyage', 'synthetic-voyage-alternative', 1024], ['openai', 'text-embedding-3-small', 1536],
+    ]) {
         const previousBindings = observations().bindings.length;
-        await provider().getByLabel('Embedding-Modell', { exact: true }).selectOption(embeddingModel);
+        if (embeddingProvider === 'openai') {
+            await provider().getByLabel('Embeddings: Anbieter', { exact: true }).selectOption('openai');
+            check(await provider().getByLabel('Embeddings: API-Key', { exact: true }).inputValue() === '', 'Embedding provider switch reused its previous key');
+            check(await provider().getByRole('button', { name: 'Einrichtung speichern', exact: true }).isDisabled(), 'New embedding provider accepted a missing key');
+            await provider().getByLabel('Embeddings: API-Key', { exact: true }).fill(openaiEmbeddingKey);
+        }
+        await provider().getByLabel('Embeddings: Modell', { exact: true }).fill(embeddingModel);
+        await provider().getByLabel('Embeddings: Eingabe', { exact: true }).fill('0.02');
         check(await provider().getByRole('button', { name: 'Verbindung testen', exact: true }).isDisabled(), 'Unsaved embedding change can be tested');
         await save();
         const changed = await api(`/projects/${project.id}/memory/provider`);
-        check(changed.config.embeddingModel === embeddingModel && changed.boundEmbeddingModel === embeddingModel, 'Embedding switch was not persisted');
+        check(changed.config.embedding.model === embeddingModel && changed.boundEmbeddingModel === embeddingModel
+            && changed.boundEmbeddingProvider === embeddingProvider && changed.boundEmbeddingDimensions === dimensions, 'Embedding switch was not persisted');
         const observed = observations(), binding = observed.bindings.at(-1);
         check(observed.bindings.length === previousBindings + 1 && binding.projectId === project.id
-            && binding.embeddingModel === embeddingModel && binding.embeddingDimensions === 1536
+            && binding.embeddingProvider === embeddingProvider && binding.embeddingModel === embeddingModel && binding.embeddingDimensions === dimensions
             && observed.inferenceRequests === 0, 'Embedding switch skipped the scoped empty-graph binding or attempted inference');
     }
-    mark('Explicit embedding changes use the empty-graph binding for each model and retain the stored key without inference');
+    mark('Embedding model/provider/dimension changes use the empty-graph binding and require a separate key for a new provider');
     await provider().getByRole('button', { name: 'Verbindung testen', exact: true }).click();
-    await provider().getByText('Eine kostenpflichtige KI-Anfrage wurde nicht ausgeführt;', { exact: false }).waitFor();
+    await provider().getByText('API-Keys akzeptiert, Modelle im Katalog gefunden', { exact: false }).waitFor();
     const memory = await api(`/projects/${project.id}/memory`);
     check(memory.settings.enabled === false && memory.settings.cloudAllowed === false, 'Connection setup implicitly enabled cloud processing');
     check(observations().configurationChecks > 0 && observations().inferenceRequests === 0, 'Connection test attempted inference');
@@ -123,7 +146,7 @@ try {
     const untouched = await api(`/projects/${second.id}/memory/provider`);
     check(!untouched.configured && !untouched.apiKeyConfigured && untouched.config === null, 'Configuration crossed project boundary');
     await assertNoStoredKey();
-    check(await provider().getByLabel('Sprachmodell', { exact: true }).inputValue() === '', 'Previous project model remained in form');
+    check(await provider().getByLabel('Sprachmodell: Modell', { exact: true }).inputValue() === '', 'Previous project model remained in form');
     await keyField().fill('synthetic-unsaved-key-discarded');
     await navigate(project.id); await assertNoStoredKey();
     mark('Second project remains unconfigured; project navigation clears unsaved credentials');
@@ -134,17 +157,31 @@ try {
     check(!removed.configured && !removed.apiKeyConfigured && removed.source === 'disabled', 'Deleted project connection fell back to operator credentials');
     for (const width of [1440, 390, 320]) await capture('memory-removed', width);
     // Exercise the real six-checks/minute limit without bypassing it or retrying
-    // mutations. Setup plus both model changes used five checks in this window.
+    // mutations. Setup, partial/full tests and both embedding changes used six checks.
     if (Date.now() < providerWindowStarted + 61_000) console.log('Waiting for the real provider-check rate window before reconnecting');
     while (Date.now() < providerWindowStarted + 61_000) await delay(Math.min(30_000, providerWindowStarted + 61_000 - Date.now()));
-    await loadAndSelect(reconnectedKey); await save();
+    await loadAndSelect(reconnectedKey, reconnectedEmbeddingKey, 'openai'); await save();
     await provider().getByRole('button', { name: 'Verbindung testen', exact: true }).click();
-    await provider().getByText('Eine kostenpflichtige KI-Anfrage wurde nicht ausgeführt;', { exact: false }).waitFor();
+    await provider().getByText('Keine kostenpflichtige KI-Anfrage ausgeführt;', { exact: false }).waitFor();
     await assertNoStoredKey();
     const reconnected = await api(`/projects/${project.id}/memory/provider`);
     check(reconnected.configured && reconnected.version > removed.version, 'Reconnection did not replace the disabled configuration');
     check(observations().keyLabels.includes('reconnected') && observations().inferenceRequests === 0, 'Reconnection did not use the new synthetic credential');
     mark('Remove and reconnect use a new credential, preserve project scope and perform no inference');
+    await provider().getByLabel('Suchtrefferbewertung: Anbieter', { exact: true }).selectOption('voyage');
+    await provider().getByLabel('Suchtrefferbewertung: Modell', { exact: true }).fill('synthetic-voyage-reranker');
+    await provider().getByLabel('Suchtrefferbewertung: Eingabe', { exact: true }).fill('0.05');
+    check(await provider().getByRole('button', { name: 'Einrichtung speichern', exact: true }).isDisabled(), 'Paid reranker reused another component key');
+    await provider().getByLabel('Suchtrefferbewertung: API-Key', { exact: true }).fill(rerankerKey);
+    await save();
+    await provider().getByRole('button', { name: 'Verbindung testen', exact: true }).click();
+    await provider().getByText('Für Suchtrefferbewertung gibt es keinen Modellkatalog: API-Key und Modell bleiben ungeprüft.', { exact: false }).waitFor();
+    await provider().getByLabel('Suchtrefferbewertung: Anbieter', { exact: true }).selectOption('rrf');
+    await save();
+    const localRanking = await api(`/projects/${project.id}/memory/provider`);
+    check(JSON.stringify(localRanking.config.reranker) === JSON.stringify({ provider: 'rrf' }) && localRanking.keyConfigured.reranker === false, 'Local ranking retained paid provider fields');
+    check(observations().inferenceRequests === 0, 'Reranker setup invoked inference');
+    mark('Voyage reranking requires its own key, reports partial verification, and can return to local RRF without paid parameters');
     report.memoryService = observations();
     check(pageErrors.length === 0, `Browser errors: ${pageErrors.join('; ')}`);
     report.pageErrors = pageErrors; report.consoleErrors = consoleErrors; report.failedResponses = failedResponses;
@@ -166,7 +203,7 @@ try {
     report.result = 'FAIL'; report.failures.push(String(error));
     if (page) {
         // Never capture a key, even synthetic, in a diagnostic screenshot.
-        await page.locator('input[type=password]').fill('').catch(() => {});
+        for (const field of await page.locator('input[type=password]').all()) await field.fill('').catch(() => {});
         writeFileSync(join(output, 'failure-body.txt'), await page.locator('body').innerText().catch(() => ''), { mode: 0o600 });
         await page.screenshot({ path: join(output, 'failure.png'), fullPage: true }).catch(() => {});
     }

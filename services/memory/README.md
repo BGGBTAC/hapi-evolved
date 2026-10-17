@@ -16,8 +16,15 @@ bleibt die lokale Ledger-Suche verfügbar; hybride Suche meldet den fehlenden Di
 ## Konfiguration
 
 Der normale Einrichtungsweg ist **Projekt → Gedächtnis → Graph-Memory einrichten**.
-Ein menschlicher Projektadministrator hinterlegt einen OpenAI-API-Key, lädt den
-aktuellen Modellkatalog und speichert Sprachmodell, Embedding-Modell und Preise.
+Ein menschlicher Projektadministrator konfiguriert drei getrennte Funktionen:
+
+- Sprachmodell: OpenAI oder Anthropic/Claude für Wissensextraktion.
+- Embeddings: OpenAI oder Voyage AI mit expliziter Vektorgröße.
+- Suchtrefferbewertung: lokale RRF-Rangfusion (Standard, ohne zusätzlichen API-Key)
+  oder ein separat konfigurierter OpenAI-/Voyage-Reranker.
+
+Claude + Voyage + lokale RRF benötigt keinen OpenAI-Zugang. Jede kostenpflichtige
+Funktion besitzt einen eigenen Schlüssel, eine Modell-ID und aktuelle Preise.
 Die Verwaltung verlangt eine frische Passkey-Bestätigung. Der Key liegt verschlüsselt
 in einer eigenen Tabelle des Projekt-Vaults und ist weder über die generische
 Secretverwaltung noch über Agentenwerkzeuge abrufbar. Im Browser bleibt er nur bis
@@ -30,13 +37,34 @@ Wiederholungen einer bereits angenommenen Operations-ID behalten ihr ursprüngli
 Ergebnis auch nach einem Schlüsselwechsel. `/receipt` und `/reset` benötigen keinen
 Provider-Key. Ein Projektwechsel kann keine Schlüssel eines anderen Projekts übernehmen.
 
-Der interne Endpunkt `/configuration/models` fragt ausschließlich
-`https://api.openai.com/v1/models` ab, ohne Redirects, mit Zeit-/Größenlimits.
+Der interne Endpunkt `/configuration/models` fragt die festen OpenAI-/Anthropic-
+Katalogendpunkte ohne Redirects mit Zeit- und Größenlimits ab. Bei Voyage wird kein
+Katalog vorgetäuscht: IDs werden manuell eingegeben und `verified: false` zurückgegeben.
 `/configuration/check` validiert die übergebene Konfiguration und prüft Neo4j;
-beide verwenden das interne Dienst-Token. Der Browser-Verbindungstest kombiniert
-diese Prüfungen, ohne kostenpflichtige Modellaufrufe. Modelllisten liefern weder
-Preise noch einen Nachweis der Graphiti-Kompatibilität. Nötig sind strukturierte
-Textausgaben, Chat-Completions-Logprobs und 1536-dimensionale Embeddings.
+beide verwenden das interne Dienst-Token. Der Browser-Verbindungstest kombiniert diese
+Prüfungen ohne kostenpflichtige Modellaufrufe und nennt ungeprüfte Komponenten.
+Modelllisten liefern keine Preise und keinen vollständigen Kompatibilitätsnachweis.
+Sprachmodelle benötigen strukturierte Ausgaben; nur der optionale OpenAI-Reranker
+benötigt Chat-Completions-Logprobs. Dimensionen werden beim Anbieter angefordert und
+vor der Verwendung exakt geprüft, niemals durch lokales Abschneiden angepasst.
+
+Projektkonfigurationen verwenden `schemaVersion: 2` mit `llm`, `embedding` und
+`reranker`. Jeder kostenpflichtige Slot hat ein eigenes `apiKey`; öffentliche Antworten
+enthalten ausschließlich freigegebene Konfigurationsfelder und Schlüsselstatus.
+Alte flache OpenAI-Datensätze werden nach Entschlüsselung lesend normalisiert, ohne
+Ciphertext oder Version umzuschreiben: alter Schlüssel für LLM und Embeddings, lokales
+RRF als bisher tatsächlich genutzte Suchstrategie. Alte Vektorbindungen werden als
+OpenAI-Bindungen erhalten. Ein Anbieterwechsel übernimmt keinen fremden Schlüssel.
+
+Alle kostenpflichtigen Aufrufe laufen über rollenbezogene Budgettransporte. Anthropic
+verwendet einen Adapter für ein einzelnes lokales Ausgabe-Schema-Tool ohne automatische
+Wiederholungen, Server-Tools oder Prompt-Caching. Voyage läuft direkt über HTTP ohne
+unbudgetierten SDK-Client. Das Embedding-Profil nutzt fest `input_type: null`, weil die
+Graphiti-Schnittstelle Anfrage und Dokument nicht zuverlässig unterscheidet; es kürzt
+Eingaben nicht still. Bei Voyage-Reranking zählt die Reservierung die Anfrage einmal
+je Dokument. Mehrdeutige Antworten behalten ihre konservative Reservierung.
+Ausgewähltes externes Reranking aktiviert ausdrücklich die Cross-Encoder-Suchstrategie;
+lokales RRF setzt einen Adapter ein, der unerwartete kostenpflichtige Aufrufe abweist.
 
 Projektkonfiguration hat Vorrang vor den unten beschriebenen Betreiberwerten.
 Explizites Entfernen hinterlässt eine versionierte Sperre gegen den Rückfall auf
@@ -50,7 +78,7 @@ Endpunkt `/configuration/binding` die dauerhafte Modellbindung. Eine bereits ide
 Bindung erlaubt Schlüssel- und Preisänderungen auch mit vorhandenem Graph. Bei einer
 abweichenden oder unbekannten Bindung prüft der Dienst alle Projektgenerationen und
 aktive beziehungsweise unklare Aufträge. Nur bei nachgewiesen leerem Graph schreibt er
-unter Projektsperre die neue Bindung an Embedding-Modell und Dimensionen. Das erneute
+unter Projektsperre die neue Bindung an Anbieter, Embedding-Modell und Dimensionen. Das erneute
 Speichern repariert auch eine vorherige Teilunterbrechung zwischen Dienst und Vault.
 Bis zu diesem erneuten Speichern können alte, noch wartende Aufträge wegen der
 abweichenden Bindung fehlschlagen. Diese Aufträge werden nicht automatisch wiederholt.

@@ -18,7 +18,7 @@ async def main():
     project = 'stacktest-' + uuid4().hex
     prefix = 'hapi_' + project.replace('-', '_')
     own, neighbor = prefix + '_0', prefix + '_1_0'
-    binding = {'projectId': project, 'embeddingModel': 'text-embedding-3-small', 'embeddingDimensions': 1536}
+    binding = {'projectId': project, 'embeddingProvider': 'openai', 'embeddingModel': 'text-embedding-3-small', 'embeddingDimensions': 1536}
     driver = AsyncGraphDatabase.driver(os.environ['NEO4J_URI'], auth=(os.environ.get('NEO4J_USER', 'neo4j'), password))
     async def count(group):
         async with driver.session() as session:
@@ -34,12 +34,21 @@ async def main():
         async with httpx.AsyncClient(base_url='http://127.0.0.1:8012', headers={'authorization': f'Bearer {token}'}, timeout=15) as client:
             assert (await client.get('/health', headers={'authorization': 'invalid'})).status_code == 401
             assert (await client.get('/health')).status_code == 503
-            config = {'provider': 'openai', 'apiKey': 'synthetic-validation-never-sent',
-                'model': 'synthetic-model', 'embeddingModel': 'text-embedding-3-small', 'embeddingDimensions': 1536,
-                'inputUsdPerMTok': '1', 'outputUsdPerMTok': '2', 'embeddingUsdPerMTok': '0.1', 'maxOutputTokens': 2048}
+            config = {'schemaVersion': 2,
+                'llm': {'provider': 'openai', 'apiKey': 'synthetic-validation-never-sent', 'model': 'synthetic-model',
+                    'inputUsdPerMTok': '1', 'outputUsdPerMTok': '2', 'maxOutputTokens': 2048},
+                'embedding': {'provider': 'openai', 'apiKey': 'synthetic-validation-never-sent',
+                    'model': 'text-embedding-3-small', 'dimensions': 1536, 'inputUsdPerMTok': '0.1'},
+                'reranker': {'provider': 'rrf'}}
+            mixed = {**config, 'llm': {**config['llm'], 'provider': 'anthropic', 'model': 'claude-synthetic'},
+                'embedding': {**config['embedding'], 'provider': 'voyage', 'model': 'voyage-4', 'dimensions': 1024}}
+            mixed_checked = await client.post('/configuration/check', json={'providerConfig': mixed})
+            assert mixed_checked.status_code == 200 and mixed_checked.json()['ok'] is True
+            assert (await client.post('/configuration/models', json={'provider': 'voyage',
+                'apiKey': 'synthetic-voyage-never-sent'})).json() == {'models': [], 'verified': False}
             checked = await client.post('/configuration/check', json={'providerConfig': config})
             assert checked.status_code == 200 and checked.json()['ok'] is True
-            assert (await client.post('/configuration/check', json={'providerConfig': {**config, 'embeddingDimensions': 3072}})).status_code == 400
+            assert (await client.post('/configuration/check', json={'providerConfig': {**config, 'embedding': {**config['embedding'], 'dimensions': 3073}}})).status_code == 400
             assert (await client.get('/health')).status_code == 503, 'Project check must not change operator configuration'
             assert (await client.post('/configuration/binding', json=binding)).json() == {'bound': False}
             response = await client.post('/reset', json={'projectId': project, 'generation': 1})
@@ -71,13 +80,21 @@ async def main():
             assert (await client.post('/search', content=b'x' * 100001)).status_code == 413
             await client.post('/reset', json={'projectId': project, 'generation': 2})
             assert (await client.post('/configuration/binding', json=binding)).json() == {'bound': True}
+            voyage_binding = {**binding, 'embeddingProvider': 'voyage', 'embeddingModel': 'same-model', 'embeddingDimensions': 1024}
+            assert (await client.post('/configuration/binding', json=voyage_binding)).json() == {'bound': True}
+            await seed(prefix + '_2')
+            assert (await client.post('/configuration/binding', json={**voyage_binding, 'embeddingProvider': 'openai'})).json() == {'bound': False}, 'Provider is part of the durable vector identity'
+            mismatched = {**config, 'embedding': {**config['embedding'], 'model': 'same-model', 'dimensions': 1024}}
+            denied = await client.post('/search', json={'projects': [{'projectId': project, 'generation': 2}],
+                'query': 'Never sent', 'operationId': str(uuid4()), 'budgetMicros': 100, 'providerConfig': mismatched})
+            assert denied.status_code == 422 and denied.json()['spentMicros'] == 0
         print(json.dumps({'memory': 'passed', 'neo4jCascade': True, 'projectIsolation': True,
             'idempotentReset': True, 'staleGenerationRejected': True, 'projectConfigurationCheck': True,
             'operatorRemainsUnconfigured': True, 'allGenerationBindingProof': True, 'relationshipOnlyBindingBlocked': True, 'identicalBindingWithGraph': True,
-            'providerDisabled': True, 'spentMicros': 0}))
+            'providerIdentityBinding': True, 'claudeVoyageLocalValidation': True, 'voyageCatalogUnverified': True, 'providerDisabled': True, 'spentMicros': 0}))
     finally:
         async with driver.session() as session:
-            result = await session.run('MATCH (n:EvolvedValidation) WHERE n.group_id IN $groups DETACH DELETE n', groups=[own, neighbor, prefix + '_1'])
+            result = await session.run('MATCH (n:EvolvedValidation) WHERE n.group_id IN $groups DETACH DELETE n', groups=[own, neighbor, prefix + '_1', prefix + '_2'])
             await result.consume()
         await driver.close()
 

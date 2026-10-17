@@ -7,11 +7,30 @@ import { MemoryPanel } from './Memory'
 
 const context = vi.hoisted(() => ({ api: { baseUrl: '', request: vi.fn() }, me: { user: { id: 'user-1' } }, project: null as EvolvedProject | null }))
 vi.mock('./auth', () => ({ useEvolved: () => context }))
-const config: MemoryProviderConfig = { provider: 'openai', model: 'gpt-4.1-mini', embeddingModel: 'text-embedding-3-small', embeddingDimensions: 1536, inputUsdPerMTok: '0.40', outputUsdPerMTok: '1.60', embeddingUsdPerMTok: '0.02', maxOutputTokens: 2048 }
-const status = (configured = false): MemoryProviderStatus => ({ configured, version: configured ? 1 : 0, apiKeyConfigured: configured, source: configured ? 'project' : 'disabled', config: configured ? { ...config } : null, embeddingLocked: false, boundEmbeddingModel: configured ? config.embeddingModel : null, canManage: true })
+const config: MemoryProviderConfig = { schemaVersion: 2,
+    llm: { provider: 'openai', model: 'gpt-4.1-mini', inputUsdPerMTok: '0.40', outputUsdPerMTok: '1.60', maxOutputTokens: 2048 },
+    embedding: { provider: 'openai', model: 'text-embedding-3-small', dimensions: 1536, inputUsdPerMTok: '0.02' }, reranker: { provider: 'rrf' } }
+const status = (configured = false, selected = config): MemoryProviderStatus => ({ configured, version: configured ? 1 : 0, apiKeyConfigured: configured,
+    keyConfigured: { llm: configured, embedding: configured, reranker: configured && selected.reranker.provider !== 'rrf' },
+    source: configured ? 'project' : 'disabled', config: configured ? structuredClone(selected) : null, embeddingLocked: false,
+    boundEmbeddingProvider: configured ? selected.embedding.provider : null, boundEmbeddingModel: configured ? selected.embedding.model : null,
+    boundEmbeddingDimensions: configured ? selected.embedding.dimensions : null, canManage: true })
 const catalog = ['gpt-4.1-mini', 'text-embedding-3-small', 'future-model-from-provider']
-const keyInput = () => screen.getByLabelText(/OpenAI-API-Key/)
+const keyInput = () => screen.getByLabelText('Sprachmodell: API-Key')
 const setKey = () => fireEvent.change(keyInput(), { target: { value: 'synthetic-test-key' } })
+const input = (label: string, value: string | number) => fireEvent.change(screen.getByLabelText(label), { target: { value } })
+const configure = (value = config) => {
+    for (const [slot, title] of [['llm', 'Sprachmodell'], ['embedding', 'Embeddings'], ['reranker', 'Suchtrefferbewertung']] as const) {
+        const selection = value[slot]
+        if ((screen.getByLabelText(`${title}: Anbieter`) as HTMLSelectElement).value !== selection.provider) input(`${title}: Anbieter`, selection.provider)
+        if (selection.provider === 'rrf') continue
+        input(`${title}: Modell`, selection.model)
+        input(`${title}: Eingabe`, selection.inputUsdPerMTok)
+        if ('outputUsdPerMTok' in selection) { input(`${title}: Ausgabe`, selection.outputUsdPerMTok); input(`${title}: Maximale Ausgabetokens`, selection.maxOutputTokens) }
+        if ('dimensions' in selection) input(`${title}: Dimensionen`, selection.dimensions)
+    }
+}
+const setBothKeys = () => { setKey(); input('Embeddings: API-Key', 'synthetic-embedding-key') }
 
 beforeEach(() => {
     context.project = { id: 'project-1', teamId: 'team-1', name: 'Project', role: 'admin', profile: 'restricted' }
@@ -22,6 +41,116 @@ beforeEach(() => {
 })
 
 describe('Graph Memory browser configuration', () => {
+    it('saves Claude plus Voyage without an OpenAI key and reports the partial connection check honestly', async () => {
+        const selected: MemoryProviderConfig = { schemaVersion: 2,
+            llm: { ...config.llm, provider: 'anthropic', model: 'claude-model' },
+            embedding: { provider: 'voyage', model: 'voyage-model', dimensions: 1024, inputUsdPerMTok: '0.1' }, reranker: { provider: 'rrf' } }
+        let saved = false
+        context.api.request.mockImplementation(async (path: string, options: { method?: string }) => {
+            if (path.endsWith('/test')) return { ok: true, modelsVerified: false, unverifiedComponents: ['embedding'], inferenceTested: false }
+            if (options.method === 'PUT') saved = true
+            return status(saved, selected)
+        })
+        render(<MemoryProviderPanel />)
+        await screen.findByLabelText('Sprachmodell: API-Key')
+        expect(screen.getByLabelText('Sprachmodell: Anbieter')).toHaveValue('anthropic')
+        expect(screen.getByLabelText('Embeddings: Anbieter')).toHaveValue('voyage')
+        expect(screen.getByLabelText('Suchtrefferbewertung: Anbieter')).toHaveValue('rrf')
+        expect(screen.queryByRole('button', { name: 'Embeddings: Modelle laden' })).not.toBeInTheDocument()
+        expect(screen.queryByLabelText('Suchtrefferbewertung: API-Key')).not.toBeInTheDocument()
+        expect(screen.getByRole('link', { name: /API-Key bei Voyage/ })).toHaveAttribute('href', 'https://dash.voyageai.com/api-keys')
+        configure(selected)
+        input('Sprachmodell: API-Key', 'synthetic-anthropic-key')
+        expect(screen.getByRole('button', { name: 'Einrichtung speichern' })).toBeDisabled()
+        input('Embeddings: API-Key', 'synthetic-voyage-key')
+        fireEvent.click(screen.getByRole('button', { name: 'Einrichtung speichern' }))
+        await screen.findByText(/Einrichtung verschlüsselt gespeichert/)
+        const body = context.api.request.mock.calls.find(([, options]) => options.method === 'PUT')?.[1].body
+        expect(body).toEqual({ ...selected, version: 0, llm: { ...selected.llm, apiKey: 'synthetic-anthropic-key' }, embedding: { ...selected.embedding, apiKey: 'synthetic-voyage-key' } })
+        for (const label of ['Sprachmodell: API-Key', 'Embeddings: API-Key']) expect(screen.getByLabelText(label)).toHaveValue('')
+        fireEvent.click(screen.getByRole('button', { name: 'Verbindung testen' }))
+        expect(await screen.findByRole('status')).toHaveTextContent(/Für Embeddings gibt es keinen Modellkatalog: API-Key und Modell bleiben ungeprüft/)
+        expect(screen.getByRole('status')).toHaveTextContent(/Keine kostenpflichtige KI-Anfrage/)
+        expect(screen.queryByText(/API-Keys akzeptiert/)).not.toBeInTheDocument()
+        expect(screen.getByText('Verbindung prüfen').closest('li')).toHaveAttribute('data-complete', 'false')
+        expect(context.api.request.mock.calls.map(([path]) => path)).toEqual(['/projects/project-1/memory/provider', '/projects/project-1/memory/provider', '/projects/project-1/memory/provider/test'])
+    })
+
+    it('clears entered keys on provider changes and never borrows another component credential', async () => {
+        context.api.request.mockResolvedValue(status(true))
+        render(<MemoryProviderPanel />)
+        await screen.findByLabelText('Sprachmodell: API-Key')
+        setKey()
+        input('Sprachmodell: Anbieter', 'anthropic')
+        expect(keyInput()).toHaveValue('')
+        expect(keyInput()).not.toHaveAttribute('placeholder', 'Schlüssel gespeichert')
+        input('Sprachmodell: Modell', 'claude-model'); input('Sprachmodell: Eingabe', '1'); input('Sprachmodell: Ausgabe', '2')
+        expect(screen.getByRole('button', { name: 'Einrichtung speichern' })).toBeDisabled()
+        expect(screen.getByRole('button', { name: 'Sprachmodell: Modelle laden' })).toBeDisabled()
+        input('Sprachmodell: API-Key', 'synthetic-new-anthropic-key')
+        expect(screen.getByRole('button', { name: 'Einrichtung speichern' })).toBeEnabled()
+        fireEvent.click(screen.getByRole('button', { name: 'Einrichtung speichern' }))
+        await screen.findByText(/Einrichtung verschlüsselt gespeichert/)
+        const body = context.api.request.mock.calls.find(([, options]) => options.method === 'PUT')?.[1].body
+        expect(body.llm).toMatchObject({ provider: 'anthropic', apiKey: 'synthetic-new-anthropic-key' })
+        expect(body.embedding).toEqual(config.embedding)
+        expect(JSON.stringify(body)).not.toContain('synthetic-test-key')
+    })
+
+    it.each(['openai', 'voyage'] as const)('requires an independent key and price when enabling a %s reranker', async provider => {
+        context.api.request.mockResolvedValue(status(true))
+        render(<MemoryProviderPanel />)
+        await screen.findByLabelText('Sprachmodell: API-Key')
+        input('Suchtrefferbewertung: Anbieter', provider)
+        input('Suchtrefferbewertung: Modell', 'rerank-model')
+        input('Suchtrefferbewertung: Eingabe', '0.3')
+        if (provider === 'openai') {
+            input('Suchtrefferbewertung: Ausgabe', '0.6')
+            expect(screen.getByText(/Chat Completions mit Logprobs unterstützen/)).toBeInTheDocument()
+        }
+        expect(screen.getByRole('button', { name: 'Einrichtung speichern' })).toBeDisabled()
+        input('Suchtrefferbewertung: API-Key', 'synthetic-reranker-key')
+        fireEvent.click(screen.getByRole('button', { name: 'Einrichtung speichern' }))
+        await screen.findByText(/Einrichtung verschlüsselt gespeichert/)
+        const body = context.api.request.mock.calls.find(([, options]) => options.method === 'PUT')?.[1].body
+        expect(body.reranker).toEqual({ provider, model: 'rerank-model', apiKey: 'synthetic-reranker-key', inputUsdPerMTok: '0.3',
+            ...(provider === 'openai' ? { outputUsdPerMTok: '0.6', maxOutputTokens: 2048 } : {}) })
+        expect(body.llm).not.toHaveProperty('apiKey'); expect(body.embedding).not.toHaveProperty('apiKey')
+    })
+
+    it('removes all reranker credentials and paid parameters when returning to local ranking', async () => {
+        const selected: MemoryProviderConfig = { ...config, reranker: { ...config.llm, provider: 'openai' } }
+        context.api.request.mockResolvedValue(status(true, selected))
+        render(<MemoryProviderPanel />)
+        await screen.findByLabelText('Suchtrefferbewertung: API-Key')
+        input('Suchtrefferbewertung: API-Key', 'synthetic-discarded-reranker-key')
+        input('Suchtrefferbewertung: Anbieter', 'rrf')
+        expect(screen.queryByLabelText('Suchtrefferbewertung: API-Key')).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Einrichtung speichern' }))
+        await screen.findByText(/Einrichtung verschlüsselt gespeichert/)
+        const body = context.api.request.mock.calls.find(([, options]) => options.method === 'PUT')?.[1].body
+        expect(body.reranker).toEqual({ provider: 'rrf' })
+        expect(JSON.stringify(body)).not.toContain('synthetic-discarded-reranker-key')
+    })
+
+    it.each([
+        ['openai', [1, 1536, 3072], [0, 3073, 4096]],
+        ['voyage', [256, 512, 1024, 2048], [1, 1536, 3072]],
+    ] as const)('validates %s embedding dimensions before saving', async (provider, allowed, denied) => {
+        const selected: MemoryProviderConfig = { ...config, embedding: { ...config.embedding, provider, dimensions: provider === 'voyage' ? 1024 : 1536 } }
+        context.api.request.mockResolvedValue(status(true, selected))
+        render(<MemoryProviderPanel />)
+        await screen.findByLabelText('Embeddings: Dimensionen')
+        for (const dimensions of denied) {
+            input('Embeddings: Dimensionen', dimensions)
+            expect(screen.getByRole('button', { name: 'Einrichtung speichern' })).toBeDisabled()
+        }
+        for (const dimensions of allowed) {
+            input('Embeddings: Dimensionen', dimensions)
+            expect(screen.getByRole('button', { name: 'Einrichtung speichern' })).toBeEnabled()
+        }
+    })
+
     it('does not repeat a previous paid hybrid search when testing the provider connection', async () => {
         context.api.request.mockImplementation(async (path: string) => {
             if (path.endsWith('/provider/test')) return { ok: true, modelsVerified: true, inferenceTested: false }
@@ -31,7 +160,7 @@ describe('Graph Memory browser configuration', () => {
         })
         const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
         const view = render(<QueryClientProvider client={client}><MemoryPanel /></QueryClientProvider>)
-        await screen.findByLabelText('OpenAI-API-Key')
+        await screen.findByLabelText('Sprachmodell: API-Key')
         fireEvent.change(screen.getByLabelText('Suchart'), { target: { value: 'hybrid' } })
         fireEvent.change(screen.getByLabelText('Wissen durchsuchen'), { target: { value: 'synthetic query' } })
         fireEvent.click(screen.getByRole('button', { name: 'Suchen' }))
@@ -39,7 +168,7 @@ describe('Graph Memory browser configuration', () => {
         const searches = () => context.api.request.mock.calls.filter(([path]) => path.startsWith('/memory/search?'))
         expect(searches()).toHaveLength(1)
         fireEvent.click(screen.getByRole('button', { name: 'Verbindung testen' }))
-        await screen.findByText(/API-Key akzeptiert/)
+        await screen.findByText(/API-Keys akzeptiert/)
         await waitFor(() => expect(screen.getByRole('button', { name: 'Verbindung testen' })).toBeEnabled())
         expect(searches()).toHaveLength(1)
         view.unmount(); client.clear()
@@ -47,51 +176,57 @@ describe('Graph Memory browser configuration', () => {
 
     it('explains the first-run setup without a server error and does not call an unscoped API', async () => {
         const view = render(<MemoryProviderPanel />)
-        await screen.findByLabelText(/OpenAI-API-Key/)
+        await screen.findByLabelText('Sprachmodell: API-Key')
         expect(screen.getByRole('button', { name: 'Einrichtung speichern' })).toBeDisabled()
-        expect(screen.getByRole('link', { name: /API-Key bei OpenAI/ })).toHaveAttribute('href', 'https://platform.openai.com/api-keys')
+        expect(screen.getByRole('link', { name: /API-Key bei Anthropic/ })).toHaveAttribute('href', 'https://platform.claude.com/settings/keys')
         expect(screen.getByText(/Claude- und Codex-Anmeldung/)).toBeInTheDocument()
         expect(screen.getByRole('link', { name: /Cloud und Budget freigeben/ })).toHaveAttribute('href', '#memory-budget')
         context.project = null; view.rerender(<MemoryProviderPanel />)
-        expect(screen.queryByLabelText(/OpenAI-API-Key/)).not.toBeInTheDocument()
+        expect(screen.queryByLabelText('Sprachmodell: API-Key')).not.toBeInTheDocument()
         expect(context.api.request).toHaveBeenCalledTimes(1)
     })
 
-    it('loads live models, fills verified price suggestions, saves an encrypted-key request and tests without inference', async () => {
+    it('loads live models, requires explicit prices, saves independent keys and tests without inference', async () => {
         let saved = false
         context.api.request.mockImplementation(async (path: string, options: { method?: string }) => {
-            if (path.endsWith('/models')) return { models: catalog }
+            if (path.endsWith('/models')) return { models: catalog, verified: true }
             if (path.endsWith('/test')) return { ok: true, modelsVerified: true, inferenceTested: false }
             if (options.method === 'PUT') saved = true
             return status(saved)
         })
         render(<MemoryProviderPanel />)
-        await screen.findByLabelText(/OpenAI-API-Key/); setKey()
-        fireEvent.click(screen.getByRole('button', { name: 'Modelle vom Anbieter laden' }))
+        await screen.findByLabelText('Sprachmodell: API-Key')
+        input('Sprachmodell: Anbieter', 'openai'); input('Embeddings: Anbieter', 'openai'); setBothKeys()
+        fireEvent.click(screen.getByRole('button', { name: 'Sprachmodell: Modelle laden' }))
         await screen.findByText(/3 Modelle direkt/)
-        expect(screen.getByLabelText('Sprachmodell')).toHaveValue('gpt-4.1-mini')
-        expect(screen.getByLabelText('Embedding-Modell')).toHaveValue('text-embedding-3-small')
+        expect(context.api.request).toHaveBeenCalledWith('/projects/project-1/memory/provider/models', expect.objectContaining({
+            method: 'POST', body: { component: 'llm', provider: 'openai', apiKey: 'synthetic-test-key' } }))
+        expect(screen.getByLabelText('Sprachmodell: Modell')).toHaveValue('')
+        expect(screen.getByLabelText('Sprachmodell: Eingabe')).toHaveValue(null)
+        expect(screen.getByRole('button', { name: 'Einrichtung speichern' })).toBeDisabled()
+        configure()
+        expect(screen.getByLabelText('Embeddings: Modell')).toHaveValue('text-embedding-3-small')
         expect(screen.getByLabelText('Sprachmodell: Eingabe')).toHaveValue(0.4)
         fireEvent.click(screen.getByRole('button', { name: 'Einrichtung speichern' }))
         expect(keyInput()).toHaveValue('')
         await screen.findByText(/Einrichtung verschlüsselt gespeichert/)
-        expect(context.api.request).toHaveBeenCalledWith('/projects/project-1/memory/provider', expect.objectContaining({ method: 'PUT', body: { ...config, version: 0, apiKey: 'synthetic-test-key' }, signal: expect.any(AbortSignal) }))
+        expect(context.api.request).toHaveBeenCalledWith('/projects/project-1/memory/provider', expect.objectContaining({ method: 'PUT', body: { ...config, version: 0, llm: { ...config.llm, apiKey: 'synthetic-test-key' }, embedding: { ...config.embedding, apiKey: 'synthetic-embedding-key' } }, signal: expect.any(AbortSignal) }))
         expect(JSON.stringify(localStorage)).not.toContain('synthetic-test-key')
         expect(JSON.stringify(sessionStorage)).not.toContain('synthetic-test-key')
         expect(document.body.textContent).not.toContain('synthetic-test-key')
         fireEvent.click(screen.getByRole('button', { name: 'Verbindung testen' }))
-        await screen.findByText(/API-Key akzeptiert/)
+        await screen.findByText(/API-Keys akzeptiert/)
         expect(screen.getByText(/Modellkompatibilität ist damit noch nicht getestet/)).toBeInTheDocument()
         expect(context.api.request.mock.calls.some(([path]) => path.endsWith('/ingest') || path.endsWith('/search') || path.endsWith('/settings'))).toBe(false)
     })
 
     it('accepts new provider model IDs with explicit prices instead of a hardcoded model allowlist', async () => {
-        context.api.request.mockImplementation(async (path: string) => path.endsWith('/models') ? { models: catalog } : status(true))
+        context.api.request.mockImplementation(async (path: string) => path.endsWith('/models') ? { models: catalog, verified: true } : status(true))
         render(<MemoryProviderPanel />)
-        await screen.findByLabelText(/OpenAI-API-Key/)
-        fireEvent.click(screen.getByRole('button', { name: 'Modelle vom Anbieter laden' }))
+        await screen.findByLabelText('Sprachmodell: API-Key')
+        fireEvent.click(screen.getByRole('button', { name: 'Sprachmodell: Modelle laden' }))
         await screen.findByText(/3 Modelle direkt/)
-        fireEvent.change(screen.getByLabelText('Sprachmodell'), { target: { value: 'future-model-from-provider' } })
+        fireEvent.change(screen.getByLabelText('Sprachmodell: Modell'), { target: { value: 'future-model-from-provider' } })
         expect(screen.getByLabelText('Sprachmodell: Eingabe')).toHaveValue(null)
         expect(screen.getByRole('button', { name: 'Einrichtung speichern' })).toBeDisabled()
         fireEvent.change(screen.getByLabelText('Sprachmodell: Eingabe'), { target: { value: '1.25' } })
@@ -99,8 +234,8 @@ describe('Graph Memory browser configuration', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Einrichtung speichern' }))
         await screen.findByText(/Einrichtung verschlüsselt gespeichert/)
         const body = context.api.request.mock.calls.find(([, options]) => options.method === 'PUT')?.[1].body
-        expect(body).toMatchObject({ model: 'future-model-from-provider', inputUsdPerMTok: '1.25', outputUsdPerMTok: '5', version: 1 })
-        expect(body).not.toHaveProperty('apiKey')
+        expect(body).toMatchObject({ llm: { model: 'future-model-from-provider', inputUsdPerMTok: '1.25', outputUsdPerMTok: '5' }, version: 1 })
+        expect(body.llm).not.toHaveProperty('apiKey'); expect(body.embedding).not.toHaveProperty('apiKey')
     })
 
     it.each(['member', 'viewer'] as const)('does not expose secret fields or mutation controls to a %s', async role => {
@@ -108,19 +243,19 @@ describe('Graph Memory browser configuration', () => {
         context.api.request.mockResolvedValue({ ...status(true), canManage: false })
         render(<MemoryProviderPanel />)
         await screen.findByText(/Ein Projektadministrator kann hier/)
-        expect(screen.queryByLabelText(/OpenAI-API-Key/)).not.toBeInTheDocument()
+        expect(screen.queryByLabelText('Sprachmodell: API-Key')).not.toBeInTheDocument()
         expect(screen.queryByRole('button')).not.toBeInTheDocument()
         expect(context.api.request).toHaveBeenCalledTimes(role === 'viewer' ? 0 : 1)
     })
 
     it('explains the server-enforced embedding check and disconnects only after confirmation', async () => {
         context.api.request.mockImplementation(async (path: string, options: { method?: string }) => {
-            if (path.endsWith('/models')) return { models: catalog }
+            if (path.endsWith('/models')) return { models: catalog, verified: true }
             return options.method === 'DELETE' ? { ...status(), version: 2 } : { ...status(true), embeddingLocked: true }
         })
         render(<MemoryProviderPanel />)
-        await screen.findByLabelText(/OpenAI-API-Key/)
-        expect(screen.getByLabelText('Embedding-Modell')).toBeDisabled()
+        await screen.findByLabelText('Sprachmodell: API-Key')
+        expect(screen.getByLabelText('Embeddings: Modell')).toBeEnabled()
         expect(screen.getByText(/wenn der Graph nachweislich leer ist/)).toBeInTheDocument()
         fireEvent.click(screen.getByRole('button', { name: 'Verbindung entfernen' }))
         expect(context.api.request.mock.calls.some(([, options]) => ['PUT', 'DELETE'].includes(options.method))).toBe(false)
@@ -133,58 +268,58 @@ describe('Graph Memory browser configuration', () => {
     it('retains the bound embedding identity after removal so the project can reconnect with a new key', async () => {
         let connected = true
         context.api.request.mockImplementation(async (path: string, options: { method?: string }) => {
-            if (path.endsWith('/models')) return { models: catalog }
+            if (path.endsWith('/models')) return { models: catalog, verified: true }
             if (options.method === 'DELETE') connected = false
             if (options.method === 'PUT') connected = true
-            return { ...status(connected), version: connected ? 3 : 2, embeddingLocked: true, boundEmbeddingModel: config.embeddingModel }
+            return { ...status(connected), version: connected ? 3 : 2, embeddingLocked: true, boundEmbeddingModel: config.embedding.model, boundEmbeddingProvider: config.embedding.provider, boundEmbeddingDimensions: config.embedding.dimensions }
         })
         render(<MemoryProviderPanel />)
-        await screen.findByLabelText(/OpenAI-API-Key/)
+        await screen.findByLabelText('Sprachmodell: API-Key')
         fireEvent.click(screen.getByRole('button', { name: 'Verbindung entfernen' }))
         fireEvent.click(screen.getByRole('button', { name: 'Bestätigen' }))
         await screen.findByText(/Projektverbindung entfernt/)
-        expect(screen.getByLabelText('Embedding-Modell')).toHaveValue(config.embeddingModel)
-        expect(screen.getByLabelText('Embedding-Modell')).toBeDisabled()
-        setKey(); fireEvent.click(screen.getByRole('button', { name: 'Modelle vom Anbieter laden' }))
+        expect(screen.getByLabelText('Embeddings: Modell')).toHaveValue(config.embedding.model)
+        expect(screen.getByLabelText('Embeddings: Modell')).toBeEnabled()
+        configure(); setBothKeys(); fireEvent.click(screen.getByRole('button', { name: 'Sprachmodell: Modelle laden' }))
         await screen.findByText(/3 Modelle direkt/)
         fireEvent.click(screen.getByRole('button', { name: 'Einrichtung speichern' }))
         await screen.findByText(/Einrichtung verschlüsselt gespeichert/)
-        expect(context.api.request.mock.calls.find(([, options]) => options.method === 'PUT')?.[1].body).toMatchObject({ version: 2, apiKey: 'synthetic-test-key', embeddingModel: config.embeddingModel })
+        expect(context.api.request.mock.calls.find(([, options]) => options.method === 'PUT')?.[1].body).toMatchObject({ version: 2, llm: { apiKey: 'synthetic-test-key' }, embedding: { apiKey: 'synthetic-embedding-key', model: config.embedding.model, provider: 'openai', dimensions: 1536 } })
     })
 
     it('allows selecting a first embedding model for legacy failed work while the server verifies the graph is empty', async () => {
-        context.api.request.mockImplementation(async (path: string) => path.endsWith('/models') ? { models: catalog } : { ...status(), source: 'environment', embeddingLocked: true, boundEmbeddingModel: null })
+        context.api.request.mockImplementation(async (path: string) => path.endsWith('/models') ? { models: catalog, verified: true } : { ...status(), source: 'environment', embeddingLocked: true, boundEmbeddingModel: null })
         render(<MemoryProviderPanel />)
-        await screen.findByLabelText('OpenAI-API-Key'); setKey()
-        fireEvent.click(screen.getByRole('button', { name: 'Modelle vom Anbieter laden' }))
+        await screen.findByLabelText('Sprachmodell: API-Key'); configure(); setBothKeys()
+        fireEvent.click(screen.getByRole('button', { name: 'Sprachmodell: Modelle laden' }))
         await screen.findByText(/3 Modelle direkt/)
-        expect(screen.getByLabelText('Embedding-Modell')).toBeEnabled()
-        expect(screen.getByLabelText('Embedding-Modell')).toHaveValue(config.embeddingModel)
-        expect(screen.getByText(/frühere Verarbeitungsversuche bereits Graphdaten/)).toBeInTheDocument()
+        expect(screen.getByLabelText('Embeddings: Modell')).toBeEnabled()
+        expect(screen.getByLabelText('Embeddings: Modell')).toHaveValue(config.embedding.model)
+        expect(screen.getByText(/wenn der Graph nachweislich leer ist/)).toBeInTheDocument()
         expect(screen.getByRole('button', { name: 'Einrichtung speichern' })).toBeEnabled()
     })
 
     it('permits an explicit embedding change to be checked by the server without bypassing a nonempty-graph rejection', async () => {
         context.api.request.mockImplementation(async (path: string, options: { method?: string }) => {
-            if (path.endsWith('/models')) return { models: [...catalog, 'text-embedding-3-large'] }
+            if (path.endsWith('/models')) return { models: [...catalog, 'text-embedding-3-large'], verified: true }
             if (options.method === 'PUT') throw new EvolvedApiError('Graph not empty', 409, 'memory_embedding_locked')
             return { ...status(true), embeddingLocked: true }
         })
         render(<MemoryProviderPanel />)
-        await screen.findByLabelText('OpenAI-API-Key')
-        fireEvent.click(screen.getByRole('button', { name: 'Modelle vom Anbieter laden' }))
+        await screen.findByLabelText('Sprachmodell: API-Key')
+        fireEvent.click(screen.getByRole('button', { name: 'Sprachmodell: Modelle laden' }))
         await screen.findByText(/4 Modelle direkt/)
-        fireEvent.change(screen.getByLabelText('Embedding-Modell'), { target: { value: 'text-embedding-3-large' } })
+        fireEvent.change(screen.getByLabelText('Embeddings: Modell'), { target: { value: 'text-embedding-3-large' } }); input('Embeddings: Eingabe', '0.13')
         fireEvent.click(screen.getByRole('button', { name: 'Einrichtung speichern' }))
         expect(await screen.findByRole('alert')).toHaveTextContent(/keine Graphdaten geändert/)
-        expect(context.api.request.mock.calls.find(([, options]) => options.method === 'PUT')?.[1].body).toMatchObject({ embeddingModel: 'text-embedding-3-large', embeddingUsdPerMTok: '0.13' })
+        expect(context.api.request.mock.calls.find(([, options]) => options.method === 'PUT')?.[1].body).toMatchObject({ embedding: { model: 'text-embedding-3-large', inputUsdPerMTok: '0.13' } })
     })
 
     it('opens required prices for reconnecting a custom embedding and keeps them open while editing', async () => {
         context.api.request.mockResolvedValue({ ...status(), embeddingLocked: true, boundEmbeddingModel: 'custom-embedding' })
         render(<MemoryProviderPanel />)
-        await screen.findByLabelText('OpenAI-API-Key')
-        const details = screen.getByText('Preise und erweiterte Einstellungen').closest('details')!
+        await screen.findByLabelText('Sprachmodell: API-Key')
+        const details = screen.getByText('Sprachmodell: Preise und Limits').closest('details')!
         expect(details.open).toBe(true)
         for (const label of ['Sprachmodell: Eingabe', 'Sprachmodell: Ausgabe', 'Embeddings: Eingabe']) fireEvent.change(screen.getByLabelText(label), { target: { value: '0.2' } })
         expect(details.open).toBe(true)
@@ -193,7 +328,7 @@ describe('Graph Memory browser configuration', () => {
     it('allows explicitly blocking an inherited operator connection without possessing its key', async () => {
         context.api.request.mockImplementation(async (_path: string, options: { method?: string }) => options.method === 'DELETE' ? { ...status(), version: 1 } : { ...status(), source: 'environment' })
         render(<MemoryProviderPanel />)
-        await screen.findByLabelText('OpenAI-API-Key')
+        await screen.findByLabelText('Sprachmodell: API-Key')
         fireEvent.click(screen.getByRole('button', { name: 'Betreiberzugang für dieses Projekt sperren' }))
         expect(context.api.request.mock.calls.some(([, options]) => options.method === 'DELETE')).toBe(false)
         fireEvent.click(screen.getByRole('button', { name: 'Bestätigen' }))
@@ -209,8 +344,9 @@ describe('Graph Memory browser configuration', () => {
             return status()
         })
         const view = render(<MemoryProviderPanel />)
-        await screen.findByLabelText(/OpenAI-API-Key/); setKey()
-        fireEvent.click(screen.getByRole('button', { name: 'Modelle vom Anbieter laden' }))
+        await screen.findByLabelText('Sprachmodell: API-Key'); setBothKeys()
+        input('Suchtrefferbewertung: Anbieter', 'voyage'); input('Suchtrefferbewertung: API-Key', 'synthetic-reranker-key')
+        fireEvent.click(screen.getByRole('button', { name: 'Sprachmodell: Modelle laden' }))
         await waitFor(() => expect(finish).toBeDefined())
         if (change === 'project') context.project = { ...context.project!, id: 'project-2' }
         if (change === 'user') context.me.user.id = 'user-2'
@@ -218,24 +354,25 @@ describe('Graph Memory browser configuration', () => {
         if (change === 'origin') context.api.baseUrl = 'https://another.example'
         view.rerender(<MemoryProviderPanel />)
         expect(signal.aborted).toBe(true)
-        await act(async () => finish({ models: ['old-private-model'] }))
+        await act(async () => finish({ models: ['old-private-model'], verified: true }))
         expect(screen.queryByText(/old-private-model/)).not.toBeInTheDocument()
-        expect(document.body.innerHTML).not.toContain('synthetic-test-key')
-        if (change !== 'role') expect(await screen.findByLabelText(/OpenAI-API-Key/)).toHaveValue('')
+        for (const secret of ['synthetic-test-key', 'synthetic-embedding-key', 'synthetic-reranker-key']) expect(document.body.innerHTML).not.toContain(secret)
+        if (change !== 'role') expect(await screen.findByLabelText('Sprachmodell: API-Key')).toHaveValue('')
     })
 
     it('never echoes a rejected credential from an upstream error and clears a submitted key on save failure', async () => {
+        const selected: MemoryProviderConfig = { ...config, reranker: { ...config.llm, provider: 'openai' } }
         context.api.request.mockImplementation(async (_path: string, options: { method?: string }) => {
             if (options.method === 'PUT') throw new EvolvedApiError('synthetic-test-key rejected', 400, 'invalid_key')
-            return status(true)
+            return status(true, selected)
         })
         render(<MemoryProviderPanel />)
-        await screen.findByLabelText(/OpenAI-API-Key/); setKey()
+        await screen.findByLabelText('Sprachmodell: API-Key'); setBothKeys(); input('Suchtrefferbewertung: API-Key', 'synthetic-reranker-key')
         fireEvent.click(screen.getByRole('button', { name: 'Einrichtung speichern' }))
         const error = await screen.findByRole('alert')
-        expect(error).toHaveTextContent(/Prüfe den API-Key/)
+        expect(error).toHaveTextContent(/Prüfe die API-Keys/)
         expect(error).not.toHaveTextContent('synthetic-test-key')
-        expect(keyInput()).toHaveValue('')
+        for (const label of ['Sprachmodell: API-Key', 'Embeddings: API-Key', 'Suchtrefferbewertung: API-Key']) expect(screen.getByLabelText(label)).toHaveValue('')
         expect(screen.queryByText(/Einrichtung verschlüsselt gespeichert/)).not.toBeInTheDocument()
     })
 })

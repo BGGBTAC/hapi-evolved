@@ -10,7 +10,7 @@ import { EvolvedError, hashToken, privateFile, type AgentProfile } from './store
 import { GithubBroker } from './githubBroker'
 import { McpVault } from './mcpVault'
 import { GIT_TIMEOUT_MS, type GitCredentialRequest } from './githubProtocol'
-import { memoryProviderConfigSchema, type MemoryProviderConfig } from './memoryProvider'
+import { memoryProviderConfigSchema, memoryProviderPublic, storedMemoryProviderConfig, type MemoryProviderConfig } from './memoryProvider'
 
 export type SecretMetadata = { id: string; projectId: string; name: string; version: number; createdAt: number; updatedAt: number }
 export type ResourceAction = {
@@ -69,6 +69,10 @@ export class EvolvedVault implements VaultClient {
             CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,user_id TEXT NOT NULL,project_id TEXT NOT NULL,operation TEXT NOT NULL,target_id TEXT,at INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS memory_providers(project_id TEXT PRIMARY KEY,version INTEGER NOT NULL,embedding_model TEXT,nonce BLOB,ciphertext BLOB,tag BLOB,updated_at INTEGER NOT NULL);
         `)
+        const memoryColumns = new Set((this.db.query('PRAGMA table_info(memory_providers)').all() as Array<{ name: string }>).map(column => column.name))
+        if (!memoryColumns.has('embedding_provider')) this.db.exec('ALTER TABLE memory_providers ADD COLUMN embedding_provider TEXT')
+        if (!memoryColumns.has('embedding_dimensions')) this.db.exec('ALTER TABLE memory_providers ADD COLUMN embedding_dimensions INTEGER')
+        this.db.exec("UPDATE memory_providers SET embedding_provider='openai',embedding_dimensions=1536 WHERE embedding_model IS NOT NULL AND embedding_provider IS NULL")
         this.db.prepare("UPDATE runs SET status='indeterminate',result=? WHERE status='running'").run(JSON.stringify({ status: 'indeterminate' }))
         this.github = new GithubBroker(this.db, {
             encrypt: (projectId, generation, token) => {
@@ -171,7 +175,7 @@ export class EvolvedVault implements VaultClient {
         throw new EvolvedError('operation_denied', 'Unsupported vault operation.', 403)
     }
     private memoryProvider(userId: string, projectId: string, payload: Record<string, unknown>): unknown {
-        type Row = { version: number; embedding_model: string | null; nonce: Uint8Array | null; ciphertext: Uint8Array | null; tag: Uint8Array | null }
+        type Row = { version: number; embedding_provider: string | null; embedding_model: string | null; embedding_dimensions: number | null; nonce: Uint8Array | null; ciphertext: Uint8Array | null; tag: Uint8Array | null }
         const read = () => this.db.prepare('SELECT * FROM memory_providers WHERE project_id=?').get(projectId) as Row | null
         const reveal = (row: Row): MemoryProviderConfig | null => {
             if (!row.ciphertext) return null
@@ -180,9 +184,7 @@ export class EvolvedVault implements VaultClient {
             let clear: Buffer | undefined
             try {
                 clear = decrypted(key, { nonce: row.nonce, ciphertext: row.ciphertext, tag: row.tag }, JSON.stringify(['hapi-evolved-memory-provider-v1', projectId, row.version]))
-                const parsed = memoryProviderConfigSchema.safeParse(JSON.parse(clear.toString('utf8')))
-                if (!parsed.success) throw new Error()
-                return parsed.data
+                return storedMemoryProviderConfig(JSON.parse(clear.toString('utf8')))
             } catch { throw new EvolvedError('vault_integrity', 'Memory provider record is invalid.', 500) }
             finally { key.fill(0); clear?.fill(0) }
         }
@@ -190,8 +192,9 @@ export class EvolvedVault implements VaultClient {
             const config = row ? reveal(row) : null
             const state = !row ? 'unset' : config ? 'configured' : 'disabled'
             if (runtime) return { state, version: row?.version ?? 0, config }
-            const publicConfig = config ? (({ apiKey: _key, ...fields }) => fields)(config) : null
-            return { state, version: row?.version ?? 0, config: publicConfig, embeddingModel: row?.embedding_model ?? null }
+            return { state, version: row?.version ?? 0, config: config ? memoryProviderPublic(config) : null,
+                embeddingProvider: row?.embedding_provider ?? null, embeddingModel: row?.embedding_model ?? null,
+                embeddingDimensions: row?.embedding_dimensions ?? null }
         }
         if (payload.action === 'status') return status(read())
         // Only signed internal Hub requests can use this branch; never forwarded from browser input.
@@ -210,8 +213,8 @@ export class EvolvedVault implements VaultClient {
                 try { cipher = encrypted(key, clear, JSON.stringify(['hapi-evolved-memory-provider-v1', projectId, version])) }
                 finally { key.fill(0); clear.fill(0) }
             }
-            this.db.prepare('INSERT INTO memory_providers VALUES(?,?,?,?,?,?,?) ON CONFLICT(project_id) DO UPDATE SET version=excluded.version,embedding_model=excluded.embedding_model,nonce=excluded.nonce,ciphertext=excluded.ciphertext,tag=excluded.tag,updated_at=excluded.updated_at')
-                .run(projectId, version, config?.embeddingModel ?? prior?.embedding_model ?? null, cipher?.nonce ?? null, cipher?.ciphertext ?? null, cipher?.tag ?? null, Date.now())
+            this.db.prepare('INSERT INTO memory_providers(project_id,version,embedding_model,nonce,ciphertext,tag,updated_at,embedding_provider,embedding_dimensions) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(project_id) DO UPDATE SET version=excluded.version,embedding_model=excluded.embedding_model,nonce=excluded.nonce,ciphertext=excluded.ciphertext,tag=excluded.tag,updated_at=excluded.updated_at,embedding_provider=excluded.embedding_provider,embedding_dimensions=excluded.embedding_dimensions')
+                .run(projectId, version, config?.embedding.model ?? prior?.embedding_model ?? null, cipher?.nonce ?? null, cipher?.ciphertext ?? null, cipher?.tag ?? null, Date.now(), config?.embedding.provider ?? prior?.embedding_provider ?? null, config?.embedding.dimensions ?? prior?.embedding_dimensions ?? null)
             this.db.prepare('INSERT INTO audit(user_id,project_id,operation,target_id,at) VALUES(?,?,?,?,?)').run(userId, projectId, config ? 'memory.provider.set' : 'memory.provider.deleted', projectId, Date.now())
             return status(read())
         })()
