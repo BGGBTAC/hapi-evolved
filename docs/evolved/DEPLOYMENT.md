@@ -103,7 +103,38 @@ Codegraph, Vorschau-Sandbox, Persistenz und Runner-Widerruf prüfen.
 Der eigene Vault-Prozess speichert AES-256-GCM-verschlüsselte Werte und pro Projekt verpackte
 Schlüssel. `credentials/vault/master.key` bleibt ausschließlich dort eingebunden. Der Hub signiert
 Anfragen mit seinem getrennten Ed25519-Schlüssel. Browser können Werte anlegen/ersetzen/löschen;
-kein Endpunkt gibt gespeicherte Klartextwerte zurück. Der Browser muss dafür frisch authentisiert sein.
+kein Browser- oder MCP-Endpunkt gibt gespeicherte Klartextwerte zurück. Der Browser muss dafür frisch authentisiert sein.
+
+Der getrennte Agentenzugriff erfordert eine ausdrückliche, per Passkey bestätigte
+Freigabe pro Tresoreintrag und `PROJECT_SECRET_*`-Variable. Freigaben binden
+Projekt, aktuelles Profil und konkrete verwaltete Runner-Lease; alte Einträge
+werden nicht automatisch freigegeben. Höchstens 32 Variablen mit insgesamt
+64 KiB werden in neue Agentenprozesse übernommen. Reservierte Laufzeitnamen
+lassen sich durch das Pflichtpräfix nicht überschreiben.
+
+Die interne Auflösung läuft über signierte Vault-Anfragen und den privaten
+Runner-Proxy. `/api/evolved/runner/environment` liefert Geheimwerte nur für die
+aktuelle, bereite verwaltete Lease. Gültige manuelle Runner erhalten ein leeres
+Bundle ohne Vault-Abfrage; eine widerrufene Lease bleibt gesperrt. Browsercookies,
+Origin-Header und Agenten-Capabilities sind ausgeschlossen. Der private
+Proxy-Endpunkt prüft die tatsächliche Socketadresse gegen den festen Docker-DNS-Namen
+`runner` im eigenen Projektnetz; andere Dienste im gemeinsamen Backend-Netz
+erhalten keinen Zugang. Forwarded-Header haben darauf keinen Einfluss.
+Es gibt keine allgemeine Secret-Lesefunktion. Die Agenten-Discovery liefert
+ausschließlich freigegebene Variablennamen, Versionen und eine Metadatenrevision.
+Der Vault protokolliert Auflösungen mit Freigabe-IDs, niemals Werten.
+
+Widerruf einer Freigabe sowie Rotation/Löschen ihres Tresorwertes widerrufen
+vor der Änderung die betroffene Lease. Die vorhandenen Runner-Supervisoren
+beenden anschließend deren Sessions; die im Prozess bereits bekannten Werte
+können nicht zurückgerufen werden. Bei Offenlegung auch extern rotieren.
+Die Ersatz-Lease erhält keine bisherigen Freigaben. Bei einer unklaren
+Speicherbestätigung oder weggefallener Autorisierung wird die betroffene Lease
+ebenfalls widerrufen, damit ein verspäteter Vault-Schreibvorgang keinen Zugang
+offen lässt. Hub-Mutationen und Credential-Auslieferung werden pro Projekt
+serialisiert. Dieses Verfahren setzt den einzelnen Hub der unterstützten
+Compose-Installation voraus; mehrere unabhängig schreibende Hub-Prozesse werden
+nicht unterstützt.
 
 Bei nativem Betrieb ohne Container braucht der Vault einen eigenen Dienstbenutzer und ein
 privates Zustandsverzeichnis außerhalb aller manuellen und verwalteten Projektordner.

@@ -1,27 +1,5 @@
-import { isClaudeModelPreset } from '@hapi/protocol'
-
-/**
- * Context windows vary by model/provider and may change over time.
- *
- * The UI only needs this to compute a conservative "context remaining" warning.
- * We intentionally keep a headroom budget to avoid false confidence near the limit
- * (system prompts, tool overhead, and other hidden tokens can consume extra space).
- *
- * If/when the server provides an explicit per-session context limit, prefer that
- * and use this only as a fallback.
- */
-const CONTEXT_HEADROOM_TOKENS = 10_000
-const DEFAULT_CLAUDE_CONTEXT_WINDOW_TOKENS = 200_000
-const LARGE_CLAUDE_CONTEXT_WINDOW_TOKENS = 1_000_000
-// Fallback for Codex sessions when the server has not reported an explicit modelContextWindow.
-// The value matches the context window currently reported by Codex App Server token-count events.
-const DEFAULT_CODEX_CONTEXT_WINDOW_TOKENS = 258_400
-// Pi supports multiple providers with varying context windows. 200K is a
-// conservative default (most Claude/GPT-4 class models). When the server
-// reports an explicit modelContextWindow via usage events, that takes
-// precedence over this fallback.
-const DEFAULT_PI_CONTEXT_WINDOW_TOKENS = 200_000
-
+/** Only explicit runtime limits are context windows. Model names, account tiers and
+ * historic defaults cannot establish the usable budget of a running session. */
 function parseCursorWireContextWindow(model: string): number | null {
     const match = model.match(/\[([^\]]+)\]/)
     if (!match) {
@@ -48,48 +26,7 @@ function parseCursorWireContextWindow(model: string): number | null {
 }
 
 export function getContextBudgetTokens(model: string | null | undefined, flavor?: string | null): number | null {
-    if (flavor === 'codex') {
-        return Math.max(1, DEFAULT_CODEX_CONTEXT_WINDOW_TOKENS - CONTEXT_HEADROOM_TOKENS)
-    }
-
-    if (flavor === 'pi') {
-        return Math.max(1, DEFAULT_PI_CONTEXT_WINDOW_TOKENS - CONTEXT_HEADROOM_TOKENS)
-    }
-
-    if (flavor === 'cursor') {
-        const trimmedModel = model?.trim()
-        const windowTokens = trimmedModel ? parseCursorWireContextWindow(trimmedModel) : null
-        if (!windowTokens) {
-            return null
-        }
-        return Math.max(1, windowTokens - CONTEXT_HEADROOM_TOKENS)
-    }
-
-    if (flavor !== 'claude') {
-        return null
-    }
-
-    const trimmedModel = model?.trim()
-    const windowTokens = (() => {
-        if (!trimmedModel) {
-            return DEFAULT_CLAUDE_CONTEXT_WINDOW_TOKENS
-        }
-        if (isClaudeModelPreset(trimmedModel) || trimmedModel.startsWith('claude-')) {
-            // Fable ships with a 1M window even under its bare id: the SDK
-            // result message reports modelUsage["claude-fable-5"].contextWindow
-            // = 1,000,000, so the "[1m]" suffix check alone would undercount
-            // local-mode sessions (their transcript usage carries no
-            // context_window and falls through to this heuristic).
-            const isFable = trimmedModel === 'fable'
-                || trimmedModel === 'fable[1m]'
-                || trimmedModel.startsWith('claude-fable')
-            return trimmedModel.endsWith('[1m]') || isFable
-                ? LARGE_CLAUDE_CONTEXT_WINDOW_TOKENS
-                : DEFAULT_CLAUDE_CONTEXT_WINDOW_TOKENS
-        }
-        return null
-    })()
-
-    if (!windowTokens) return null
-    return Math.max(1, windowTokens - CONTEXT_HEADROOM_TOKENS)
+    // Cursor's wire ID explicitly encodes its selected context capability. Claude,
+    // Codex and Pi report context through runtime usage instead of fixed defaults.
+    return flavor === 'cursor' && model ? parseCursorWireContextWindow(model) : null
 }

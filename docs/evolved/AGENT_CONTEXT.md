@@ -32,6 +32,25 @@ Der Text enthält keine Geheimnisse, Projektinhalte oder gespeicherten
 Verfügbarkeitsaussagen. Aktuelle Informationen werden mit den freigegebenen
 Werkzeugen gelesen. Die Hinweise verleihen keine zusätzlichen Rechte.
 
+## Ausdrücklich freigegebene Tresorwerte
+
+Der Projekttresor speichert Werte zunächst ohne Agentenfreigabe. Ein menschlicher
+Administrator kann unter **Tresor → Agentenzugriff** einzelne Werte ausdrücklich
+als `PROJECT_SECRET_*`-Umgebungsvariablen für den aktuellen verwalteten
+Projektdienst und sein Profil bereitstellen. Die Discovery zeigt Namen und
+Versionen, niemals Werte. Die interne Zustellung erfolgt erst beim Start eines
+neuen Agentenprozesses; Fortsetzen oder `/new` innerhalb derselben Laufzeit
+genügt nicht.
+
+Agenten dürfen solche Variablen für die vom Benutzer autorisierten Aufgaben
+verwenden. Sie dürfen die Werte nicht ausgeben, in Prompts oder Dateien kopieren,
+ins Gedächtnis aufnehmen oder an Unteragenten als Nachricht weiterreichen.
+Eine fehlende Freigabe wird über die Oberfläche behoben; weder Browsercookies
+noch Runner-Leases dürfen als Umgehung gelesen werden. Widerruf, Rotation und
+Löschung beenden die betroffene Runner-Berechtigung und ihre Sessions. Eine neue
+Lease erbt diese Freigaben nicht. Bereits gelesene Werte können nicht zurückgeholt
+werden; bei Bedarf muss der Benutzer sie auch beim Anbieter rotieren.
+
 ## Details zu jeder Funktion
 
 Der kurze Überblick bleibt immer im Betriebskontext. Vor Verwendung einer

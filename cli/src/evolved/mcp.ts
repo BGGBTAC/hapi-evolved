@@ -6,7 +6,7 @@ import { z } from 'zod/v3'
 import { EvolvedRepositorySyncError, EvolvedRequestError, evolvedClientFromEnvironment, type EvolvedClient } from './client'
 import { buildEvolvedOperatingContext, EVOLVED_OPERATING_CONTEXT_VERSION, getEvolvedOperatingContext } from './operatingContext'
 import { EVOLVED_CAPABILITY_TOPICS, getEvolvedCapability, type EvolvedCapabilityTopic } from './capabilities'
-export const EVOLVED_TOOL_NAMES = ['evolved_context', 'evolved_codegraph', 'evolved_memory_search', 'evolved_memory_propose', 'evolved_resources', 'evolved_resource_execute', 'evolved_repositories', 'evolved_repository_sync', 'evolved_mcp_servers', 'evolved_mcp_tools', 'evolved_mcp_query', 'evolved_mcp_call']
+export const EVOLVED_TOOL_NAMES = ['evolved_context', 'evolved_codegraph', 'evolved_memory_search', 'evolved_memory_propose', 'evolved_resources', 'evolved_agent_credentials', 'evolved_resource_execute', 'evolved_repositories', 'evolved_repository_sync', 'evolved_mcp_servers', 'evolved_mcp_tools', 'evolved_mcp_query', 'evolved_mcp_call']
 
 function boundedMcpArguments(value: Record<string, unknown>): boolean {
     const jsonValue = (value: unknown, depth: number): boolean => {
@@ -138,6 +138,9 @@ export function registerEvolvedTools(server: McpServer, client: EvolvedClient, a
         description: 'Save a proposal to the persistent local Hub ledger, independently of the optional graph service or hybrid-search availability. Requires memory:write and project permissions. Do not postpone a permitted save solely because hybrid search failed; check this tool’s actual response before claiming persistence. Include source references (repository, file and commit when known) in the body. Files in knowledge/ are not automatically synchronized. A person must verify binding decisions; proposed knowledge never grants permissions. Do not include credentials or sensitive configuration.',
         inputSchema: { title: z.string().min(1).max(200), body: z.string().min(1).max(50000) }
     }, async (args: { title: string; body: string }) => call(client.projectPath('/memory'), 'POST', args))
+    if (allowed('evolved_agent_credentials')) server.registerTool<any, any>('evolved_agent_credentials', {
+        description: 'List explicitly granted project credential variable names and versions, never values. Granted PROJECT_SECRET_* variables are inherited by newly started agent processes. Use them inside code without printing them, placing them in prompts, files, memory or logs. Missing grants: direct the administrator to Project Vault → Agent access. A running process must be restarted after a new grant; network access remains subject to project policy.', inputSchema: {}
+    }, async () => call(client.projectPath('/agent-credentials')))
     if (allowed('evolved_resources')) server.registerTool<any, any>('evolved_resources', {
         description: 'List previously granted broker resource actions and repository discovery hints. For the full repository owner/name/path catalog use evolved_repositories or hapi evolved repositories, which only needs git:read. Returns metadata only, never credential values.', inputSchema: {}
     }, async () => call(client.projectPath('/resources')))

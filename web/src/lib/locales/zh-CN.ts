@@ -1183,6 +1183,9 @@ export default {
   'misc.contextCache': '缓存：{value}',
   'misc.contextUsed': '使用：{value}（{percent}%）',
   'misc.contextUsedTokens': '使用：{value}',
+  'misc.contextWindowKnown': '会话上限：{value} 个 token（由代理报告）',
+  'misc.contextWindowUnknown': '代理尚未报告此会话的上下文上限。',
+  'misc.contextWindowNote': '自动压缩可能在达到此上限之前发生。模型公布的最大容量可能与会话上限不同。',
   'misc.contextRemaining': '剩余：{value}（{percent}%）',
 
   // Web Share Target 分享面板

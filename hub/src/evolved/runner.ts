@@ -1,6 +1,9 @@
 import { Hono } from 'hono'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
+import { AgentCredentialBundleSchema } from '@hapi/protocol/credentialEnv'
+import type { VaultClient } from './vault'
+import { getManagedCredentialLease, withCredentialProjectLock } from './credentialGrants'
 import { EvolvedError, EvolvedStore, hashToken, randomToken, type AgentProfile, type EvolvedPrincipal } from './store'
 import { authenticateEvolvedRequest, parseBody, requireFreshPasskey, requireHuman, type EvolvedEnv } from './security'
 
@@ -23,9 +26,10 @@ export function exchangeRunnerLease(store: EvolvedStore, token: string) {
         return { ...cap, projectId: project.id, namespace: project.namespace, profile: project.profile, rootPath: project.rootPath, leaseExpiresAt: lease.expires_at }
     })()
 }
-export function createRunnerRoutes(store: EvolvedStore): Hono<EvolvedEnv> {
+export function createRunnerRoutes(store: EvolvedStore, vault?: VaultClient): Hono<EvolvedEnv> {
     const app = new Hono<EvolvedEnv>()
     const exchanges = new Map<string, { count: number; expiresAt: number }>()
+    const credentialReads = new Set<string>()
     const human = async (req: Request): Promise<EvolvedPrincipal> => {
         const principal = await authenticateEvolvedRequest(req, store)
         if (!principal) throw new EvolvedError('unauthorized', 'Sign in required.', 401)
@@ -39,6 +43,47 @@ export function createRunnerRoutes(store: EvolvedStore): Hono<EvolvedEnv> {
         const { lease, project } = currentLease(store, authorization.slice(7))
         if (!(JSON.parse(lease.scopes) as string[]).includes('runner:connect')) throw new EvolvedError('scope_denied', 'Runner connection scope required.', 403)
         return c.json({ projectId: project.id, profile: project.profile, rootPath: project.rootPath, expiresAt: lease.expires_at })
+    })
+    app.post('/runner/environment', async c => {
+        if (c.req.header('cookie') || c.req.header('origin') || new URL(c.req.url).search) throw new EvolvedError('lease_only', 'Private runner credentials required.', 403)
+        await parseBody(c, z.object({}).strict())
+        const authorization = c.req.header('authorization') ?? ''
+        if (!authorization.startsWith('Bearer ')) throw new EvolvedError('invalid_lease', 'Runner lease required.', 401)
+        const token = authorization.slice(7)
+        const initial = currentLease(store, token)
+        if (!(JSON.parse(initial.lease.scopes) as string[]).includes('runner:connect')) throw new EvolvedError('scope_denied', 'Runner connection scope required.', 403)
+        const hasManagedRunners = store.db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='evolved_managed_runners'").get()
+        const mapping = hasManagedRunners ? store.db.query('SELECT lease_id FROM evolved_managed_runners WHERE project_id=?').get(initial.project.id) as { lease_id: string } | null : null
+        if (mapping?.lease_id !== initial.lease.id) {
+            // Manually provisioned runners cannot receive Vault grants. Preserve
+            // their existing spawn path without depending on Vault availability.
+            // A superseded managed lease also receives no former grant values.
+            c.header('Cache-Control', 'no-store')
+            return c.json({ projectId: initial.project.id, revision: hashToken(`unmanaged:${initial.lease.id}:${initial.project.profile}`), environment: {} })
+        }
+        const authorized = () => {
+            const state = currentLease(store, token)
+            if (!(JSON.parse(state.lease.scopes) as string[]).includes('runner:connect') || getManagedCredentialLease(store, state.project)?.id !== state.lease.id) {
+                throw new EvolvedError('credential_runner_required', 'Current managed project runner required.', 403)
+            }
+            return state
+        }
+        const projectId = authorized().project.id
+        if (credentialReads.has(projectId)) throw new EvolvedError('credential_busy', 'Project credential delivery is busy; retry shortly.', 429)
+        credentialReads.add(projectId)
+        const signal = AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(8000)])
+        try { return await withCredentialProjectLock(store, projectId, async () => {
+            signal.throwIfAborted()
+            const { lease, project } = authorized()
+            if (!vault) throw new EvolvedError('credential_unavailable', 'Project credential delivery unavailable.', 503)
+            const raw = await vault.request({ userId: lease.user_id, projectId: project.id, operation: 'agentCredentials', payload: { action: 'resolve', leaseId: lease.id, profile: project.profile } }, signal)
+            signal.throwIfAborted()
+            authorized() // Rotation, revocation and membership changes win over an in-flight Vault read.
+            const bundle = AgentCredentialBundleSchema.safeParse(raw)
+            if (!bundle.success) throw new EvolvedError('credential_unavailable', 'Project credential delivery unavailable.', 503)
+            c.header('Cache-Control', 'no-store')
+            return c.json({ projectId: project.id, ...bundle.data })
+        }) } finally { credentialReads.delete(projectId) }
     })
     app.post('/runner/token', async c => {
         if (c.req.header('cookie')) throw new EvolvedError('lease_only', 'Runner token exchange does not accept browser credentials.', 403)

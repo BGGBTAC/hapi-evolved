@@ -7,6 +7,14 @@ vi.mock('./auth', () => ({ useOptionalEvolved: () => null }))
 const catalog = (): ProviderModelsState => ({ enabled: true, canRefresh: true, data: { provider: 'claude', status: 'ready', method: 'subscription', source: 'native-cli', catalogOrigin: 'native-reported', entitlementVerified: false, upstreamRefresh: 'unknown', stale: false, checkedAt: 1, expiresAt: Date.now() + 60_000, models: [{ id: 'opus-latest-synthetic', label: 'Native Opus', resolvedModel: 'claude-native-new' }] }, error: null, isLoading: false, refresh: vi.fn().mockResolvedValue(undefined) })
 
 describe('Native model selection', () => {
+    it('shows optional native capacities and descriptions without claiming they are a session limit', () => {
+        const state = catalog()
+        state.data!.models[0] = { ...state.data!.models[0], description: 'Native model description', contextWindow: 1_000_000 }
+        render(<ModelCatalogInput provider="claude" value="opus-latest-synthetic" onChange={vi.fn()} catalog={state} />)
+        expect(screen.getByRole('option', { name: /1\.000\.000 Token/ })).toBeInTheDocument()
+        expect(screen.getByText('Native model description')).toBeInTheDocument()
+        expect(screen.getByText(/tatsächliche Kontextfenster meldet der laufende Agent/)).toBeInTheDocument()
+    })
     it('uses native options without hardcoded model presets or account entitlement claims', () => {
         const state = catalog(), change = vi.fn()
         render(<ModelCatalogInput provider="claude" value="auto" onChange={change} catalog={state} />)

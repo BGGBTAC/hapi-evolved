@@ -3,7 +3,7 @@ import { useOptionalEvolved } from './auth'
 import { EvolvedApiError, projectPath } from './api'
 
 export type ModelProvider = 'codex' | 'claude'
-export type ProviderModel = { id: string; label: string; resolvedModel?: string; isDefault?: boolean; reasoningEfforts?: string[] }
+export type ProviderModel = { id: string; label: string; description?: string; contextWindow?: number; resolvedModel?: string; isDefault?: boolean; reasoningEfforts?: string[] }
 export type ProviderModelCatalog = {
     provider: ModelProvider
     status: 'ready' | 'unavailable' | 'disconnected'

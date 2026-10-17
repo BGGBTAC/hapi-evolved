@@ -48,11 +48,8 @@ export interface ConversionContext {
     version?: string
     gitBranch?: string
     parentUuid?: string | null
-    // The model preset the session actually selected at launch time (e.g. "fable[1m]"),
-    // with the `[1m]` suffix intact. Some 1M presets (fable[1m]) arrive on system/init
-    // with the suffix already dropped ("claude-fable-5"), so this preserved preset is
-    // the only turn-1 signal that such a session is 1M. Used only to seed the very first
-    // contextWindow estimate before result.modelUsage confirms the real value.
+    // Keep the selected variant separate when the runtime resolves both variants
+    // to the same bare id; selection is never proof of context capacity.
     selectedModel?: string | null
 }
 
@@ -103,6 +100,7 @@ export class SDKToLogConverter {
     // — rather than a single sticky number — means a mid-session model switch picks up the
     // new model's own window immediately instead of inheriting the previous model's.
     private modelContextWindows = new Map<string, number>()
+    private childModelContextWindows = new Map<string, number>()
 
     constructor(
         context: Omit<ConversionContext, 'parentUuid'>,
@@ -134,18 +132,7 @@ export class SDKToLogConverter {
         return wants1m ? `${model}[1m]` : model
     }
 
-    /**
-     * Update the originally-selected model hint (for when the session's model
-     * changes mid-conversation, e.g. via the web model picker). `context.selectedModel`
-     * is only a turn-1 seed hint (see the system/init handler in `convert()`), but the
-     * caller (claudeRemoteLauncher) re-resolves the active mode -- including its model --
-     * on every turn, not just the first, since a single long-running `claudeRemote()`
-     * call keeps accepting new turns with a live-updatable mode. Without this update,
-     * a mid-session switch would seed new models from a stale, session-start value:
-     * switching *to* an 1M preset would under-seed (still guess 200k for its first
-     * turn), and switching *away from* one would over-seed (guess 1M for a model that
-     * isn't 1M-capable) until a result message corrects it.
-     */
+    /** Update the selected variant without reusing another variant's known limit. */
     updateSelectedModel(model: string | null | undefined): void {
         this.context.selectedModel = model ?? null
     }
@@ -302,20 +289,11 @@ export class SDKToLogConverter {
             case 'assistant': {
                 const assistantMsg = sdkMessage as SDKAssistantMessage
                 const message = assistantMsg.message as Record<string, unknown>
-                // Look up the contextWindow by the session's resolved cache key (derived
-                // from the last system/init model), NOT the assistant message's own `model`
-                // field. The message's model is always reported bare (no "[1m]"), so it
-                // can't tell a 200k plain preset apart from its 1M "[1m]" variant when they
-                // share a base id; resolvedContextWindowKey carries the disambiguated key.
-                // Using the resolved key also means sidechain (Task subagent) messages carry
-                // the MAIN session window rather than the subagent's own — the web status
-                // bar's latestUsage picks the most recent usage message without filtering
-                // sidechains (Claude usage carries no scope_role), so a subagent's smaller
-                // window would otherwise make the footer denominator visibly drop while it
-                // runs.
-                const contextWindow = this.resolvedContextWindowKey
-                    ? this.modelContextWindows.get(this.resolvedContextWindowKey)
-                    : undefined
+                // Parent usage follows the resolved variant; child messages use their
+                // own model and must never inherit the parent's larger context window.
+                const contextWindow = assistantMsg.parent_tool_use_id
+                    ? (typeof message.model === 'string' ? this.childModelContextWindows.get(message.model) : undefined)
+                    : this.resolvedContextWindowKey ? this.modelContextWindows.get(this.resolvedContextWindowKey) : undefined
                 if (contextWindow !== undefined && message && typeof message.usage === 'object' && message.usage !== null) {
                     const usage = message.usage as Record<string, unknown>
                     if (usage.context_window === undefined) {
@@ -347,33 +325,12 @@ export class SDKToLogConverter {
                     this.updateSessionId(systemMsg.session_id)
                 }
 
-                // Capture the resolved model name on init. The remote launcher re-emits
-                // system/init on every turn for the lifetime of this converter, so if we
-                // already learned this model's real contextWindow from a previous result
-                // message, leave it alone — recomputing a heuristic guess here would
-                // downgrade an already-known-good value and is the exact cause of the
-                // 200k<->1M flicker. Only seed a heuristic when this model has no cached
-                // value yet (first time we see it in this session).
+                // Preserve confirmed limits per model/selected variant across turns.
                 if (systemMsg.subtype === 'init' && typeof systemMsg.model === 'string') {
                     this.resolvedModel = systemMsg.model
                     this.resolvedContextWindowKey = this.computeContextWindowKey(systemMsg.model)
-                    if (!this.modelContextWindows.has(this.resolvedContextWindowKey)) {
-                        // Best-effort 1M-vs-200k seed for turn 1, before any authoritative
-                        // result has arrived. `systemMsg.model` only tells us it's a 1M
-                        // model for the presets whose init keeps the "[1m]" suffix
-                        // (opus[1m]/sonnet[1m]); for others the init model is bare even
-                        // when it's a 1M preset (fable[1m] -> "claude-fable-5"). So we
-                        // primarily consult the originally-selected preset, which always
-                        // preserves the suffix (e.g. "fable[1m]"), and fall back to the
-                        // init model string. This selectedModel seed is load-bearing —
-                        // without it, a fresh fable[1m] turn would flash 200k until the
-                        // first result lands. Guarding/seeding on resolvedContextWindowKey
-                        // (not the bare init id) is what forces a re-seed when switching
-                        // fable[1m] <-> fable, whose bare ids would otherwise be identical.
-                        const seedIs1m = (this.context.selectedModel?.endsWith('[1m]') ?? false)
-                            || systemMsg.model.endsWith('[1m]')
-                        this.modelContextWindows.set(this.resolvedContextWindowKey, seedIs1m ? 1_000_000 : 200_000)
-                    }
+                    // A bare model id or a requested [1m] preset is not a runtime
+                    // limit. Await modelUsage instead of publishing a guessed 200k/1M.
                 }
 
                 // System messages are typically not sent to logs
@@ -391,25 +348,24 @@ export class SDKToLogConverter {
             }
 
             case 'result': {
-                // Result messages carry the authoritative per-model contextWindow. modelUsage is
-                // keyed by the same raw model id the CLI reports on system/init, so the
-                // entry for the current session model is stored under resolvedContextWindowKey
-                // (which folds in the "[1m]" for fable), matching what assistant lookups use.
-                // Other entries — Task subagents like haiku — are stored under their own raw
-                // id (never fold the session's "[1m]" onto a subagent; haiku is 200k). Always
-                // overwrite on result — it is ground truth — for every model reported, so a
-                // model switched away from earlier this session keeps its real value cached
-                // for if/when the session switches back to it.
+                // Only the resolved parent's entry updates its selected-variant cache.
+                // Child raw IDs live separately: a bare parent and suffixed child must
+                // not collide with the parent's folded variant key or depend on order.
                 const resultMsg = sdkMessage as SDKResultMessage
                 if (resultMsg.modelUsage) {
+                    const reported = new Map<string, number>()
                     for (const [model, usage] of Object.entries(resultMsg.modelUsage)) {
                         const cw = usage?.contextWindow
-                        if (typeof cw === 'number' && cw > 0) {
-                            const key = (this.resolvedModel && model === this.resolvedModel)
-                                ? (this.resolvedContextWindowKey ?? model)
-                                : model
-                            this.modelContextWindows.set(key, cw)
+                        if (typeof cw === 'number' && Number.isSafeInteger(cw) && cw > 0) {
+                            reported.set(model, cw)
+                            this.childModelContextWindows.set(model, cw)
                         }
+                    }
+                    if (!resultMsg.parent_tool_use_id && this.resolvedModel && this.resolvedContextWindowKey) {
+                        const base = this.resolvedModel.replace(/\[1m\]$/i, '')
+                        const candidates = [...reported].filter(([model]) => model.replace(/\[1m\]$/i, '') === base)
+                        const window = reported.get(this.resolvedModel) ?? (candidates.length === 1 ? candidates[0][1] : undefined)
+                        if (window !== undefined) this.modelContextWindows.set(this.resolvedContextWindowKey, window)
                     }
                 }
                 logMessage = {
@@ -418,6 +374,7 @@ export class SDKToLogConverter {
                     subtype: 'turn_duration',
                     durationMs: resultMsg.duration_ms,
                     resultSummary: {
+                        contextModel: resultMsg.parent_tool_use_id ? undefined : this.resolvedModel ?? undefined,
                         usage: resultMsg.usage,
                         modelUsage: resultMsg.modelUsage,
                         total_cost_usd: resultMsg.total_cost_usd,

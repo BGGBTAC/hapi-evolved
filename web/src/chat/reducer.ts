@@ -1,5 +1,5 @@
 import type { AgentState } from '@/types/api'
-import type { AgentEvent, ChatBlock, NormalizedMessage, UsageData } from '@/chat/types'
+import type { AgentEvent, ChatBlock, NormalizedMessage, RoundSummary, UsageData } from '@/chat/types'
 import type { ThreadGoal } from '@/types/api'
 import { traceMessages, type TracedMessage } from '@/chat/tracer'
 import { dedupeAgentEvents, foldApiErrorEvents } from '@/chat/reducerEvents'
@@ -38,10 +38,9 @@ export type LatestUsage = {
     contextSize: number
     contextWindow: number | null
     /**
-     * Model reported by the usage-bearing message itself. Local-mode Claude
-     * sessions often have session.model = null (the model is picked inside the
-     * TUI), so this is the only model signal available for the context-window
-     * heuristic when the usage carries no explicit context_window.
+     * Model reported by the usage-bearing message itself. This associates
+     * provider-reported result limits with the corresponding parent usage,
+     * even when session.model is unset or the model changes inside the TUI.
      */
     model: string | null
     timestamp: number
@@ -192,16 +191,34 @@ export function reduceChatBlocks(
 
     // Calculate latest usage from messages (find the most recent message with usage data)
     let latestUsage: LatestUsage | null = null
+    const completedWindows = new Map<string, number>()
     for (let i = normalized.length - 1; i >= 0; i--) {
         const msg = normalized[i]
+        if (msg.role === 'event' && msg.content.type === 'turn-summary' && isUsageVisibleInParentContext(msg)) {
+            const summary = msg.content.summary as RoundSummary
+            let entries = Object.entries(summary.contextWindows ?? {})
+            if (summary.contextModel) {
+                const exact = entries.find(([model]) => model === summary.contextModel)
+                const candidates = entries.filter(([model]) => model.replace(/\[1m\]$/i, '') === summary.contextModel!.replace(/\[1m\]$/i, ''))
+                entries = exact ? [exact] : candidates.length === 1 ? candidates : []
+            }
+            for (const [model, window] of entries) {
+                if (!completedWindows.has(model)) completedWindows.set(model, window)
+            }
+        }
         if (msg.usage && isUsageVisibleInParentContext(msg)) {
+            // Claude reports the actual limit at turn completion. Apply it to that
+            // turn immediately, without using its cumulative token bill as context
+            // occupancy or waiting for the next assistant message.
+            const sameModelWindows = msg.model ? [...completedWindows].filter(([model]) => model.replace(/\[1m\]$/i, '') === msg.model!.replace(/\[1m\]$/i, '')) : []
+            const completedWindow = sameModelWindows.length === 1 ? sameModelWindows[0][1] : undefined
             latestUsage = {
                 inputTokens: msg.usage.input_tokens,
                 outputTokens: msg.usage.output_tokens,
                 cacheCreation: msg.usage.cache_creation_input_tokens ?? 0,
                 cacheRead: msg.usage.cache_read_input_tokens ?? 0,
                 contextSize: calculateContextSize(msg.usage),
-                contextWindow: msg.usage.context_window ?? null,
+                contextWindow: completedWindow ?? msg.usage.context_window ?? null,
                 model: msg.model ?? null,
                 timestamp: msg.createdAt
             }

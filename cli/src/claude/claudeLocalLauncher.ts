@@ -1,4 +1,3 @@
-import { annotateLocalClaudeContext, resolveLocalClaudeModel } from './utils/localContextWindow';
 import { claudeLocal } from "./claudeLocal";
 import { Session } from "./session";
 import { createSessionScanner } from "./utils/sessionScanner";
@@ -8,9 +7,6 @@ import { applySessionTitleFallback } from './utils/sessionTitleFallback';
 import { resolveClaudeLocalResumeGuardId } from "./utils/claudeResumeGuard";
 
 export async function claudeLocalLauncher(session: Session): Promise<'switch' | 'exit'> {
-
-    session.localContextModelObserved = false;
-    session.localContextModel = await resolveLocalClaudeModel({ path: session.path, model: session.getModel(), args: session.claudeArgs, env: session.claudeEnvVars });
 
     // Create scanner
     const scanner = await createSessionScanner({
@@ -41,7 +37,9 @@ export async function claudeLocalLauncher(session: Session): Promise<'switch' | 
             if (!isClaudeChatVisibleMessage(message)) {
                 return
             }
-            session.client.sendClaudeSessionMessage(annotateLocalClaudeContext(message, session.localContextModel, session.localContextModelObserved))
+            // Native usage is evidence; a selected alias or observed model switch
+            // cannot establish this account's actual context limit.
+            session.client.sendClaudeSessionMessage(message)
         }
     });
 

@@ -25,8 +25,6 @@ export class Session extends AgentSessionBase<EnhancedMode> {
     readonly localPermissionBridge: LocalPermissionBridge;
     readonly startedBy: 'runner' | 'terminal';
     readonly startingMode: 'local' | 'remote';
-    localContextModel: string | undefined;
-    localContextModelObserved = false;
     localLaunchFailure: LocalLaunchFailure | null = null;
     private nativeSkillNames = new Set<string>();
     /**

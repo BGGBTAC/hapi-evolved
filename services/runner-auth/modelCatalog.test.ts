@@ -172,3 +172,15 @@ test('catalog schema rejects unsafe identifiers, control text, oversized arrays 
     expect(parseRequest({ requestId: 'models', action: 'models', provider: 'claude', refresh: true })).toMatchObject({ refresh: true })
     for (const fields of [{ refresh: 'true' }, { executable: '/bin/sh' }, { code: 'not-for-models' }]) expect(() => parseRequest({ requestId: 'models', action: 'models', provider: 'claude', ...fields })).toThrow()
 })
+
+test('catalog retains bounded descriptions and explicit native capacities without guessing missing windows', () => {
+    expect(normalizeModels('codex', [{ model: 'gpt-6-astra', displayName: 'Astra', description: 'Native description', contextWindow: 900_000 }]))
+        .toEqual([{ id: 'gpt-6-astra', label: 'Astra', isDefault: false, description: 'Native description', contextWindow: 900_000 }])
+    expect(normalizeModels('claude', [{ value: 'opus', resolvedModel: 'claude-opus-5-5' }])[0].contextWindow).toBeUndefined()
+    for (const contextWindow of [-1, 0, 1.5, Infinity, '1000000']) {
+        expect(normalizeModels('claude', [{ value: 'opus', contextWindow }])[0].contextWindow).toBeUndefined()
+    }
+    for (const description of ['secret\ncontrol', '\u202Ehidden', 'x'.repeat(501)]) {
+        expect(normalizeModels('claude', [{ value: 'opus', description }])[0].description).toBeUndefined()
+    }
+})

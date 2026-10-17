@@ -1,6 +1,6 @@
 import type { Provider, ProviderSummary } from './controller'
 
-export type CatalogModel = { id: string; label: string; resolvedModel?: string; isDefault?: boolean; reasoningEfforts?: string[] }
+export type CatalogModel = { id: string; label: string; description?: string; contextWindow?: number; resolvedModel?: string; isDefault?: boolean; reasoningEfforts?: string[] }
 export type ModelCatalog = {
     provider: Provider
     status: 'ready' | 'unavailable' | 'disconnected'
@@ -40,6 +40,13 @@ export function normalizeModels(provider: Provider, input: unknown): CatalogMode
         const label = item.displayName === undefined ? id : item.displayName
         if (typeof label !== 'string' || !label.trim() || label.length > 80 || badText.test(label)) throw new Error('Invalid model label')
         const model: CatalogModel = { id, label, isDefault: provider === 'claude' ? id === 'default' : item.isDefault === true }
+        if (typeof item.description === 'string' && item.description.trim() && item.description.length <= 500 && !badText.test(item.description)) {
+            model.description = item.description.trim()
+        }
+        // Optional native metadata, never inferred from a model name or marketing
+        // description. A catalog limit does not establish a running thread's budget.
+        const contextWindow = item.contextWindow ?? item.context_window
+        if (typeof contextWindow === 'number' && Number.isSafeInteger(contextWindow) && contextWindow > 0) model.contextWindow = contextWindow
         if (provider === 'claude' && item.resolvedModel !== undefined) model.resolvedModel = modelId(item.resolvedModel)
         const efforts = provider === 'claude' ? item.supportedEffortLevels : item.supportedReasoningEfforts
         if (efforts !== undefined) {

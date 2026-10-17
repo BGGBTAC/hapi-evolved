@@ -1230,7 +1230,7 @@ describe('normalizeDecryptedMessage', () => {
                 data: {
                     type: 'token_count',
                     info: {
-                        total: {
+                        last: {
                             inputTokens: 82_503,
                             cachedInputTokens: 71_808,
                             outputTokens: 166
@@ -1319,9 +1319,8 @@ describe('normalizeDecryptedMessage', () => {
         expect(normalized).toMatchObject({
             role: 'event',
             usage: {
-                input_tokens: 8119,
-                output_tokens: 2,
-                cache_read_input_tokens: 5760,
+                input_tokens: 13879,
+                output_tokens: 0,
                 context_tokens: 13879,
                 context_window: 65536
             }

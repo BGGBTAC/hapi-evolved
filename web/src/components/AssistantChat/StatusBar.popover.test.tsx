@@ -213,7 +213,8 @@ describe('StatusBar context details popover', () => {
 
         const cacheLine = await screen.findByText('缓存：86k')
         const details = cacheLine.parentElement
-        expect(details?.textContent).toBe('缓存：86k使用：90k（35%）剩余：168k（65%）')
+        expect(details?.textContent).toContain('缓存：86k使用：90k（35%）剩余：168k（65%）')
+        expect(details?.textContent).toContain('会话上限：258,000 个 token（由代理报告）')
         expect(screen.queryByText('上下文详情')).toBeNull()
     })
 
@@ -238,6 +239,30 @@ describe('StatusBar context details popover', () => {
         fireEvent.click(trigger)
 
         const cacheLine = await screen.findByText('Cache: 86k')
-        expect(cacheLine.parentElement?.textContent).toBe('Cache: 86kUsed: 90k (35%)Remaining: 168k (65%)')
+        expect(cacheLine.parentElement?.textContent).toContain('Cache: 86kUsed: 90k (35%)Remaining: 168k (65%)')
+        expect(screen.getByText('Session limit: 258,000 tokens (reported by agent)')).toBeInTheDocument()
+    })
+
+    it('shows the exact reported Astra session limit without subtracting headroom', async () => {
+        render(<I18nProvider><StatusBar active thinking={false} agentState={null} agentFlavor="codex" model="gpt-6-astra" contextSize={90_000} contextWindow={900_000} /></I18nProvider>)
+        const trigger = screen.getByRole('button', { name: 'Context details' })
+        expect(trigger).toHaveTextContent('10% · 90k / 900k')
+        fireEvent.click(trigger)
+        expect(await screen.findByText('Session limit: 900,000 tokens (reported by agent)')).toBeInTheDocument()
+        expect(screen.getByText(/Automatic compaction may happen before this limit/)).toBeInTheDocument()
+    })
+
+    it('does not round a 1.05M runtime window to 1.1M', () => {
+        render(<I18nProvider><StatusBar active thinking={false} agentState={null} agentFlavor="codex" contextSize={100_000} contextWindow={1_050_000} /></I18nProvider>)
+        expect(screen.getByRole('button', { name: 'Context details' })).toHaveTextContent('1.05M')
+    })
+
+    it('explains unknown limits instead of fabricating percentages for new models', async () => {
+        render(<I18nProvider><StatusBar active thinking={false} agentState={null} agentFlavor="claude" model="claude-opus-5-5" contextSize={90_000} /></I18nProvider>)
+        const trigger = screen.getByRole('button', { name: 'Context details' })
+        expect(trigger).toHaveTextContent('90k used')
+        expect(trigger.textContent).not.toContain('%')
+        fireEvent.click(trigger)
+        expect(await screen.findByText('The agent has not reported this session’s context limit yet.')).toBeInTheDocument()
     })
 })

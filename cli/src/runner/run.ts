@@ -12,6 +12,7 @@ import { configuration } from '@/configuration';
 import packageJson from '../../package.json';
 import { getEnvironmentInfo } from '@/ui/doctor';
 import { spawnHappyCLI } from '@/utils/spawnHappyCLI';
+import { resolveAgentCredentialEnvironment, withAgentCredentialEnvironment } from '@/evolved/credentialEnvironment';
 import { writeRunnerState, RunnerLocallyPersistedState, readRunnerState, acquireRunnerLock, releaseRunnerLock } from '@/persistence';
 import { getCliArgs } from '@/utils/cliArgs';
 import { getProcessStartMarker, isProcessAlive, isWindows, killProcess, killProcessByChildProcess, killProcessTreeByPid } from '@/utils/process';
@@ -795,6 +796,7 @@ export async function startRunner(options: { workspaceRoots?: string[] } = {}): 
         await cleanupWorktree();
       };
 
+      let delegatedCredentials = false;
       try {
 
         // Resolve authentication token if provided
@@ -834,6 +836,8 @@ export async function startRunner(options: { workspaceRoots?: string[] } = {}): 
         }
 
         const args = buildCliArgs(agent, options, yolo);
+        const credentialEnvironment = await resolveAgentCredentialEnvironment();
+        delegatedCredentials = Object.keys(credentialEnvironment).length > 0;
 
         // sessionId reserved for future use
         const MAX_TAIL_CHARS = 4000;
@@ -868,17 +872,14 @@ export async function startRunner(options: { workspaceRoots?: string[] } = {}): 
           cwd: canonicalDirectory,
           detached: true,  // Sessions stay alive when runner stops
           stdio: ['ignore', 'pipe', 'pipe'],  // Capture stdout/stderr for debugging
-          env: {
-            ...process.env,
-            ...extraEnv
-          }
+          env: withAgentCredentialEnvironment(process.env, extraEnv, credentialEnvironment)
         });
         happyProcess.once('exit', () => {
           void cleanupCopiedCodexConfig('child-exit');
         });
 
         happyProcess.stderr?.on('data', (data) => {
-          stderrTail = appendTail(stderrTail, data);
+          if (!delegatedCredentials) stderrTail = appendTail(stderrTail, data);
         });
 
         let spawnErrorBeforePidCheck: Error | null = null;
@@ -891,11 +892,11 @@ export async function startRunner(options: { workspaceRoots?: string[] } = {}): 
           // Allow the async 'error' event to fire before we read it
           await new Promise((resolve) => setImmediate(resolve));
           const details = [`cwd=${spawnDirectory}`];
-          if (spawnErrorBeforePidCheck) {
+          if (spawnErrorBeforePidCheck && !delegatedCredentials) {
             details.push(formatSpawnError(spawnErrorBeforePidCheck));
           }
           const errorMessage = `Failed to spawn HAPI process - no PID returned (${details.join('; ')})`;
-          logger.debug('[RUNNER RUN] Failed to spawn process - no PID returned', spawnErrorBeforePidCheck ?? null);
+          logger.debug('[RUNNER RUN] Failed to spawn process - no PID returned', delegatedCredentials ? null : spawnErrorBeforePidCheck ?? null);
           reportSpawnOutcomeToHub?.({
             type: 'error',
             details: {
@@ -995,7 +996,7 @@ export async function startRunner(options: { workspaceRoots?: string[] } = {}): 
         });
 
         happyProcess.on('error', (error) => {
-          logger.debug(`[RUNNER RUN] Child process error:`, error);
+          logger.debug(`[RUNNER RUN] Child process error:`, delegatedCredentials ? 'Process with project credentials failed.' : error);
           const errorAwaiter = pidToErrorAwaiter.get(pid);
           if (errorAwaiter) {
             pidToErrorAwaiter.delete(pid);
@@ -1114,8 +1115,8 @@ export async function startRunner(options: { workspaceRoots?: string[] } = {}): 
         }
         return spawnResult;
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        logger.debug('[RUNNER RUN] Failed to spawn session:', error);
+        const errorMessage = delegatedCredentials ? 'Agent process with project credentials could not be started.' : error instanceof Error ? error.message : String(error);
+        logger.debug('[RUNNER RUN] Failed to spawn session:', delegatedCredentials ? errorMessage : error);
         await cleanupCopiedCodexConfig('exception');
         await maybeCleanupWorktree('exception');
         reportSpawnOutcomeToHub?.({
