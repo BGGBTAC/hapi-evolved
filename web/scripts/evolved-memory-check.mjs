@@ -161,7 +161,7 @@ try {
     await page.route(`${origin}/api/evolved/session-token?*`, failedRenewal);
     await provider().getByRole('button', { name: 'Einrichtung speichern', exact: true }).click();
     await page.getByText('Die Verbindung konnte gerade nicht erneuert werden.', { exact: false }).waitFor();
-    await provider().getByText('Speichern oder Prüfen der Einrichtung konnte nicht bestätigt werden.', { exact: false }).waitFor();
+    await provider().getByText('Der Memory-Dienst oder Anbieter ist gerade nicht erreichbar.', { exact: false }).waitFor();
     await assertDraft(); check(providerWrites().length === 3, 'Real step-up did not retry exactly once before the synthetic save failure');
     await page.unroute(`${origin}${providerPath}`, failedMutation); await page.unroute(`${origin}/api/evolved/session-token?*`, failedRenewal);
     await page.getByRole('button', { name: 'Verbindung erneut prüfen', exact: true }).click();
