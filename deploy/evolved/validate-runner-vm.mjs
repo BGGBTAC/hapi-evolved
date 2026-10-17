@@ -3,11 +3,23 @@ import { lstatSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isDeepStrictEqual } from 'node:util'
 import { checkRunnerConfig, parseRunnerEnv } from './check-runner.ts'
 
 const markerLabel = 'io.hapi.evolved.runner-validation'
 const services = ['runner', 'runner-proxy', 'egress']
+const runnerSeccomp = JSON.parse(readFileSync(new URL('./security/runner-seccomp.json', import.meta.url), 'utf8'))
 function requireCheck(value, message) { if (!value) throw new Error(message) }
+
+export function inspectRunnerSandbox(container) {
+    let seccomp
+    const options = container.HostConfig?.SecurityOpt
+    try { seccomp = JSON.parse(options?.find(value => value.startsWith('seccomp='))?.slice(8) ?? '') } catch { /* Fail closed below. */ }
+    requireCheck(Array.isArray(options) && options.length === 3
+        && options.includes('no-new-privileges:true') && options.includes('apparmor=hapi-evolved-runner')
+        && container.AppArmorProfile === 'hapi-evolved-runner' && isDeepStrictEqual(seccomp, runnerSeccomp),
+        'Benanntes Runner-AppArmor-Profil oder Runner-Seccomp-Profil fehlt.')
+}
 
 /** The marker is an explicit operator assertion that this is a disposable test project. */
 export function validationPlan(source, environment = {}) {
@@ -62,8 +74,12 @@ export function inspectTestContainer(container, plan, expectedService, requireRu
         && labels[markerLabel] === plan.projectId, 'Container gehört nicht zum ausdrücklich markierten Teststack.')
     requireCheck(!host.Privileged && host.ReadonlyRootfs && host.NetworkMode !== 'host' && !host.PidMode,
         'Containerisolation stimmt nicht mit dem Testvertrag überein.')
-    requireCheck(host.CapDrop?.includes('ALL') && host.SecurityOpt?.some(value => value.startsWith('no-new-privileges')),
+    requireCheck(host.CapDrop?.includes('ALL') && host.SecurityOpt?.includes('no-new-privileges:true'),
         'Capability-Drop oder no-new-privileges fehlt.')
+    if (expectedService === 'runner') inspectRunnerSandbox(container)
+    else requireCheck(container.AppArmorProfile === 'docker-default'
+        && isDeepStrictEqual(host.SecurityOpt, ['no-new-privileges:true']),
+    'Proxy und Egress verlangen unveränderte Docker-Sicherheitsprofile.')
     const expectedCaps = expectedService === 'runner' ? ['SETGID', 'SETPCAP', 'SETUID'] : []
     requireCheck(JSON.stringify((host.CapAdd ?? []).map(value => value.replace(/^CAP_/, '')).sort()) === JSON.stringify(expectedCaps), 'Unerwartete Linux-Capabilities.')
     requireCheck(!Object.keys(host.PortBindings ?? {}).length && !host.Devices?.length && !host.DeviceRequests?.length,
@@ -110,6 +126,8 @@ try {
     const fields=new Map(readFileSync('/proc/'+state.pid+'/status','utf8').split('\\n').map(line=>{const p=line.indexOf(':');return [line.slice(0,p),line.slice(p+1).trim()]}));
     check(fields.get('Uid')?.split(/\\s+/).every(v=>Number(v)===uid)&&fields.get('Gid')?.split(/\\s+/).every(v=>Number(v)===gid)&&fields.get('Groups')==='','Runner retained privileges');
     check(['CapInh','CapPrm','CapEff','CapBnd','CapAmb'].every(key=>/^0+$/.test(fields.get(key)??'')),'Runner capability set is not empty');
+    check(fields.get('NoNewPrivs')==='1'&&fields.get('Seccomp')==='2','Runner sandbox filters are not enforced');
+    check(readFileSync('/proc/'+state.pid+'/attr/current','utf8').trim()==='hapi-evolved-runner (enforce)','Runner AppArmor profile is not enforced');
     check(!existsSync('/var/run/docker.sock')&&!existsSync('/run/docker.sock')&&!existsSync('/credentials/lease'),'Operator credential or Docker socket is exposed');
     const canary=root+'/.hapi-validation-write-'+randomUUID();let writeError;
     try { writeFileSync(canary,'synthetic validation',{flag:'wx',mode:0o600}) } catch(error) { writeError=error.code }
@@ -128,7 +146,7 @@ try {
     const browser=await fetch('http://runner-proxy:3010/health',{headers:{origin:'https://invalid.test'},signal:AbortSignal.timeout(3000)});
     const admin=await fetch('http://runner-proxy:3010/api/evolved/me',{signal:AbortSignal.timeout(3000)});
     check(browser.status===403&&admin.status===403,'Proxy browser/admin boundary failed');
-    console.log(JSON.stringify({machineId,registered:true,uid,gid,workspaceReadOnly:true,runnerCapabilitiesEmpty:true,operatorCredentialsAbsent:true,testedProxyTargetsDenied:deniedTargets,proxyAdminDenied:true}));
+    console.log(JSON.stringify({machineId,registered:true,uid,gid,workspaceReadOnly:true,runnerCapabilitiesEmpty:true,runnerSandboxEnforced:true,operatorCredentialsAbsent:true,testedProxyTargetsDenied:deniedTargets,proxyAdminDenied:true}));
 } catch { console.error('Isolierte Runnerprüfung fehlgeschlagen; nur Teststackzustand untersuchen.'); process.exit(1) }
 `
 }

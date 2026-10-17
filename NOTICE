@@ -17,6 +17,8 @@ Additional bundled-tool notices include:
 - shared/tools/tunwg/LICENSE
 - cli/tools/licenses/ripgrep-LICENSE
 - cli/tools/licenses/difftastic-LICENSE
+- deploy/evolved/security/LICENSE.moby (Docker sandbox profile derivatives;
+  source revision and HAPI-eVolved changes in that directory's README.md)
 
 Dependencies, downloaded native tools, provider CLIs and container base
 images retain their respective licenses. Manifests and lockfiles identify
