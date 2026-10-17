@@ -61,7 +61,7 @@ describe('Graph Memory browser configuration', () => {
         expect(screen.getByRole('link', { name: /API-Key bei Voyage/ })).toHaveAttribute('href', 'https://dash.voyageai.com/api-keys')
         configure(selected)
         input('Sprachmodell: API-Key', 'synthetic-anthropic-key')
-        expect(screen.getByRole('button', { name: 'Einrichtung speichern' })).toBeDisabled()
+        expect(screen.getByRole('button', { name: 'Einrichtung speichern' })).toBeEnabled()
         input('Embeddings: API-Key', 'synthetic-voyage-key')
         fireEvent.click(screen.getByRole('button', { name: 'Einrichtung speichern' }))
         await screen.findByText(/Einrichtung verschlüsselt gespeichert/)
@@ -85,7 +85,7 @@ describe('Graph Memory browser configuration', () => {
         expect(keyInput()).toHaveValue('')
         expect(keyInput()).not.toHaveAttribute('placeholder', 'Schlüssel gespeichert')
         input('Sprachmodell: Modell', 'claude-model'); input('Sprachmodell: Eingabe', '1'); input('Sprachmodell: Ausgabe', '2')
-        expect(screen.getByRole('button', { name: 'Einrichtung speichern' })).toBeDisabled()
+        expect(screen.getByRole('button', { name: 'Einrichtung speichern' })).toBeEnabled()
         expect(screen.getByRole('button', { name: 'Sprachmodell: Modelle laden' })).toBeDisabled()
         input('Sprachmodell: API-Key', 'synthetic-new-anthropic-key')
         expect(screen.getByRole('button', { name: 'Einrichtung speichern' })).toBeEnabled()
@@ -108,7 +108,7 @@ describe('Graph Memory browser configuration', () => {
             input('Suchtrefferbewertung: Ausgabe', '0.6')
             expect(screen.getByText(/Chat Completions mit Logprobs unterstützen/)).toBeInTheDocument()
         }
-        expect(screen.getByRole('button', { name: 'Einrichtung speichern' })).toBeDisabled()
+        expect(screen.getByRole('button', { name: 'Einrichtung speichern' })).toBeEnabled()
         input('Suchtrefferbewertung: API-Key', 'synthetic-reranker-key')
         fireEvent.click(screen.getByRole('button', { name: 'Einrichtung speichern' }))
         await screen.findByText(/Einrichtung verschlüsselt gespeichert/)
@@ -143,7 +143,10 @@ describe('Graph Memory browser configuration', () => {
         await screen.findByLabelText('Embeddings: Dimensionen')
         for (const dimensions of denied) {
             input('Embeddings: Dimensionen', dimensions)
-            expect(screen.getByRole('button', { name: 'Einrichtung speichern' })).toBeDisabled()
+            fireEvent.click(screen.getByRole('button', { name: 'Einrichtung speichern' }))
+            expect(screen.getByLabelText('Embeddings: Dimensionen')).toHaveAttribute('aria-invalid', 'true')
+            expect(screen.getByLabelText('Embeddings: Dimensionen')).toHaveFocus()
+            expect(context.api.request.mock.calls.some(([, options]) => options.method === 'PUT')).toBe(false)
         }
         for (const dimensions of allowed) {
             input('Embeddings: Dimensionen', dimensions)
@@ -203,13 +206,14 @@ describe('Graph Memory browser configuration', () => {
             method: 'POST', body: { component: 'llm', provider: 'openai', apiKey: 'synthetic-test-key' } }))
         expect(screen.getByLabelText('Sprachmodell: Modell')).toHaveValue('')
         expect(screen.getByLabelText('Sprachmodell: Eingabe')).toHaveValue(null)
-        expect(screen.getByRole('button', { name: 'Einrichtung speichern' })).toBeDisabled()
+        expect(screen.getByRole('button', { name: 'Einrichtung speichern' })).toBeEnabled()
         configure()
         expect(screen.getByLabelText('Embeddings: Modell')).toHaveValue('text-embedding-3-small')
         expect(screen.getByLabelText('Sprachmodell: Eingabe')).toHaveValue(0.4)
         fireEvent.click(screen.getByRole('button', { name: 'Einrichtung speichern' }))
-        expect(keyInput()).toHaveValue('')
+        expect(keyInput()).toHaveValue('synthetic-test-key')
         await screen.findByText(/Einrichtung verschlüsselt gespeichert/)
+        expect(keyInput()).toHaveValue('')
         expect(context.api.request).toHaveBeenCalledWith('/projects/project-1/memory/provider', expect.objectContaining({ method: 'PUT', body: { ...config, version: 0, llm: { ...config.llm, apiKey: 'synthetic-test-key' }, embedding: { ...config.embedding, apiKey: 'synthetic-embedding-key' } }, signal: expect.any(AbortSignal) }))
         expect(JSON.stringify(localStorage)).not.toContain('synthetic-test-key')
         expect(JSON.stringify(sessionStorage)).not.toContain('synthetic-test-key')
@@ -228,7 +232,7 @@ describe('Graph Memory browser configuration', () => {
         await screen.findByText(/3 Modelle direkt/)
         fireEvent.change(screen.getByLabelText('Sprachmodell: Modell'), { target: { value: 'future-model-from-provider' } })
         expect(screen.getByLabelText('Sprachmodell: Eingabe')).toHaveValue(null)
-        expect(screen.getByRole('button', { name: 'Einrichtung speichern' })).toBeDisabled()
+        expect(screen.getByRole('button', { name: 'Einrichtung speichern' })).toBeEnabled()
         fireEvent.change(screen.getByLabelText('Sprachmodell: Eingabe'), { target: { value: '1.25' } })
         fireEvent.change(screen.getByLabelText('Sprachmodell: Ausgabe'), { target: { value: '5' } })
         fireEvent.click(screen.getByRole('button', { name: 'Einrichtung speichern' }))
@@ -360,7 +364,7 @@ describe('Graph Memory browser configuration', () => {
         if (change !== 'role') expect(await screen.findByLabelText('Sprachmodell: API-Key')).toHaveValue('')
     })
 
-    it('never echoes a rejected credential from an upstream error and clears a submitted key on save failure', async () => {
+    it('never echoes a rejected credential and retains all entered keys for correction after a failed save', async () => {
         const selected: MemoryProviderConfig = { ...config, reranker: { ...config.llm, provider: 'openai' } }
         context.api.request.mockImplementation(async (_path: string, options: { method?: string }) => {
             if (options.method === 'PUT') throw new EvolvedApiError('synthetic-test-key rejected', 400, 'invalid_key')
@@ -372,7 +376,95 @@ describe('Graph Memory browser configuration', () => {
         const error = await screen.findByRole('alert')
         expect(error).toHaveTextContent(/Prüfe die API-Keys/)
         expect(error).not.toHaveTextContent('synthetic-test-key')
-        for (const label of ['Sprachmodell: API-Key', 'Embeddings: API-Key', 'Suchtrefferbewertung: API-Key']) expect(screen.getByLabelText(label)).toHaveValue('')
+        expect(keyInput()).toHaveValue('synthetic-test-key')
+        expect(screen.getByLabelText('Embeddings: API-Key')).toHaveValue('synthetic-embedding-key')
+        expect(screen.getByLabelText('Suchtrefferbewertung: API-Key')).toHaveValue('synthetic-reranker-key')
+        expect(JSON.stringify(localStorage)).not.toContain('synthetic-')
+        expect(JSON.stringify(sessionStorage)).not.toContain('synthetic-')
         expect(screen.queryByText(/Einrichtung verschlüsselt gespeichert/)).not.toBeInTheDocument()
     })
+
+    it('explains incomplete setup and focuses required fields without sending or losing keys', async () => {
+        render(<MemoryProviderPanel />)
+        await screen.findByLabelText('Sprachmodell: API-Key')
+        setBothKeys()
+        expect(screen.getByRole('link', { name: 'Sprachmodell: Modell auswählen oder Modell-ID eintragen.' })).toBeVisible()
+        expect(screen.getByRole('link', { name: /Sprachmodell: Eingabepreis/ })).toBeVisible()
+        expect(screen.queryByRole('link', { name: /API-Key fehlt/ })).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Einrichtung speichern' }))
+        expect(screen.getByLabelText('Sprachmodell: Modell')).toHaveFocus()
+        expect(context.api.request.mock.calls.some(([, options]) => options.method === 'PUT')).toBe(false)
+        expect(keyInput()).toHaveValue('synthetic-test-key')
+        const prices = screen.getByText('Sprachmodell: Preise und Limits').closest('details')!
+        prices.open = false
+        fireEvent.click(screen.getByRole('link', { name: /Sprachmodell: Eingabepreis/ }))
+        expect(prices.open).toBe(true)
+        expect(screen.getByLabelText('Sprachmodell: Eingabe')).toHaveFocus()
+    })
+
+    it('keeps a complete draft through a transient save failure and clears keys only after a successful retry', async () => {
+        let attempts = 0
+        context.api.request.mockImplementation(async (_path: string, options: { method?: string }) => {
+            if (options.method !== 'PUT') return status()
+            if (++attempts === 1) throw new EvolvedApiError('Unavailable', 503)
+            return status(true)
+        })
+        render(<MemoryProviderPanel />)
+        await screen.findByLabelText('Sprachmodell: API-Key'); configure(); setBothKeys()
+        fireEvent.click(screen.getByRole('button', { name: 'Einrichtung speichern' }))
+        await screen.findByRole('alert')
+        expect(keyInput()).toHaveValue('synthetic-test-key')
+        expect(screen.getByLabelText('Embeddings: API-Key')).toHaveValue('synthetic-embedding-key')
+        expect(screen.getByLabelText('Sprachmodell: Modell')).toHaveValue(config.llm.model)
+        fireEvent.click(screen.getByRole('button', { name: 'Einrichtung speichern' }))
+        await screen.findByText(/Einrichtung verschlüsselt gespeichert/)
+        expect(attempts).toBe(2)
+        expect(keyInput()).toHaveValue('')
+        expect(keyInput()).toHaveAttribute('placeholder', 'Schlüssel gespeichert')
+    })
+
+    it('requires explicit discard before reloading a dirty provider draft', async () => {
+        render(<MemoryProviderPanel />)
+        await screen.findByLabelText('Sprachmodell: API-Key'); setBothKeys()
+        fireEvent.click(screen.getByRole('button', { name: 'Stand neu laden' }))
+        expect(keyInput()).toHaveValue('synthetic-test-key')
+        expect(context.api.request).toHaveBeenCalledTimes(1)
+        fireEvent.click(screen.getByRole('button', { name: 'Eingaben behalten' }))
+        expect(keyInput()).toHaveValue('synthetic-test-key')
+        fireEvent.click(screen.getByRole('button', { name: 'Stand neu laden' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Eingaben verwerfen und neu laden' }))
+        await waitFor(() => expect(keyInput()).toHaveValue(''))
+        expect(context.api.request).toHaveBeenCalledTimes(2)
+    })
+
+
+    it.each([
+        ['Sprachmodell: API-Key', 'abc', /API-Key muss 8/],
+        ['Sprachmodell: API-Key', 'synthetic key with spaces', /API-Key muss 8/],
+        ['Sprachmodell: Modell', 'claude/model', /Modell-ID muss mit Buchstabe/],
+    ])('explains malformed %s before submitting the configuration', async (label, value, message) => {
+        context.api.request.mockResolvedValue(status(true))
+        render(<MemoryProviderPanel />)
+        await screen.findByLabelText('Sprachmodell: API-Key')
+        input(label as string, value as string)
+        expect(screen.getByRole('link', { name: message as RegExp })).toBeVisible()
+        fireEvent.click(screen.getByRole('button', { name: 'Einrichtung speichern' }))
+        expect(screen.getByLabelText(label as string)).toHaveFocus()
+        expect(context.api.request.mock.calls.some(([, options]) => options.method === 'PUT')).toBe(false)
+    })
+
+    it('retains an unsaved draft when removing the connection fails', async () => {
+        context.api.request.mockImplementation(async (_path: string, options: { method?: string }) => {
+            if (options.method === 'DELETE') throw new EvolvedApiError('Unavailable', 503)
+            return status(true)
+        })
+        render(<MemoryProviderPanel />)
+        await screen.findByLabelText('Sprachmodell: API-Key'); setBothKeys()
+        fireEvent.click(screen.getByRole('button', { name: 'Verbindung entfernen' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Bestätigen' }))
+        await screen.findByRole('alert')
+        expect(keyInput()).toHaveValue('synthetic-test-key')
+        expect(screen.getByLabelText('Embeddings: API-Key')).toHaveValue('synthetic-embedding-key')
+    })
+
 })
