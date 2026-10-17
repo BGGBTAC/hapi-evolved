@@ -2,10 +2,10 @@ import { readCredentialResponse } from '@hapi/protocol/credentialTransport'
 
 /** Undefined entries also override spawnHappyCLI's ambient-environment merge. */
 export function withAgentCredentialEnvironment(parent: NodeJS.ProcessEnv, extra: NodeJS.ProcessEnv, granted: Record<string, string>): NodeJS.ProcessEnv {
-    const result = { ...parent, ...extra }
-    if (parent.HAPI_EVOLVED_PROXY === '1') {
-        for (const name of Object.keys(result)) if (name.startsWith('PROJECT_SECRET_')) result[name] = undefined
-    }
+    // Construct own properties instead of dynamically assigning into an object's
+    // prototype chain. Preserve explicit undefined entries for the spawn merge.
+    const result = Object.fromEntries(Object.entries({ ...parent, ...extra }).map(([name, value]) =>
+        [name, parent.HAPI_EVOLVED_PROXY === '1' && name.startsWith('PROJECT_SECRET_') ? undefined : value]))
     return { ...result, ...granted }
 }
 
