@@ -27,6 +27,9 @@ class GraphClientTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(len(http.clients), 2)
                     self.assertTrue(all(isinstance(client._transport, BudgetTransport) for client in http.clients))
                     self.assertIsNot(graph.llm_client.client, graph.embedder.client)
+                    self.assertEqual(http.clients[0].timeout.as_dict(), {"connect": 40, "read": 600, "write": 40, "pool": 40})
+                    self.assertEqual(http.clients[1].timeout.as_dict(), {"connect": 40, "read": 40, "write": 40, "pool": 40})
+                    self.assertEqual(graph.llm_client.client.max_retries, 0)
                     from providers import LocalRRFClient
                     self.assertIsInstance(graph.cross_encoder, LocalRRFClient)
                 finally:

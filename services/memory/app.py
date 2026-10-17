@@ -73,8 +73,11 @@ async def graph_client(operation, config=None):
             else {"authorization": "Bearer " + role.api_key})
         transport = BudgetTransport(ledger, operation, role.transport_config())
         try:
+            # Reasoning and structured output may take longer than embedding
+            # calls. Keep connection/pool/write limits short and retries disabled.
+            read_timeout = 600 if role.role == "llm" or (role.role == "reranker" and role.provider == "openai") else 40
             http = httpx.AsyncClient(base_url=role.base.rstrip("/") + "/", headers=headers,
-                transport=transport, timeout=40, follow_redirects=False, trust_env=False)
+                transport=transport, timeout=httpx.Timeout(40, read=read_timeout), follow_redirects=False, trust_env=False)
         except BaseException:
             await transport.aclose()
             raise

@@ -1,10 +1,12 @@
 """Role-specific provider allowlists and conservative durable prepayment."""
+import asyncio
 import json
 from types import MappingProxyType
 import httpx
 from budget import OperationLedger, micros, BudgetExceeded
 
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+PROVIDER_REQUEST_TIMEOUT_SECONDS = 600
 SCHEMA_TOOL = "graphiti_output"
 
 
@@ -87,6 +89,13 @@ class BudgetTransport(httpx.AsyncBaseTransport):
     async def handle_async_request(self, request):
         serialized, reserved, endpoint = self.prepare(request)
         self.ledger.charge(self.operation, reserved)
+        # A read timeout bounds pauses between chunks, not the whole response.
+        # Each prepaid request also has a fixed total deadline; no retry/refund
+        # is safe when the upstream may already have processed that request.
+        async with asyncio.timeout(PROVIDER_REQUEST_TIMEOUT_SECONDS):
+            return await self._send_prepaid(request, serialized, reserved, endpoint)
+
+    async def _send_prepaid(self, request, serialized, reserved, endpoint):
         headers = dict(request.headers)
         headers.pop("content-length", None)
         headers["accept-encoding"] = "identity"

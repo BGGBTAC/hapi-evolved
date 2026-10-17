@@ -1,5 +1,6 @@
 """Real Graphiti interfaces over mocked, budgeted provider HTTP; no live API calls."""
 import json
+import asyncio
 import traceback
 import unittest
 from unittest.mock import patch
@@ -8,7 +9,7 @@ from pydantic import BaseModel
 from graphiti_core.llm_client.config import LLMConfig
 from graphiti_core.prompts.models import Message
 from graphiti_core.nodes import EntityNode
-from budget import OperationLedger, BudgetExceeded
+from budget import OperationLedger, BudgetExceeded, micros
 from configuration import provider_config
 from embedding import ConfiguredVoyageEmbedder, validate_vectors
 from providers import AnthropicSchemaClient, ProviderExtractionError, VoyageReranker, LocalRRFClient
@@ -77,6 +78,66 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("calling graphiti_output exactly once", calls[0]["system"])
         self.assertNotIn("store", calls[0])
         self.assertEqual(messages[0].content, "Extract")
+
+    async def test_larger_output_limit_is_prepaid_in_full_and_insufficient_budget_prevents_network(self):
+        for limit in (16384, 65536):
+            self.ledger.db.execute("UPDATE operations SET budget=20000000,spent=0")
+            supplied = mixed_config()
+            supplied["llm"].update(maxOutputTokens=limit, inputUsdPerMTok="4", outputUsdPerMTok="20")
+            role = provider_config(supplied).llm
+            calls, reservations = [], []
+            def handle(request):
+                body = json.loads(request.content)
+                calls.append(body)
+                self.assertEqual(body["max_tokens"], limit)
+                expected = micros(len(request.content) + 4096, "4") + micros(limit, "20")
+                self.assertEqual(self.ledger.spent("op"), expected)
+                reservations.append(expected)
+                return httpx.Response(200, json={"stop_reason": "tool_use", "content": [
+                    {"type": "thinking", "thinking": "Synthetic thinking is not returned"},
+                    {"type": "tool_use", "name": SCHEMA_TOOL, "input": {"value": "complete"}}],
+                    "usage": {"input_tokens": 7, "output_tokens": 6000}})
+            http = await self.client(role, handle)
+            llm = AnthropicSchemaClient(LLMConfig(model=role.model, max_tokens=limit), http)
+            messages = [Message(role="system", content="Extract"), Message(role="user", content="Synthetic episode")]
+            self.assertEqual(await llm.generate_response(messages, Extraction, max_tokens=100000), {"value": "complete"})
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(self.ledger.spent("op"), 7 * 4 + 6000 * 20)
+            self.assertEqual(self.ledger.db.execute("SELECT budget FROM operations WHERE id='op'").fetchone()[0], 20000000)
+            # A deliberately insufficient existing budget refuses the whole
+            # reservation. It neither sends a request nor silently lowers output.
+            self.ledger.db.execute("UPDATE operations SET budget=?,spent=0", (reservations[0] - 1,))
+            with self.assertRaises(BudgetExceeded):
+                await llm.generate_response(messages, Extraction, max_tokens=100000)
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(self.ledger.spent("op"), 0)
+
+    async def test_total_deadline_stops_continuous_response_chunks_and_closes_without_refunding(self):
+        class SlowResponse(httpx.AsyncByteStream):
+            closed = 0
+            async def __aiter__(self):
+                yield b'{'
+                while True:
+                    await asyncio.sleep(0.005)
+                    yield b' '
+            async def aclose(self):
+                self.closed += 1
+        stream, calls, prepaid = SlowResponse(), [], []
+        supplied = mixed_config()
+        supplied["llm"]["maxOutputTokens"] = 16384
+        role = provider_config(supplied).llm
+        def handle(request):
+            calls.append(request)
+            prepaid.append(self.ledger.spent("op"))
+            return httpx.Response(200, stream=stream)
+        http = await self.client(role, handle)
+        llm = AnthropicSchemaClient(LLMConfig(model=role.model, max_tokens=16384), http)
+        with patch("transport.PROVIDER_REQUEST_TIMEOUT_SECONDS", 0.03), self.assertRaises(TimeoutError):
+            await asyncio.wait_for(llm.generate_response([Message(role="system", content="Extract"), Message(role="user", content="Synthetic")], Extraction), 1)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(stream.closed, 1)
+        self.assertGreater(prepaid[0], 16384 * 2)
+        self.assertEqual(self.ledger.spent("op"), prepaid[0])
 
     async def test_auto_tool_choice_supports_nonempty_real_graphiti_schema_and_ignores_companion_blocks(self):
         from graphiti_core.prompts.extract_nodes import ExtractedEntities

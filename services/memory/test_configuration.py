@@ -44,7 +44,7 @@ class ConfigurationTests(unittest.TestCase):
             "provider": ["other", None], "apiKey": [None, "short", "test-key\r\ninjected", "ü" * 20, "x" * 4097],
             "model": [None, "", "unsafe/model", "m" * 201, "m\n"],
             "embeddingModel": [123, "invalid model"], "embeddingDimensions": [True, "1536", 0, 3073],
-            "maxOutputTokens": [True, 255, 4097, 2048.0, "2048"],
+            "maxOutputTokens": [True, 255, 65537, 2048.0, "2048"],
             "inputUsdPerMTok": ["0", "0.00", "-1", "NaN", "Infinity", "1e2", "1_0", "1,2", ".2", "1000001", "1" * 33, 1],
             "outputUsdPerMTok": [None, "0", "-1"], "embeddingUsdPerMTok": ["0", "inf", ""]
         }.items():
@@ -83,6 +83,23 @@ class ConfigurationTests(unittest.TestCase):
             valid["embedding"]["dimensions"] = dimensions
             self.assertEqual(provider_config(valid).embedding.dimensions, dimensions)
 
+    def test_explicit_output_limits_round_trip_for_llm_and_openai_reranker(self):
+        for provider in ("openai", "anthropic"):
+            for limit in (256, 2048, 4096, 16384, 65536):
+                supplied = browser_config(provider=provider, maxOutputTokens=limit)
+                supplied["reranker"] = {**supplied["llm"], "provider": "openai"}
+                config = provider_config(supplied)
+                self.assertEqual(config.llm.max_output_tokens, limit)
+                self.assertEqual(config.reranker.max_output_tokens, limit)
+                self.assertEqual(config.llm.transport_config()["max_output_tokens"], limit)
+                self.assertEqual(config.llm.input_rate, "1")
+                self.assertEqual(config.llm.output_rate, "2")
+        for limit in (255, 65537, True, "16384", 16384.5):
+            supplied = browser_config()
+            supplied["reranker"] = {**supplied["llm"], "maxOutputTokens": limit}
+            with self.assertRaises(InvalidConfiguration):
+                provider_config(supplied)
+
     def test_operator_fallback_keeps_custom_https_endpoint_and_dimensions(self):
         env = {"EVOLVED_MEMORY_API_BASE": "https://operator.invalid:8443/v1",
             "EVOLVED_MEMORY_MODEL": "operator/model", "EVOLVED_MEMORY_EMBEDDING_MODEL": "operator/embedding",
@@ -92,7 +109,12 @@ class ConfigurationTests(unittest.TestCase):
         config = operator_config(env, lambda name: "synthetic-operator-key")
         self.assertEqual(config.llm.base, env["EVOLVED_MEMORY_API_BASE"])
         self.assertEqual(config.embedding.dimensions, 1024)
-        self.assertEqual(config.llm.max_output_tokens, 4096)
+        self.assertEqual(config.llm.max_output_tokens, 9000)
+        for requested, expected in [("16384", 16384), ("65536", 65536), ("65537", 65536), ("255", 256)]:
+            updated = operator_config({**env, "EVOLVED_MEMORY_MAX_OUTPUT_TOKENS": requested}, lambda name: "synthetic-operator-key")
+            self.assertEqual(updated.llm.max_output_tokens, expected)
+        without_limit = {name: value for name, value in env.items() if name != "EVOLVED_MEMORY_MAX_OUTPUT_TOKENS"}
+        self.assertEqual(operator_config(without_limit, lambda name: "synthetic-operator-key").llm.max_output_tokens, 2048)
         for endpoint in ["http://operator.invalid", "https://user:password@operator.invalid", "https://operator.invalid?x=1", "https://operator.invalid:bad"]:
             with self.assertRaises(InvalidConfiguration):
                 operator_config({**env, "EVOLVED_MEMORY_API_BASE": endpoint}, lambda name: "synthetic-operator-key")

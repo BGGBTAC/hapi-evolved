@@ -73,6 +73,30 @@ Zusätzliche Text- und Thinking-Blöcke werden verworfen; ausschließlich das va
 Schemaergebnis gelangt in die Extraktion. Eine unvollständige oder mehrdeutige
 Antwort wird nicht automatisch kostenpflichtig wiederholt.
 
+Das explizit gespeicherte Ausgabelimit kann zwischen `256` und `65536` Tokens liegen.
+Bei Claude zählt auch Thinking zu diesem Limit; einige Modelle können Thinking
+nicht abschalten ([Anthropic-Tokenbudget](https://platform.claude.com/docs/en/build-with-claude/thinking)).
+Ein zu kleines Limit kann deshalb schon vor dem vollständigen Schemaergebnis enden.
+Die Obergrenze ist eine Grenze dieser Anwendung, keine zugesicherte Modellfähigkeit;
+das gewählte Modell muss das eingestellte Limit unterstützen. Gespeicherte
+Projektkonfigurationen behalten ihren Wert bis zum nächsten ausdrücklichen Speichern.
+Explizite Betreiberwerte oberhalb `4096` werden künftig bis `65536` berücksichtigt;
+ohne Betreiberwert bleibt der bisherige Standard `2048`. Höhere Limits werden
+vor jedem Aufruf vollständig im vorhandenen Auftragsbudget reserviert; reichen die
+Mittel nicht, wird kein Anbieteraufruf gesendet. Monats-/Auftragsbudgets werden nicht
+erhöht und fehlgeschlagene Aufträge nicht automatisch wiederholt.
+
+Sprachmodellaufrufe einschließlich des OpenAI-Rerankers erlauben bis zu `600`
+Sekunden Lesewartezeit. Verbindungsaufbau, Poolwartezeit und Schreiben bleiben auf
+`40` Sekunden begrenzt; Embeddings und Voyage-Reranking behalten auch beim Lesen
+`40` Sekunden. Das gilt ebenfalls für den bisherigen OpenAI-Betreiberpfad.
+Zusätzlich gilt pro Anbieteranfrage eine feste Gesamtfrist von `600` Sekunden,
+damit auch kontinuierlich eintreffende Antwortteile die Wartezeit nicht unbegrenzt verlängern.
+Ein Timeout lässt die konservative Reservierung bestehen und führt keinen neuen
+Anbieteraufruf aus. Der Hub kann seinen kürzeren HTTP-Aufruf beenden, während der
+bereits angenommene Backendauftrag weiterläuft; Folgeabfragen verwenden dieselbe
+Operations-ID und den vorhandenen Beleg.
+
 Erreichbarkeit des Backends bestätigt noch keine erfolgreiche Indexierung. Bei
 fehlgeschlagenen Operationen enthalten die internen Belege einen festen `errorCode`
 und die Verarbeitungsphase `stage`, bei abgelehnten Claude-Anfragen zusätzlich den
@@ -118,7 +142,7 @@ frei und wiederholt keine bereits fehlgeschlagenen Indexaufträge automatisch.
 | `EVOLVED_MEMORY_OUTPUT_USD_PER_MTOK` | Ausgabepreis in USD je Million Tokens, einschließlich Reasoning |
 | `EVOLVED_MEMORY_EMBEDDING_USD_PER_MTOK` | Embeddingpreis in USD je Million Tokens |
 | `EVOLVED_MEMORY_EMBEDDING_DIM` | Standard `1536`; passend zum Modell festlegen |
-| `EVOLVED_MEMORY_MAX_OUTPUT_TOKENS` | Standard `2048`, begrenzt auf `256…4096` |
+| `EVOLVED_MEMORY_MAX_OUTPUT_TOKENS` | Standard `2048`, begrenzt auf `256…65536`; zählt gegebenenfalls Thinking mit |
 | `EVOLVED_MEMORY_STATE` | Dauerhafte Operationsdatenbank, Standard `/data/operations.db` |
 
 Für die drei Zugangsdaten funktioniert alternativ die gleichnamige Umgebungsvariable ohne `_FILE`.
