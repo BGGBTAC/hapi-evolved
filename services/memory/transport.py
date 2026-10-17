@@ -59,7 +59,7 @@ class BudgetTransport(httpx.AsyncBaseTransport):
                 if set(body) != {"model", "messages", "system", "max_tokens", "tools", "tool_choice"} or not text_messages(body["messages"]) or not isinstance(body["system"], str):
                     raise ValueError("Only schema extraction is allowed")
                 tools = body["tools"]
-                if not isinstance(tools, list) or len(tools) != 1 or not isinstance(tools[0], dict) or set(tools[0]) != {"name", "description", "input_schema"} or tools[0]["name"] != SCHEMA_TOOL or not isinstance(tools[0]["input_schema"], dict) or tools[0]["input_schema"].get("type") != "object" or body["tool_choice"] != {"type": "tool", "name": SCHEMA_TOOL}:
+                if not isinstance(tools, list) or len(tools) != 1 or not isinstance(tools[0], dict) or set(tools[0]) != {"name", "description", "input_schema"} or tools[0]["name"] != SCHEMA_TOOL or not isinstance(tools[0]["input_schema"], dict) or tools[0]["input_schema"].get("type") != "object" or body["tool_choice"] != {"type": "auto", "disable_parallel_tool_use": True} or body["tool_choice"].get("disable_parallel_tool_use") is not True:
                     raise ValueError("Only the internal schema tool is allowed")
                 output_key = "max_tokens"
             else:
