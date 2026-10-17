@@ -13,9 +13,21 @@ Die mitgelieferte Unit verwendet das Layout `/opt/hapi-evolved` für den überpr
 
 Die Erstinitialisierung als Dienst-UID muss **vor** der Übernahme der äußeren Zustandsbasis durch root erfolgen. Danach nur das äußere Verzeichnis mit `chown root:root /var/lib/hapi-evolved` und `chmod 0700 /var/lib/hapi-evolved` schützen, niemals rekursiv die Dienstunterverzeichnisse umstellen. Bei normalen Updates den Initialisierer nicht erneut als UID `1001` auf die geschützte Basis anwenden. Neue Betreiberdateien benötigen eine gezielte, bestandserhaltende Migration; bestehende Schlüssel bleiben erhalten.
 
+Native Codex verwendet Bubblewrap für seine Read-only-/Workspace-Dateirechte.
+Dafür verlangt der Runner ein eigenes AppArmor-Enforce-Profil und die mitgelieferte
+Seccomp-Policy. Getestet ist Ubuntu 24.04 mit AppArmor 4 und aktivierten
+unprivilegierten User-Namespaces. [Installation und native Abnahme](../../deploy/evolved/security/README.md)
+erfolgen vor dem Steuerdienststart; fehlende Unterstützung führt zu einer klaren
+Startfehlermeldung. Globale Hostregeln, zusätzliche Container-Capabilities und
+die Dateirechte der Sitzungen werden nicht erweitert.
+
 Nach dem Build von Hub und Runner auf dem eigenen Installationshost als Betreiber einrichten:
 
 ```sh
+sudo install -o root -g root -m 0644 \
+  /opt/hapi-evolved/deploy/evolved/security/runner.apparmor \
+  /etc/apparmor.d/hapi-evolved-runner
+sudo apparmor_parser -r /etc/apparmor.d/hapi-evolved-runner
 sudo install -d -m 0755 /usr/local/lib/hapi-evolved
 sudo install -m 0755 /usr/local/bin/bun /usr/local/lib/hapi-evolved/bun
 sudo install -m 0644 /opt/hapi-evolved/deploy/evolved/hapi-evolved-control.service /etc/systemd/system/hapi-evolved-control.service

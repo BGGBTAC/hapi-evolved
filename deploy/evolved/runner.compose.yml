@@ -12,6 +12,12 @@ x-runner: &runner
 services:
   runner:
     <<: *runner
+    # Native Codex constructs its read-only/workspace sandbox with unprivileged
+    # user namespaces. Load this named enforce profile during host setup.
+    security_opt:
+      - no-new-privileges:true
+      - apparmor=hapi-evolved-runner
+      - seccomp=./security/runner-seccomp.json
     build: { context: ../.., dockerfile: deploy/evolved/Runner.Dockerfile }
     image: hapi-evolved-runner:0.1.0
     user: "0:0"

@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { signControl, type ControlRequest } from '../../hub/src/evolved/runnerControlProtocol'
 import { checkRunnerConfig, parseRunnerEnv } from '../../deploy/evolved/check-runner'
 import { assertRootOwnedPath, ensureWorkspaceAnchor, validWorkspaceIdentity, WorkspaceAnchorError, type WorkspaceIdentity } from './workspaceAnchor'
+import { requireRunnerSandbox } from './sandbox'
 
 export class ControlError extends Error {
     constructor(readonly code:string, readonly status=503) { super(code) }
@@ -151,6 +152,7 @@ export class RunnerOperator {
         if(realpathSync(config.state)!==config.state || realpathSync(config.source)!==config.source || ![config.uid,config.gid].every(n=>Number.isSafeInteger(n)&&n>0)) throw new Error('Invalid operator configuration')
         if(config.backendNetwork && !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,80}$/.test(config.backendNetwork))throw new Error('Invalid operator network configuration')
         assertRootOwnedPath(config.state);assertRootOwnedPath(config.source)
+        requireRunnerSandbox(config.source)
         const hub=new URL(config.hubUrl)
         if(hub.protocol!=='http:'||hub.hostname!=='127.0.0.1'||hub.username||hub.password||hub.pathname!=='/'||hub.search||hub.hash)throw new Error('Operator authority must use the local hub')
         const source=lstatSync(config.source),compose=lstatSync(join(config.source,'deploy/evolved/runner.compose.yml'))

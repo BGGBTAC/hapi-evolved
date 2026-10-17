@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { chmodSync, chownSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, chownSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 // @ts-expect-error The JavaScript operator harness has no TypeScript declaration.
@@ -28,10 +28,14 @@ function fixture() {
 function container(plan: ReturnType<typeof validationPlan>, service: string) {
     const runner = service === 'runner', proxy = service === 'runner-proxy'
     return {
+        AppArmorProfile: runner ? 'hapi-evolved-runner' : 'docker-default',
         Config: { Labels: { 'com.docker.compose.project': plan.stack, 'com.docker.compose.service': service,
             'io.hapi.evolved.runner-validation': plan.projectId }, User: runner ? '0:0' : `${plan.config.EVOLVED_UID}:${plan.config.EVOLVED_GID}` },
         HostConfig: { Privileged: false, ReadonlyRootfs: true, NetworkMode: `${plan.stack}_project`, PidMode: '',
-            CapDrop: ['ALL'], CapAdd: runner ? ['SETUID', 'SETGID', 'SETPCAP'] : [], SecurityOpt: ['no-new-privileges:true'], PortBindings: {}, Devices: [], DeviceRequests: [] },
+            CapDrop: ['ALL'], CapAdd: runner ? ['SETUID', 'SETGID', 'SETPCAP'] : [],
+            SecurityOpt: ['no-new-privileges:true', ...(runner ? ['apparmor=hapi-evolved-runner',
+                `seccomp=${JSON.stringify(JSON.parse(readFileSync(new URL('./security/runner-seccomp.json', import.meta.url), 'utf8')))}`] : [])],
+            PortBindings: {}, Devices: [], DeviceRequests: [] },
         NetworkSettings: { Networks: Object.fromEntries([`${plan.stack}_project`, proxy ? plan.backend : `${plan.stack}_provider-egress`].map(name => [name, {}])) },
         Mounts: runner ? [
             { Type: 'bind', Source: plan.config.EVOLVED_RUNNER_HOME, Destination: '/runner', RW: true },
@@ -158,6 +162,12 @@ describe('isolated runner VM acceptance guard', () => {
             (value: any) => { value.HostConfig.CapAdd.push('SYS_ADMIN') },
             (value: any) => { value.HostConfig.CapDrop = [] },
             (value: any) => { value.HostConfig.SecurityOpt = [] },
+            (value: any) => { value.AppArmorProfile = 'unconfined' },
+            (value: any) => { value.HostConfig.SecurityOpt.push('apparmor=unconfined') },
+            (value: any) => { value.HostConfig.SecurityOpt.push('systempaths=unconfined') },
+            (value: any) => { value.HostConfig.SecurityOpt[0] = 'no-new-privileges:false' },
+            (value: any) => { value.HostConfig.SecurityOpt = ['no-new-privileges:true', 'seccomp=unconfined'] },
+            (value: any) => { value.HostConfig.SecurityOpt = ['no-new-privileges:true', 'seccomp={"defaultAction":"SCMP_ACT_ALLOW"}'] },
             (value: any) => { value.HostConfig.PortBindings = { '3010/tcp': [{ HostPort: '3010' }] } },
             (value: any) => { value.NetworkSettings.Networks.production = {} },
             (value: any) => { value.Mounts[1].RW = true },
@@ -166,6 +176,19 @@ describe('isolated runner VM acceptance guard', () => {
         for (const mutate of mutations) {
             const value = container(plan, 'runner'); value.State.Running = false; mutate(value)
             expect(() => inspectTestContainer(value, plan, 'runner', false)).toThrow()
+        }
+    })
+    test('proxy and egress accept only unchanged Docker security profiles', () => {
+        const { plan } = fixture()
+        for (const service of ['runner-proxy', 'egress']) {
+            for (const option of ['systempaths=unconfined', 'apparmor=unconfined', 'seccomp=unconfined', 'no-new-privileges:false']) {
+                const value = container(plan, service)
+                value.HostConfig.SecurityOpt.push(option)
+                expect(() => inspectTestContainer(value, plan, service)).toThrow()
+            }
+            const value = container(plan, service)
+            value.AppArmorProfile = 'unconfined'
+            expect(() => inspectTestContainer(value, plan, service)).toThrow()
         }
     })
     test('compiles both embedded probes without executing them or embedding lease paths/values', () => {
