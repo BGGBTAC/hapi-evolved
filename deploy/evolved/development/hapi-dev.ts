@@ -9,8 +9,8 @@
  */
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
-import { closeSync, constants, copyFileSync, createReadStream, createWriteStream, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeSync } from 'node:fs'
-import { isAbsolute, join, normalize, relative } from 'node:path'
+import { closeSync, constants, createReadStream, createWriteStream, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, renameSync, rmSync, statSync, writeSync } from 'node:fs'
+import { basename, isAbsolute, join, normalize, relative } from 'node:path'
 import { Readable } from 'node:stream'
 import { odooToolchain, POSTGRES_PORT, toolchainPaths } from '../../../cli/src/evolved/development/layout'
 import { isAndroidDebugVariant, RepoSubdirectorySchema } from '../../../shared/src/evolvedDevelopment'
@@ -103,6 +103,8 @@ export type Runtime = {
     isTTY: boolean
     fetch: typeof fetch
     now: () => Date
+    /** JDK discovery; default (and when omitted) is the trusted fixed /usr/bin/java check. Test fixtures inject a fake. */
+    javaHome?: () => string
 }
 
 function environment(step: Step, env: NodeJS.ProcessEnv): Record<string, string> {
@@ -112,12 +114,12 @@ function environment(step: Step, env: NodeJS.ProcessEnv): Record<string, string>
 
 export function defaultRuntime(dryRun: boolean): Runtime {
     return {
-        dryRun, env: process.env, isTTY: !!process.stdin.isTTY, fetch, now: () => new Date(),
+        dryRun, env: process.env, isTTY: !!process.stdin.isTTY, fetch, now: () => new Date(), javaHome,
         out: line => console.log(line),
         run: step => new Promise(resolve => {
             const child = spawn(step.argv[0], step.argv.slice(1), { cwd: step.cwd ?? '/', env: environment(step, process.env), shell: false,
                 stdio: [step.stdin ?? 'ignore', 'pipe', 'pipe'] })
-            const log = step.log ? createWriteStream('', { fd: openSync(step.log, constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW, 0o600) }) : null
+            const log = step.log ? createWriteStream('', { fd: openManagedAppend(step.log, true) }) : null
             for (const stream of [child.stdout, child.stderr]) stream?.on('data', (chunk: Buffer) => { process.stdout.write(chunk); log?.write(chunk) })
             child.on('error', () => { log?.end(); resolve(127) })
             child.on('close', code => { log?.end(); resolve(code ?? 1) })
@@ -163,10 +165,86 @@ function ensureDirectory(runtime: Runtime, paths: Layout, path: string, mode = 0
     managedDirectory(baseOf(paths, path), path, !runtime.dryRun, mode)
 }
 /** Write a helper-owned file without following a pre-existing symlink at the target. */
+/**
+ * Replace a helper-owned file without ever writing an existing inode: an existing target must be a
+ * regular single-link file of this user (no symlink, no hard link to something elsewhere); the new
+ * content goes to an exclusive temporary file in the same directory, then rename() swaps the entry.
+ */
 export function writeManagedFile(paths: Layout, path: string, data: string) {
-    managedDirectory(baseOf(paths, path), join(path, '..'), true)
-    const fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o600)
-    try { writeSync(fd, data) } finally { closeSync(fd) }
+    const directory = join(path, '..')
+    managedDirectory(baseOf(paths, path), directory, true)
+    const existing = lstatOrNull(path)
+    if (existing && !ownSingleFile(existing)) fail(UNSAFE_FILE(path))
+    const temporary = join(directory, `.${basename(path)}.${randomBytes(6).toString('hex')}.tmp`)
+    const fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600)
+    try {
+        try { writeSync(fd, data) } finally { closeSync(fd) }
+        renameSync(temporary, path)
+    } catch (error) { rmSync(temporary, { force: true }); throw error }
+}
+const UNSAFE_FILE = (path: string) => `${path} ist eine Verknüpfung, hat mehrere harte Links oder gehört einem anderen Benutzer; HAPI schreibt dort nicht hinein und löscht nichts.`
+function ownSingleFile(info: { isFile(): boolean; nlink: number; uid: number }): boolean {
+    const uid = process.getuid?.()
+    return info.isFile() && info.nlink === 1 && (uid === undefined || info.uid === uid)
+}
+/** Append to a helper-owned file; the opened inode itself is checked (regular, one link, own) before any write. */
+export function openManagedAppend(path: string, create: boolean): number {
+    const fd = openSync(path, constants.O_WRONLY | constants.O_APPEND | constants.O_NOFOLLOW | (create ? constants.O_CREAT : 0), 0o600)
+    if (!ownSingleFile(fstatSync(fd))) { closeSync(fd); fail(UNSAFE_FILE(path)) }
+    return fd
+}
+/** Every component below `base` up to `path` must exist as a real directory (no symlink anywhere in the chain). */
+export function realDirectoryChain(base: string, path: string): boolean {
+    const inside = relative(base, path)
+    if (inside.startsWith('..') || isAbsolute(inside)) return false
+    let current = base
+    for (const part of inside === '' ? [] : inside.split('/')) {
+        current = join(current, part)
+        const info = lstatOrNull(current)
+        if (!info || info.isSymbolicLink() || !info.isDirectory()) return false
+    }
+    return true
+}
+/**
+ * Copy one regular, single-link file by descriptor (O_NOFOLLOW, non-blocking open), at most `maxBytes`,
+ * into a new exclusive target. Returns the copied size, or null when the source is not acceptable.
+ */
+function copyRegularFile(source: string, target: string, maxBytes: number): number | null {
+    let input: number
+    try { input = openSync(source, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK) } catch { return null }
+    try {
+        const info = fstatSync(input)
+        if (!info.isFile() || info.nlink !== 1 || info.size > maxBytes) return null
+        const output = openSync(target, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600)
+        try {
+            const buffer = Buffer.alloc(1024 * 1024)
+            let total = 0
+            for (let read = readSync(input, buffer, 0, buffer.length, null); read > 0; read = readSync(input, buffer, 0, buffer.length, null)) {
+                total += read
+                if (total > maxBytes) throw new UsageError(`${source} wuchs während des Kopierens über die Grenze.`)
+                writeSync(output, buffer, 0, read)
+            }
+            return total
+        } finally { closeSync(output) }
+    } finally { closeSync(input) }
+}
+function readRegularFile(path: string, maxBytes: number): string | null {
+    let fd: number
+    try { fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK) } catch { return null }
+    try {
+        const info = fstatSync(fd)
+        if (!info.isFile() || info.nlink !== 1 || info.size > maxBytes) return null
+        const buffer = Buffer.alloc(info.size)
+        return readSync(fd, buffer, 0, info.size, 0) === info.size ? buffer.toString('utf8') : null
+    } finally { closeSync(fd) }
+}
+/** Before an existing managed directory is read or used: every existing component must be a real, own directory. */
+function verifyManagedChain(paths: Layout, path: string) {
+    managedDirectory(baseOf(paths, path), path, false)
+}
+function ownRegularFile(path: string): boolean {
+    const info = lstatOrNull(path)
+    return !!info && ownSingleFile(info)
 }
 /** An existing helper target must be a real directory, never a link to somewhere else. */
 function reusable(path: string): boolean {
@@ -196,7 +274,7 @@ export function postgresBin(minimum = 13): string {
     }
     return fail(`Keine PostgreSQL-Server-Programme ≥ ${minimum} unter /usr/lib/postgresql gefunden (Development-Image nötig).`)
 }
-function javaHome(): string {
+export function javaHome(): string {
     const java = systemTool(['/usr/bin/java'])
     if (!java) fail('Kein JDK gefunden (Development-Image nötig).')
     return realpathSync(java!).replace(/\/bin\/java$/, '')
@@ -218,9 +296,12 @@ function artifactFiles(directory: string, prefix = '', depth = 0, found: string[
     }
     return found
 }
+/** Hash a regular, single-link file through its descriptor (no link following). */
 async function sha256File(path: string): Promise<string> {
+    const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+    if (!ownSingleFile(fstatSync(fd))) { closeSync(fd); fail(UNSAFE_FILE(path)) }
     const hash = createHash('sha256')
-    await pipeline(createReadStream(path), hash)
+    await pipeline(createReadStream('', { fd }), hash)
     return hash.digest('hex')
 }
 async function writeChecksums(runtime: Runtime, directory: string) {
@@ -319,14 +400,15 @@ async function odooTest(runtime: Runtime, paths: Layout, flags: Flags) {
     const major = odooMajor(flagValue(flags, 'major')), modules = moduleList(flagValue(flags, 'modules')), database = databaseName(flagValue(flags, 'db-slug') ?? 'dev')
     const repository = insideProject(paths.projectRoot, flagValue(flags, 'repository'), '--repository'), addons = addonsList(flagValue(flags, 'addons'))
     for (const path of addons) if (path !== '.') insideProject(paths.projectRoot, join(repository, path), `Addons-Pfad ${path}`)
-    if (!runtime.dryRun && !existsSync(join(paths.pg.run, `.s.PGSQL.${POSTGRES_PORT}`))) fail('Der Projekt-PostgreSQL läuft nicht; zuerst „hapi-dev postgres start“.')
+    verifyManagedChain(paths, paths.pg.run)
+    if (!runtime.dryRun) requireProjectSocket(paths)
     effects(runtime, ['führt Projekt- und Odoo-Code aus', `legt bei Bedarf die lokale Wegwerf-Datenbank ${database} an`, 'schreibt Logs unter .hapi/.cache/artifacts/odoo'])
     const artifacts = artifactDirectory(runtime, paths, 'odoo'), log = join(artifacts, 'test.log')
     const httpPort = flagValue(flags, 'http-port') ?? '8069'
     if (!/^[0-9]{4,5}$/.test(httpPort) || Number(httpPort) < 1024 || Number(httpPort) > 65535) fail('--http-port muss zwischen 1024 und 65535 liegen.')
     const code = await execute(runtime, { argv: odooTestArgv(paths, major, repository, addons, modules, database, 5432, Number(httpPort)), cwd: repository, log }, 'Odoo-Tests')
     if (!runtime.dryRun) {
-        const text = existsSync(log) ? readFileSync(log, 'utf8') : ''
+        const text = readRegularFile(log, 64 * 1024 * 1024) ?? ''
         const summary = { exitCode: code, database, modules, major, failedLines: (text.match(/^.* (?:ERROR|CRITICAL) .*$/gm) ?? []).length,
             result: text.match(/[0-9]+ failed, [0-9]+ error\(s\) of [0-9]+ tests[^\n]*/g)?.slice(-1)[0] ?? null }
         writeManagedFile(paths, join(artifacts, 'summary.json'), JSON.stringify(summary, null, 2) + '\n')
@@ -346,7 +428,7 @@ async function odooUpgradeDryRun(runtime: Runtime, paths: Layout, flags: Flags) 
     const addonsPath = addons.map(path => path === '.' ? repository : join(repository, path)).join(',')
     const code = await execute(runtime, { argv: [join(odoo.venv, 'bin/python'), join(odoo.source, 'odoo-bin'), 'upgrade_code', `--addons-path=${addonsPath}`, '--from', from, '--to', to, '--dry-run'], cwd: repository, log }, 'upgrade_code --dry-run', [1])
     if (!runtime.dryRun) {
-        const outcome = upgradeDryRunOutcome(code, existsSync(log) ? readFileSync(log, 'utf8') : '')
+        const outcome = upgradeDryRunOutcome(code, readRegularFile(log, 64 * 1024 * 1024) ?? '')
         writeManagedFile(paths, join(artifacts, 'summary.json'), JSON.stringify({ exitCode: code, outcome, from, to }, null, 2) + '\n')
         runtime.out(UPGRADE_OUTCOME_TEXT[outcome])
     }
@@ -418,12 +500,25 @@ export function postgresEnvironment(runtime: Runtime, paths: Layout, identity: I
 
 /** complete = initialised by this helper (PG_VERSION plus HAPI socket block); otherwise never reused silently. */
 function clusterState(paths: Layout): 'missing' | 'complete' | 'incomplete' {
+    // The whole chain (…/postgresql/17/data) must be real own directories; a symlinked parent fails here.
+    verifyManagedChain(paths, paths.pg.data)
     const info = lstatOrNull(paths.pg.data)
     if (!info) return 'missing'
     if (info.isSymbolicLink() || !info.isDirectory()) return 'incomplete'
-    try {
-        return existsSync(join(paths.pg.data, 'PG_VERSION')) && readFileSync(join(paths.pg.data, 'postgresql.conf'), 'utf8').includes(POSTGRES_MARKER) ? 'complete' : 'incomplete'
-    } catch { return 'incomplete' }
+    const config = readRegularFile(join(paths.pg.data, 'postgresql.conf'), 1024 * 1024)
+    return ownRegularFile(join(paths.pg.data, 'PG_VERSION')) && config?.includes(POSTGRES_MARKER) ? 'complete' : 'incomplete'
+}
+/** The fixed socket leaf must be an actual Unix socket of this user, never a link resolved elsewhere. */
+export function acceptableSocket(info: { isSocket(): boolean; isSymbolicLink(): boolean; uid: number } | null, uid = process.getuid?.()): 'ok' | 'missing' | 'unsafe' {
+    if (!info) return 'missing'
+    return !info.isSymbolicLink() && info.isSocket() && (uid === undefined || info.uid === uid) ? 'ok' : 'unsafe'
+}
+function requireProjectSocket(paths: Layout) {
+    verifyManagedChain(paths, paths.pg.run)
+    const socket = join(paths.pg.run, `.s.PGSQL.${POSTGRES_PORT}`)
+    const state = acceptableSocket(lstatOrNull(socket))
+    if (state === 'missing') fail('Der Projekt-PostgreSQL läuft nicht; zuerst „hapi-dev postgres start“.')
+    if (state === 'unsafe') fail(`${socket} ist kein Unix-Socket dieses Benutzers (z. B. eine Verknüpfung); Clients verbinden sich dort nicht. Es wird nichts gelöscht; bitte prüfen.`)
 }
 const INCOMPLETE_CLUSTER = (paths: Layout) => `${paths.pg.data} existiert, ist aber kein vollständig von HAPI eingerichteter Cluster (PG_VERSION oder HAPI-Socketblock fehlt). Es wird nichts gelöscht; bitte prüfen und den Ordner bei Bedarf selbst umbenennen.`
 
@@ -434,6 +529,9 @@ async function postgres(runtime: Runtime, paths: Layout, action: string | undefi
     if (paths.pg.run !== join(paths.pg.base, 'run')) runtime.out(`Hinweis: Der Projektpfad ist für einen Unix-Socket zu lang; der Socket liegt im privaten Runner-Ordner ${paths.pg.run}.`)
     const pgCtl = [join(bin, 'pg_ctl'), '-D', paths.pg.data]
     const env = () => postgresEnvironment(runtime, paths, identity)
+    // init/start/stop/status all use the existing cluster and socket directories: verify their full chains first.
+    verifyManagedChain(paths, paths.pg.data)
+    verifyManagedChain(paths, paths.pg.run)
     if (action === 'init') {
         effects(runtime, [`legt einen neuen Cluster nur in ${paths.pg.data} an (Benutzer odoo, nur lokaler Socket, TCP abgelehnt)`, 'fsync aus: nur für Wegwerf-Testdaten'])
         const state = clusterState(paths)
@@ -447,7 +545,7 @@ async function postgres(runtime: Runtime, paths: Layout, action: string | undefi
         }
         if (!runtime.dryRun) {
             const config = join(paths.pg.data, 'postgresql.conf')
-            const fd = openSync(config, constants.O_WRONLY | constants.O_APPEND | constants.O_NOFOLLOW)
+            const fd = openManagedAppend(config, false)
             try { writeSync(fd, postgresConfig(paths)) } finally { closeSync(fd) }
         }
         return 0
@@ -470,12 +568,16 @@ async function postgres(runtime: Runtime, paths: Layout, action: string | undefi
 
 async function database(runtime: Runtime, paths: Layout, action: string | undefined, rest: string[], flags: Flags) {
     const bin = postgresBin(13)
+    verifyManagedChain(paths, paths.pg.data)
+    verifyManagedChain(paths, paths.pg.run)
     if (action === 'list') {
+        if (!runtime.dryRun) requireProjectSocket(paths)
         return execute(runtime, { argv: [join(bin, 'psql'), '-h', paths.pg.run, '-p', '5432', '-U', 'odoo', '-d', 'postgres', '-At', '-c', "SELECT datname FROM pg_database WHERE datname LIKE 'hapi\\_test\\_%' ORDER BY 1"], env: postgresEnvironment(runtime, paths) }, 'psql')
     }
     if (action === 'drop') {
         const name = databaseName(rest[0])
         if (flags.confirm !== name) fail(`Zum Löschen ausdrücklich --confirm ${name} angeben. Es werden nur hapi_test_*-Datenbanken des Projekt-Clusters gelöscht.`)
+        if (!runtime.dryRun) requireProjectSocket(paths)
         effects(runtime, [`löscht die Wegwerf-Datenbank ${name} im Projekt-Cluster`])
         return execute(runtime, { argv: [join(bin, 'dropdb'), '-h', paths.pg.run, '-p', '5432', '-U', 'odoo', '--if-exists', name], env: postgresEnvironment(runtime, paths) }, 'dropdb')
     }
@@ -483,8 +585,8 @@ async function database(runtime: Runtime, paths: Layout, action: string | undefi
 }
 
 function sdkmanager(paths: Layout) { return join(paths.android.sdk, 'cmdline-tools/latest/bin/sdkmanager') }
-function androidEnv(paths: Layout): Record<string, string> {
-    return { JAVA_HOME: javaHome(), ANDROID_HOME: paths.android.sdk, ANDROID_SDK_ROOT: paths.android.sdk, GRADLE_USER_HOME: paths.android.gradleHome, ANDROID_USER_HOME: join(paths.android.sdk, '.android') }
+function androidEnv(runtime: Runtime, paths: Layout): Record<string, string> {
+    return { JAVA_HOME: (runtime.javaHome ?? javaHome)(), ANDROID_HOME: paths.android.sdk, ANDROID_SDK_ROOT: paths.android.sdk, GRADLE_USER_HOME: paths.android.gradleHome, ANDROID_USER_HOME: join(paths.android.sdk, '.android') }
 }
 
 async function androidSdk(runtime: Runtime, paths: Layout, action: string | undefined, flags: Flags) {
@@ -511,16 +613,17 @@ async function androidSdk(runtime: Runtime, paths: Layout, action: string | unde
     if (action === 'licenses') {
         if (!runtime.isTTY) fail('Lizenzen werden nur interaktiv von einem Menschen in einem Terminal angenommen, nie automatisch durch Agenten.')
         effects(runtime, ['zeigt die Android-SDK-Lizenzen; Annahme nur durch Ihre Eingabe'])
-        return execute(runtime, { argv: [sdkmanager(paths), `--sdk_root=${paths.android.sdk}`, '--licenses'], env: androidEnv(paths), stdin: 'inherit' }, 'sdkmanager --licenses')
+        return execute(runtime, { argv: [sdkmanager(paths), `--sdk_root=${paths.android.sdk}`, '--licenses'], env: androidEnv(runtime, paths), stdin: 'inherit' }, 'sdkmanager --licenses')
     }
     if (action === 'install') {
-        if (!runtime.dryRun && !existsSync(join(paths.android.sdk, 'licenses/android-sdk-license'))) fail('Noch keine angenommene SDK-Lizenz; zuerst „hapi-dev android sdk licenses“ (interaktiv).')
+        if (!runtime.dryRun) verifyManagedChain(paths, join(paths.android.sdk, 'licenses'))
+        if (!runtime.dryRun && !ownRegularFile(join(paths.android.sdk, 'licenses/android-sdk-license'))) fail('Noch keine angenommene SDK-Lizenz; zuerst „hapi-dev android sdk licenses“ (interaktiv).')
         const compileSdk = flagValue(flags, 'compile-sdk'), buildTools = flagValue(flags, 'build-tools')
         if (!compileSdk || !/^[1-9][0-9]?$/.test(compileSdk)) fail('--compile-sdk <Level> angeben, z. B. 35.')
         if (buildTools !== undefined && !/^[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,2}$/.test(buildTools)) fail('--build-tools wie 35.0.0 angeben.')
         const packages = [`platforms;android-${compileSdk}`, ...(buildTools ? [`build-tools;${buildTools}`] : []), ...(flags['platform-tools'] ? ['platform-tools'] : []), ...(flags.emulator ? ['emulator'] : [])]
         effects(runtime, [`lädt SDK-Pakete (${packages.join(', ')}) in ${paths.android.sdk}`, 'neue, noch nicht angenommene Lizenzen führen zum Abbruch statt zur automatischen Annahme'])
-        return execute(runtime, { argv: [sdkmanager(paths), `--sdk_root=${paths.android.sdk}`, '--install', ...packages], env: androidEnv(paths), stdin: 'ignore' }, 'sdkmanager --install')
+        return execute(runtime, { argv: [sdkmanager(paths), `--sdk_root=${paths.android.sdk}`, '--install', ...packages], env: androidEnv(runtime, paths), stdin: 'ignore' }, 'sdkmanager --install')
     }
     return fail('android sdk bootstrap|licenses|install')
 }
@@ -536,7 +639,7 @@ export function gradleTask(kind: string, module: string, variant: string): strin
 }
 
 export const ARTIFACT_LIMITS = { files: 500, bytes: 2 * 1024 * 1024 * 1024 } as const
-type CopyBudget = { files: number; bytes: number; truncated: boolean }
+type CopyBudget = { files: number; bytes: number; truncated: boolean; skipped: string[] }
 /**
  * Copies matching regular files from `from` to `to/<prefix>/<relative path>`, preserving the relative
  * structure (no flattening, so equal file names never collide), skipping links, with one total budget.
@@ -555,8 +658,9 @@ function copyTree(runtime: Runtime, paths: Layout, from: string, to: string, pre
         if (budget.files <= 0 || budget.bytes < size) { budget.truncated = true; continue }
         const target = join(to, prefix, child)
         ensureDirectory(runtime, paths, join(target, '..'))
-        copyFileSync(join(from, child), target, constants.COPYFILE_EXCL)
-        budget.files--; budget.bytes -= size
+        const bytes = copyRegularFile(join(from, child), target, budget.bytes)
+        if (bytes === null) { budget.skipped.push(child); continue }
+        budget.files--; budget.bytes -= bytes
         copied.push(join(prefix, child))
     }
     return copied
@@ -577,8 +681,10 @@ export function apkOutputDirectories(apkRoot: string, variant: string): string[]
             const child = relativePath ? `${relativePath}/${entry.name}` : entry.name
             if (entry.isDirectory()) visit(child, depth + 1)
             else if (entry.isFile() && entry.name === 'output-metadata.json') {
+                // Read by descriptor: regular, single-link, bounded.
                 try {
-                    const metadata = JSON.parse(readFileSync(join(apkRoot, child), 'utf8')) as { variantName?: unknown }
+                    const metadata = JSON.parse(readRegularFile(join(apkRoot, child), 64 * 1024) ?? 'null') as { variantName?: unknown } | null
+                    if (!metadata) continue
                     if (metadata.variantName === variant) found.push(relativePath)
                 } catch {}
             }
@@ -602,21 +708,27 @@ async function androidGradle(runtime: Runtime, paths: Layout, kind: string | und
     effects(runtime, ['führt Projekt-Buildskripte (Gradle) aus', 'lädt Gradle und Abhängigkeiten', `Cache in ${paths.android.gradleHome}`, 'Artefakte unter .hapi/.cache/artifacts/android'])
     ensureDirectory(runtime, paths, paths.android.gradleHome)
     const artifacts = artifactDirectory(runtime, paths, 'android'), log = join(artifacts, 'gradle.log')
-    const code = await execute(runtime, { argv: ['/bin/sh', gradlew, '--no-daemon', '--console=plain', task], cwd: project, env: androidEnv(paths), log }, `Gradle ${task}`)
+    const code = await execute(runtime, { argv: ['/bin/sh', gradlew, '--no-daemon', '--console=plain', task], cwd: project, env: androidEnv(runtime, paths), log }, `Gradle ${task}`)
     const moduleDirectory = join(project, module.replace(/^:/, '').split(':').join('/'))
     const Variant = variant[0].toUpperCase() + variant.slice(1)
-    const budget: CopyBudget = { ...ARTIFACT_LIMITS, truncated: false }
+    const budget: CopyBudget = { ...ARTIFACT_LIMITS, truncated: false, skipped: [] }
     let copied: string[] = []
-    if (kind === 'assemble') {
-        const apkRoot = join(moduleDirectory, 'build/outputs/apk')
-        for (const directory of runtime.dryRun ? [] : apkOutputDirectories(apkRoot, variant)) {
-            copied.push(...copyTree(runtime, paths, join(apkRoot, directory), artifacts, join('apk', directory), name => name.endsWith('.apk') || name === 'output-metadata.json', budget))
+    // Output roots are only read when the complete chain from the canonical checkout is real directories:
+    // a symlinked build/ (or any parent) could otherwise pull files from outside the project into artifacts.
+    const sourceRoot = join(moduleDirectory, kind === 'assemble' ? 'build/outputs/apk' : kind === 'unit-test' ? `build/test-results/test${Variant}UnitTest` : 'build/reports')
+    const unsafeChain = !runtime.dryRun && exists(sourceRoot) && !realDirectoryChain(project, sourceRoot)
+    if (unsafeChain) runtime.out(`✗ ${sourceRoot} oder ein Elternordner ist eine Verknüpfung; aus Sicherheitsgründen wird nichts daraus kopiert.`)
+    else if (kind === 'assemble') {
+        for (const directory of runtime.dryRun ? [] : apkOutputDirectories(sourceRoot, variant)) {
+            copied.push(...copyTree(runtime, paths, join(sourceRoot, directory), artifacts, join('apk', directory), name => name.endsWith('.apk') || name === 'output-metadata.json', budget))
         }
     }
-    if (kind === 'unit-test') copied = copyTree(runtime, paths, join(moduleDirectory, `build/test-results/test${Variant}UnitTest`), artifacts, 'test-results', name => name.endsWith('.xml'), budget)
-    if (kind === 'lint') copied = copyTree(runtime, paths, join(moduleDirectory, 'build/reports'), artifacts, 'reports', name => /^lint-results.*\.(?:xml|html|sarif)$/.test(name), budget)
+    else if (kind === 'unit-test') copied = copyTree(runtime, paths, sourceRoot, artifacts, 'test-results', name => name.endsWith('.xml'), budget)
+    else if (kind === 'lint') copied = copyTree(runtime, paths, sourceRoot, artifacts, 'reports', name => /^lint-results.*\.(?:xml|html|sarif)$/.test(name), budget)
+    if (budget.skipped.length) runtime.out(`Hinweis: ${budget.skipped.length} Datei(en) übersprungen (keine reguläre Datei, mehrere harte Links oder zu groß): ${budget.skipped.slice(0, 5).join(', ')}`)
     if (budget.truncated) runtime.out(`Hinweis: Artefaktgrenze erreicht (${ARTIFACT_LIMITS.files} Dateien); nicht alles wurde kopiert.`)
     await writeChecksums(runtime, artifacts)
+    if (unsafeChain) return 3
     if (!runtime.dryRun && code === 0 && kind === 'assemble' && !copied.some(path => path.endsWith('.apk'))) {
         runtime.out(`✗ Gradle meldete Erfolg, aber für die Variante ${variant} wurde kein APK unter ${join(moduleDirectory, 'build/outputs/apk')} gefunden. Kein Artefakt; bitte das Gradle-Log prüfen.`)
         return 3
@@ -648,7 +760,8 @@ function selectSwift(runtime: Runtime, paths: Layout, version: string): number {
 /** Swift binary of the version recorded in swift/current.json, if installed. */
 export function projectSwift(paths: Layout): string | null {
     try {
-        const version = JSON.parse(readFileSync(join(paths.swift, 'current.json'), 'utf8')).version
+        verifyManagedChain(paths, paths.swift)
+        const version = JSON.parse(readRegularFile(join(paths.swift, 'current.json'), 8192) ?? 'null')?.version
         if (typeof version !== 'string' || !/^[0-9]{1,2}\.[0-9]{1,2}(?:\.[0-9]{1,2})?$/.test(version)) return null
         const resolved = resolveSwiftBinary(join(paths.swift, version))
         return resolved.ok ? resolved.binary : null
@@ -739,6 +852,7 @@ Alles landet unter <projekt>/.hapi/.cache/toolchain bzw. .hapi/.cache/artifacts.
 
 const BOOLEAN_FLAGS = new Set(['dry-run', 'platform-tools', 'emulator', 'human-acknowledged-sdk-licenses', 'help'])
 export function parse(argv: string[]): { positional: string[]; flags: Flags } {
+    // Option names are restricted to [a-z-] (no __proto__); values are flat strings or true.
     const positional: string[] = [], flags: Flags = {}
     for (let index = 0; index < argv.length; index++) {
         const arg = argv[index]

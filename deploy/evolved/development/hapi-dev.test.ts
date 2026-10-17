@@ -1,18 +1,22 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync, existsSync } from 'node:fs'
+import { chmodSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { resolveSwiftBinary } from '../../../cli/src/evolved/development/swiftToolchain'
-import { ANDROID_CMDLINE_TOOLS, apkOutputDirectories, upgradeDryRunOutcome, gradleTask, insideProject, layout, main, managedDirectory, odooTestArgv, parse, postgresConfig, postgresEnvironment, postgresServerOptions, projectRoot, swiftPlatform, swiftUrls, UsageError, writeManagedFile, type Runtime, type Step } from './hapi-dev'
+import { acceptableSocket, ANDROID_CMDLINE_TOOLS, apkOutputDirectories, defaultRuntime, javaHome, openManagedAppend, systemTool, upgradeDryRunOutcome, gradleTask, insideProject, layout, main, managedDirectory, odooTestArgv, parse, postgresConfig, postgresEnvironment, postgresServerOptions, projectRoot, swiftPlatform, swiftUrls, UsageError, writeManagedFile, type Runtime, type Step } from './hapi-dev'
 
 const directories: string[] = []
 afterEach(() => { for (const path of directories.splice(0)) rmSync(path, { recursive: true, force: true }) })
 function temp() { const path = realpathSync(mkdtempSync(join(tmpdir(), 'hapi-dev-'))); directories.push(path); return path }
 
+const FAKE_JAVA_HOME = '/opt/hapi-test-fake-jdk'
 function fakeRuntime(options: { env?: NodeJS.ProcessEnv; tty?: boolean; context?: unknown; code?: number; log?: string } = {}) {
     const lines: string[] = [], steps: Step[] = [], requests: string[] = []
     const factory = (dryRun: boolean): Runtime => ({
         dryRun, env: options.env ?? {}, isTTY: options.tty ?? false, now: () => new Date('2026-10-17T12:00:00Z'),
+        // Controlled fake JDK: unit tests never depend on (or trust) a host Java installation.
+        javaHome: () => FAKE_JAVA_HOME,
         out: line => lines.push(line),
         run: async step => { steps.push(step); if (step.log && options.log !== undefined) writeFileSync(step.log, options.log); return options.code ?? 0 },
         fetch: (async (url: string | URL) => { requests.push(String(url)); return Response.json(options.context ?? {}) }) as typeof fetch,
@@ -139,8 +143,11 @@ describe('hapi-dev Odoo and PostgreSQL plans', () => {
         await expect(main(['--project-root', root, 'db', 'drop', 'dev'], fake.factory)).rejects.toThrow(/--confirm hapi_test_dev/)
         await expect(main(['--project-root', root, 'db', 'drop', 'dev', '--confirm', 'production'], fake.factory)).rejects.toThrow(UsageError)
         await expect(main(['--project-root', root, 'db', 'drop', 'Prod;x', '--confirm', 'hapi_test_Prod;x'], fake.factory)).rejects.toThrow(UsageError)
-        expect(await main(['--project-root', root, 'db', 'drop', 'dev', '--confirm', 'hapi_test_dev'], fake.factory)).toBe(0)
-        expect(fake.steps.at(-1)?.argv.slice(-2)).toEqual(['--if-exists', 'hapi_test_dev'])
+        // Without a running project socket nothing is dropped; the plan (dry run) names only the confirmed database.
+        await expect(main(['--project-root', root, 'db', 'drop', 'dev', '--confirm', 'hapi_test_dev'], fake.factory)).rejects.toThrow(/zuerst „hapi-dev postgres start“/)
+        expect(await main(['--project-root', root, '--dry-run', 'db', 'drop', 'dev', '--confirm', 'hapi_test_dev'], fake.factory)).toBe(0)
+        expect(fake.lines.join('\n')).toMatch(/dropdb .*--if-exists hapi_test_dev/)
+        expect(fake.steps).toEqual([])
     })
 })
 
@@ -198,7 +205,6 @@ describe('hapi-dev Android artifacts', () => {
     }
 
     test('flavored debug APKs are found via output metadata and keep their relative paths', async () => {
-        if (!existsSync('/usr/bin/java')) return
         const root = temp(), repo = project(root)
         for (const flavor of ['free', 'paid']) {
             mkdirSync(join(repo, `app/build/outputs/apk/${flavor}/debug`), { recursive: true })
@@ -215,7 +221,6 @@ describe('hapi-dev Android artifacts', () => {
     })
 
     test('conventional layout without metadata, nested equal names and a missing APK is an explicit failure', async () => {
-        if (!existsSync('/usr/bin/java')) return
         const root = temp(), repo = project(root)
         for (const name of ['one', 'two']) {
             mkdirSync(join(repo, `app/build/test-results/testDebugUnitTest/${name}`), { recursive: true })
@@ -333,5 +338,192 @@ describe('hapi-dev Odoo upgrade dry run', () => {
         const other = temp(); mkdirSync(join(other, 'repositories/erp'), { recursive: true })
         expect(await main(['--project-root', other, 'odoo', 'upgrade-dry-run', '--repository', 'repositories/erp'], failing.factory)).toBe(1)
         expect(failing.lines.join('\n')).toMatch(/✗ upgrade_code ist fehlgeschlagen/)
+    })
+})
+
+describe('hapi-dev never writes or reads through links (CodeQL triage regressions)', () => {
+    test('helper state behind a hard link or symlink is rejected; normal reruns replace own files', async () => {
+        const root = temp(), outside = temp(), paths = layout(root)
+        mkdirSync(join(paths.swift, '6.4.1'), { recursive: true })
+        const sentinel = join(outside, 'sentinel'); writeFileSync(sentinel, 'OUTSIDE')
+        linkSync(sentinel, join(paths.swift, 'current.json'))
+        const fake = fakeRuntime()
+        await expect(main(['--project-root', root, 'swift', 'install', '--version', '6.4.1'], fake.factory)).rejects.toThrow(/mehrere harte Links/)
+        expect(readFileSync(sentinel, 'utf8')).toBe('OUTSIDE')
+        rmSync(join(paths.swift, 'current.json'))
+        symlinkSync(sentinel, join(paths.swift, 'current.json'))
+        await expect(main(['--project-root', root, 'swift', 'install', '--version', '6.4.1'], fake.factory)).rejects.toThrow(/Verknüpfung/)
+        expect(readFileSync(sentinel, 'utf8')).toBe('OUTSIDE')
+        rmSync(join(paths.swift, 'current.json'))
+        // Normal rerun: an own regular file is replaced (atomic rename), no temp files remain.
+        expect(await main(['--project-root', root, 'swift', 'install', '--version', '6.4.1'], fake.factory)).toBe(0)
+        expect(await main(['--project-root', root, 'swift', 'install', '--version', '6.4.1'], fake.factory)).toBe(0)
+        expect(JSON.parse(readFileSync(join(paths.swift, 'current.json'), 'utf8')).version).toBe('6.4.1')
+        expect(readdirSync(paths.swift).filter(name => name.endsWith('.tmp'))).toEqual([])
+        expect(fake.steps).toEqual([])
+    })
+
+    test('append writers check the opened inode before writing', () => {
+        const root = temp(), outside = temp()
+        const sentinel = join(outside, 'sentinel'); writeFileSync(sentinel, 'OUTSIDE')
+        linkSync(sentinel, join(root, 'gradle.log'))
+        expect(() => openManagedAppend(join(root, 'gradle.log'), true)).toThrow(/mehrere harte Links/)
+        symlinkSync(sentinel, join(root, 'link.log'))
+        expect(() => openManagedAppend(join(root, 'link.log'), true)).toThrow()
+        expect(readFileSync(sentinel, 'utf8')).toBe('OUTSIDE')
+    })
+
+    test('a symlinked parent of the build output is never collected; hard-linked report files are skipped', async () => {
+        const root = temp(), outside = temp()
+        mkdirSync(join(root, 'repo/app'), { recursive: true })
+        writeFileSync(join(root, 'repo/gradlew'), '# fixture, never executed\n')
+        mkdirSync(join(outside, 'test-results/testDebugUnitTest'), { recursive: true })
+        writeFileSync(join(outside, 'test-results/testDebugUnitTest/private.xml'), 'OUTSIDE DATA')
+        symlinkSync(outside, join(root, 'repo/app/build'))
+        const fake = fakeRuntime()
+        expect(await main(['--project-root', root, 'android', 'gradle', 'unit-test', '--project', 'repo'], fake.factory)).toBe(3)
+        expect(fake.lines.join('\n')).toMatch(/Verknüpfung; aus Sicherheitsgründen wird nichts daraus kopiert/)
+        const runs = join(layout(root).artifacts, 'android')
+        expect(existsSync(join(runs, readdirSync(runs)[0], 'test-results'))).toBe(false)
+
+        const other = temp(), secret = join(temp(), 'secret.xml')
+        writeFileSync(secret, 'OUTSIDE HARDLINK')
+        const results = join(other, 'repo/app/build/test-results/testDebugUnitTest/nested')
+        mkdirSync(results, { recursive: true })
+        writeFileSync(join(other, 'repo/gradlew'), '# fixture\n')
+        writeFileSync(join(results, 'TEST-ok.xml'), '<testsuite/>')
+        linkSync(secret, join(results, 'TEST-linked.xml'))
+        const second = fakeRuntime()
+        expect(await main(['--project-root', other, 'android', 'gradle', 'unit-test', '--project', 'repo'], second.factory)).toBe(0)
+        const base = join(layout(other).artifacts, 'android'), run = join(base, readdirSync(base)[0])
+        expect(readFileSync(join(run, 'test-results/nested/TEST-ok.xml'), 'utf8')).toBe('<testsuite/>')
+        expect(existsSync(join(run, 'test-results/nested/TEST-linked.xml'))).toBe(false)
+        expect(second.lines.join('\n')).toMatch(/1 Datei\(en\) übersprungen/)
+        expect(readFileSync(join(run, 'SHA256SUMS'), 'utf8')).not.toContain('TEST-linked.xml')
+    })
+
+    test('hard-linked output metadata does not select an APK directory', () => {
+        const root = temp(), apk = join(root, 'apk'), outside = join(temp(), 'meta.json')
+        mkdirSync(join(apk, 'odd/place'), { recursive: true })
+        writeFileSync(outside, JSON.stringify({ variantName: 'freeDebug' }))
+        linkSync(outside, join(apk, 'odd/place/output-metadata.json'))
+        expect(apkOutputDirectories(apk, 'freeDebug')).toEqual([])
+    })
+})
+
+describe('hapi-dev PostgreSQL cluster chain and tool discovery seams', () => {
+    test('a symlinked postgresql/17 parent is rejected for start/stop/status/init and db commands; nothing is run or removed', async () => {
+        if (!existsSync('/usr/lib/postgresql')) return
+        const root = temp(), outside = temp(), paths = layout(root)
+        mkdirSync(join(outside, 'data'), { recursive: true })
+        writeFileSync(join(outside, 'data/PG_VERSION'), '16\n')
+        writeFileSync(join(outside, 'data/postgresql.conf'), postgresConfig(paths))
+        mkdirSync(paths.pg.base, { recursive: true })
+        symlinkSync(outside, join(paths.pg.base, '17'))
+        const fake = fakeRuntime()
+        for (const args of [['postgres', 'start'], ['postgres', 'stop'], ['postgres', 'status'], ['postgres', 'init'], ['db', 'list']]) {
+            await expect(main(['--project-root', root, ...args], fake.factory)).rejects.toThrow(/Verknüpfung oder kein Verzeichnis/)
+        }
+        expect(fake.steps).toEqual([])
+        expect(readdirSync(join(outside, 'data')).sort()).toEqual(['PG_VERSION', 'postgresql.conf'])
+        expect(lstatSync(join(paths.pg.base, '17')).isSymbolicLink()).toBe(true)
+    })
+
+    test('a valid existing cluster in real directories still starts with the forced socket-only options', async () => {
+        if (!existsSync('/usr/lib/postgresql')) return
+        const root = temp(), paths = layout(root)
+        mkdirSync(paths.pg.data, { recursive: true })
+        writeFileSync(join(paths.pg.data, 'PG_VERSION'), '17\n')
+        writeFileSync(join(paths.pg.data, 'postgresql.conf'), postgresConfig(paths))
+        const fake = fakeRuntime()
+        expect(await main(['--project-root', root, 'postgres', 'start'], fake.factory)).toBe(0)
+        expect(fake.steps[0].argv).toContain(postgresServerOptions(paths))
+    })
+
+    test('hard-linked PG_VERSION/config or SDK licence files do not count as local state', async () => {
+        const root = temp(), outside = temp(), paths = layout(root)
+        mkdirSync(paths.pg.data, { recursive: true })
+        writeFileSync(join(outside, 'conf'), postgresConfig(paths))
+        linkSync(join(outside, 'conf'), join(paths.pg.data, 'postgresql.conf'))
+        writeFileSync(join(paths.pg.data, 'PG_VERSION'), '17\n')
+        if (existsSync('/usr/lib/postgresql')) await expect(main(['--project-root', root, 'postgres', 'start'], fakeRuntime().factory)).rejects.toThrow(/kein vollständig/)
+        mkdirSync(join(paths.android.sdk, 'licenses'), { recursive: true })
+        writeFileSync(join(outside, 'licence'), 'hash')
+        linkSync(join(outside, 'licence'), join(paths.android.sdk, 'licenses/android-sdk-license'))
+        await expect(main(['--project-root', root, '--human-acknowledged-sdk-licenses', 'android', 'sdk', 'install', '--compile-sdk', '35'], fakeRuntime().factory)).rejects.toThrow(/Noch keine angenommene SDK-Lizenz/)
+    })
+
+    test('production keeps the fixed trusted JDK discovery; systemTool rejects missing, non-executable and group/world-writable tools', () => {
+        expect(defaultRuntime(true).javaHome).toBe(javaHome)
+        const directory = temp()
+        const tool = (name: string, mode: number) => { const path = join(directory, name); writeFileSync(path, '#!/bin/sh\n'); chmodSync(path, mode); return path }
+        expect(systemTool([tool('ok', 0o755)])).toBe(join(directory, 'ok'))
+        expect(systemTool([tool('plain', 0o644)])).toBeNull()
+        expect(systemTool([tool('group', 0o775)])).toBeNull()
+        expect(systemTool([tool('world', 0o757)])).toBeNull()
+        expect(systemTool([join(directory, 'missing')])).toBeNull()
+        symlinkSync(join(directory, 'group'), join(directory, 'link-to-group'))
+        expect(systemTool([join(directory, 'link-to-group')])).toBeNull()
+        expect(systemTool([join(directory, 'missing'), join(directory, 'ok')])).toBe(join(directory, 'ok'))
+    })
+
+    test('Android helpers use the injected JDK, not the host Java', async () => {
+        const root = temp()
+        mkdirSync(join(root, 'repo'), { recursive: true })
+        writeFileSync(join(root, 'repo/gradlew'), '# fixture\n')
+        const fake = fakeRuntime()
+        expect(await main(['--project-root', root, 'android', 'gradle', 'unit-test', '--project', 'repo'], fake.factory)).toBe(0)
+        expect(fake.steps[0].env?.JAVA_HOME).toBe(FAKE_JAVA_HOME)
+    })
+})
+
+describe('hapi-dev PostgreSQL socket leaf', () => {
+    function project() {
+        const root = temp(), paths = layout(root)
+        mkdirSync(join(root, 'repo'), { recursive: true })
+        mkdirSync(paths.pg.run, { recursive: true })
+        return { root, paths, socket: join(paths.pg.run, '.s.PGSQL.5432') }
+    }
+    const odooTest = (root: string) => ['--project-root', root, 'odoo', 'test', '--major', '20', '--repository', 'repo', '--modules', 'fixture']
+
+    test('a symlink or regular file at the socket leaf is rejected before Odoo or db clients run', async () => {
+        const outside = join(temp(), 'sentinel'); writeFileSync(outside, 'SYNTHETIC DATA')
+        const linked = project(); symlinkSync(outside, linked.socket)
+        const fake = fakeRuntime()
+        await expect(main(odooTest(linked.root), fake.factory)).rejects.toThrow(/kein Unix-Socket dieses Benutzers/)
+        const plain = project(); writeFileSync(plain.socket, '')
+        await expect(main(odooTest(plain.root), fake.factory)).rejects.toThrow(/kein Unix-Socket/)
+        if (existsSync('/usr/lib/postgresql')) await expect(main(['--project-root', linked.root, 'db', 'list'], fake.factory)).rejects.toThrow(/kein Unix-Socket/)
+        expect(fake.steps).toEqual([])
+        expect(readFileSync(outside, 'utf8')).toBe('SYNTHETIC DATA')
+        expect(lstatSync(linked.socket).isSymbolicLink()).toBe(true)
+    })
+
+    test('a missing socket keeps the start guidance', async () => {
+        const missing = project()
+        await expect(main(odooTest(missing.root), fakeRuntime().factory)).rejects.toThrow(/zuerst „hapi-dev postgres start“/)
+    })
+
+    test('only an own, non-link Unix socket is accepted (also for the private /tmp fallback directory)', () => {
+        const stat = (socket: boolean, link: boolean, uid: number) => ({ isSocket: () => socket, isSymbolicLink: () => link, uid })
+        expect(acceptableSocket(stat(true, false, 1001), 1001)).toBe('ok')
+        expect(acceptableSocket(stat(true, false, 1002), 1001)).toBe('unsafe')
+        expect(acceptableSocket(stat(false, true, 1001), 1001)).toBe('unsafe')
+        expect(acceptableSocket(stat(false, false, 1001), 1001)).toBe('unsafe')
+        expect(acceptableSocket(null, 1001)).toBe('missing')
+        expect(layout('/managed-workspaces/6d5f2b1e-1f7c-4f63-9d7b-4f1f7d0f8e11').pg.run).toMatch(/^\/tmp\/hapi-pg-[a-f0-9]{16}$/)
+    })
+
+    test('a real listening Unix socket passes and Odoo is scheduled with it as db_host', async () => {
+        const { root, paths, socket } = project()
+        const server = createServer()
+        const listening = await new Promise<boolean>(resolve => { server.once('error', () => resolve(false)); server.listen(socket, () => resolve(true)) })
+        // Some sandboxes forbid binding Unix sockets; the pure check above still covers the rule there.
+        if (!listening) return
+        try {
+            const fake = fakeRuntime()
+            expect(await main(odooTest(root), fake.factory)).toBe(0)
+            expect(fake.steps[0].argv).toContain(`--db_host=${paths.pg.run}`)
+        } finally { await new Promise(resolve => server.close(resolve)) }
     })
 })
