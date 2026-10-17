@@ -21,6 +21,8 @@ export function socketUrl(endpoint: string): string {
 export type GatewayHooks = {
     before(request: Envelope, connectionId: string): Promise<Envelope>;
     after(request: Envelope, response: Envelope, connectionId: string): Promise<void | Envelope[]>;
+    /** Observe only native settings before the lifecycle reply barrier; forwarding order is unchanged. */
+    settingsNotification?(params: unknown, connectionId: string): void;
     disconnected?(connectionId: string): void;
     control(method: string, params: unknown): Promise<unknown>;
 };
@@ -94,8 +96,14 @@ export async function startCodexGateway(options: {
             }).catch(() => downstream.close(1011, 'Codex connection failed')).finally(() => { processing--; drained(); });
         });
         upstream.on('message', raw => {
+            let message: Envelope;
+            try {
+                message = EnvelopeSchema.parse(JSON.parse(raw.toString()));
+                if (message.id === undefined && message.method === 'thread/settings/updated') {
+                    options.hooks.settingsNotification?.(message.params, connectionId);
+                }
+            } catch { downstream.close(1011, 'Invalid Codex response'); return; }
             outgoing = outgoing.then(async () => {
-                const message = EnvelopeSchema.parse(JSON.parse(raw.toString()));
                 const request = message.method === undefined && message.id !== undefined ? pending.get(message.id) : undefined;
                 let replay: void | Envelope[] = undefined;
                 if (request) {

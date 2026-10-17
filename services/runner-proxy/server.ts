@@ -8,6 +8,7 @@ import { SOCKET_MAX_HTTP_BUFFER_SIZE } from '../../hub/src/socket/socketLimits'
 import { boundedGitResponse, GIT_TIMEOUT_MS, gitPath } from '../../hub/src/evolved/githubProtocol'
 import { parseRunnerGitRequest, readRunnerGitBody } from './gitRequest'
 import { readCredentialResponse } from '../../shared/src/credentialTransport'
+import { fetchPublicGit, streamPublicGit, type PublicGitFetcher } from './publicGit'
 
 type Grant = { token: string; expiresAt: number; projectId: string }
 const MAX_PENDING_BYTES = 8 * 1024 * 1024
@@ -53,14 +54,16 @@ export function allowedProxyPath(path: string, method = 'GET', search = ''): boo
         || /^\/api\/evolved\/github-pr\/(?:features|link)$/.test(path)
         || /^\/api\/evolved\/(memory\/search|projects\/[^/]+\/(memory(?:\/.*)?|resources(?:\/.*)?))$/.test(path)
 }
-export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; projectId: string; host?: string; port?: number; credentialRunnerLookup?: () => Promise<readonly string[]> }) {
+export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; projectId: string; host?: string; port?: number; credentialRunnerLookup?: () => Promise<readonly string[]>; publicGitFetcher?: PublicGitFetcher }) {
     const hub = new URL(config.hubUrl)
     if (hub.username || hub.password || !['http:', 'https:'].includes(hub.protocol)) throw new Error('Invalid Hub URL')
     let grant: Grant | null = null, renewing: Promise<Grant> | null = null
     const gitTransfers = new Set<AbortController>()
-    // The runner joins only this proxy's private project network, never the shared
-    // backend network. Docker's fixed `runner` alias therefore identifies our own
-    // project container. No request/header/environment variable selects this host.
+    const publicGitTransfers = new Set<AbortController>(), privateGitTransfers = new Set<AbortController>()
+    // The runner and this proxy share only their private project network. The runner's
+    // Internet network is separate from this proxy's shared backend network. Docker's
+    // network-scoped `runner` alias therefore identifies our own project container.
+    // No request/header/environment variable selects this host.
     // The function override is exclusively an in-process test dependency.
     const lookupCredentialRunner = config.credentialRunnerLookup ?? (async () => (await lookup('runner', { all: true, verbatim: true })).map(peer => peer.address))
     let credentialPeerLookup: Promise<readonly string[]> | null = null
@@ -198,18 +201,42 @@ export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; p
             if (url.pathname.startsWith('/socket.io/')) return handler.fetch(request, server)
             if (request.headers.has('origin')) return new Response('Browser access denied', { status: 403 })
             if (url.pathname.startsWith('/evolved-git/')) {
-                if (gitTransfers.size >= 2) return new Response('Git transfer limit reached', { status: 429 })
                 const controller = new AbortController()
                 const cancelled = () => controller.abort()
                 const timeout = setTimeout(cancelled, GIT_TIMEOUT_MS)
                 request.signal.addEventListener('abort', cancelled, { once: true })
                 if (request.signal.aborted) cancelled()
                 gitTransfers.add(controller)
-                const finish = () => { clearTimeout(timeout); request.signal.removeEventListener('abort', cancelled); gitTransfers.delete(controller) }
+                const finish = () => {
+                    clearTimeout(timeout); request.signal.removeEventListener('abort', cancelled)
+                    gitTransfers.delete(controller); publicGitTransfers.delete(controller); privateGitTransfers.delete(controller)
+                }
                 try {
                     const parsed = parseRunnerGitRequest(request, '/evolved-git/github.com/'), { git } = parsed
-                    const access = await current()
+                    const pool = git.service === 'git-upload-pack' ? publicGitTransfers : privateGitTransfers
+                    if (pool.size >= (git.service === 'git-upload-pack' ? 8 : 2)) {
+                        finish(); return new Response('Git transfer limit reached', { status: 429 })
+                    }
+                    pool.add(controller)
                     const body = await readRunnerGitBody(new Request(request, { signal: controller.signal }), parsed)
+                    let publicResponse: Response | null = null
+                    try { publicResponse = await fetchPublicGit(git, body, controller.signal, config.publicGitFetcher) }
+                    // Public egress can fail independently of the grant-checked
+                    // private broker. Preserve that path unless the client left.
+                    catch { controller.signal.throwIfAborted() }
+                    if (publicResponse) {
+                        clearTimeout(timeout)
+                        server.timeout(request, 0) // The stream owns its inactivity deadline.
+                        return streamPublicGit(publicResponse, controller, finish)
+                    }
+                    publicGitTransfers.delete(controller)
+                    if (!privateGitTransfers.has(controller)) {
+                        if (privateGitTransfers.size >= 2) {
+                            finish(); return new Response('Git transfer limit reached', { status: 429 })
+                        }
+                        privateGitTransfers.add(controller)
+                    }
+                    const access = await current()
                     const headers = new Headers({ authorization: `Bearer ${access.token}` })
                     if (!git.advertisement) headers.set('content-type', `application/x-${git.service}-request`)
                     if (git.protocol) headers.set('git-protocol', git.protocol)

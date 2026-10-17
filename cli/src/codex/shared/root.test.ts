@@ -120,6 +120,43 @@ async function completePlan(f: Awaited<ReturnType<typeof fixture>>, status = 'co
 }
 
 describe('shared startup permissions', () => {
+    it('keeps empty managed full-access settings as a no-op', async () => {
+        const f = await fixture();
+        vi.stubEnv('HAPI_EVOLVED_PROXY', '1'); vi.stubEnv('EVOLVED_RUNNER_PROFILE', 'extended');
+        f.root.acceptSettings({ model: 'mock', sandboxPolicy: { type: 'dangerFullAccess' } });
+        const request = vi.spyOn(f.root.client, 'request');
+        await f.root.applySettings({});
+        expect(request).not.toHaveBeenCalled();
+    });
+    it.each(['readOnly', 'workspaceWrite'] as const)('enables Internet before activation while preserving %s filesystem restrictions', async type => {
+        const f = await fixture();
+        vi.stubEnv('HAPI_EVOLVED_PROXY', '1'); vi.stubEnv('EVOLVED_RUNNER_PROFILE', type === 'readOnly' ? 'restricted' : 'workspace');
+        const sandboxPolicy = type === 'readOnly' ? { type, networkAccess: false }
+            : { type, networkAccess: false, writableRoots: ['/project'], excludeTmpdirEnvVar: true, excludeSlashTmp: true };
+        f.native.settings = { ...f.native.settings, sandboxPolicy, approvalPolicy: type === 'readOnly' ? 'never' : 'on-request' };
+        f.root.acceptSettings(f.native.settings);
+        const request = vi.spyOn(f.root.client, 'request');
+        await f.root.activate();
+        expect(request).toHaveBeenCalledWith('thread/settings/update', { threadId: 'thread', sandboxPolicy: { ...sandboxPolicy, networkAccess: true } });
+        expect(f.native.settings.approvalPolicy).toBe(type === 'readOnly' ? 'never' : 'on-request');
+        expect(f.rpc.size).toBeGreaterThan(0);
+        request.mockClear();
+        await f.root.initialSettings({});
+        expect(request).not.toHaveBeenCalledWith('thread/settings/update', expect.anything());
+    });
+    it('does not expose controls when managed native network configuration fails', async () => {
+        const f = await fixture();
+        vi.stubEnv('HAPI_EVOLVED_PROXY', '1'); vi.stubEnv('EVOLVED_RUNNER_PROFILE', 'restricted');
+        f.root.acceptSettings({ model: 'mock', sandboxPolicy: { type: 'readOnly', networkAccess: false } });
+        const initialControls = [...f.rpc.keys()];
+        const original = f.root.client.request.bind(f.root.client);
+        vi.spyOn(f.root.client, 'request').mockImplementation(async (method, params) => {
+            if (method === 'thread/settings/update') throw new Error('Synthetic policy failure');
+            return original(method, params);
+        });
+        await expect(f.root.activate()).rejects.toThrow('Synthetic policy failure');
+        expect([...f.rpc.keys()]).toEqual(initialControls);
+    });
     it('retains custom developer instructions and adds platform context once for new/resumed roots', async () => {
         vi.stubEnv('HAPI_EVOLVED_CAPABILITY_FILE', '/private/test-capability');
         const { root } = await fixture();

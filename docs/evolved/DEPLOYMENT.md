@@ -283,13 +283,30 @@ Claude Code 2.1.285 und Codex 0.157.0. Der Betreiber meldet die gewünschten nat
 Runner unter der **unprivilegierten UID/GID** an; deren eigene Provider-Anmeldung liegt im privaten
 Runner-Home und ist für diesen Agenten lesbar. Dieses Login ist getrennt vom Evolved-Vault:
 Vault-Master, Datenbankkennwörter und Hub-Lease sind dem Agentcontainer nicht zugänglich.
-Bei OAuth-Login können weitere exakt benannte Providerhosts in `EVOLVED_EGRESS_HOSTS` nötig sein;
-die Standardliste erlaubt ausschließlich die eingetragenen Claude-/OpenAI-HTTPS-Hosts.
 Keine echten Provideranmeldungen oder kostenpflichtigen Agentläufe sind Teil der automatischen Abnahme.
 
-Der Agentcontainer besitzt ausschließlich sein internes Projektnetz. Der Proxy hält die widerrufbare
-Hub-Lease und erneuert kurzlebige Capabilities. Ein separater HTTPS-CONNECT-Proxy erlaubt nur
-festgelegte öffentliche Modellhosts; private Adressen und DNS-Rebinding werden abgewiesen.
+Der Agentcontainer ist mit seinem internen Projektnetz und dem eigenen Docker-Ausgangsnetz
+`provider-egress` verbunden. Alle Profile (`restricted`, `workspace`, `extended`) haben damit
+normalen ausgehenden Netzwerkzugriff, einschließlich HTTP(S), DNS, SSH, TCP und UDP. Odoo-APIs,
+GitHub, Paketquellen und Dokumentationsseiten benötigen keine zusätzliche Hostfreigabe.
+Es werden keine Proxy-Umgebungsvariablen erzwungen; auch Programme ohne Proxy-Unterstützung
+können normale Verbindungen aufbauen. Die tatsächliche Erreichbarkeit hängt wie bei jedem
+Docker-Container von Routing und Firewall des Betreibers ab. Das Ausgangsnetz ist keine
+Sperre gegen private, vom Host routbare Zielnetze.
+
+Der Runner tritt dem gemeinsamen Backend-Netz nicht bei; Hub-Lease und Vault-Master werden
+weiterhin nicht in den Agentcontainer eingebunden. Der Runner-Proxy hält die widerrufbare
+Hub-Lease und erneuert kurzlebige Capabilities. Datei-, Repository- und Credential-Berechtigungen
+bleiben unabhängig vom Internetzugriff.
+
+Der separate Egress-Proxy bleibt für gebrokerte öffentliche Git-Lesevorgänge und bestehende
+Proxy-Clients verfügbar. Er erlaubt standardmäßig HTTPS-CONNECT zu
+öffentlichen Zielen auf Port 443 und prüft private/reservierte Adressen sowie DNS-Rebinding.
+`EVOLVED_EGRESS_HOSTS` in `runner.env` für diesen Standardbetrieb **weglassen**. Eine bewusst
+gesetzte kommaseparierte Hostliste beschränkt ausschließlich diesen Proxy, nicht die direkten
+Verbindungen des Runners. Nach dem Update Runner und Egress-Dienst mit der aktualisierten
+Compose-Datei neu erstellen, damit bestehende Container die neue Netzanbindung erhalten.
+
 Root-PID 1 startet alle Agentprozesse unter der unprivilegierten UID und prüft laufend die aktuelle
 Freigabe. Widerruf, Profiländerung, Ablauf oder Nichterreichbarkeit beendet den gesamten Container
 nach dem nächsten Prüfzyklus (eine Sekunde plus höchstens zwei Sekunden Anfrage-Timeout).
@@ -303,6 +320,11 @@ bevor die neue Version dasselbe Home verwendet: Ein alter Prozess ohne diesen Ke
 durch den neuen Lock nicht nachträglich ausgeschlossen. Ein Runner-Home nie parallel zwischen
 alten und neuen Containern teilen. Der neue Start folgt keinen Symlinks und verweigert unklare
 Metadaten, statt private Dateien pauschal zu löschen.
+
+Öffentliche GitHub-Repositorys können mit ihrer normalen HTTPS-URL ohne GitHub-Verbindung
+oder Projektregistrierung geklont werden; HAPI versucht den Lesezugriff zuerst anonym.
+Private Repositorys und GitHub-Pushes verwenden weiterhin die expliziten Broker-Freigaben
+des Projekts. Internetzugriff gibt weder gespeicherte Tokens noch private Repositorys frei.
 
 MCP-Werkzeuge für Repositorys, Codegraph, Memory und Ressourcen werden in Claude/Codex automatisch ergänzt.
 Im Runner ist auch `bun /app/cli/src/index.ts evolved --help` verfügbar.
@@ -366,7 +388,8 @@ bei Bedarf verwendet das Skript `sudo -n docker`.
 
 Die Abnahme prüft aktive Hubregistrierung, unprivilegierte Runnerprozesse ohne Linux-Capabilities,
 einen tatsächlich schreibgeschützten Workspace, getrennte Netze und Mounts ohne Docker-Socket
-oder Lease im Runner sowie gesperrte private Egressziele und Verwaltungs-API. Vor der ersten
+oder Lease im Runner sowie abgewiesene private Ziele am separaten CONNECT-Proxy und eine
+gesperrte Verwaltungs-API. Dies ist keine Prüfung einer LAN-Sperre für direkte Runnerverbindungen. Vor der ersten
 aktiven Runnerprobe muss die Container-Generation mindestens fünf Sekunden passiv beobachtet
 stabil laufen; so kann die Probe keinen PID-Wiederverwendungsfehler beim Start verdecken. Der Bericht enthält
 nur IDs und Prüfergebnisse. Providerlogin, Build, Stop und Widerruf bleiben separate Betreiberschritte;

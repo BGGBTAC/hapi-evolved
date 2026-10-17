@@ -32,14 +32,11 @@ services:
       EVOLVED_RUNNER_PROFILE: ${EVOLVED_RUNNER_PROFILE:?Current project profile required}
       EVOLVED_RUNNER_WORKSPACE_DEVICE: ${EVOLVED_RUNNER_WORKSPACE_DEVICE:-}
       EVOLVED_RUNNER_WORKSPACE_INODE: ${EVOLVED_RUNNER_WORKSPACE_INODE:-}
-      HTTPS_PROXY: http://egress:3128
-      HTTP_PROXY: http://egress:3128
-      NO_PROXY: runner-proxy,localhost,127.0.0.1
     volumes:
       - ${EVOLVED_RUNNER_HOME:?Private runner home required}:/runner
       # Later host mounts must not propagate past the supervisor's startup check.
       - ${EVOLVED_RUNNER_WORKSPACE:?Only this project's workspace}:${EVOLVED_WORKSPACE_PREFIX:-/workspaces}/${EVOLVED_PROJECT_DIRECTORY}:${EVOLVED_WORKSPACE_MODE:-ro},rprivate
-    networks: [project]
+    networks: [project, provider-egress]
     mem_limit: 4g
     pids_limit: 512
     depends_on: [runner-proxy, egress]
@@ -62,7 +59,8 @@ services:
     command: [bun, services/runner-proxy/egress.ts]
     environment:
       EVOLVED_EGRESS_HOST: 0.0.0.0
-      EVOLVED_EGRESS_HOSTS: ${EVOLVED_EGRESS_HOSTS:-api.anthropic.com,claude.ai,claude.com,console.anthropic.com,platform.claude.com,api.openai.com,chatgpt.com,auth.openai.com}
+      # Empty means all public Internet destinations, for every project profile.
+      EVOLVED_EGRESS_HOSTS: ${EVOLVED_EGRESS_HOSTS:-}
     networks: [project, provider-egress]
     mem_limit: 128m
 networks:

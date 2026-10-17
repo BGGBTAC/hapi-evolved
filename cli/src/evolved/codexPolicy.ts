@@ -1,5 +1,18 @@
 import { realpathSync } from 'node:fs';
 import { isAbsolute, relative } from 'node:path';
+import type { SandboxPolicy } from '../codex/appServerTypes';
+
+/** Network access is independent of the supervised project's filesystem profile. */
+export function evolvedCodexInternetEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+    return env.HAPI_EVOLVED_PROXY === '1' && ['restricted', 'workspace', 'extended'].includes(env.EVOLVED_RUNNER_PROFILE ?? '');
+}
+export function evolvedCodexNetworkConfig(env: NodeJS.ProcessEnv = process.env): Record<string, boolean> {
+    return evolvedCodexInternetEnabled(env) ? { 'sandbox_workspace_write.network_access': true } : {};
+}
+export function withEvolvedCodexNetworkAccess<T extends SandboxPolicy>(policy: T, env: NodeJS.ProcessEnv = process.env): T {
+    return evolvedCodexInternetEnabled(env) && (policy.type === 'readOnly' || policy.type === 'workspaceWrite')
+        ? { ...policy, networkAccess: true } : policy;
+}
 /** The supervisor verifies this immutable lease profile before spawning the Runner. */
 function profile(env: NodeJS.ProcessEnv): string | undefined {
     if (!env.EVOLVED_PROJECT_ID && env.HAPI_EVOLVED_PROXY !== '1') return undefined;
@@ -55,7 +68,9 @@ export function assertEvolvedCodexNativePolicy(params: Record<string, unknown>, 
         if (roots === undefined) continue;
         if (value === 'restricted' || !Array.isArray(roots) || roots.some(root => !withinRoot(root, env))) denied();
     }
-    for (const network of [policy?.networkAccess, config['sandbox_workspace_write.network_access']]) if (network !== undefined && network !== false) denied();
+    for (const network of [policy?.networkAccess, config['sandbox_workspace_write.network_access']]) {
+        if (network !== undefined && (typeof network !== 'boolean' || (network && !evolvedCodexInternetEnabled(env)))) denied();
+    }
     for (const key of ['excludeTmpdirEnvVar', 'excludeSlashTmp']) if (policy?.[key] !== undefined && typeof policy[key] !== 'boolean') denied();
     for (const key of ['sandbox_workspace_write.exclude_tmpdir_env_var', 'sandbox_workspace_write.exclude_slash_tmp']) if (config[key] !== undefined && typeof config[key] !== 'boolean') denied();
     if (policy?.access !== undefined) {

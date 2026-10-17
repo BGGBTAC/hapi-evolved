@@ -70,8 +70,8 @@ export function inspectTestContainer(container, plan, expectedService, requireRu
         'Testcontainer veröffentlicht Ports oder zusätzliche Geräte.')
     const expectedUser = expectedService === 'runner' ? '0:0' : `${plan.config.EVOLVED_UID}:${plan.config.EVOLVED_GID}`
     requireCheck(container.Config.User === expectedUser, 'Unerwartete Container-UID.')
-    const expectedNetworks = [ `${plan.stack}_project`, ...(expectedService === 'runner-proxy' ? [plan.backend]
-        : expectedService === 'egress' ? [`${plan.stack}_provider-egress`] : []) ].sort()
+    const expectedNetworks = [ `${plan.stack}_project`, expectedService === 'runner-proxy'
+        ? plan.backend : `${plan.stack}_provider-egress` ].sort()
     requireCheck(JSON.stringify(Object.keys(container.NetworkSettings?.Networks ?? {}).sort()) === JSON.stringify(expectedNetworks), 'Unerwartete Container-Netzwerke.')
     const expectedMounts = expectedService === 'runner'
         ? [{ source: plan.config.EVOLVED_RUNNER_HOME, target: '/runner', rw: true }, { source: plan.config.EVOLVED_RUNNER_WORKSPACE, target: plan.root, rw: false }]
@@ -122,12 +122,13 @@ try {
         socket.on('data',chunk=>{result+=chunk.toString();if(result.includes('\\r\\n')){socket.destroy(); /^HTTP\\/1\\.1 403 /.test(result)?resolve():reject(Error('CONNECT was not denied'))}});
         socket.on('error',reject);socket.on('close',()=>{if(!result.includes('\\r\\n'))reject(Error('Incomplete CONNECT response'))});
     }) }
-    const deniedTargets=['10.0.0.1:443','169.254.169.254:443','100.64.0.1:443','unlisted.hapi-validation.invalid:443'];
+    // These checks cover the optional CONNECT proxy, not the runner's direct network.
+    const deniedTargets=['10.0.0.1:443','169.254.169.254:443','100.64.0.1:443'];
     for (const target of deniedTargets) await denied(target);
     const browser=await fetch('http://runner-proxy:3010/health',{headers:{origin:'https://invalid.test'},signal:AbortSignal.timeout(3000)});
     const admin=await fetch('http://runner-proxy:3010/api/evolved/me',{signal:AbortSignal.timeout(3000)});
     check(browser.status===403&&admin.status===403,'Proxy browser/admin boundary failed');
-    console.log(JSON.stringify({machineId,registered:true,uid,gid,workspaceReadOnly:true,runnerCapabilitiesEmpty:true,operatorCredentialsAbsent:true,testedEgressTargetsDenied:deniedTargets,proxyAdminDenied:true}));
+    console.log(JSON.stringify({machineId,registered:true,uid,gid,workspaceReadOnly:true,runnerCapabilitiesEmpty:true,operatorCredentialsAbsent:true,testedProxyTargetsDenied:deniedTargets,proxyAdminDenied:true}));
 } catch { console.error('Isolierte Runnerprüfung fehlgeschlagen; nur Teststackzustand untersuchen.'); process.exit(1) }
 `
 }

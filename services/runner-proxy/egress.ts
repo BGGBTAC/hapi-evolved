@@ -20,11 +20,12 @@ export function publicAddress(address: string): boolean {
 export function connectTarget(target: string, allowedHosts: Set<string>): string | null {
     const match = /^([a-z0-9.-]+):443$/i.exec(target)
     const host = match?.[1].toLowerCase()
-    // GitHub belongs to the grant broker, even if accidentally allowlisted here.
-    return host && host !== 'github.com' && !host.endsWith('.github.com') && !isIP(host) && allowedHosts.has(host) ? host : null
+    // This proxy serves internal Git requests and legacy HTTPS clients. Runners
+    // have their own direct Internet connection; this is not their network policy.
+    return host && !isIP(host) && (!allowedHosts.size || allowedHosts.has(host)) ? host : null
 }
 export function createModelEgress(hosts: string[], port = 3128, host = '127.0.0.1') {
-    const allowed = new Set(hosts.map(value => value.trim().toLowerCase()))
+    const allowed = new Set(hosts.map(value => value.trim().toLowerCase()).filter(Boolean))
     let count = 0
     const server = createServer((_req, res) => { res.writeHead(405); res.end('HTTPS CONNECT only') })
     server.on('connect', async (request, client, head) => {
@@ -58,6 +59,6 @@ export function createModelEgress(hosts: string[], port = 3128, host = '127.0.0.
     return server
 }
 if (import.meta.main) {
-    const hosts = (process.env.EVOLVED_EGRESS_HOSTS ?? 'api.anthropic.com,claude.ai,claude.com,console.anthropic.com,platform.claude.com,api.openai.com,chatgpt.com,auth.openai.com').split(',')
+    const hosts = (process.env.EVOLVED_EGRESS_HOSTS ?? '').split(',')
     createModelEgress(hosts, Number(process.env.EVOLVED_EGRESS_PORT ?? 3128), process.env.EVOLVED_EGRESS_HOST ?? '127.0.0.1')
 }

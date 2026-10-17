@@ -189,7 +189,9 @@ stoppen und neu starten; bloßes Fortsetzen oder `/new` innerhalb einer bestehen
 Laufzeit übernimmt neue Variablen nicht. Agenten entdecken die freigegebenen
 Variablennamen über HAPI und können den Wert im Prozess für API-Aufrufe verwenden.
 Werte sollen weder im Chat noch in Logs, Dateien, Gedächtnis oder Toolausgaben
-erscheinen. Die Freigabe schafft keine zusätzlichen Netzwerkrechte.
+erscheinen. Dienste wie eine öffentliche Odoo-API können in allen Projektprofilen
+über den normalen Internetzugang angesprochen werden; eine zusätzliche Hostfreigabe
+ist nicht nötig. Die Freigabe eines Werts ersetzt keine Zugriffsrechte beim jeweiligen Dienst.
 
 Das ist eine echte Vertrauensentscheidung: Ein Agent mit Prozesszugriff kann
 einen freigegebenen Wert lesen und weitergeben. Verwende möglichst eng begrenzte
@@ -355,6 +357,15 @@ Codex, bearbeitet Projektdateien und führt Git-Befehle aus. Damit du ihn über 
 steuern kannst, benötigt er einen HAPI-Zugang für das Projekt.
 
 Unter **Runner** verwaltest du zusätzliche manuelle Zugänge. Der normale Browserweg über **Abos verbinden** richtet einen verwalteten Projektdienst automatisch ein. Zusätzliche externe Runner installiert der Betreiber gemäß [Deployment-Anleitung](DEPLOYMENT.md).
+
+Alle Projektprofile haben standardmäßig normalen ausgehenden Internetzugang, auch
+für Programme ohne Proxy-Unterstützung. Agenten können öffentliche APIs, Dokumentation,
+Paketquellen wie npm und PyPI, SSH sowie TCP-/UDP-Verbindungen verwenden; dafür ist
+kein Wechsel zu „extended“ nötig. Öffentliche GitHub-Repositorys lassen sich mit ihrer
+normalen HTTPS-URL ohne GitHub-Verbindung oder Projektregistrierung klonen. Private
+GitHub-Repositorys und Pushes benötigen weiterhin die expliziten Projektfreigaben.
+Schreibrechte für Projektdateien und die Freigabe von Tresorwerten verwaltet HAPI
+getrennt. Die Erreichbarkeit einzelner Ziele hängt weiterhin vom Servernetz ab.
 
 **Dauerhaft – bis zum Widerruf** ist für deinen eigenen Runner vorausgewählt.
 Dieser Zugang hat kein Ablaufdatum. Wähle **Befristet**, wenn du den Zugang nur für
