@@ -25,8 +25,8 @@ const links = {
     anthropic: { key: 'https://platform.claude.com/settings/keys', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing' },
     voyage: { key: 'https://dash.voyageai.com/api-keys', pricing: 'https://docs.voyageai.com/docs/pricing' },
 }
-const textModel = () => ({ model: '', inputUsdPerMTok: '', outputUsdPerMTok: '', maxOutputTokens: 2048 })
-const emptyConfig = (): MemoryProviderConfig => ({ schemaVersion: 2, llm: { provider: 'anthropic', ...textModel() }, embedding: { provider: 'voyage', model: '', dimensions: 1024, inputUsdPerMTok: '' }, reranker: { provider: 'rrf' } })
+const textModel = (provider?: Provider) => ({ model: '', inputUsdPerMTok: '', outputUsdPerMTok: '', maxOutputTokens: provider === 'anthropic' ? 16384 : 2048 })
+const emptyConfig = (): MemoryProviderConfig => ({ schemaVersion: 2, llm: { provider: 'anthropic', ...textModel('anthropic') }, embedding: { provider: 'voyage', model: '', dimensions: 1024, inputUsdPerMTok: '' }, reranker: { provider: 'rrf' } })
 const emptyKeys = () => ({ llm: '', embedding: '', reranker: '' })
 const emptyCatalogs = () => ({ llm: [] as string[], embedding: [] as string[], reranker: [] as string[] })
 const storedConfig = (status: MemoryProviderStatus): MemoryProviderConfig => status.config ?? { ...emptyConfig(), embedding: { provider: status.boundEmbeddingProvider ?? 'voyage', model: status.boundEmbeddingModel ?? '', dimensions: status.boundEmbeddingDimensions ?? 1024, inputUsdPerMTok: '' } }
@@ -100,7 +100,7 @@ function MemoryProviderForm({ settings, onChanged }: { settings?: MemorySettings
     }
     const switchProvider = (slot: Slot, provider: Provider) => {
         let value: MemoryProviderConfig[Slot]
-        if (slot === 'llm') value = { provider: provider as 'openai' | 'anthropic', ...textModel() }
+        if (slot === 'llm') value = { provider: provider as 'openai' | 'anthropic', ...textModel(provider) }
         else if (slot === 'embedding') value = { provider: provider as 'openai' | 'voyage', model: '', dimensions: provider === 'openai' ? 1536 : 1024, inputUsdPerMTok: '' }
         else value = provider === 'rrf' ? { provider: 'rrf' } : provider === 'voyage' ? { provider: 'voyage', model: '', inputUsdPerMTok: '' } : { provider: 'openai', ...textModel() }
         setPricesOpen(current => ({ ...current, [slot]: true })); setConfig(current => ({ ...current, [slot]: value })); setKeys(current => ({ ...current, [slot]: '' })); setCatalogs(current => ({ ...current, [slot]: [] })); edited()
@@ -155,7 +155,7 @@ function MemoryProviderForm({ settings, onChanged }: { settings?: MemorySettings
         if (!validPrice(value.inputUsdPerMTok)) add('input-price', 'Eingabepreis in USD je Million Tokens eintragen (größer als 0, höchstens 1.000.000).')
         if ('outputUsdPerMTok' in value) {
             if (!validPrice(value.outputUsdPerMTok)) add('output-price', 'Ausgabepreis in USD je Million Tokens eintragen (größer als 0, höchstens 1.000.000).')
-            if (!Number.isInteger(value.maxOutputTokens) || value.maxOutputTokens < 256 || value.maxOutputTokens > 4096) add('tokens', 'Ausgabelimit als ganze Zahl von 256 bis 4096 eintragen.')
+            if (!Number.isInteger(value.maxOutputTokens) || value.maxOutputTokens < 256 || value.maxOutputTokens > 65536) add('tokens', 'Ausgabelimit als ganze Zahl von 256 bis 65536 eintragen.')
         }
         if ('dimensions' in value && value.provider === 'openai' && (value.model === 'text-embedding-3-small' && value.dimensions > 1536 || value.model === 'text-embedding-ada-002' && value.dimensions !== 1536)) add('dimensions', 'text-embedding-3-small unterstützt höchstens 1536 Dimensionen; text-embedding-ada-002 benötigt genau 1536.')
         if ('dimensions' in value && (!Number.isInteger(value.dimensions) || (value.provider === 'voyage' ? ![256, 512, 1024, 2048].includes(value.dimensions) : value.dimensions < 1 || value.dimensions > 3072))) add('dimensions', value.provider === 'voyage' ? 'Dimensionen auf 256, 512, 1024 oder 2048 setzen.' : 'Dimensionen als ganze Zahl von 1 bis 3072 eintragen.')
@@ -182,7 +182,7 @@ function MemoryProviderForm({ settings, onChanged }: { settings?: MemorySettings
                 <details className="ev-disclosure" open={pricesOpen[slot]} onToggle={event => { const open = event.currentTarget.open; setPricesOpen(current => current[slot] === open ? current : { ...current, [slot]: open }) }}><summary>{title}: Preise und Limits</summary>
                     <p className="ev-muted">Aktuelle <a href={links[provider].pricing} target="_blank" rel="noopener noreferrer">Anbieterpreise</a> in USD je Million Tokens eintragen. Der Modellkatalog liefert keine Preise; diese Werte steuern die Budgetkontrolle.</p>
                     <div className="ev-form-grid"><Field label={`${title}: Eingabe`}><input {...fieldProps(slot, 'input-price')} aria-label={`${title}: Eingabe`} type="number" min="0.000001" max="1000000" step="any" required value={value.inputUsdPerMTok} onChange={event => change(slot, { inputUsdPerMTok: event.target.value })} /></Field>
-                        {'outputUsdPerMTok' in value && <><Field label={`${title}: Ausgabe`}><input {...fieldProps(slot, 'output-price')} aria-label={`${title}: Ausgabe`} type="number" min="0.000001" max="1000000" step="any" required value={value.outputUsdPerMTok} onChange={event => change(slot, { outputUsdPerMTok: event.target.value })} /></Field><Field label={`${title}: Maximale Ausgabetokens`}><input {...fieldProps(slot, 'tokens')} aria-label={`${title}: Maximale Ausgabetokens`} type="number" min="256" max="4096" step="1" required value={value.maxOutputTokens} onChange={event => change(slot, { maxOutputTokens: Number(event.target.value) })} /></Field></>}
+                        {'outputUsdPerMTok' in value && <><Field label={`${title}: Ausgabe`}><input {...fieldProps(slot, 'output-price')} aria-label={`${title}: Ausgabe`} type="number" min="0.000001" max="1000000" step="any" required value={value.outputUsdPerMTok} onChange={event => change(slot, { outputUsdPerMTok: event.target.value })} /></Field><Field label={`${title}: Maximale Ausgabetokens`} hint="Zählt auch Denktokens bei Modellen mit Reasoning. Zu kleine Limits können die Extraktion abbrechen. Das gewählte Modell muss den Wert unterstützen; Auftrags- und Monatsbudget bleiben unverändert."><input {...fieldProps(slot, 'tokens')} aria-label={`${title}: Maximale Ausgabetokens`} type="number" min="256" max="65536" step="1" required value={value.maxOutputTokens} onChange={event => change(slot, { maxOutputTokens: Number(event.target.value) })} /></Field></>}
                     </div>
                 </details>
                 {slot === 'reranker' && provider === 'openai' && <p className="ev-muted">Dieses Modell muss Chat Completions mit Logprobs unterstützen. Nicht jedes Modell im Katalog ist dafür geeignet.</p>}

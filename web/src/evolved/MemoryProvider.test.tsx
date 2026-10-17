@@ -54,6 +54,7 @@ describe('Graph Memory browser configuration', () => {
         render(<MemoryProviderPanel />)
         await screen.findByLabelText('Sprachmodell: API-Key')
         expect(screen.getByLabelText('Sprachmodell: Anbieter')).toHaveValue('anthropic')
+        expect(screen.getByLabelText('Sprachmodell: Maximale Ausgabetokens')).toHaveValue(16384)
         expect(screen.getByLabelText('Embeddings: Anbieter')).toHaveValue('voyage')
         expect(screen.getByLabelText('Suchtrefferbewertung: Anbieter')).toHaveValue('rrf')
         expect(screen.queryByRole('button', { name: 'Embeddings: Modelle laden' })).not.toBeInTheDocument()
@@ -95,6 +96,33 @@ describe('Graph Memory browser configuration', () => {
         expect(body.llm).toMatchObject({ provider: 'anthropic', apiKey: 'synthetic-new-anthropic-key' })
         expect(body.embedding).toEqual(config.embedding)
         expect(JSON.stringify(body)).not.toContain('synthetic-test-key')
+    })
+
+    it('preserves saved limits and saves a larger Claude output limit without replacing credentials', async () => {
+        let selected: MemoryProviderConfig = { ...config, llm: { ...config.llm, provider: 'anthropic', model: 'claude-model' } }
+        context.api.request.mockImplementation(async (_path: string, options: { method?: string; body?: MemoryProviderConfig }) => {
+            if (options.method === 'PUT') selected = options.body!
+            return status(true, selected)
+        })
+        render(<MemoryProviderPanel />)
+        await screen.findByLabelText('Sprachmodell: Maximale Ausgabetokens')
+        expect(screen.getByLabelText('Sprachmodell: Maximale Ausgabetokens')).toHaveValue(2048)
+        expect(screen.getByText(/Zählt auch Denktokens/)).toHaveTextContent(/Auftrags- und Monatsbudget bleiben unverändert/)
+        for (const invalid of [255, 65537, 16384.5]) {
+            input('Sprachmodell: Maximale Ausgabetokens', invalid)
+            fireEvent.click(screen.getByRole('button', { name: 'Einrichtung speichern' }))
+            expect(screen.getByLabelText('Sprachmodell: Maximale Ausgabetokens')).toHaveAttribute('aria-invalid', 'true')
+            expect(context.api.request.mock.calls.some(([, options]) => options.method === 'PUT')).toBe(false)
+        }
+        input('Sprachmodell: Maximale Ausgabetokens', 16384)
+        fireEvent.click(screen.getByRole('button', { name: 'Einrichtung speichern' }))
+        await screen.findByText(/Einrichtung verschlüsselt gespeichert/)
+        expect(screen.getByLabelText('Sprachmodell: Maximale Ausgabetokens')).toHaveValue(16384)
+        const body = context.api.request.mock.calls.find(([, options]) => options.method === 'PUT')?.[1].body
+        expect(body).toEqual({ ...config, version: 1, llm: { ...config.llm, provider: 'anthropic', model: 'claude-model', maxOutputTokens: 16384 } })
+        expect(body.llm).not.toHaveProperty('apiKey')
+        expect(body.embedding).not.toHaveProperty('apiKey')
+        expect(context.api.request.mock.calls.every(([path]) => path.endsWith('/memory/provider'))).toBe(true)
     })
 
     it.each(['openai', 'voyage'] as const)('requires an independent key and price when enabling a %s reranker', async provider => {
