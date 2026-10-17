@@ -468,3 +468,15 @@ describe('Graph Memory browser configuration', () => {
     })
 
 })
+
+it('explains and blocks a chat model entered as an OpenAI embedder before submitting credentials', async () => {
+    context.api.request.mockResolvedValue(status(true))
+    render(<MemoryProviderPanel />)
+    await screen.findByLabelText('Embeddings: Modell')
+    input('Embeddings: Modell', 'chat-latest')
+    input('Embeddings: Eingabe', '0.02')
+    fireEvent.click(screen.getByRole('button', { name: 'Einrichtung speichern' }))
+    expect(await screen.findByText(/Für OpenAI-Embeddings ein text-embedding-Modell aus dem Anbieter-Katalog wählen; Chatmodelle/)).toBeVisible()
+    expect(context.api.request.mock.calls.some(([, options]) => options.method === 'PUT')).toBe(false)
+    expect(screen.getByLabelText('Embeddings: Modell')).toHaveFocus()
+})

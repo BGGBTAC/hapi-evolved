@@ -33,7 +33,13 @@ export type McpCatalog = {
 }
 export type McpCallHistory = { calls: { id: number; toolName: string; startedAt: number; durationMs: number; status: 'success' | 'tool_error' | 'failed' | 'unknown'; errorCode: string | null }[] }
 export type MemorySource = { kind: 'chat' | 'code' | 'attachment' | 'manual'; path?: string; commit?: string; hash?: string; sessionId?: string; messageId?: string; origin?: string }
-export type MemoryItem = { id: string; projectId: string; title: string; body: string; status: 'proposed' | 'verified'; createdAt: number | string; sources: MemorySource[]; archivedImport: boolean; score?: number }
+export type MemoryItem = {
+    id: string; projectId: string; title: string; body: string; status: 'proposed' | 'verified'
+    createdAt: number | string; sources: MemorySource[]; archivedImport: boolean; score?: number
+    indexState: 'pending' | 'indexed' | 'error' | 'archived'; indexRetry: { taskId: string; generation: number } | null
+}
+export type MemoryFact = { id: string; projectId: string; body: string; memoryIds: string[]; sources: MemorySource[]; status: 'proposed' | 'verified' }
+export type MemorySearchResponse = { mode: 'ledger'; results: MemoryItem[]; backendAvailable: boolean } | { mode: 'hybrid'; results: MemoryFact[]; backendAvailable: boolean }
 export type MemorySettings = { enabled: boolean; cloudAllowed: boolean; monthlyBudgetMicros: number; jobBudgetMicros: number }
 export type MemoryResponse = {
     items: MemoryItem[]

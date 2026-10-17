@@ -11,6 +11,7 @@ export type MemorySource = {
 export type MemoryItem = {
     id: string; projectId: string; title: string; body: string; status: 'proposed' | 'verified'
     createdAt: number; sources: MemorySource[]; indexState: string; archivedImport: boolean
+    indexRetry: { taskId: string; generation: number } | null
 }
 export type MemorySettings = { enabled: boolean; cloudAllowed: boolean; monthlyBudgetMicros: number; jobBudgetMicros: number }
 export type MemoryTask = { id: string; project_id: string; item_id: string | null; actor_id: string; kind: string; generation: number; reservation_id: string | null; lease_until: number }
@@ -170,7 +171,50 @@ export class MemoryLedger {
     private item(row: ItemRow): MemoryItem {
         const sources = this.db.query('SELECT source_json FROM evolved_memory_sources WHERE item_id=?').all(row.id) as { source_json: string }[]
         return { id: row.id, projectId: row.project_id, title: row.title, body: row.body, status: row.status, createdAt: row.created_at,
-            sources: sources.map(source => JSON.parse(source.source_json) as MemorySource), indexState: row.index_state, archivedImport: !!row.archived_import }
+            sources: sources.map(source => JSON.parse(source.source_json) as MemorySource), indexState: row.index_state, archivedImport: !!row.archived_import, indexRetry: this.retryCandidate(row) }
+    }
+    private latestIndexTask(projectId: string, itemId: string) {
+        return this.db.query("SELECT id,state,created_at FROM evolved_memory_tasks WHERE project_id=? AND item_id=? AND kind='index' ORDER BY created_at DESC,id DESC LIMIT 1")
+            .get(projectId, itemId) as { id: string; state: string; created_at: number } | null
+    }
+    private unsettledIndexAttempt(projectId: string, itemId: string): boolean {
+        return !!this.db.query(`SELECT 1 FROM evolved_memory_tasks t LEFT JOIN evolved_memory_reservations r
+            ON r.id=t.reservation_id AND r.project_id=t.project_id WHERE t.project_id=? AND t.item_id=? AND t.kind='index'
+            AND (t.state IN ('queued','running') OR (t.reservation_id IS NOT NULL AND (r.id IS NULL OR r.state!='settled'))) LIMIT 1`)
+            .get(projectId, itemId)
+    }
+    private retryCandidate(row: ItemRow): MemoryItem['indexRetry'] {
+        if (row.archived_import || row.index_state !== 'error' || this.unsettledIndexAttempt(row.project_id, row.id)) return null
+        const latest = this.latestIndexTask(row.project_id, row.id)
+        return latest?.state === 'failed' ? { taskId: latest.id, generation: this.settings(row.project_id).generation } : null
+    }
+    /** Explicit consent creates a new cost receipt; replaying the same consent never creates another attempt. */
+    retryIndex(projectId: string, itemId: string, actorId: string, expected: { taskId: string; generation: number }) {
+        return this.db.transaction(() => {
+            const item = this.get(projectId, itemId)
+            if (!item) throw new MemoryError('Active memory entry not found', 404)
+            const settings = this.settings(projectId)
+            if (settings.generation !== expected.generation) throw new MemoryError('Memory generation changed; reload before retrying', 409)
+            // UUIDv8 derived from the failed attempt. This survives HTTP retries and Hub restarts,
+            // including a retry that already finished before the duplicate request arrived.
+            const hash = memoryHash(JSON.stringify(['memory-index-retry-v1', projectId, itemId, expected.generation, expected.taskId]))
+            const taskId = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-8${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`
+            const prior = this.db.query('SELECT project_id,item_id,generation,kind FROM evolved_memory_tasks WHERE id=?').get(taskId) as MemoryTask | null
+            if (prior) {
+                if (prior.project_id !== projectId || prior.item_id !== itemId || prior.generation !== settings.generation || prior.kind !== 'index') throw new MemoryError('Retry identity conflict', 409)
+                return { item, taskId, replayed: true }
+            }
+            const candidate = item.indexRetry
+            if (!candidate || candidate.taskId !== expected.taskId) throw new MemoryError('Index attempt changed or its cost receipt is unresolved; reload before retrying', 409)
+            if (!settings.enabled || !settings.cloudAllowed || settings.jobBudgetMicros <= 0) throw new MemoryError('Enable cloud processing and its budgets before retrying', 409)
+            const budget = this.budget(projectId)
+            if (budget.spentMicros + budget.reservedMicros + settings.jobBudgetMicros > budget.limitMicros) throw new MemoryError('Monthly memory budget exhausted', 402)
+            const latest = this.latestIndexTask(projectId, itemId)!
+            this.db.query("INSERT INTO evolved_memory_tasks(id,project_id,item_id,actor_id,kind,generation,created_at) VALUES(?,?,?,?,'index',?,?)")
+                .run(taskId, projectId, itemId, actorId, settings.generation, Math.max(Date.now(), latest.created_at + 1))
+            this.db.query("UPDATE evolved_memory_items SET index_state='pending' WHERE id=? AND project_id=?").run(itemId, projectId)
+            return { item: this.get(projectId, itemId)!, taskId, replayed: false }
+        }).immediate()
     }
     get(projectId: string, id: string, includeArchived = false): MemoryItem | null {
         const row = this.db.query(`SELECT * FROM evolved_memory_items WHERE id=? AND project_id=? ${includeArchived ? '' : 'AND archived_import=0'}`).get(id, projectId) as ItemRow | null

@@ -242,9 +242,27 @@ aufklappbar. „Vergessen“ entfernt den Eintrag aus den Suchergebnissen und ve
 die Bereinigung abgeleiteter Graphdaten. Bei einem vorübergehend nicht
 verfügbaren Graphdienst wird diese Bereinigung später wiederholt.
 
+**Inhalt und Graphstatus sind getrennt.** „Verifiziert“ bestätigt die menschliche
+Prüfung des Inhalts. Zusätzlich zeigt jeder aktive Eintrag, ob er im Graph
+indiziert ist, auf Verarbeitung wartet oder die Verarbeitung fehlgeschlagen ist.
+Auch ein erreichbarer Graphdienst bestätigt noch keine erfolgreiche Indexierung.
+
+Bei einem Indexfehler zuerst die Anbieter-, Modell- und Budgeteinrichtung prüfen.
+Ein Projektadministrator kann anschließend am Eintrag **Im Graph erneut verarbeiten**
+wählen und den neuen Auftrag bestätigen. Dafür gelten die bestehende Cloud-Freigabe
+und die Ausgabenlimits; es können erneut API-Kosten entstehen. Solange frühere Kosten
+ungeklärt sind oder ein Auftrag läuft, wird kein weiterer gestartet. Das Speichern
+einer korrigierten Einrichtung startet fehlgeschlagene Aufträge nicht automatisch.
+Alte Fehler bleiben sichtbar, auch wenn der Graph zwischenzeitlich bereinigt wurde.
+Archivierte Gesprächsimporte werden nicht erneut verarbeitet. Mit **Status aktualisieren**
+lässt sich der Fortschritt abrufen.
+
 Die lokale Textsuche funktioniert ohne Cloud-Verarbeitung. Die ausdrücklich
 gewählte Hybridsuche verwendet den verbundenen Graphdienst und das
 Verarbeitungsbudget. Statusfilter grenzen die angezeigten Ergebnisse ein.
+Hybridtreffer erscheinen als Graphfakten mit ihren Quellen. Sie sind abgeleitete
+Suchergebnisse; Verifizieren, Vergessen und erneute Verarbeitung erfolgen am
+gespeicherten Wissenseintrag.
 
 Für den Wissensgraphen öffnet ein Projektadministrator **Gedächtnis → Graph-Memory einrichten**:
 

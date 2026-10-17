@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { EvolvedError, EvolvedStore } from './store'
 import { EvolvedVault } from './vault'
 import { HttpMemoryBackend, MemoryService } from './memoryService'
-import { createMemoryProviderRoutes, MemoryProviderService, type MemoryProviderConfig } from './memoryProvider'
+import { createMemoryProviderRoutes, MemoryProviderService, type MemoryProviderConfig, type MemoryProviderPublic } from './memoryProvider'
 
 const cleanup: Array<() => void> = []
 afterEach(() => { for (const close of cleanup.splice(0)) close() })
@@ -481,4 +481,58 @@ describe('internal project-specific memory snapshots', () => {
         await backend.request('/reset', { projectId: 'project-a' })
         expect(calls.at(-1)?.path).toBe('/reset')
     })
+})
+
+describe('memory model capabilities and safe legacy repair', () => {
+    test('embedding catalogs contain only discovered embedding models, including new versions', async () => {
+        const f = fixture()
+        f.setUpstream(async () => Response.json({ verified: true, models: ['chat-latest', 'text-embedding-future-9', 'text-embedding-3-small'] }))
+        const response = await f.request('POST', { component: 'embedding', provider: 'openai', apiKey: key }, '/models')
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({ verified: true, models: ['text-embedding-3-small', 'text-embedding-future-9'] })
+        const textResponse = await f.request('POST', { component: 'llm', provider: 'openai', apiKey: key }, '/models')
+        expect(await textResponse.json()).toEqual({ verified: true, models: ['chat-latest'] })
+    })
+    test('catalog membership cannot make a chat model an embedder; rejection makes no binding or write', async () => {
+        const f = fixture()
+        const result = await f.request('PUT', { ...config, version: 0, embedding: { ...config.embedding, model: 'chat-model' } })
+        expect(result.status).toBe(400)
+        expect(await result.json()).toMatchObject({ code: 'memory_provider_model_role' })
+        expect(f.calls).toEqual([])
+        expect((await f.service.record(f.project.id, 'admin')).version).toBe(0)
+    })
+    test('incorrect historical configs remain readable and repairable without exposing or reentering keys', async () => {
+        const f = fixture(), legacy = { ...config, embedding: { ...config.embedding, model: 'chat-model' } }
+        await f.vault.request({ userId: 'admin', projectId: f.project.id, operation: 'memoryProvider', payload: { action: 'set', version: 0, config: legacy } })
+        const status = await (await f.request()).json() as { config: MemoryProviderPublic }
+        expect(status.config.embedding.model).toBe('chat-model')
+        expect(JSON.stringify(status)).not.toContain(key)
+        expect((await f.request('POST', {}, '/test')).status).toBe(400)
+        expect(await f.service.modelsForProject(f.project.id, { component: 'embedding', provider: 'openai' }, async () => f.store.requireProject('admin', f.project.id, 'admin')))
+            .toEqual({ verified: true, models: ['text-embedding-3-large', 'text-embedding-3-small'] })
+        const result = await f.service.savePublic(f.project.id, 'admin', { ...status.config, version: 1, embedding: { ...status.config.embedding, model: config.embedding.model } }, async () => f.store.requireProject('admin', f.project.id, 'admin'))
+        expect(result.config?.embedding.model).toBe(config.embedding.model)
+        expect(JSON.stringify(result)).not.toContain(key)
+        expect((await f.service.resolve(f.project.id))?.embedding.apiKey).toBe(key)
+        expect(f.store.db.query('SELECT COUNT(*) AS n FROM evolved_memory_tasks').get()).toEqual({ n: 0 })
+        expect(f.calls.every(call => ['/configuration/models', '/configuration/binding'].includes(call.path))).toBe(true)
+    })
+    test('invalid roles block availability and ingestion before transport or spending', async () => {
+        const f = fixture(), invalid = { ...config, embedding: { ...config.embedding, model: 'chat-model' } }
+        const backend = new HttpMemoryBackend('http://127.0.0.1:1', 'synthetic-token', async () => invalid)
+        expect(await backend.available(f.project.id)).toBe(false)
+        await expect(backend.prepare(f.project.id)).rejects.toThrow('not ready')
+        await expect(backend.request('/ingest', { projectId: f.project.id })).rejects.toThrow('Memory request was not sent')
+        expect(f.calls).toEqual([])
+    })
+})
+
+test('new configuration rejects known incompatible dimensions before storing a binding', async () => {
+    for (const [model, dimensions] of [['text-embedding-3-small', 1537], ['text-embedding-ada-002', 1024]] as const) {
+        const f = fixture()
+        const response = await f.request('PUT', { ...config, version: 0, embedding: { ...config.embedding, model, dimensions } })
+        expect(response.status).toBe(400)
+        expect(await response.json()).toMatchObject({ code: 'memory_provider_embedding_dimensions' })
+        expect(f.calls).toEqual([])
+    }
 })

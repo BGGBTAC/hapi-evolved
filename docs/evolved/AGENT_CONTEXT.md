@@ -186,6 +186,18 @@ den Schreibaufruf. Eine Datei unter `knowledge/` wird nicht automatisch in
 dieses zentrale Wissen übernommen. Vorgeschlagene Inhalte bleiben ungeprüft;
 Quellen und bestehende Projektrechte gelten weiterhin.
 
+Inhaltliche Verifikation und Graphindex sind getrennt: Ein „verifizierter“ Eintrag
+kann noch auf die Verarbeitung warten oder einen Indexfehler haben. Die
+Erreichbarkeit des Dienstes und eine erfolgreiche lokale Textsuche belegen keine
+funktionierende semantische Suche. Die Oberfläche zeigt den Graphstatus pro Eintrag.
+Nach der Reparatur der Einrichtung kann ein Projektadministrator einen geeigneten
+fehlgeschlagenen Eintrag ausdrücklich erneut verarbeiten lassen. Das ist ein neuer,
+budgetierter Auftrag; ungeklärte frühere Kosten sperren diesen Wiederholungsversuch.
+Das Speichern der Einrichtung startet solche Aufträge nicht automatisch. Agenten
+erhöhen dafür weder Budgets noch rufen sie die menschliche Verwaltungsroute auf.
+Graphfakten verweisen auf Wissenseinträge; ihre IDs sind keine IDs für Verifizieren,
+Vergessen oder erneute Indexierung.
+
 Die Betriebsgrundlagen verlangen gezielte, knappe Wissensvorschläge mit Belegen.
 Sessiontranskripte, Tool-Aufrufe und Fortschrittsmeldungen werden nicht automatisch
 ins Gedächtnis übernommen und sollen auch nicht als Rohdaten vorgeschlagen werden.
