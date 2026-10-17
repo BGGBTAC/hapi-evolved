@@ -10,7 +10,7 @@ const price = z.string().max(32).regex(/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/).refin
 export const memoryProviderKeySchema = z.string().min(8).max(4096).regex(/^[\x21-\x7e]+$/)
 const llmPublicSchema = z.object({
     provider: z.enum(['openai', 'anthropic']), model: modelId,
-    inputUsdPerMTok: price, outputUsdPerMTok: price, maxOutputTokens: z.number().int().min(256).max(4096),
+    inputUsdPerMTok: price, outputUsdPerMTok: price, maxOutputTokens: z.number().int().min(256).max(65_536),
 }).strict()
 const embeddingFields = { model: modelId, inputUsdPerMTok: price }
 const openaiEmbeddingSchema = z.object({ ...embeddingFields, provider: z.literal('openai'), dimensions: z.number().int().min(1).max(3072) }).strict()

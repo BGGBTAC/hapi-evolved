@@ -183,6 +183,43 @@ describe('human-only project memory provider setup', () => {
         expect((await f.request('PUT', { ...config, llm: { ...config.llm, apiKey: '' }, version: 3 })).status).toBe(400)
     })
 
+    test('larger explicit output limits survive Hub and encrypted Vault without raising budgets or retrying work', async () => {
+        for (const provider of ['openai', 'anthropic'] as const) {
+            const f = fixture(), selected = { ...config, llm: { ...config.llm, provider, maxOutputTokens: 4096 },
+                reranker: { ...config.llm, provider: 'openai', apiKey: 'SYNTHETIC-reranker-output-limit', maxOutputTokens: 4096 } } satisfies MemoryProviderConfig
+            expect((await f.request('PUT', { ...selected, version: 0 })).status).toBe(200)
+            expect((await f.service.resolve(f.project.id))?.llm.maxOutputTokens).toBe(4096)
+            f.store.db.query('INSERT INTO evolved_memory_settings(project_id,enabled,cloud_allowed,monthly_budget_micros,job_budget_micros,approved_by) VALUES(?,1,1,100000000,20000000,?)').run(f.project.id, 'admin')
+            f.store.db.query("INSERT INTO evolved_memory_tasks(id,project_id,actor_id,kind,generation,state,created_at) VALUES('failed-index',?,'admin','index',0,'failed',?)").run(f.project.id, f.store.now())
+            const work = () => ['evolved_memory_settings', 'evolved_memory_tasks', 'evolved_memory_reservations'].map(table => f.store.db.query(`SELECT * FROM ${table}`).all())
+            const before = work()
+            let version = 1
+            for (const limit of [16_384, 65_536]) {
+                const updated = await f.request('PUT', { ...selected, version,
+                    llm: { ...selected.llm, apiKey: '', maxOutputTokens: limit }, embedding: { ...selected.embedding, apiKey: '' },
+                    reranker: { ...selected.reranker, apiKey: '', maxOutputTokens: limit } })
+                expect(updated.status).toBe(200)
+                const publicText = await updated.text()
+                expect(publicText).not.toContain(key)
+                expect(publicText).not.toContain('SYNTHETIC-reranker-output-limit')
+                expect(JSON.parse(publicText)).toMatchObject({ version: ++version, config: {
+                    llm: { maxOutputTokens: limit }, reranker: { maxOutputTokens: limit } } })
+                expect(await f.service.resolve(f.project.id)).toEqual({ ...selected,
+                    llm: { ...selected.llm, maxOutputTokens: limit }, reranker: { ...selected.reranker, maxOutputTokens: limit } })
+                expect(work()).toEqual(before)
+            }
+            expect(f.calls.every(call => ['/configuration/models', '/configuration/binding'].includes(call.path))).toBe(true)
+            f.calls.length = 0
+            for (const limit of [255, 65_537, 16_384.5, '16384', true]) {
+                expect((await f.request('PUT', { ...selected, version, llm: { ...selected.llm, maxOutputTokens: limit } })).status).toBe(400)
+                await expect(f.vault.request({ userId: 'admin', projectId: f.project.id, operation: 'memoryProvider',
+                    payload: { action: 'set', version, config: { ...selected, reranker: { ...selected.reranker, maxOutputTokens: limit } } } })).rejects.toThrow('Invalid memory provider configuration')
+            }
+            expect(f.calls).toEqual([])
+            expect(work()).toEqual(before)
+        }
+    })
+
     test('project snapshots and deletion state cannot fall through to another project credential', async () => {
         const f = fixture(), other = f.store.createProject('admin', f.team.id, 'Other')
         await f.request('PUT', { ...config, version: 0 })

@@ -86,7 +86,7 @@ def role_config(value, role):
     if set(value) != fields or not isinstance(value["model"], str) or not MODEL_ID.fullmatch(value["model"]):
         raise InvalidConfiguration()
     output = value.get("maxOutputTokens", 0)
-    if "maxOutputTokens" in fields and (type(output) is not int or not 256 <= output <= 4096):
+    if "maxOutputTokens" in fields and (type(output) is not int or not 256 <= output <= 65536):
         raise InvalidConfiguration()
     dimensions = validate_dimensions(provider, value["dimensions"]) if role == "embedding" else 0
     return RoleConfiguration(provider, role, BASES[provider], validate_api_key(value["apiKey"]), value["model"],
@@ -108,7 +108,7 @@ def operator_config(environ, read_secret):
     try:
         parsed.port
         dimensions = int(environ.get("EVOLVED_MEMORY_EMBEDDING_DIM", "1536"))
-        output = min(4096, max(256, int(environ.get("EVOLVED_MEMORY_MAX_OUTPUT_TOKENS", "2048"))))
+        output = min(65536, max(256, int(environ.get("EVOLVED_MEMORY_MAX_OUTPUT_TOKENS", "2048"))))
     except ValueError:
         raise InvalidConfiguration() from None
     if not 1 <= dimensions <= 65536:
