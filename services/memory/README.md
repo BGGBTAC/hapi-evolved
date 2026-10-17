@@ -66,6 +66,21 @@ je Dokument. Mehrdeutige Antworten behalten ihre konservative Reservierung.
 Ausgewähltes externes Reranking aktiviert ausdrücklich die Cross-Encoder-Suchstrategie;
 lokales RRF setzt einen Adapter ein, der unerwartete kostenpflichtige Aufrufe abweist.
 
+Der Claude-Adapter verwendet `tool_choice: auto` mit höchstens einem internen
+Schema-Aufruf. Erzwungene Tool-Aufrufe werden unter anderem von Opus 5.5 abgelehnt
+([Anthropic-Kompatibilität](https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools)).
+Zusätzliche Text- und Thinking-Blöcke werden verworfen; ausschließlich das validierte
+Schemaergebnis gelangt in die Extraktion. Eine unvollständige oder mehrdeutige
+Antwort wird nicht automatisch kostenpflichtig wiederholt.
+
+Erreichbarkeit des Backends bestätigt noch keine erfolgreiche Indexierung. Bei
+fehlgeschlagenen Operationen enthalten die internen Belege einen festen `errorCode`
+und die Verarbeitungsphase `stage`, bei abgelehnten Claude-Anfragen zusätzlich den
+HTTP-Status `providerStatus`. Provider-Antworten, Prompts und Exceptiontexte werden
+dabei nicht gespeichert. `anthropic_http_error` weist auf eine abgelehnte Anfrage
+hin, `anthropic_output_truncated` auf das Ausgabetokenlimit und
+`anthropic_invalid_response` auf ein fehlendes oder ungültiges Schemaergebnis.
+
 Projektkonfiguration hat Vorrang vor den unten beschriebenen Betreiberwerten.
 Explizites Entfernen hinterlässt eine versionierte Sperre gegen den Rückfall auf
 globale Credentials. Ein bestehendes Embeddingprofil bleibt bei Graphdaten gebunden;

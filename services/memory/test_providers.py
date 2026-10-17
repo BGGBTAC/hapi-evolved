@@ -1,5 +1,6 @@
 """Real Graphiti interfaces over mocked, budgeted provider HTTP; no live API calls."""
 import json
+import traceback
 import unittest
 from unittest.mock import patch
 import httpx
@@ -10,7 +11,7 @@ from graphiti_core.nodes import EntityNode
 from budget import OperationLedger, BudgetExceeded
 from configuration import provider_config
 from embedding import ConfiguredVoyageEmbedder, validate_vectors
-from providers import AnthropicSchemaClient, VoyageReranker, LocalRRFClient
+from providers import AnthropicSchemaClient, ProviderExtractionError, VoyageReranker, LocalRRFClient
 from test_configuration import browser_config
 from transport import BudgetTransport, SCHEMA_TOOL
 
@@ -50,7 +51,7 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
     def anthropic_body(self, **changes):
         return {"model": "claude-synthetic", "system": "system text", "messages": [{"role": "user", "content": "data"}],
             "max_tokens": 4096, "tools": [{"name": SCHEMA_TOOL, "description": "Schema", "input_schema": {"type": "object"}}],
-            "tool_choice": {"type": "tool", "name": SCHEMA_TOOL}, **changes}
+            "tool_choice": {"type": "auto", "disable_parallel_tool_use": True}, **changes}
 
     async def test_anthropic_schema_call_caps_output_and_accounts_native_usage_without_retries(self):
         calls = []
@@ -72,16 +73,84 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0]["max_tokens"], 2048)
         self.assertEqual(calls[0]["tools"][0]["input_schema"], Extraction.model_json_schema())
+        self.assertEqual(calls[0]["tool_choice"], {"type": "auto", "disable_parallel_tool_use": True})
+        self.assertIn("calling graphiti_output exactly once", calls[0]["system"])
         self.assertNotIn("store", calls[0])
         self.assertEqual(messages[0].content, "Extract")
+
+    async def test_auto_tool_choice_supports_nonempty_real_graphiti_schema_and_ignores_companion_blocks(self):
+        from graphiti_core.prompts.extract_nodes import ExtractedEntities
+        calls = []
+        value = {"extracted_entities": [{"name": "Synthetic Project", "entity_type_id": 0, "episode_indices": [0]}]}
+        def handle(request):
+            body = json.loads(request.content)
+            calls.append(body)
+            # Reproduce the provider contract that rejects forced selection. This
+            # test does not encode a model name or send a request to a provider.
+            if body["tool_choice"]["type"] in ("tool", "any"):
+                return httpx.Response(400, json={"error": {"message": "synthetic forced-tool rejection"}})
+            return httpx.Response(200, json={"stop_reason": "tool_use", "content": [
+                {"type": "thinking", "thinking": "synthetic-private-thinking", "signature": "synthetic-signature"},
+                {"type": "text", "text": "synthetic-private-text"},
+                {"type": "tool_use", "name": SCHEMA_TOOL, "input": value},
+                {"type": "redacted_thinking", "data": "synthetic-private-redacted"}],
+                "usage": {"input_tokens": 7, "output_tokens": 4}})
+        http = await self.client(self.config.llm, handle)
+        llm = AnthropicSchemaClient(LLMConfig(model="claude-synthetic", max_tokens=2048), http)
+        result = await llm.generate_response([Message(role="system", content="Extract"), Message(role="user", content="Synthetic episode")], ExtractedEntities)
+        self.assertEqual(result, value)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(self.ledger.spent("op"), 15)
+        self.assertNotIn("synthetic-private", json.dumps(result))
+
+    async def test_anthropic_invalid_structured_results_fail_once_without_private_diagnostics(self):
+        tool = {"type": "tool_use", "name": SCHEMA_TOOL, "input": {"value": "synthetic-valid"}}
+        variants = [
+            None, [], {}, {"stop_reason": "tool_use", "content": None},
+            {"stop_reason": "end_turn", "content": [{"type": "text", "text": "synthetic-private-canary"}]},
+            {"stop_reason": "tool_use", "content": []},
+            {"stop_reason": "tool_use", "content": [tool, tool]},
+            {"stop_reason": "tool_use", "content": [tool, {**tool, "name": "other"}]},
+            {"stop_reason": "tool_use", "content": [{**tool, "name": "other"}]},
+            {"stop_reason": "tool_use", "content": ["synthetic-private-canary"]},
+            {"stop_reason": "tool_use", "content": [tool, {"type": ["synthetic-private-canary"]}]},
+            {"stop_reason": "tool_use", "content": [tool, {"type": "server_tool_use", "input": "synthetic-private-canary"}]},
+            {"stop_reason": "tool_use", "content": [{**tool, "input": "synthetic-private-canary"}]},
+            {"stop_reason": "tool_use", "content": [{**tool, "input": {"value": ["synthetic-private-canary"]}}]},
+        ]
+        for value in variants:
+            calls = []
+            # Direct adapter responses exercise parser failures independently of
+            # the transport's mandatory usage validation and accounting.
+            def handle(request):
+                calls.append(request)
+                return httpx.Response(200, content=json.dumps(value))
+            async with httpx.AsyncClient(base_url=self.config.llm.base + "/", transport=httpx.MockTransport(handle)) as http:
+                llm = AnthropicSchemaClient(LLMConfig(model="claude-synthetic", max_tokens=2048), http)
+                with self.assertRaises(ProviderExtractionError) as caught:
+                    await llm.generate_response([Message(role="system", content="Extract"), Message(role="user", content="data")], Extraction)
+            self.assertEqual(caught.exception.code, "anthropic_invalid_response")
+            self.assertIsNone(caught.exception.status_code)
+            self.assertNotIn("synthetic-private-canary", ''.join(traceback.format_exception(caught.exception)))
+            self.assertEqual(len(calls), 1)
+
+    def test_provider_diagnostic_constructor_never_accepts_arbitrary_fields(self):
+        for code, status in [("synthetic-private-code", None), ([], None), (None, None),
+                ("anthropic_http_error", "synthetic-private-status"), ("anthropic_http_error", True),
+                ("anthropic_http_error", 299), ("anthropic_http_error", 600), ("anthropic_invalid_response", 400)]:
+            with self.assertRaises(ValueError) as caught:
+                ProviderExtractionError(code, status)
+            self.assertEqual(str(caught.exception), "Invalid extraction diagnostic")
 
     async def test_anthropic_truncated_output_fails_even_when_partial_object_parses(self):
         http = await self.client(self.config.llm, lambda _: httpx.Response(200, json={"stop_reason": "max_tokens",
             "content": [{"type": "tool_use", "name": SCHEMA_TOOL, "input": {"value": "partial"}}],
             "usage": {"input_tokens": 1, "output_tokens": 2}}))
         llm = AnthropicSchemaClient(LLMConfig(model="claude-synthetic", max_tokens=2048), http)
-        with self.assertRaisesRegex(ValueError, "Incomplete"):
+        with self.assertRaises(ProviderExtractionError) as caught:
             await llm.generate_response([Message(role="system", content="Extract"), Message(role="user", content="data")], Extraction)
+        self.assertEqual(caught.exception.code, "anthropic_output_truncated")
+        self.assertIsNone(caught.exception.status_code)
         self.assertEqual(self.ledger.spent("op"), 5)
 
     async def test_anthropic_error_response_is_not_retried_or_reflected_into_prompt(self):
@@ -91,8 +160,12 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(500, text="private upstream diagnostic")
         http = await self.client(self.config.llm, handle)
         llm = AnthropicSchemaClient(LLMConfig(model="claude-synthetic", max_tokens=2048), http)
-        with self.assertRaisesRegex(ValueError, "^Model extraction failed$"):
+        with self.assertRaises(ProviderExtractionError) as caught:
             await llm.generate_response([Message(role="system", content="Extract"), Message(role="user", content="data")])
+        self.assertEqual(caught.exception.code, "anthropic_http_error")
+        self.assertEqual(caught.exception.status_code, 500)
+        self.assertEqual(str(caught.exception), "anthropic_http_error")
+        self.assertNotIn("private upstream diagnostic", ''.join(traceback.format_exception(caught.exception)))
         self.assertEqual(len(calls), 1)
         self.assertGreater(self.ledger.spent("op"), 0)
 
@@ -102,7 +175,11 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
             self.anthropic_body(cache_control={"type": "ephemeral"}),
             self.anthropic_body(tools=[{"type": "web_search_20250305", "name": "web_search"}]),
             self.anthropic_body(messages=[{"role": "user", "content": [{"type": "image", "source": {}}]}]),
-            self.anthropic_body(tool_choice={"type": "auto"})]
+            self.anthropic_body(tool_choice={"type": "auto"}),
+            self.anthropic_body(tool_choice={"type": "tool", "name": SCHEMA_TOOL}),
+            self.anthropic_body(tool_choice={"type": "any"}),
+            self.anthropic_body(tool_choice={"type": "auto", "disable_parallel_tool_use": False}),
+            self.anthropic_body(tool_choice={"type": "auto", "disable_parallel_tool_use": 1})]
         for body in variants:
             with self.assertRaises(ValueError):
                 await http.post("messages", json=body)

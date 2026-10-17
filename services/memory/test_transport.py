@@ -3,7 +3,7 @@ import json
 import unittest
 import httpx
 from budget import OperationLedger, BudgetExceeded
-from transport import BudgetTransport
+from transport import BudgetTransport, SCHEMA_TOOL
 
 
 class TransportTests(unittest.IsolatedAsyncioTestCase):
@@ -98,5 +98,35 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.status_code, status)
             self.assertEqual(len(calls), 1)
             self.assertGreater(ledger.spent("op"), 0)
+
+    async def test_anthropic_exact_auto_contract_and_http_rejection_keep_single_reservation(self):
+        ledger = OperationLedger(":memory:")
+        ledger.begin("op", "p", 0, "hash", 10_000)
+        transport = BudgetTransport(ledger, "op", {**self.config(), "provider": "anthropic"})
+        body = {"model": "test-model", "system": "Extract synthetic data", "messages": [{"role": "user", "content": "Synthetic data"}],
+            "max_tokens": 1000, "tools": [{"name": SCHEMA_TOOL, "description": "Schema", "input_schema": {"type": "object"}}],
+            "tool_choice": {"type": "auto", "disable_parallel_tool_use": True}}
+        calls, reserved = [], []
+        def handle(request):
+            calls.append(json.loads(request.content))
+            reserved.append(ledger.spent("op"))
+            return httpx.Response(400, json={"error": {"message": "synthetic-private-error"}})
+        await transport.inner.aclose()
+        transport.inner = httpx.MockTransport(handle)
+        async with httpx.AsyncClient(transport=transport) as client:
+            for choice in [{"type": "tool", "name": SCHEMA_TOOL}, {"type": "any"},
+                    {"type": "auto", "disable_parallel_tool_use": 1}]:
+                with self.assertRaises(ValueError):
+                    await client.post("https://model.invalid/v1/messages", json={**body, "tool_choice": choice})
+            self.assertEqual(ledger.spent("op"), 0)
+            self.assertEqual(calls, [])
+            response = await client.post("https://model.invalid/v1/messages", json=body)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["tool_choice"], body["tool_choice"])
+        self.assertEqual(calls[0]["max_tokens"], 20)
+        self.assertGreater(reserved[0], 0)
+        self.assertEqual(ledger.spent("op"), reserved[0])
+        ledger.db.close()
 
 if __name__ == "__main__": unittest.main()

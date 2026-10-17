@@ -19,6 +19,7 @@ from neo4j import AsyncGraphDatabase
 from budget import OperationLedger, OperationConflict, BudgetExceeded
 from configuration import MODEL_ID, InvalidConfiguration, operator_config, provider_config, validate_dimensions
 from provider_catalog import list_models, CatalogUnavailable, ProviderUnauthorized
+from providers import ProviderExtractionError
 
 logging.getLogger("graphiti_core").setLevel(logging.CRITICAL)
 logging.getLogger("httpx").setLevel(logging.CRITICAL)
@@ -319,8 +320,11 @@ async def execute(request: Request, kind: str):
             return JSONResponse({"error": "Operation conflict"}, 409)
         graph = None; http = None
         success = False
+        result = {}
+        stage = "client_setup"
         try:
             graph, http = await graph_client(operation, config)
+            stage = "graph_schema"
             await graph.build_indices_and_constraints()
             scope = group_id(project, generation)
             if kind == "ingest":
@@ -333,7 +337,9 @@ async def execute(request: Request, kind: str):
                 episode = EpisodicNode(uuid=memory_id, name=str(data.get("title", "Memory"))[:200],
                     group_id=scope, source=EpisodeType.text, source_description=json.dumps(data.get("sources", [])),
                     content=data["body"], valid_at=datetime.fromisoformat(data["referenceTime"]), created_at=datetime.now(timezone.utc))
+                stage = "episode_save"
                 await episode.save(graph.driver)
+                stage = "extraction"
                 await graph.add_episode(name=str(data.get("title", "Memory"))[:200], episode_body=data["body"],
                     source=EpisodeType.text, source_description=json.dumps(data.get("sources", [])),
                     reference_time=datetime.fromisoformat(data["referenceTime"]), uuid=memory_id,
@@ -353,6 +359,7 @@ async def execute(request: Request, kind: str):
                 if config.reranker is not None:
                     search_config.edge_config.reranker = EdgeReranker.cross_encoder
                 search_config.limit = limit
+                stage = "search"
                 facts = (await graph.search_(query=query, group_ids=[scope], config=search_config)).edges
                 result = {"results": [{"id": edge.uuid, "body": edge.fact, "memoryIds": edge.episodes,
                     "validAt": edge.valid_at.isoformat() if edge.valid_at else None,
@@ -360,16 +367,26 @@ async def execute(request: Request, kind: str):
                     "source": edge.source_node_uuid, "target": edge.target_node_uuid} for edge in facts]}
             success = True
         except BudgetExceeded:
-            result = {"error": "Operation budget exhausted"}
+            result = {"error": "Operation budget exhausted", "errorCode": "operation_budget_exhausted", "stage": stage}
+        except ProviderExtractionError as error:
+            # Static codes only: never persist provider bodies, validation inputs,
+            # prompts, exception messages or tracebacks in an operation receipt.
+            result = {"error": "Claude extraction failed", "errorCode": error.code, "stage": stage}
+            if error.status_code is not None:
+                result["providerStatus"] = error.status_code
         except Exception:
-            result = {"error": "Graph extraction/search failed"}
+            result = {"error": "Graph extraction/search failed", "errorCode": "graph_operation_failed", "stage": stage}
         finally:
             if http:
                 try:
                     await http.aclose()
                 except Exception:
+                    # Preserve the primary failure if cleanup also fails.
+                    if success:
+                        result = {"error": "Graph operation cleanup failed", "errorCode": "graph_cleanup_failed", "stage": "cleanup"}
+                    else:
+                        result["cleanupFailed"] = True
                     success = False
-                    result = {"error": "Graph operation cleanup failed"}
         ledger.finish(operation, success, result)
         return JSONResponse({**result, "spentMicros": ledger.spent(operation)}, 200 if success else 422)
 
