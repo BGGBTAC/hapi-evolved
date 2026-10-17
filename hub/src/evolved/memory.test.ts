@@ -262,3 +262,107 @@ test('a capability revoked during backend availability checks never starts a pai
     expect(requests).toBe(0)
     expect(fixture.service.ledger.budget(fixture.project.id).reservedMicros).toBe(0)
 })
+
+describe('explicit index recovery', () => {
+    const enabled = { enabled: true, cloudAllowed: true, monthlyBudgetMicros: 100, jobBudgetMicros: 20 }
+    function failed(backend?: MemoryBackend) {
+        const f = setup(backend ?? { available: async () => true, request: async () => ({ ok: false, spentMicros: 0 }) })
+        const ledger = f.service.ledger
+        ledger.configure(f.project.id, enabled, 'alice')
+        const item = ledger.create(f.project.id, 'alice', 'Fact', 'Retained knowledge', [{ kind: 'manual', projectId: f.project.id, hash: 'test' }])
+        const task = ledger.claim()!
+        ledger.reserve(f.project.id, task.id); ledger.taskReservation(task.id, task.id); ledger.settle(task.id, 0)
+        ledger.fail(task, 'Graph extraction failed')
+        const expected = ledger.get(f.project.id, item.id)!.indexRetry!
+        return { ...f, ledger, item, task, expected, path: `/projects/${f.project.id}/memory/${item.id}/retry` }
+    }
+    test('repeated consent is idempotent even after another terminal failure, while a new consent gets a fresh receipt', async () => {
+        const f = failed()
+        const first = await f.request(f.path, 'alice', f.expected)
+        expect(first.status).toBe(202)
+        const created = await first.json() as { taskId: string }
+        expect(created).toMatchObject({ replayed: false, item: { indexState: 'pending', indexRetry: null } })
+        expect(created.taskId).not.toBe(f.task.id)
+        expect(await (await f.request(f.path, 'alice', f.expected)).json()).toMatchObject({ taskId: created.taskId, replayed: true })
+        await f.service.processOne()
+        expect(f.ledger.get(f.project.id, f.item.id)).toMatchObject({ indexState: 'error', indexRetry: { taskId: created.taskId } })
+        expect(await (await f.request(f.path, 'alice', f.expected)).json()).toMatchObject({ taskId: created.taskId, replayed: true })
+        const next = await f.request(f.path, 'alice', f.ledger.get(f.project.id, f.item.id)!.indexRetry)
+        expect(next.status).toBe(202)
+        expect((await next.json() as { taskId: string }).taskId).not.toBe(created.taskId)
+        expect(f.store.db.query('SELECT COUNT(*) AS n FROM evolved_memory_tasks WHERE kind=\'index\'').get()).toEqual({ n: 3 })
+        expect(f.ledger.budget(f.project.id)).toMatchObject({ spentMicros: 0, reservedMicros: 0 })
+    })
+    test('concurrent identical requests create one task and one fresh reservation', async () => {
+        let entered = 0, release!: () => void
+        const gate = new Promise<void>(resolve => { release = resolve })
+        const f = failed({ available: async () => { if (++entered === 2) release(); await gate; return true }, request: async () => ({ ok: false, spentMicros: 1 }) })
+        const responses = await Promise.all([f.request(f.path, 'alice', f.expected), f.request(f.path, 'alice', f.expected)])
+        expect(responses.map(response => response.status)).toEqual([202, 202])
+        const bodies = await Promise.all(responses.map(response => response.json() as Promise<{ taskId: string; replayed: boolean }>))
+        expect(new Set(bodies.map(body => body.taskId)).size).toBe(1)
+        expect(bodies.map(body => body.replayed).sort()).toEqual([false, true])
+        await f.service.processOne()
+        expect(f.store.db.query('SELECT COUNT(*) AS n FROM evolved_memory_reservations').get()).toEqual({ n: 2 })
+        expect(f.ledger.budget(f.project.id)).toMatchObject({ spentMicros: 1, reservedMicros: 0 })
+    })
+    test('old generation failures retry in the current generation after purge, not under an old operation ID', () => {
+        const f = failed()
+        const disposable = f.ledger.create(f.project.id, 'alice', 'Disposable', 'Remove', [])
+        f.ledger.forget(f.project.id, disposable.id, 'alice')
+        expect(() => f.ledger.retryIndex(f.project.id, f.item.id, 'alice', f.expected)).toThrow('generation changed')
+        const result = f.ledger.retryIndex(f.project.id, f.item.id, 'alice', f.ledger.get(f.project.id, f.item.id)!.indexRetry!)
+        const purge = f.ledger.claim()!
+        expect(purge.kind).toBe('purge')
+        expect(f.ledger.claim()).toBeNull()
+        f.ledger.complete(purge)
+        expect(f.ledger.claim()).toMatchObject({ id: result.taskId, generation: 1, reservation_id: null })
+    })
+    test('pending attempts, archives and unresolved or missing historical receipts cannot be bypassed', () => {
+        for (const mode of ['queued', 'running', 'archived', 'reserved', 'missing'] as const) {
+            const f = failed()
+            if (mode === 'queued' || mode === 'running') f.store.db.query('UPDATE evolved_memory_tasks SET state=? WHERE id=?').run(mode, f.task.id)
+            if (mode === 'archived') f.store.db.query('UPDATE evolved_memory_items SET archived_import=1 WHERE id=?').run(f.item.id)
+            if (mode === 'reserved') f.store.db.query("UPDATE evolved_memory_reservations SET state='reserved' WHERE id=?").run(f.task.id)
+            if (mode === 'missing') f.store.db.query('DELETE FROM evolved_memory_reservations WHERE id=?').run(f.task.id)
+            expect(f.ledger.get(f.project.id, f.item.id, true)?.indexRetry).toBeNull()
+            expect(() => f.ledger.retryIndex(f.project.id, f.item.id, 'alice', f.expected)).toThrow()
+            expect(f.store.db.query('SELECT COUNT(*) AS n FROM evolved_memory_tasks').get()).toEqual({ n: 1 })
+        }
+    })
+    test('cloud consent and remaining budget are required without allocating money during queue admission', () => {
+        const f = failed()
+        f.ledger.configure(f.project.id, { enabled: false })
+        expect(() => f.ledger.retryIndex(f.project.id, f.item.id, 'alice', f.expected)).toThrow('Enable cloud processing')
+        f.ledger.configure(f.project.id, enabled)
+        f.ledger.reserve(f.project.id, 'unrelated', 20); f.ledger.settle('unrelated', 20)
+        f.ledger.configure(f.project.id, { monthlyBudgetMicros: 20 })
+        expect(() => f.ledger.retryIndex(f.project.id, f.item.id, 'alice', f.expected)).toThrow('exhausted')
+        expect(f.ledger.budget(f.project.id).reservedMicros).toBe(0)
+    })
+    test('retry requires a person with current admin access and worker rechecks the new actor before spending', async () => {
+        const f = failed()
+        const capability = f.store.issueCapability('alice', f.project.id, ['memory:read', 'memory:write'], [], 300)
+        expect((await f.request(f.path, 'alice', f.expected, 'POST', capability.token)).status).toBe(403)
+        expect((await f.request(f.path, 'bob', f.expected)).status).toBe(403)
+        f.store.setMember('alice', f.team.id, 'bob', 'member')
+        expect((await f.request(f.path, 'bob', f.expected)).status).toBe(403)
+        f.store.setMember('alice', f.team.id, 'bob', 'admin')
+        const result = await f.request(f.path, 'bob', f.expected)
+        expect(result.status).toBe(202)
+        f.store.db.query('DELETE FROM evolved_team_members WHERE team_id=? AND user_id=?').run(f.team.id, 'bob')
+        await f.service.processOne()
+        expect(f.ledger.get(f.project.id, f.item.id)?.indexState).toBe('error')
+        expect(f.store.db.query('SELECT reservation_id,error FROM evolved_memory_tasks WHERE id=?').get((await result.json() as { taskId: string }).taskId)).toEqual({ reservation_id: null, error: 'Authorization revoked' })
+    })
+    test('membership revocation or generation change during preflight prevents new work', async () => {
+        let onCheck = () => {}
+        const f = failed({ available: async () => { onCheck(); return true }, request: async () => ({}) })
+        f.store.setMember('alice', f.team.id, 'bob', 'admin')
+        onCheck = () => { f.store.db.query('DELETE FROM evolved_team_members WHERE team_id=? AND user_id=?').run(f.team.id, 'bob') }
+        expect((await f.request(f.path, 'bob', f.expected)).status).toBe(403)
+        onCheck = () => { f.store.db.query('UPDATE evolved_memory_settings SET generation=generation+1 WHERE project_id=?').run(f.project.id) }
+        expect((await f.request(f.path, 'alice', f.expected)).status).toBe(409)
+        expect(f.store.db.query('SELECT COUNT(*) AS n FROM evolved_memory_tasks').get()).toEqual({ n: 1 })
+    })
+})
