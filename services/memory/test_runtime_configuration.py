@@ -53,6 +53,34 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
         self.driver.session = session
         return run
 
+    async def test_extraction_failure_receipts_only_keep_static_diagnostics_and_replay_without_calls(self):
+        from providers import ProviderExtractionError
+        cases = [
+            (ProviderExtractionError("anthropic_http_error", 400), "anthropic_http_error", 400),
+            (ProviderExtractionError("anthropic_output_truncated"), "anthropic_output_truncated", None),
+            (RuntimeError("private-secret-and-knowledge"), "graph_operation_failed", None),
+        ]
+        for index, (error, code, status) in enumerate(cases):
+            graph, resources = self.graph()
+            graph.search_.side_effect = error
+            resources.aclose.side_effect = RuntimeError("private-cleanup-secret")
+            payload = self.operation(operationId="failure-" + str(index))
+            with patch.object(self.app, "graph_client", AsyncMock(return_value=(graph, resources))):
+                result = await self.client.post("/search", json=payload)
+                replay = await self.client.post("/search", json=payload)
+            self.assertEqual(result.status_code, 422)
+            self.assertEqual(replay.json(), result.json())
+            self.assertEqual(result.json()["errorCode"], code)
+            self.assertEqual(result.json()["stage"], "search")
+            self.assertEqual(result.json().get("providerStatus"), status)
+            self.assertEqual(result.json()["spentMicros"], 0)
+            self.assertTrue(result.json()["cleanupFailed"])
+            graph.search_.assert_awaited_once()
+            resources.aclose.assert_awaited_once()
+        for filename in Path(self.directory.name).glob("operations.db*"):
+            self.assertNotIn(b"private-secret-and-knowledge", filename.read_bytes())
+            self.assertNotIn(b"private-cleanup-secret", filename.read_bytes())
+
     async def test_empty_binding_accepts_failed_and_purged_history_without_changing_receipts(self):
         run = self.graph_counts()
         for state in ["failed", "purged"]:
@@ -450,7 +478,7 @@ class RuntimeConfigurationTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(self.app, "graph_client", AsyncMock(return_value=(graph, resources))):
             result = await self.client.post("/search", json=self.operation())
         self.assertEqual(result.status_code, 422)
-        self.assertEqual(result.json(), {"error": "Graph operation cleanup failed", "spentMicros": 0})
+        self.assertEqual(result.json(), {"error": "Graph operation cleanup failed", "errorCode": "graph_cleanup_failed", "stage": "cleanup", "spentMicros": 0})
         self.assertTrue((await self.client.post("/receipt", json={"operationId": "op-project-a"})).json()["final"])
 
 
