@@ -8,15 +8,62 @@ import type { VaultClient } from './vault'
 const modelId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/)
 const price = z.string().max(32).regex(/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/).refine(value => Number(value) > 0 && Number(value) <= 1_000_000)
 export const memoryProviderKeySchema = z.string().min(8).max(4096).regex(/^[\x21-\x7e]+$/)
+const llmPublicSchema = z.object({
+    provider: z.enum(['openai', 'anthropic']), model: modelId,
+    inputUsdPerMTok: price, outputUsdPerMTok: price, maxOutputTokens: z.number().int().min(256).max(4096),
+}).strict()
+const embeddingFields = { model: modelId, inputUsdPerMTok: price }
+const openaiEmbeddingSchema = z.object({ ...embeddingFields, provider: z.literal('openai'), dimensions: z.number().int().min(1).max(3072) }).strict()
+const voyageEmbeddingSchema = z.object({ ...embeddingFields, provider: z.literal('voyage'), dimensions: z.union([z.literal(256), z.literal(512), z.literal(1024), z.literal(2048)]) }).strict()
+const rrfSchema = z.object({ provider: z.literal('rrf') }).strict()
+const openaiRerankerSchema = llmPublicSchema.extend({ provider: z.literal('openai') }).strict()
+const voyageRerankerSchema = z.object({ provider: z.literal('voyage'), model: modelId, inputUsdPerMTok: price }).strict()
 export const memoryProviderPublicSchema = z.object({
-    provider: z.literal('openai'), model: modelId, embeddingModel: modelId,
+    schemaVersion: z.literal(2), llm: llmPublicSchema,
+    embedding: z.discriminatedUnion('provider', [openaiEmbeddingSchema, voyageEmbeddingSchema]),
+    reranker: z.discriminatedUnion('provider', [rrfSchema, openaiRerankerSchema, voyageRerankerSchema]),
+}).strict()
+export const memoryProviderConfigSchema = memoryProviderPublicSchema.extend({
+    llm: llmPublicSchema.extend({ apiKey: memoryProviderKeySchema }).strict(),
+    embedding: z.discriminatedUnion('provider', [openaiEmbeddingSchema.extend({ apiKey: memoryProviderKeySchema }), voyageEmbeddingSchema.extend({ apiKey: memoryProviderKeySchema })]),
+    reranker: z.discriminatedUnion('provider', [rrfSchema, openaiRerankerSchema.extend({ apiKey: memoryProviderKeySchema }), voyageRerankerSchema.extend({ apiKey: memoryProviderKeySchema })]),
+}).strict()
+export type MemoryProviderConfig = z.infer<typeof memoryProviderConfigSchema>
+export type MemoryProviderPublic = z.infer<typeof memoryProviderPublicSchema>
+export type MemoryProviderComponent = 'llm' | 'embedding' | 'reranker'
+type CloudProvider = 'openai' | 'anthropic' | 'voyage'
+export type MemoryProviderRecord = { state: 'unset' | 'configured' | 'disabled'; version: number; config: MemoryProviderPublic | null; embeddingProvider: 'openai' | 'voyage' | null; embeddingModel: string | null; embeddingDimensions: number | null }
+
+/** An explicit public allowlist prevents newly nested credentials leaking through status. */
+export function memoryProviderPublic(config: MemoryProviderConfig): MemoryProviderPublic {
+    const { llm, embedding, reranker } = config
+    return {
+        schemaVersion: 2,
+        llm: { provider: llm.provider, model: llm.model, inputUsdPerMTok: llm.inputUsdPerMTok, outputUsdPerMTok: llm.outputUsdPerMTok, maxOutputTokens: llm.maxOutputTokens },
+        embedding: { provider: embedding.provider, model: embedding.model, dimensions: embedding.dimensions, inputUsdPerMTok: embedding.inputUsdPerMTok } as MemoryProviderPublic['embedding'],
+        reranker: reranker.provider === 'rrf' ? { provider: 'rrf' } : reranker.provider === 'voyage'
+            ? { provider: 'voyage', model: reranker.model, inputUsdPerMTok: reranker.inputUsdPerMTok }
+            : { provider: 'openai', model: reranker.model, inputUsdPerMTok: reranker.inputUsdPerMTok, outputUsdPerMTok: reranker.outputUsdPerMTok, maxOutputTokens: reranker.maxOutputTokens },
+    }
+}
+
+const legacyConfigSchema = z.object({
+    provider: z.literal('openai'), apiKey: memoryProviderKeySchema, model: modelId, embeddingModel: modelId,
     embeddingDimensions: z.literal(1536), inputUsdPerMTok: price, outputUsdPerMTok: price,
     embeddingUsdPerMTok: price, maxOutputTokens: z.number().int().min(256).max(4096),
 }).strict()
-export const memoryProviderConfigSchema = memoryProviderPublicSchema.extend({ apiKey: memoryProviderKeySchema }).strict()
-export type MemoryProviderConfig = z.infer<typeof memoryProviderConfigSchema>
-export type MemoryProviderPublic = z.infer<typeof memoryProviderPublicSchema>
-export type MemoryProviderRecord = { state: 'unset' | 'configured' | 'disabled'; version: number; config: MemoryProviderPublic | null; embeddingModel: string | null }
+/** Only encrypted legacy records use this migration. Public writes require v2. */
+export function storedMemoryProviderConfig(value: unknown): MemoryProviderConfig {
+    const current = memoryProviderConfigSchema.safeParse(value)
+    if (current.success) return current.data
+    const old = legacyConfigSchema.parse(value)
+    return {
+        schemaVersion: 2,
+        llm: { provider: 'openai', apiKey: old.apiKey, model: old.model, inputUsdPerMTok: old.inputUsdPerMTok, outputUsdPerMTok: old.outputUsdPerMTok, maxOutputTokens: old.maxOutputTokens },
+        embedding: { provider: 'openai', apiKey: old.apiKey, model: old.embeddingModel, dimensions: old.embeddingDimensions, inputUsdPerMTok: old.embeddingUsdPerMTok },
+        reranker: { provider: 'rrf' },
+    }
+}
 export type MemoryProviderResolver = (projectId: string) => Promise<MemoryProviderConfig | null | undefined>
 export type MemoryProviderOperation = <T>(projectId: string, operation: () => Promise<T>) => Promise<T>
 
@@ -69,15 +116,51 @@ export class MemoryProviderService {
             if (response.status === 401) throw new EvolvedError('memory_provider_auth_failed', 'The API key was not accepted.', 400)
             throw new EvolvedError('memory_provider_check_failed', 'Memory configuration or connection check failed.', response.status === 400 ? 400 : 503)
         }
-        const text = await response.text()
-        if (text.length > 1_000_000) throw new EvolvedError('memory_provider_invalid_response', 'Invalid memory service response.', 502)
-        try { return JSON.parse(text) as Record<string, unknown> } catch { throw new EvolvedError('memory_provider_invalid_response', 'Invalid memory service response.', 502) }
+        const reader = response.body?.getReader(), chunks: Uint8Array[] = []
+        let bytes = 0
+        try {
+            if (!reader) throw new Error()
+            while (true) {
+                const next = await reader.read()
+                if (next.done) break
+                bytes += next.value.byteLength
+                if (bytes > 1_000_000) throw new Error()
+                chunks.push(next.value)
+            }
+            const result: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+            if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error()
+            return result as Record<string, unknown>
+        } catch {
+            await reader?.cancel().catch(() => {})
+            throw new EvolvedError('memory_provider_invalid_response', 'Invalid memory service response.', 502)
+        } finally { reader?.releaseLock() }
     }
-    async models(apiKey: string): Promise<string[]> {
-        const result = await this.request('/configuration/models', { apiKey })
-        const parsed = z.array(modelId).max(5000).safeParse(result.models)
-        if (!parsed.success || parsed.data.some(id => id.includes(apiKey))) throw new EvolvedError('memory_provider_invalid_response', 'Invalid model catalog response.', 502)
-        return [...new Set(parsed.data)].sort()
+    async models(provider: CloudProvider, apiKey: string): Promise<{ models: string[]; verified: boolean }> {
+        const result = await this.request('/configuration/models', { provider, apiKey })
+        const parsed = z.object({ models: z.array(modelId).max(5000), verified: z.boolean() }).strict().safeParse(result)
+        if (!parsed.success || parsed.data.models.some(id => id.includes(apiKey))
+            || parsed.data.verified !== (provider !== 'voyage') || provider === 'voyage' && parsed.data.models.length !== 0) {
+            throw new EvolvedError('memory_provider_invalid_response', 'Invalid model catalog response.', 502)
+        }
+        return { models: [...new Set(parsed.data.models)].sort(), verified: parsed.data.verified }
+    }
+    async verifyModels(config: MemoryProviderConfig, reauthorize: () => Promise<unknown>): Promise<MemoryProviderComponent[]> {
+        const catalogs = new Map<string, { models: string[]; verified: boolean }>()
+        const unverified: MemoryProviderComponent[] = []
+        for (const component of ['llm', 'embedding', 'reranker'] as const) {
+            const slot = config[component]
+            if (slot.provider === 'rrf') continue
+            const cacheKey = JSON.stringify([slot.provider, slot.apiKey])
+            let catalog = catalogs.get(cacheKey)
+            if (!catalog) {
+                await reauthorize()
+                catalog = await this.models(slot.provider, slot.apiKey)
+                catalogs.set(cacheKey, catalog)
+            }
+            if (!catalog.verified) unverified.push(component)
+            else if (!catalog.models.includes(slot.model)) throw new EvolvedError('memory_provider_model_unavailable', 'Select models returned for this component API key.', 400)
+        }
+        return unverified
     }
     async check(config: MemoryProviderConfig): Promise<void> {
         const result = await this.request('/configuration/check', { providerConfig: config })
@@ -117,34 +200,43 @@ export function createMemoryProviderRoutes(options: { store: EvolvedStore; servi
         const { principal, project } = await authorize(c)
         const record = await service.record(project.id, principal.user.id)
         await authorize(c)
+        const config = record.config ? memoryProviderPublicSchema.parse(record.config) : null
         return { configured: record.state === 'configured', apiKeyConfigured: record.state === 'configured', version: record.version,
-            source: record.state === 'configured' ? 'project' : record.state === 'disabled' ? 'disabled' : 'environment',
-            config: record.config ? memoryProviderPublicSchema.parse(record.config) : null, boundEmbeddingModel: record.embeddingModel ? modelId.parse(record.embeddingModel) : null, embeddingLocked: service.embeddingLocked(project.id, record.embeddingModel !== null), canManage: project.role === 'admin' }
+            keyConfigured: { llm: !!config, embedding: !!config, reranker: !!config && config.reranker.provider !== 'rrf' },
+            source: record.state === 'configured' ? 'project' : record.state === 'disabled' ? 'disabled' : 'environment', config,
+            boundEmbeddingProvider: record.embeddingProvider, boundEmbeddingModel: record.embeddingModel ? modelId.parse(record.embeddingModel) : null,
+            boundEmbeddingDimensions: record.embeddingDimensions, embeddingLocked: service.embeddingLocked(project.id, record.embeddingModel !== null), canManage: project.role === 'admin' }
     }
     app.get(path, async c => c.json(await status(c)))
     const version = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER - 1)
+    const optionalKey = z.union([z.literal(''), memoryProviderKeySchema]).optional()
+    const inputSchema = memoryProviderPublicSchema.extend({
+        version, llm: llmPublicSchema.extend({ apiKey: optionalKey }),
+        embedding: z.discriminatedUnion('provider', [openaiEmbeddingSchema.extend({ apiKey: optionalKey }), voyageEmbeddingSchema.extend({ apiKey: optionalKey })]),
+        reranker: z.discriminatedUnion('provider', [rrfSchema, openaiRerankerSchema.extend({ apiKey: optionalKey }), voyageRerankerSchema.extend({ apiKey: optionalKey })]),
+    }).strict()
     app.put(path, async c => {
         const { principal, project } = await authorize(c, true)
-        const input = await parseBody(c, memoryProviderPublicSchema.extend({ version, apiKey: z.union([z.literal(''), memoryProviderKeySchema]).optional() }).strict())
+        const input = await parseBody(c, inputSchema)
         return bounded(principal.user.id, project.id, () => service.changing(project.id, async () => {
             const current = await service.record(project.id, principal.user.id)
             if (current.version !== input.version) throw new EvolvedError('memory_provider_conflict', 'Configuration changed. Reload before saving.', 409)
-            const existing = !input.apiKey ? await service.resolve(project.id) : null
-            const apiKey = input.apiKey || existing?.apiKey
-            if (!apiKey) throw new EvolvedError('memory_provider_key_required', 'An API key is required for the first configuration.', 400)
-            const { version: expectedVersion, apiKey: _submitted, ...fields } = input
-            const config = { ...fields, apiKey }
+            const existing = await service.resolve(project.id)
+            const credentials = (component: MemoryProviderComponent) => {
+                const slot = input[component], prior = existing?.[component]
+                if (slot.provider === 'rrf') return { provider: 'rrf' }
+                const apiKey = slot.apiKey || (prior?.provider === slot.provider ? prior.apiKey : undefined)
+                if (!apiKey) throw new EvolvedError('memory_provider_key_required', 'An API key is required for each new provider component.', 400)
+                return { ...slot, apiKey }
+            }
+            const config = memoryProviderConfigSchema.parse({ schemaVersion: 2, llm: credentials('llm'), embedding: credentials('embedding'), reranker: credentials('reranker') })
+            await service.verifyModels(config, () => authorize(c, true))
             await authorize(c, true)
-            const models = await service.models(apiKey)
-            if (!models.includes(config.model) || !models.includes(config.embeddingModel)) throw new EvolvedError('memory_provider_model_unavailable', 'Select models returned for this API key.', 400)
+            // Confirm even unchanged selections: a Python bind may have succeeded before a Vault CAS failure.
+            const binding = await service.request('/configuration/binding', { projectId: project.id, embeddingProvider: config.embedding.provider, embeddingModel: config.embedding.model, embeddingDimensions: config.embedding.dimensions })
+            if (binding.bound !== true) throw new EvolvedError('memory_embedding_locked', 'Existing graph data or processing tasks prevent changing the embedding configuration.', 409)
             await authorize(c, true)
-            // Confirm even an unchanged selection: a prior Python bind can succeed
-            // before the Vault CAS fails. Identical bindings are idempotent; changing
-            // one still requires the service's empty-graph proof and durable fence.
-            const binding = await service.request('/configuration/binding', { projectId: project.id, embeddingModel: config.embeddingModel, embeddingDimensions: config.embeddingDimensions })
-            if (binding.bound !== true) throw new EvolvedError('memory_embedding_locked', 'Existing graph data or processing tasks prevent changing the embedding model.', 409)
-            await authorize(c, true)
-            await service.vault.request({ userId: principal.user.id, projectId: project.id, operation: 'memoryProvider', payload: { action: 'set', version: expectedVersion, config } })
+            await service.vault.request({ userId: principal.user.id, projectId: project.id, operation: 'memoryProvider', payload: { action: 'set', version: input.version, config } })
             await authorize(c, true)
             store.audit(principal.user.id, project.id, 'memory.provider.updated')
             return c.json(await status(c))
@@ -162,14 +254,19 @@ export function createMemoryProviderRoutes(options: { store: EvolvedStore; servi
     })
     app.post(`${path}/models`, async c => {
         const { principal, project } = await authorize(c, true)
-        const body = await parseBody(c, z.object({ apiKey: z.union([z.literal(''), memoryProviderKeySchema]).optional() }).strict())
+        const body = await parseBody(c, z.discriminatedUnion('component', [
+            z.object({ component: z.literal('llm'), provider: z.enum(['openai', 'anthropic']), apiKey: optionalKey }).strict(),
+            z.object({ component: z.literal('embedding'), provider: z.enum(['openai', 'voyage']), apiKey: optionalKey }).strict(),
+            z.object({ component: z.literal('reranker'), provider: z.enum(['openai', 'voyage']), apiKey: optionalKey }).strict(),
+        ]))
         return bounded(principal.user.id, project.id, async () => {
-            const apiKey = body.apiKey || (await service.resolve(project.id))?.apiKey
-            if (!apiKey) throw new EvolvedError('memory_provider_key_required', 'Enter an API key or save a configuration first.', 400)
+            const prior = body.apiKey ? undefined : (await service.resolve(project.id))?.[body.component]
+            const apiKey = body.apiKey || (prior?.provider === body.provider ? prior.apiKey : undefined)
+            if (!apiKey) throw new EvolvedError('memory_provider_key_required', 'Enter an API key for this provider component or save it first.', 400)
             await authorize(c, true)
-            const models = await service.models(apiKey)
+            const catalog = await service.models(body.provider, apiKey)
             await authorize(c, true)
-            return c.json({ models })
+            return c.json(catalog)
         })
     })
     app.post(`${path}/test`, async c => {
@@ -178,12 +275,11 @@ export function createMemoryProviderRoutes(options: { store: EvolvedStore; servi
         return bounded(principal.user.id, project.id, () => service.using(project.id, async () => {
             const config = await service.resolve(project.id)
             if (!config) throw new EvolvedError('memory_provider_missing', 'Save a project provider configuration first.', 400)
+            const unverifiedComponents = await service.verifyModels(config, () => authorize(c, true))
             await authorize(c, true)
-            const models = await service.models(config.apiKey)
-            if (!models.includes(config.model) || !models.includes(config.embeddingModel)) throw new EvolvedError('memory_provider_model_unavailable', 'A configured model is no longer listed for this API key.', 400)
             await service.check(config)
             await authorize(c, true)
-            return c.json({ ok: true, backend: 'graphiti-0.30.2/neo4j', modelsVerified: true, inferenceTested: false })
+            return c.json({ ok: true, backend: 'graphiti-0.30.2/neo4j', modelsVerified: unverifiedComponents.length === 0, unverifiedComponents, inferenceTested: false })
         }))
     })
     return app

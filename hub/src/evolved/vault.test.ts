@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { generateKeyPairSync, randomUUID, sign } from 'node:crypto'
+import { Database } from 'bun:sqlite'
+import { createCipheriv, generateKeyPairSync, randomBytes, randomUUID, sign } from 'node:crypto'
 import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -13,26 +14,63 @@ function vault(dir: string, actions: ConstructorParameters<typeof EvolvedVault>[
     const result = new EvolvedVault({ dbPath: join(dir, 'vault.sqlite'), masterKeyFile: join(dir, 'master.key'), actions }); vaults.push(result); return result
 }
 const request = (operation: VaultRequest['operation'], payload: Record<string, unknown> = {}, projectId = 'project-a'): VaultRequest => ({ userId: 'user-a', projectId, operation, payload })
-const memoryConfig = { provider: 'openai', apiKey: 'SYNTHETIC-memory-credential', model: 'chat-model', embeddingModel: 'text-embedding-3-small', embeddingDimensions: 1536, inputUsdPerMTok: '0.4', outputUsdPerMTok: '1.6', embeddingUsdPerMTok: '0.02', maxOutputTokens: 1024 }
+const memoryConfig = { schemaVersion: 2,
+    llm: { provider: 'openai', apiKey: 'SYNTHETIC-memory-credential', model: 'chat-model', inputUsdPerMTok: '0.4', outputUsdPerMTok: '1.6', maxOutputTokens: 1024 },
+    embedding: { provider: 'openai', apiKey: 'SYNTHETIC-embedding-credential', model: 'text-embedding-3-small', dimensions: 1536, inputUsdPerMTok: '0.02' }, reranker: { provider: 'rrf' } }
 
 describe('Evolved isolated vault and bounded broker', () => {
+    test('old encrypted OpenAI records normalize without changing ciphertext, version or disabled bindings', async () => {
+        const dir = directory(), dbPath = join(dir, 'vault.sqlite'), master = randomBytes(32), projectKey = randomBytes(32)
+        writeFileSync(join(dir, 'master.key'), master, { mode: 0o600 })
+        const old = { provider: 'openai', apiKey: 'SYNTHETIC-legacy-openai-key', model: 'chat-model', embeddingModel: 'text-embedding-3-small',
+            embeddingDimensions: 1536, inputUsdPerMTok: '0.4', outputUsdPerMTok: '1.6', embeddingUsdPerMTok: '0.02', maxOutputTokens: 1024 }
+        const encrypt = (key: Buffer, clear: Buffer, aad: string) => {
+            const nonce = randomBytes(12), cipher = createCipheriv('aes-256-gcm', key, nonce)
+            cipher.setAAD(Buffer.from(aad))
+            return { nonce, ciphertext: Buffer.concat([cipher.update(clear), cipher.final()]), tag: cipher.getAuthTag() }
+        }
+        const wrapped = encrypt(master, projectKey, JSON.stringify(['hapi-evolved-project-key-v1', 'project-a']))
+        const cipher = encrypt(projectKey, Buffer.from(JSON.stringify(old)), JSON.stringify(['hapi-evolved-memory-provider-v1', 'project-a', 7]))
+        const db = new Database(dbPath)
+        db.exec('CREATE TABLE project_keys(project_id TEXT PRIMARY KEY,nonce BLOB NOT NULL,ciphertext BLOB NOT NULL,tag BLOB NOT NULL); CREATE TABLE memory_providers(project_id TEXT PRIMARY KEY,version INTEGER NOT NULL,embedding_model TEXT,nonce BLOB,ciphertext BLOB,tag BLOB,updated_at INTEGER NOT NULL)')
+        db.query('INSERT INTO project_keys VALUES(?,?,?,?)').run('project-a', wrapped.nonce, wrapped.ciphertext, wrapped.tag)
+        db.query('INSERT INTO memory_providers VALUES(?,?,?,?,?,?,?)').run('project-a', 7, old.embeddingModel, cipher.nonce, cipher.ciphertext, cipher.tag, 123)
+        db.query('INSERT INTO memory_providers VALUES(?,?,?,?,?,?,?)').run('project-b', 8, old.embeddingModel, null, null, null, 124)
+        db.close(); chmodSync(dbPath, 0o600)
+        const v = vault(dir)
+        const resolved = await v.request(request('memoryProvider', { action: 'resolve' })) as { config: unknown }
+        expect(resolved).toMatchObject({ state: 'configured', version: 7, config: { schemaVersion: 2,
+            llm: { provider: 'openai', apiKey: old.apiKey, model: old.model },
+            embedding: { provider: 'openai', apiKey: old.apiKey, model: old.embeddingModel, dimensions: 1536 }, reranker: { provider: 'rrf' } } })
+        const status = await v.request(request('memoryProvider', { action: 'status' }))
+        expect(JSON.stringify(status)).not.toContain(old.apiKey)
+        expect(status).toMatchObject({ embeddingProvider: 'openai', embeddingModel: old.embeddingModel, embeddingDimensions: 1536 })
+        expect(await v.request(request('memoryProvider', { action: 'status' }, 'project-b'))).toMatchObject({ state: 'disabled', version: 8,
+            embeddingProvider: 'openai', embeddingModel: old.embeddingModel, embeddingDimensions: 1536 })
+        const row = v.db.query("SELECT version,ciphertext,updated_at FROM memory_providers WHERE project_id='project-a'").get() as { version: number; ciphertext: Uint8Array; updated_at: number }
+        expect(row.version).toBe(7); expect(row.updated_at).toBe(123); expect(Buffer.from(row.ciphertext)).toEqual(cipher.ciphertext)
+        await expect(v.request(request('memoryProvider', { action: 'set', version: 7, config: old }))).rejects.toThrow('Invalid')
+        expect(await v.request(request('memoryProvider', { action: 'set', version: 7, config: resolved.config }))).toMatchObject({ version: 8 })
+        expect(await v.request(request('memoryProvider', { action: 'resolve' }))).toMatchObject({ config: resolved.config })
+    })
+
     test('memory credentials use separate encrypted records and survive restart without entering the secret catalog', async () => {
         const dir = directory(), v = vault(dir)
         const saved = await v.request(request('memoryProvider', { action: 'set', version: 0, config: memoryConfig }))
-        expect(JSON.stringify(saved)).not.toContain(memoryConfig.apiKey)
+        expect(JSON.stringify(saved)).not.toContain(memoryConfig.llm.apiKey)
         expect(await v.request(request('list'))).toEqual({ secrets: [] })
         expect(await v.request(request('resources'))).toEqual({ resources: [] })
         const row = v.db.query('SELECT ciphertext FROM memory_providers').get() as { ciphertext: Uint8Array }
-        expect(Buffer.from(row.ciphertext).toString()).not.toContain(memoryConfig.apiKey)
-        expect(JSON.stringify(v.db.query('SELECT * FROM audit').all())).not.toContain(memoryConfig.apiKey)
+        expect(Buffer.from(row.ciphertext).toString()).not.toContain(memoryConfig.llm.apiKey)
+        expect(JSON.stringify(v.db.query('SELECT * FROM audit').all())).not.toContain(memoryConfig.llm.apiKey)
         v.close(); vaults.splice(vaults.indexOf(v), 1)
-        expect(readFileSync(join(dir, 'vault.sqlite')).includes(Buffer.from(memoryConfig.apiKey))).toBe(false)
+        expect(readFileSync(join(dir, 'vault.sqlite')).includes(Buffer.from(memoryConfig.llm.apiKey))).toBe(false)
         const restarted = vault(dir)
         expect(await restarted.request(request('memoryProvider', { action: 'resolve' }))).toMatchObject({ state: 'configured', version: 1, config: memoryConfig })
         expect(await restarted.request(request('memoryProvider', { action: 'resolve' }, 'project-b'))).toMatchObject({ state: 'unset', config: null })
         await expect(restarted.request(request('memoryProvider', { action: 'set', version: 0, config: memoryConfig }))).rejects.toThrow('changed')
         await expect(restarted.request(request('memoryProvider', { action: 'delete', version: 0 }))).rejects.toThrow('changed')
-        expect(await restarted.request(request('memoryProvider', { action: 'delete', version: 1 }))).toMatchObject({ state: 'disabled', version: 2, config: null, embeddingModel: memoryConfig.embeddingModel })
+        expect(await restarted.request(request('memoryProvider', { action: 'delete', version: 1 }))).toMatchObject({ state: 'disabled', version: 2, config: null, embeddingModel: memoryConfig.embedding.model })
         expect(await restarted.request(request('memoryProvider', { action: 'resolve' }))).toMatchObject({ state: 'disabled', config: null })
         expect(await restarted.request(request('memoryProvider', { action: 'set', version: 2, config: memoryConfig }))).toMatchObject({ version: 3 })
         await restarted.request(request('purgeProject'))

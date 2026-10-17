@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process'
 import { EvolvedVault, createVaultSigningKey } from '../../hub/src/evolved/vault.ts'
 import { createVaultServer } from '../../hub/src/evolved/vaultServer.ts'
 import { startHub } from '../../hub/src/startHub.ts'
+import { memoryProviderConfigSchema } from '../../hub/src/evolved/memoryProvider.ts'
 const requestedState = process.env.EVOLVED_TEST_STATE
 if (!requestedState || !/^\/tmp\/hapi-evolved-ui-[A-Za-z0-9-]+$/.test(requestedState)) throw new Error('Synthetic test state required')
 const tmp = join('/tmp', basename(requestedState))
@@ -101,10 +102,19 @@ if (process.env.EVOLVED_TEST_MEMORY === '1') {
     const tokenFile = codegraphServiceToken?.file ?? join(tmp, 'memory-service.key')
     const token = codegraphServiceToken?.value ?? randomBytes(32).toString('hex')
     if (!codegraphServiceToken) writeFileSync(tokenFile, token, { mode: 0o600 })
-    const observed = { catalogRequests: 0, configurationChecks: 0, inferenceRequests: 0, keyLabels: [] as string[], bindings: [] as { projectId: string; embeddingModel: string; embeddingDimensions: number }[] }
+    const observed = { catalogRequests: 0, configurationChecks: 0, inferenceRequests: 0, keyLabels: [] as string[], bindings: [] as { projectId: string; embeddingProvider: string; embeddingModel: string; embeddingDimensions: number }[] }
     const observe = () => writeFileSync(join(tmp, 'memory-observed.json'), JSON.stringify(observed), { mode: 0o600 })
-    const keyLabel = (key: unknown) => key === 'synthetic-memory-browser-initial-key' ? 'initial'
-        : key === 'synthetic-memory-browser-reconnected-key' ? 'reconnected' : null
+    const keyLabel = (key: unknown, provider: unknown) => {
+        const allowed = [
+            ['synthetic-memory-browser-initial-key', 'anthropic', 'initial'],
+            ['synthetic-memory-browser-embedding-key', 'voyage', 'initial-embedding'],
+            ['synthetic-memory-browser-openai-embedding-key', 'openai', 'openai-embedding'],
+            ['synthetic-memory-browser-reconnected-key', 'anthropic', 'reconnected'],
+            ['synthetic-memory-browser-reconnected-embedding-key', 'openai', 'reconnected-embedding'],
+            ['synthetic-memory-browser-reranker-key', 'voyage', 'reranker'],
+        ]
+        return allowed.find(([value, identity]) => value === key && identity === provider)?.[2] ?? null
+    }
     observe()
     memoryServer = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(request) {
         if (request.headers.get('authorization') !== `Bearer ${token}`) return Response.json({ error: 'Denied' }, { status: 401 })
@@ -115,29 +125,31 @@ if (process.env.EVOLVED_TEST_MEMORY === '1') {
             return Response.json({ error: 'Inference is forbidden in this synthetic fixture' }, { status: 503 })
         }
         if (request.method !== 'POST') return Response.json({ error: 'Unknown fixture request' }, { status: 404 })
-        const body = await request.json() as { apiKey?: unknown; providerConfig?: { apiKey?: unknown; provider?: unknown; embeddingDimensions?: unknown }; projectId?: unknown; embeddingModel?: unknown; embeddingDimensions?: unknown }
+        const body = await request.json() as { apiKey?: unknown; provider?: unknown; providerConfig?: unknown; projectId?: unknown; embeddingProvider?: unknown; embeddingModel?: unknown; embeddingDimensions?: unknown }
         if (path === '/configuration/binding') {
             // This fixture has no graph and rejects inference. Accept only the
             // explicit projects and embeddings created by this browser scenario.
             const projects = JSON.parse(readFileSync(join(tmp, 'memory-projects.json'), 'utf8')) as string[]
-            if (!body || Object.keys(body).sort().join(',') !== 'embeddingDimensions,embeddingModel,projectId'
+            if (!body || Object.keys(body).sort().join(',') !== 'embeddingDimensions,embeddingModel,embeddingProvider,projectId'
                 || typeof body.projectId !== 'string' || !/^[A-Za-z0-9-]{1,80}$/.test(body.projectId) || !projects.includes(body.projectId)
-                || typeof body.embeddingModel !== 'string' || !['text-embedding-3-small', 'text-embedding-3-large'].includes(body.embeddingModel)
-                || body.embeddingDimensions !== 1536) return Response.json({ error: 'Invalid synthetic binding' }, { status: 400 })
-            observed.bindings.push({ projectId: body.projectId, embeddingModel: body.embeddingModel, embeddingDimensions: body.embeddingDimensions }); observe()
+                || typeof body.embeddingModel !== 'string'
+                || !(body.embeddingProvider === 'openai' && ['text-embedding-3-small', 'text-embedding-3-large'].includes(body.embeddingModel) && body.embeddingDimensions === 1536
+                    || body.embeddingProvider === 'voyage' && ['synthetic-voyage-embedding', 'synthetic-voyage-alternative'].includes(body.embeddingModel) && body.embeddingDimensions === 1024)) return Response.json({ error: 'Invalid synthetic binding' }, { status: 400 })
+            observed.bindings.push({ projectId: body.projectId, embeddingProvider: String(body.embeddingProvider), embeddingModel: body.embeddingModel, embeddingDimensions: Number(body.embeddingDimensions) }); observe()
             return Response.json({ bound: true })
         }
-        const label = keyLabel(path === '/configuration/models' ? body.apiKey : body.providerConfig?.apiKey)
-        if (!label) return Response.json({ error: 'Only synthetic fixture credentials are accepted' }, { status: 401 })
-        if (!observed.keyLabels.includes(label)) observed.keyLabels.push(label)
         if (path === '/configuration/models') {
+            const label = keyLabel(body.apiKey, body.provider)
+            if (!label) return Response.json({ error: 'Only synthetic fixture credentials are accepted' }, { status: 401 })
+            if (!observed.keyLabels.includes(label)) observed.keyLabels.push(label)
             observed.catalogRequests++; observe()
-            // The browser test controls this synthetic catalog, including a new
-            // model ID absent from UI defaults, to exercise dynamic selection.
-            const models = JSON.parse(readFileSync(join(tmp, 'memory-catalog.json'), 'utf8')) as string[]
-            return Response.json({ models })
+            // Voyage deliberately has no model/auth verification without inference.
+            const models = body.provider === 'voyage' ? [] : JSON.parse(readFileSync(join(tmp, 'memory-catalog.json'), 'utf8')) as string[]
+            return Response.json({ models, verified: body.provider !== 'voyage' })
         }
-        if (path === '/configuration/check' && body.providerConfig?.provider === 'openai' && body.providerConfig.embeddingDimensions === 1536) {
+        const parsed = memoryProviderConfigSchema.safeParse(body.providerConfig)
+        if (path === '/configuration/check' && parsed.success
+            && [parsed.data.llm, parsed.data.embedding, parsed.data.reranker].every(slot => slot.provider === 'rrf' || keyLabel(slot.apiKey, slot.provider))) {
             observed.configurationChecks++; observe()
             return Response.json({ ok: true, backend: 'synthetic-browser-check' })
         }

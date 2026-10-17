@@ -207,28 +207,43 @@ Verarbeitungsbudget. Statusfilter grenzen die angezeigten Ergebnisse ein.
 
 Für den Wissensgraphen öffnet ein Projektadministrator **Gedächtnis → Graph-Memory einrichten**:
 
-1. Einen eigenen OpenAI-API-Key in das Passwortfeld einfügen. Ein vorhandener
-   Schlüssel bleibt bei leerem Feld unverändert. Claude-/Codex-Abos sind separate Anmeldungen.
-2. **Modelle vom Anbieter laden** wählen und Sprach- sowie Embedding-Modell auswählen.
-   Der Katalog wird live abgefragt. Für bekannte Modelle werden Preise vorgeschlagen;
-   bei anderen Modellen die aktuellen USD-Preise je Million Tokens unter
-   **Preise und erweiterte Einstellungen** eintragen.
-3. **Einrichtung speichern**, gegebenenfalls mit Passkey bestätigen und
-   **Verbindung testen**. Der Test prüft Key, Modellkatalog und Datenbank ohne
-   kostenpflichtige Inferenz. Er bestätigt keine Modellkompatibilität oder verfügbares API-Guthaben.
-4. Unter **Verarbeitung und Budget** Cloud-Verarbeitung und Budget freigeben.
+1. **Sprachmodell**: Anthropic/Claude oder OpenAI wählen, den jeweiligen API-Key
+   hinterlegen und **Modelle laden** wählen. Die Modellliste kommt direkt vom Anbieter.
+2. **Embeddings**: Voyage AI oder OpenAI wählen und einen eigenen Schlüssel für diese
+   Funktion hinterlegen. Claude bietet selbst keine Embeddings. Bei Voyage die exakte
+   Modell-ID und unterstützte Dimension aus der verlinkten Anbieterdokumentation übernehmen;
+   es steht kein Modellkatalog zur Prüfung zur Verfügung.
+3. **Suchtrefferbewertung**: Die lokale Rangfusion (RRF) benötigt keinen zusätzlichen
+   Schlüssel. Alternativ bewertet ein separat konfigurierter Voyage- oder OpenAI-Reranker
+   die Treffer; dabei entstehen zusätzliche API-Kosten.
+4. Die aktuellen Anbieterpreise in USD je Million Tokens bei jeder kostenpflichtigen
+   Funktion eintragen. Modellkataloge liefern keine Preise. **Einrichtung speichern**,
+   gegebenenfalls mit Passkey bestätigen und **Verbindung testen** wählen.
+5. Unter **Verarbeitung und Budget** Cloud-Verarbeitung und Budget freigeben.
 
-Der Key wird verschlüsselt im Projekt-Tresor gespeichert und weder an Agenten
-noch beim erneuten Öffnen an den Browser ausgegeben. Kein SSH und kein Neustart
-sind erforderlich. Neue und wartende Aufträge nutzen die gespeicherte Einrichtung
-unter den bestehenden Projektfreigaben. **Verbindung entfernen** entfernt den
-Projekt-Key und verhindert einen Rückfall auf einen globalen Betreiber-Key;
-lokale Einträge bleiben erhalten.
+**Claude + Voyage + lokale Rangfusion funktioniert ohne OpenAI-Key.** Claude-/Codex-Abos
+unter „Abos verbinden“ ersetzen keine API-Keys für den Wissensgraphen.
 
-Graph-Memory benötigt strukturierte Textausgaben, Chat Completions mit Logprobs
-und Embeddings mit 1536 Dimensionen. Nicht jede Modell-ID aus dem Katalog ist
-dafür geeignet. Ein an vorhandene Graphdaten gebundenes Embedding-Modell kann
-nicht einfach ausgetauscht werden; dafür wäre eine gesonderte Neuindizierung nötig.
+Schlüssel werden getrennt je Funktion verschlüsselt im Projekt-Tresor gespeichert und
+weder Agenten noch beim erneuten Öffnen dem Browser ausgegeben. Ein leeres Schlüsselfeld
+behält nur den bereits gespeicherten Schlüssel derselben Funktion beim selben Anbieter.
+Beim Anbieterwechsel einen passenden Schlüssel eingeben. Kein SSH oder Neustart ist nötig.
+Neue und wartende Aufträge nutzen die gespeicherte Einrichtung unter den bestehenden
+Projektfreigaben. **Verbindung entfernen** entfernt die Projekt-Schlüssel und sperrt den
+Rückfall auf allgemeine Betreiberzugänge; lokale Einträge bleiben erhalten.
+
+Der Verbindungstest prüft die Datenbank und verfügbare OpenAI-/Anthropic-Kataloge, ohne
+kostenpflichtige Inferenz. Bei Voyage bleiben Schlüssel und Modell ausdrücklich ungeprüft.
+Auch ein erfolgreicher Katalogtest bestätigt weder Modellkompatibilität noch API-Guthaben.
+Das Sprachmodell muss strukturierte Ausgaben unterstützen; nur ein **OpenAI-Reranker**
+benötigt zusätzlich Chat Completions mit Logprobs. Embeddings müssen die eingestellte
+Vektorgröße unterstützen. Neue Modell-IDs sind zulässig; es gibt keine feste Modellliste.
+
+Bestehende OpenAI-Einrichtungen werden beim Lesen übernommen; die bisherige lokale
+Suchrangfolge bleibt erhalten. Das Sprachmodell kann unabhängig von Embeddings auf
+Claude wechseln. Anbieter, Modell und Dimensionen bestehender Graphvektoren bleiben
+gebunden. Ein Embedding-Wechsel wird nur bei nachweislich leerem Graph zugelassen;
+das Speichern löscht keine Graphdaten und startet keine automatische Neuindizierung.
 
 Projektadministratoren konfigurieren unter **Verarbeitung und Budget**:
 

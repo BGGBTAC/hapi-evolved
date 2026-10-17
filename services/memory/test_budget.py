@@ -1,4 +1,7 @@
 import unittest
+import sqlite3
+import tempfile
+from pathlib import Path
 from budget import OperationLedger, BudgetExceeded, OperationConflict, micros
 
 class BudgetTests(unittest.TestCase):
@@ -22,6 +25,23 @@ class BudgetTests(unittest.TestCase):
         self.assertIsNone(row["result"])
         self.assertEqual(row["status"], "purged")
         self.assertEqual(ledger.generation("p"), 1)
+
+    def test_legacy_binding_migrates_provider_without_touching_existing_operations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = str(Path(directory) / "ledger.db")
+            db = sqlite3.connect(path)
+            db.execute("CREATE TABLE embedding_bindings(project_id TEXT PRIMARY KEY, embedding_model TEXT NOT NULL, dimensions INTEGER NOT NULL)")
+            db.execute("INSERT INTO embedding_bindings VALUES('project','embedding',1024)")
+            db.commit()
+            db.close()
+            ledger = OperationLedger(path)
+            self.assertEqual(ledger.binding("project"), ("openai", "embedding", 1024))
+            ledger.bind("project", "voyage", "embedding", 1024)
+            self.assertEqual(ledger.binding("project"), ("voyage", "embedding", 1024))
+            ledger.db.close()
+            reopened = OperationLedger(path)
+            self.assertEqual(reopened.binding("project"), ("voyage", "embedding", 1024))
+            reopened.db.close()
 
     def test_fractional_pricing_rounds_up(self):
         self.assertEqual(micros(1, "0.02"), 1)

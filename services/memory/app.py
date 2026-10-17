@@ -7,6 +7,7 @@ import logging
 import os
 import re
 from collections import defaultdict
+from contextlib import AsyncExitStack
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,7 +17,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from neo4j import AsyncGraphDatabase
 from budget import OperationLedger, OperationConflict, BudgetExceeded
-from configuration import EMBEDDING_DIMENSIONS, MODEL_ID, InvalidConfiguration, operator_config, provider_config
+from configuration import MODEL_ID, InvalidConfiguration, operator_config, provider_config, validate_dimensions
 from provider_catalog import list_models, CatalogUnavailable, ProviderUnauthorized
 
 logging.getLogger("graphiti_core").setLevel(logging.CRITICAL)
@@ -60,19 +61,56 @@ async def graph_client(operation, config=None):
     from graphiti_core.cross_encoder.openai_reranker_client import OpenAIRerankerClient
     from graphiti_core.driver.neo4j_driver import Neo4jDriver
     from transport import BudgetTransport
-    from embedding import ConfiguredOpenAIEmbedder
+    from embedding import ConfiguredOpenAIEmbedder, ConfiguredVoyageEmbedder
+    from providers import AnthropicSchemaClient, LocalRRFClient, VoyageReranker
     config = model_config() if config is None else config
-    http = httpx.AsyncClient(transport=BudgetTransport(ledger, operation, config.transport_config()), timeout=40, follow_redirects=False)
-    client = AsyncOpenAI(api_key=config.api_key, base_url=config.base, max_retries=0, http_client=http)
-    llm_config = LLMConfig(model=config.model, small_model=config.model, max_tokens=config.max_output_tokens)
-    graph = Graphiti(
-        graph_driver=Neo4jDriver(os.environ.get("NEO4J_URI", "bolt://neo4j:7687"), os.environ.get("NEO4J_USER", "neo4j"), secret("NEO4J_PASSWORD")),
-        llm_client=OpenAIClient(config=llm_config, client=client),
-        cross_encoder=OpenAIRerankerClient(config=llm_config, client=client),
-        embedder=ConfiguredOpenAIEmbedder(config=OpenAIEmbedderConfig(embedding_model=config.embedding_model, embedding_dim=config.embedding_dimensions), client=client),
-        max_coroutines=2,
-    )
-    return graph, http
+    resources = AsyncExitStack()
+    resources.clients = []
+
+    async def http_client(role):
+        headers = ({"x-api-key": role.api_key, "anthropic-version": "2023-06-01"} if role.provider == "anthropic"
+            else {"authorization": "Bearer " + role.api_key})
+        transport = BudgetTransport(ledger, operation, role.transport_config())
+        try:
+            http = httpx.AsyncClient(base_url=role.base.rstrip("/") + "/", headers=headers,
+                transport=transport, timeout=40, follow_redirects=False, trust_env=False)
+        except BaseException:
+            await transport.aclose()
+            raise
+        resources.push_async_callback(http.aclose)
+        resources.clients.append(http)
+        return http
+
+    def llm_config(role):
+        return LLMConfig(model=role.model, small_model=role.model, max_tokens=role.max_output_tokens)
+
+    def openai_client(role, http):
+        return AsyncOpenAI(api_key=role.api_key, base_url=role.base, max_retries=0, http_client=http)
+
+    try:
+        llm_http = await http_client(config.llm)
+        llm = (AnthropicSchemaClient(llm_config(config.llm), llm_http) if config.llm.provider == "anthropic" else
+            OpenAIClient(config=llm_config(config.llm), client=openai_client(config.llm, llm_http)))
+        embedding_http = await http_client(config.embedding)
+        embedding = (ConfiguredVoyageEmbedder(config.embedding, embedding_http) if config.embedding.provider == "voyage" else
+            ConfiguredOpenAIEmbedder(config=OpenAIEmbedderConfig(embedding_model=config.embedding.model,
+                embedding_dim=config.embedding.dimensions), client=openai_client(config.embedding, embedding_http)))
+        reranker = LocalRRFClient()
+        if config.reranker is not None:
+            reranker_http = await http_client(config.reranker)
+            reranker = (VoyageReranker(config.reranker, reranker_http) if config.reranker.provider == "voyage" else
+                OpenAIRerankerClient(config=llm_config(config.reranker), client=openai_client(config.reranker, reranker_http)))
+        graph_driver = Neo4jDriver(os.environ.get("NEO4J_URI", "bolt://neo4j:7687"),
+            os.environ.get("NEO4J_USER", "neo4j"), secret("NEO4J_PASSWORD"))
+        # Register before Graphiti construction: even a partially built operation
+        # closes every HTTP transport and database driver exactly once.
+        resources.push_async_callback(graph_driver.close)
+        graph = Graphiti(graph_driver=graph_driver, llm_client=llm, cross_encoder=reranker,
+            embedder=embedding, max_coroutines=2)
+        return graph, resources
+    except BaseException:
+        await resources.aclose()
+        raise
 
 @app.middleware("http")
 async def authorize(request: Request, call_next):
@@ -130,9 +168,9 @@ async def check_configuration(request: Request):
 async def configuration_models(request: Request):
     try:
         data = await request.json()
-        if not isinstance(data, dict) or set(data) != {"apiKey"}:
+        if not isinstance(data, dict) or set(data) != {"provider", "apiKey"}:
             raise InvalidConfiguration()
-        return {"models": await list_models(data["apiKey"])}
+        return await list_models(data["provider"], data["apiKey"])
     except (ValueError, TypeError):
         return JSONResponse({"error": "Invalid provider configuration"}, 400)
     except ProviderUnauthorized:
@@ -148,12 +186,13 @@ def active_project_operations(project):
 async def check_binding(request: Request):
     try:
         data = await request.json()
-        if not isinstance(data, dict) or set(data) != {"projectId", "embeddingModel", "embeddingDimensions"}:
+        if not isinstance(data, dict) or set(data) != {"projectId", "embeddingProvider", "embeddingModel", "embeddingDimensions"}:
             raise ValueError()
         project = data["projectId"]
         validate_project(project)
-        model, dimensions = data["embeddingModel"], data["embeddingDimensions"]
-        if not isinstance(model, str) or not MODEL_ID.fullmatch(model) or type(dimensions) is not int or dimensions != EMBEDDING_DIMENSIONS:
+        provider, model, dimensions = data["embeddingProvider"], data["embeddingModel"], data["embeddingDimensions"]
+        validate_dimensions(provider, dimensions)
+        if not isinstance(model, str) or not MODEL_ID.fullmatch(model):
             raise ValueError()
     except (ValueError, TypeError):
         return JSONResponse({"error": "Invalid project"}, 400)
@@ -165,7 +204,7 @@ async def check_binding(request: Request):
             # after a successful bind followed by a failed external Vault save.
             # Matching bindings remain valid with graph data or old uncertain
             # operations: this only reads the binding while holding its lock.
-            if ledger.binding(project) == (model, dimensions):
+            if ledger.binding(project) == (provider, model, dimensions):
                 return {"bound": True}
             if active_project_operations(project):
                 return {"bound": False}
@@ -188,7 +227,7 @@ async def check_binding(request: Request):
                 return {"bound": False}
             # Seal the proof before returning. A pre-change request that reaches
             # ASGI only later must pass this durable binding before graph work.
-            ledger.bind(project, model, dimensions)
+            ledger.bind(project, provider, model, dimensions)
             return {"bound": True}
         except Exception:
             return JSONResponse({"bound": False, "error": "Memory graph binding could not be verified"}, 503)
@@ -267,7 +306,7 @@ async def execute(request: Request, kind: str):
         except (ValueError, OSError):
             return JSONResponse({"error": "Invalid provider configuration" if has_provider_config else "Memory model configuration unavailable"}, 400 if has_provider_config else 503)
         binding = ledger.binding(project)
-        if binding is not None and binding != (config.embedding_model, config.embedding_dimensions):
+        if binding is not None and binding != config.binding:
             result = {"error": "Embedding configuration does not match project binding"}
             try:
                 ledger.reject(operation, project, generation, fingerprint, budget, result)
@@ -305,7 +344,16 @@ async def execute(request: Request, kind: str):
                 query = data.get("query")
                 if not isinstance(query, str) or not query.strip() or len(query) > 500:
                     raise ValueError("Invalid query")
-                facts = await graph.search(query=query, group_ids=[scope], num_results=min(100, max(1, int(data.get("limit", 30)))))
+                limit = min(100, max(1, int(data.get("limit", 30))))
+                from graphiti_core.search.search_config_recipes import EDGE_HYBRID_SEARCH_RRF
+                from graphiti_core.search.search_config import EdgeReranker
+                # Copy for every operation, including RRF: Graphiti.search() mutates
+                # its shared recipe limit and can race concurrent project searches.
+                search_config = EDGE_HYBRID_SEARCH_RRF.model_copy(deep=True)
+                if config.reranker is not None:
+                    search_config.edge_config.reranker = EdgeReranker.cross_encoder
+                search_config.limit = limit
+                facts = (await graph.search_(query=query, group_ids=[scope], config=search_config)).edges
                 result = {"results": [{"id": edge.uuid, "body": edge.fact, "memoryIds": edge.episodes,
                     "validAt": edge.valid_at.isoformat() if edge.valid_at else None,
                     "invalidAt": edge.invalid_at.isoformat() if edge.invalid_at else None,
@@ -316,8 +364,12 @@ async def execute(request: Request, kind: str):
         except Exception:
             result = {"error": "Graph extraction/search failed"}
         finally:
-            if graph: await graph.close()
-            if http: await http.aclose()
+            if http:
+                try:
+                    await http.aclose()
+                except Exception:
+                    success = False
+                    result = {"error": "Graph operation cleanup failed"}
         ledger.finish(operation, success, result)
         return JSONResponse({**result, "spentMicros": ledger.spent(operation)}, 200 if success else 422)
 

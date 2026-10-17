@@ -35,21 +35,53 @@ async def main():
         adapter = importlib.import_module('app')
         original = adapter.graph_client
         provider_calls = []
-        browser = {'provider': 'openai', 'apiKey': 'synthetic-browser-key-never-sent',
-            'model': 'synthetic-model', 'embeddingModel': 'text-embedding-3-small', 'embeddingDimensions': 1536,
-            'inputUsdPerMTok': '1', 'outputUsdPerMTok': '2', 'embeddingUsdPerMTok': '0.1', 'maxOutputTokens': 2048}
+        browser = {'schemaVersion': 2,
+            'llm': {'provider': 'openai', 'apiKey': 'synthetic-browser-key-never-sent', 'model': 'synthetic-model',
+                'inputUsdPerMTok': '1', 'outputUsdPerMTok': '2', 'maxOutputTokens': 2048},
+            'embedding': {'provider': 'openai', 'apiKey': 'synthetic-browser-key-never-sent',
+                'model': 'text-embedding-3-small', 'dimensions': 1536, 'inputUsdPerMTok': '0.1'},
+            'reranker': {'provider': 'rrf'}}
+        mixed = {**browser, 'llm': {**browser['llm'], 'provider': 'anthropic', 'model': 'claude-synthetic', 'apiKey': 'synthetic-anthropic-never-sent'},
+            'embedding': {**browser['embedding'], 'provider': 'voyage', 'model': 'voyage-4', 'dimensions': 1024, 'apiKey': 'synthetic-voyage-never-sent'}}
         async def mock_provider(request):
             data = json.loads(request.content)
             provider_calls.append(request.url.path)
-            assert request.url.host in ('provider.invalid', 'api.openai.com')
+            assert request.url.host in ('provider.invalid', 'api.openai.com', 'api.anthropic.com', 'api.voyageai.com')
             if request.url.host == 'api.openai.com':
-                assert request.headers['authorization'] == 'Bearer ' + browser['apiKey']
+                assert request.headers['authorization'] == 'Bearer ' + browser['llm']['apiKey']
+            if request.url.host == 'api.anthropic.com':
+                assert request.headers['x-api-key'] == mixed['llm']['apiKey']
+                assert request.url.path == '/v1/messages' and data['max_tokens'] <= 2048
+                schema = data['tools'][0]['input_schema']
+                return httpx.Response(200, json={'id': 'msg_test', 'type': 'message', 'role': 'assistant',
+                    'model': data['model'], 'stop_reason': 'tool_use', 'stop_sequence': None,
+                    'content': [{'type': 'tool_use', 'id': 'toolu_test', 'name': 'graphiti_output', 'input': minimal(schema, schema)}],
+                    'usage': {'input_tokens': 100, 'output_tokens': 10}})
+            if request.url.host == 'api.voyageai.com':
+                assert request.headers['authorization'] == 'Bearer ' + mixed['embedding']['apiKey']
+                if request.url.path == '/v1/rerank':
+                    assert data['model'] == 'rerank-synthetic' and data['return_documents'] is False
+                    return httpx.Response(200, json={'data': [{'index': i, 'relevance_score': 0.9} for i in range(len(data['documents']))],
+                        'usage': {'total_tokens': 10}})
+                assert request.url.path == '/v1/embeddings' and data['output_dimension'] == 1024
+                assert data['truncation'] is False and 'input_type' not in data
+                inputs = data['input']
+                return httpx.Response(200, json={'data': [{'index': i, 'embedding': [1.0] + [0.0] * 1023} for i in range(len(inputs))],
+                    'usage': {'total_tokens': 10}})
             if request.url.path.endswith('/embeddings'):
                 if request.url.host == 'api.openai.com': assert data['dimensions'] == 1536
                 inputs = data['input'] if isinstance(data['input'], list) else [data['input']]
                 return httpx.Response(200, json={'object': 'list', 'model': data['model'],
                     'data': [{'object': 'embedding', 'index': i, 'embedding': [1.0] + [0.0] * 1535} for i in range(len(inputs))],
                     'usage': {'prompt_tokens': 10, 'total_tokens': 10}})
+            if request.url.path == '/v1/chat/completions':
+                assert data['model'] == 'rerank-synthetic' and data['max_completion_tokens'] == 1 and data['store'] is False
+                return httpx.Response(200, json={'id': 'chatcmpl_test', 'object': 'chat.completion', 'created': 1,
+                    'model': data['model'], 'choices': [{'index': 0, 'finish_reason': 'stop',
+                        'message': {'role': 'assistant', 'content': 'True'},
+                        'logprobs': {'content': [{'token': 'True', 'logprob': -0.1, 'bytes': [84,114,117,101],
+                            'top_logprobs': [{'token': 'True', 'logprob': -0.1, 'bytes': [84,114,117,101]}]}]}}],
+                    'usage': {'prompt_tokens': 10, 'completion_tokens': 1, 'total_tokens': 11}})
             assert request.url.path.endswith('/responses'), request.url.path
             assert data['store'] is False and data['max_output_tokens'] <= 2048
             schema = data['text']['format']['schema']
@@ -60,9 +92,10 @@ async def main():
                 'usage': {'input_tokens': 100, 'output_tokens': 10, 'total_tokens': 110}})
         async def test_graph_client(operation, config=None):
             graph, http = await original(operation, config)
-            await http._transport.inner.aclose()
-            http._transport.inner = httpx.MockTransport(mock_provider)
-            assert graph.llm_client.client is graph.cross_encoder.client is graph.embedder.client
+            for client in http.clients:
+                await client._transport.inner.aclose()
+                client._transport.inner = httpx.MockTransport(mock_provider)
+            assert graph.llm_client.client is not graph.embedder.client
             return graph, http
         adapter.graph_client = test_graph_client
         project, memory_id = str(uuid4()), str(uuid4())
@@ -90,10 +123,10 @@ async def main():
                 assert searched.json()['results'] == []
                 call_count = len(provider_calls)
                 rotated = await client.post('/search', json={**search_payload, 'providerConfig': {
-                    **browser, 'apiKey': 'rotated-key-never-sent', 'model': 'changed-model', 'inputUsdPerMTok': '3'}})
+                    **browser, 'llm': {**browser['llm'], 'apiKey': 'rotated-key-never-sent', 'model': 'changed-model', 'inputUsdPerMTok': '3'}}})
                 assert rotated.json() == searched.json() and len(provider_calls) == call_count
                 dump = '\n'.join(adapter.ledger.db.iterdump())
-                assert browser['apiKey'] not in dump and 'rotated-key-never-sent' not in dump
+                assert browser['llm']['apiKey'] not in dump and 'rotated-key-never-sent' not in dump
                 receipt = await client.post('/receipt', json={'operationId': payload['operationId']})
                 assert receipt.status_code == 200 and receipt.json()['final'] is True
                 assert receipt.json()['spentMicros'] == response.json()['spentMicros']
@@ -103,8 +136,52 @@ async def main():
                     result = await session.run('MATCH (n {group_id:$scope}) RETURN count(n) AS total', scope=scope)
                     assert (await result.single())['total'] == 0
                 assert '/v1/responses' in provider_calls and '/v1/embeddings' in provider_calls
+                mixed_project = project + '-mixed'
+                mixed_scope = adapter.group_id(mixed_project, 0)
+                try:
+                    mixed_payload = {**payload, 'projectId': mixed_project, 'operationId': str(uuid4()),
+                        'memoryId': str(uuid4()), 'providerConfig': mixed}
+                    ingested = await client.post('/ingest', json=mixed_payload)
+                    assert ingested.status_code == 200 and ingested.json()['indexed'], ingested.text
+                    mixed_search = {**search_payload, 'projects': [{'projectId': mixed_project, 'generation': 0}],
+                        'operationId': str(uuid4()), 'providerConfig': mixed}
+                    searched_mixed = await client.post('/search', json=mixed_search)
+                    assert searched_mixed.status_code == 200, searched_mixed.text
+                    assert searched_mixed.json()['results'] == []
+                    assert '/v1/messages' in provider_calls
+                    # Populate only this synthetic scope with actual Graphiti nodes
+                    # and an edge, so both selected cross-encoders must run in search.
+                    from graphiti_core.nodes import EntityNode
+                    from graphiti_core.edges import EntityEdge
+                    fixture_graph, resources = await test_graph_client('synthetic-fixture', adapter.provider_config(mixed))
+                    try:
+                        vector = [1.0] + [0.0] * 1023
+                        left = EntityNode(name='Synthetic left', group_id=mixed_scope, name_embedding=vector)
+                        right = EntityNode(name='Synthetic right', group_id=mixed_scope, name_embedding=vector)
+                        await left.save(fixture_graph.driver)
+                        await right.save(fixture_graph.driver)
+                        edge = EntityEdge(name='LINKS', fact='Synthetic verification fact', group_id=mixed_scope, created_at=datetime.now(timezone.utc),
+                            source_node_uuid=left.uuid, target_node_uuid=right.uuid, fact_embedding=vector,
+                            episodes=[mixed_payload['memoryId']])
+                        await edge.save(fixture_graph.driver)
+                    finally:
+                        await resources.aclose()
+                    for provider in ('voyage', 'openai'):
+                        reranker = ({'provider': 'voyage', 'apiKey': mixed['embedding']['apiKey'],
+                            'model': 'rerank-synthetic', 'inputUsdPerMTok': '0.1'} if provider == 'voyage' else
+                            {**browser['llm'], 'model': 'rerank-synthetic'})
+                        ranked = await client.post('/search', json={**mixed_search, 'operationId': str(uuid4()),
+                            'providerConfig': {**mixed, 'reranker': reranker}})
+                        assert ranked.status_code == 200, ranked.text
+                        assert [result['id'] for result in ranked.json()['results']] == [edge.uuid], ranked.text
+                    assert '/v1/rerank' in provider_calls and '/v1/chat/completions' in provider_calls
+                    assert (await client.post('/reset', json={'projectId': mixed_project, 'generation': 1})).status_code == 200
+                finally:
+                    async with adapter.driver.session() as session:
+                        result = await session.run('MATCH (n {group_id:$scope}) DETACH DELETE n', scope=mixed_scope)
+                        await result.consume()
                 print(json.dumps({'realSDK': 'graphiti-0.30.2', 'neo4j': 'passed', 'ingest': True, 'search': True,
-                    'operatorFallbackIngest': True, 'projectConfiguredSearch': True, 'rotationReceiptReplay': True,
+                    'operatorFallbackIngest': True, 'claudeVoyageIngestAndSearch': True, 'voyageAndOpenAIReranking': True, 'projectConfiguredSearch': True, 'rotationReceiptReplay': True,
                     'receipt': True, 'purge': True, 'paidCalls': 0, 'mockProviderRequests': len(provider_calls)}))
         finally:
             async with adapter.driver.session() as session:

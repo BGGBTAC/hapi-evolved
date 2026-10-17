@@ -34,9 +34,12 @@ class OperationLedger:
             );
             CREATE TABLE IF NOT EXISTS generations (project_id TEXT PRIMARY KEY, generation INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS embedding_bindings (
-                project_id TEXT PRIMARY KEY, embedding_model TEXT NOT NULL, dimensions INTEGER NOT NULL
+                project_id TEXT PRIMARY KEY, embedding_model TEXT NOT NULL, dimensions INTEGER NOT NULL, provider TEXT NOT NULL DEFAULT 'openai'
             );
         """)
+        # Existing vectors came from the former OpenAI-only configuration.
+        if "provider" not in {row[1] for row in self.db.execute("PRAGMA table_info(embedding_bindings)")}:
+            self.db.execute("ALTER TABLE embedding_bindings ADD COLUMN provider TEXT NOT NULL DEFAULT 'openai'")
         # Never repeat an uncertain paid request after process death.
         self.db.execute("UPDATE operations SET status='indeterminate',result=NULL WHERE status='running'")
 
@@ -57,14 +60,14 @@ class OperationLedger:
         return None
 
     def binding(self, project: str):
-        row = self.db.execute("SELECT embedding_model,dimensions FROM embedding_bindings WHERE project_id=?", (project,)).fetchone()
-        return (row[0], row[1]) if row else None
+        row = self.db.execute("SELECT provider,embedding_model,dimensions FROM embedding_bindings WHERE project_id=?", (project,)).fetchone()
+        return (row[0], row[1], row[2]) if row else None
 
-    def bind(self, project: str, model: str, dimensions: int):
+    def bind(self, project: str, provider: str, model: str, dimensions: int):
         # The caller holds the project lock and has just proved every graph
         # generation empty with no admitted or uncertain operation.
-        self.db.execute("""INSERT INTO embedding_bindings VALUES(?,?,?) ON CONFLICT(project_id)
-            DO UPDATE SET embedding_model=excluded.embedding_model,dimensions=excluded.dimensions""", (project, model, dimensions))
+        self.db.execute("""INSERT INTO embedding_bindings(project_id,provider,embedding_model,dimensions) VALUES(?,?,?,?) ON CONFLICT(project_id)
+            DO UPDATE SET provider=excluded.provider,embedding_model=excluded.embedding_model,dimensions=excluded.dimensions""", (project, provider, model, dimensions))
 
     def reject(self, operation: str, project: str, generation: int, fingerprint: str, budget: int, result: dict):
         # A late incompatible snapshot gets a durable zero-cost receipt without
