@@ -103,7 +103,7 @@ describe('temporary bridge-token renewal failures', () => {
         expect(screen.queryByText(/Deine offenen Eingaben bleiben erhalten/)).not.toBeInTheDocument()
     })
 
-    it('ignores a late failing renewal after a newer retry succeeded', async () => {
+    it.each(['success', 'failure'] as const)('does not replace a newer successful renewal with an older late %s', async outcome => {
         const f = fixture(); await draft(); f.defer(true)
         fireEvent.click(screen.getByRole('button', { name: 'Renew' }))
         await waitFor(() => expect(f.pending).toHaveLength(1))
@@ -111,9 +111,49 @@ describe('temporary bridge-token renewal failures', () => {
         await waitFor(() => expect(f.pending).toHaveLength(2))
         await act(async () => f.pending[1].resolve(Response.json({ token: 'recovered-token' })))
         await screen.findByText('a:recovered-token:user-1')
-        await act(async () => f.pending[0].resolve(Response.json({ error: 'Late failure' }, { status: 503 })))
+        await act(async () => f.pending[0].resolve(outcome === 'success' ? Response.json({ token: 'older-token' }) : Response.json({ error: 'Late failure' }, { status: 503 })))
+        expect(screen.getByText('a:recovered-token:user-1')).toBeInTheDocument()
         expect(screen.queryByText(/Die Verbindung konnte gerade nicht erneuert werden/)).not.toBeInTheDocument()
         expect(screen.getByLabelText('Private draft')).toHaveValue('synthetic-unsaved-private-input')
+    })
+
+    it.each([503, 429, 'network'] as const)('recovers from a newer %s failure when an older background renewal succeeds', async failure => {
+        const f = fixture(); await draft(); f.defer(true)
+        fireEvent.click(screen.getByRole('button', { name: 'Renew' }))
+        await waitFor(() => expect(f.pending).toHaveLength(1))
+        fireEvent.click(screen.getByRole('button', { name: 'Renew' }))
+        await waitFor(() => expect(f.pending).toHaveLength(2))
+        await act(async () => failure === 'network'
+            ? f.pending[1].reject(new TypeError('Failed to fetch'))
+            : f.pending[1].resolve(Response.json({ error: 'Temporary failure' }, { status: failure })))
+        await screen.findByText(/Die Verbindung konnte gerade nicht erneuert werden/)
+        await act(async () => f.pending[0].resolve(Response.json({ token: 'renewed-token-recovered' })))
+        expect(screen.getByText('a:renewed-token-recovered:user-1')).toBeInTheDocument()
+        expect(screen.queryByText(/Die Verbindung konnte gerade nicht erneuert werden/)).not.toBeInTheDocument()
+        expect(screen.getByLabelText('Private draft')).toHaveValue('synthetic-unsaved-private-input')
+        expect(f.mounted).toHaveBeenCalledTimes(1); expect(f.unmounted).not.toHaveBeenCalled()
+        fireEvent.click(screen.getByRole('button', { name: 'Read sessions' }))
+        await screen.findByText('Completed reads: 1')
+        expect(f.calls()).toEqual({ token: 3, sessions: 1 })
+    })
+
+    it('recovers through the oldest background renewal after two newer temporary failures', async () => {
+        const f = fixture(); await draft(); f.defer(true)
+        for (let count = 1; count <= 3; count++) {
+            fireEvent.click(screen.getByRole('button', { name: 'Renew' }))
+            await waitFor(() => expect(f.pending).toHaveLength(count))
+        }
+        await act(async () => f.pending[1].resolve(Response.json({ error: 'Temporary failure' }, { status: 503 })))
+        await act(async () => f.pending[2].resolve(Response.json({ error: 'Temporary failure' }, { status: 503 })))
+        await screen.findByText(/Die Verbindung konnte gerade nicht erneuert werden/)
+        await act(async () => f.pending[0].resolve(Response.json({ token: 'renewed-token-oldest' })))
+        expect(screen.getByText('a:renewed-token-oldest:user-1')).toBeInTheDocument()
+        expect(screen.queryByText(/Die Verbindung konnte gerade nicht erneuert werden/)).not.toBeInTheDocument()
+        expect(screen.getByLabelText('Private draft')).toHaveValue('synthetic-unsaved-private-input')
+        fireEvent.click(screen.getByRole('button', { name: 'Read sessions' }))
+        await screen.findByText('Completed reads: 1')
+        expect(f.calls()).toEqual({ token: 4, sessions: 1 })
+        expect(f.mounted).toHaveBeenCalledTimes(1); expect(f.unmounted).not.toHaveBeenCalled()
     })
 
     it('allows both concurrent unauthorized requests to retry after successful renewals', async () => {
@@ -143,6 +183,39 @@ describe('temporary bridge-token renewal failures', () => {
         expect(screen.queryByLabelText('Private draft')).not.toBeInTheDocument()
         expect(screen.queryByText(/late-renewed-token/)).not.toBeInTheDocument()
         expect(f.mounted).toHaveBeenCalledTimes(1)
+    })
+
+    it.each([[401, 'failure'], [403, 'failure'], [401, 'success'], [403, 'success']] as const)('keeps authority rejection %s effective when a newer pending renewal later returns %s', async (status, outcome) => {
+        const f = fixture(); await draft(); f.defer(true)
+        fireEvent.click(screen.getByRole('button', { name: 'Renew' }))
+        await waitFor(() => expect(f.pending).toHaveLength(1))
+        fireEvent.click(screen.getByRole('button', { name: 'Renew' }))
+        await waitFor(() => expect(f.pending).toHaveLength(2))
+        await act(async () => f.pending[0].resolve(Response.json({ error: 'Authority revoked' }, { status })))
+        await screen.findByRole('button', { name: status === 401 ? 'Mit Passkey anmelden' : 'Projekt erneut öffnen' })
+        await act(async () => f.pending[1].resolve(outcome === 'success' ? Response.json({ token: 'late-renewed-token' }) : Response.json({ error: 'Temporary failure' }, { status: 503 })))
+        expect(screen.queryByLabelText('Private draft')).not.toBeInTheDocument()
+        expect(screen.queryByText(/late-renewed-token/)).not.toBeInTheDocument()
+        expect(screen.queryByText(/Deine offenen Eingaben bleiben erhalten/)).not.toBeInTheDocument()
+        expect(f.mounted).toHaveBeenCalledTimes(1); expect(f.unmounted).toHaveBeenCalledTimes(1)
+    })
+
+    it.each([401, 403] as const)('ignores an older authority rejection %s after a newer renewal succeeded', async status => {
+        const f = fixture(); await draft(); f.defer(true)
+        fireEvent.click(screen.getByRole('button', { name: 'Renew' }))
+        await waitFor(() => expect(f.pending).toHaveLength(1))
+        fireEvent.click(screen.getByRole('button', { name: 'Renew' }))
+        await waitFor(() => expect(f.pending).toHaveLength(2))
+        await act(async () => f.pending[1].resolve(Response.json({ token: 'renewed-token-confirmed' })))
+        await screen.findByText('a:renewed-token-confirmed:user-1')
+        await act(async () => f.pending[0].resolve(Response.json({ error: 'Old authority rejection' }, { status })))
+        expect(screen.getByText('a:renewed-token-confirmed:user-1')).toBeInTheDocument()
+        expect(screen.getByLabelText('Private draft')).toHaveValue('synthetic-unsaved-private-input')
+        expect(screen.queryByText(/Deine offenen Eingaben bleiben erhalten/)).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Read sessions' }))
+        await screen.findByText('Completed reads: 1')
+        expect(f.calls()).toEqual({ token: 3, sessions: 1 })
+        expect(f.mounted).toHaveBeenCalledTimes(1); expect(f.unmounted).not.toHaveBeenCalled()
     })
 
     it.each(['success', 'failure'] as const)('ignores a late previous-project %s after project authority changed', async outcome => {

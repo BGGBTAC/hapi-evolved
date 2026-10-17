@@ -157,6 +157,7 @@ function EvolvedSessionProvider({ baseUrl, authenticated, onboarding }: {
     const [tokenProjectId, setTokenProjectId] = useState<string | null>(null)
     const tokenRef = useRef<string | null>(null)
     const tokenRequest = useRef(0)
+    const successfulTokenRequest = useRef(0)
     const principalRef = useRef<string | null>(null)
     const authEpoch = useRef(0)
     const projectRef = useRef(projectId)
@@ -229,9 +230,10 @@ function EvolvedSessionProvider({ baseUrl, authenticated, onboarding }: {
         try {
             const result = await api.request<{ token: string }>(`/session-token?projectId=${encodeURIComponent(projectId)}`)
             if (projectRef.current !== projectId || epoch !== authEpoch.current) return null
-            // Concurrent callers may each use their successful renewal, but an
-            // older response must not overwrite the newest connection state.
-            if (request !== tokenRequest.current) return result.token
+            // Only a newer success supersedes this result. A newer temporary
+            // failure must not prevent an in-flight renewal from recovering.
+            if (request < successfulTokenRequest.current) return result.token
+            successfulTokenRequest.current = request
             tokenRef.current = result.token
             setToken(result.token)
             setTokenProjectId(projectId)
@@ -239,7 +241,9 @@ function EvolvedSessionProvider({ baseUrl, authenticated, onboarding }: {
             setBridgeRefreshFailed(false)
             return result.token
         } catch (failure) {
-            if (projectRef.current !== projectId || epoch !== authEpoch.current || request !== tokenRequest.current) return null
+            if (projectRef.current !== projectId || epoch !== authEpoch.current) return null
+            const rejected = failure instanceof EvolvedApiError && (failure.status === 401 || failure.status === 403)
+            if (rejected ? request < successfulTokenRequest.current : request !== tokenRequest.current) return null
             const temporary = failure instanceof TypeError || failure instanceof EvolvedApiError && (failure.status === 429 || failure.status >= 500)
             if (temporary && tokenRef.current) {
                 // A failed renewal does not revoke the current project authority.
