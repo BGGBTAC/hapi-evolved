@@ -22,6 +22,7 @@ import { createCapacityRoutes } from './capacity'
 import { createProviderRoutes, UnixProviderControl } from './providers'
 import { PluginService, createPluginRoutes } from './plugins'
 import { createAgentCatalogRoutes } from './agentCatalog'
+import { createDevelopmentService } from './development'
 import { createSidechannelRoutes, SidechannelService, sidechannelConfig } from './sidechannel'
 import { createScheduleRoutes, ScheduleService } from './schedules'
 import { PeerCompletionReporter } from './peerReports'
@@ -95,12 +96,14 @@ export function createEvolvedRuntime(dataDir: string, secret: Uint8Array, depend
     routes.route('/', createProviderRoutes(store, { key: controlKey, control: controlSocket && controlKey ? new UnixProviderControl(controlSocket, controlKey) : undefined }))
     const plugins = new PluginService(store)
     routes.route('/', createPluginRoutes(plugins, origin))
-    routes.route('/', createAgentCatalogRoutes({ store, plugins, origin, getSyncEngine: () => getSyncEngine(), repositoryStart: repositories.resolveStart, repositoryReview: repositories.reviewContext }))
+    const development = createDevelopmentService({ store, vault, getEngine: () => getSyncEngine() })
+    routes.route('/', development.routes(origin))
+    routes.route('/', createAgentCatalogRoutes({ store, plugins, origin, getSyncEngine: () => getSyncEngine(), repositoryStart: repositories.resolveStart, repositoryReview: repositories.reviewContext, development }))
     routes.route('/', createSidechannelRoutes(new SidechannelService(store, sidechannelConfig()), () => getSyncEngine(), origin))
     const schedules = new ScheduleService(store, () => getSyncEngine())
     routes.route('/', createScheduleRoutes(schedules, () => getSyncEngine()))
     routes.route('/', createEvolvedRoutes({ store, vault, origin, allowedWorkspaceRoots: roots as string[], repositoryDiscovery: repositories.discovery,
-        onProjectDelete: projectId => { memory.forgetProject(projectId); enqueueCodegraphDeletion(store, projectId) } }))
+        onProjectDelete: projectId => { memory.forgetProject(projectId); development.forgetProject(projectId); enqueueCodegraphDeletion(store, projectId) } }))
     routes.route('/', createMemoryProviderRoutes({ store, service: memoryProvider, origin }))
     routes.route('/', createProjectMcpRoutes({ store, service: new ProjectMcpService(vault, dependencies.mcpRemote), origin }))
     routes.route('/', createMemoryRoutes({ store, service: memory, origin, resolveMessage: (...args) => resolveMessage(...args) }))
@@ -109,7 +112,7 @@ export function createEvolvedRuntime(dataDir: string, secret: Uint8Array, depend
     const stopGraph = startCodegraphSync(graphOptions)
     const stopSchedules = schedules.start()
     let stopReports: (() => void) | undefined
-    return { store, origin, routes, memory, repositoryStart: repositories.resolveStart, onSessionRemoved: repositories.onSessionRemoved, setMemoryMessageResolver(resolver: MemoryMessageResolver) { resolveMessage = resolver }, setSyncEngineProvider(provider: () => SyncEngine | null) {
+    return { store, origin, routes, memory, repositoryStart: repositories.resolveStart, developmentRepository: development.defaultRepository, onSessionRemoved: repositories.onSessionRemoved, setMemoryMessageResolver(resolver: MemoryMessageResolver) { resolveMessage = resolver }, setSyncEngineProvider(provider: () => SyncEngine | null) {
         getSyncEngine = provider; stopReports?.()
         const engine = provider()
         stopReports = engine ? new PeerCompletionReporter(store, engine).start() : undefined

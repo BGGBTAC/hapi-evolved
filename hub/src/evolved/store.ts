@@ -78,6 +78,7 @@ export class EvolvedStore {
             CREATE TABLE IF NOT EXISTS evolved_runner_leases(id TEXT PRIMARY KEY,name TEXT NOT NULL,token_hash TEXT NOT NULL UNIQUE,user_id TEXT NOT NULL REFERENCES evolved_users(id),project_id TEXT NOT NULL REFERENCES evolved_projects(id),scopes TEXT NOT NULL,action_ids TEXT NOT NULL,profile TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER,revoked_at INTEGER);
             CREATE TABLE IF NOT EXISTS evolved_capabilities(id TEXT PRIMARY KEY,token_hash TEXT NOT NULL UNIQUE,user_id TEXT NOT NULL REFERENCES evolved_users(id),project_id TEXT NOT NULL REFERENCES evolved_projects(id),scopes TEXT NOT NULL,action_ids TEXT NOT NULL,profile TEXT NOT NULL,expires_at INTEGER NOT NULL,revoked_at INTEGER,lease_id TEXT REFERENCES evolved_runner_leases(id));
             CREATE TABLE IF NOT EXISTS evolved_audit(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT,project_id TEXT,action TEXT NOT NULL,target_id TEXT,created_at INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS evolved_project_development(project_id TEXT PRIMARY KEY REFERENCES evolved_projects(id) ON DELETE CASCADE,revision INTEGER NOT NULL CHECK(revision>0),settings TEXT NOT NULL,pack_revision TEXT,updated_by TEXT REFERENCES evolved_users(id) ON DELETE SET NULL,updated_at INTEGER NOT NULL,android_ack_by TEXT REFERENCES evolved_users(id) ON DELETE SET NULL,android_ack_at INTEGER);
             CREATE INDEX IF NOT EXISTS evolved_sessions_expiry ON evolved_sessions(expires_at);
             CREATE INDEX IF NOT EXISTS evolved_challenges_expiry ON evolved_challenges(expires_at);
         `)
@@ -181,7 +182,8 @@ export class EvolvedStore {
             this.audit(actor, null, role === null ? 'member.removed' : 'member.updated', userId)
         })()
     }
-    createProject(userId: string, teamId: string, name: string, rootPath = ''): EvolvedProject {
+    /** `initialize` runs inside the creating transaction, e.g. to persist an already validated development mode. */
+    createProject(userId: string, teamId: string, name: string, rootPath = '', initialize?: (projectId: string) => void): EvolvedProject {
         this.requireTeam(userId, teamId, 'admin')
         if (rootPath && !this.user(userId)?.isAdmin) throw new EvolvedError('workspace_admin_required', 'Only the installation administrator can attach a workspace.', 403)
         const id = randomUUID()
@@ -203,6 +205,7 @@ export class EvolvedStore {
                 if (existing.some(row => workspaceBindingsOverlap(rootPath, row.root_path))) throw new EvolvedError('workspace_conflict', 'Workspace overlaps an existing project.', 409)
                 this.db.prepare('INSERT INTO evolved_projects(id,team_id,name,root_path,created_at) VALUES(?,?,?,?,?)').run(id, teamId, name, rootPath, this.now())
                 this.audit(userId, id, 'project.created', id)
+                initialize?.(id)
                 const project = this.requireProject(userId, id)
                 if (allocated) this.ephemeralWorkspaces?.push(allocated.path)
                 return project

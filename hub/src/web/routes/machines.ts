@@ -14,9 +14,10 @@ import type { WebAppEnv } from '../middleware/auth'
 import { requireMachine } from './guards'
 import { projectPermissionMode, projectSpawnDirectory } from '../../evolved/bridge'
 import type { RepositoryStartResolver, RepositoryStartTarget } from '../../evolved/repositoryWorkflow'
+import type { DevelopmentDefaultRepository } from '../../evolved/development'
 import { EvolvedError } from '../../evolved/store'
 
-export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null, options: { repositoryStart?: RepositoryStartResolver } = {}): Hono<WebAppEnv> {
+export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null, options: { repositoryStart?: RepositoryStartResolver; developmentRepository?: (projectId: string) => DevelopmentDefaultRepository | null } = {}): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
 
     app.get('/machines', (c) => {
@@ -92,6 +93,8 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null, opt
         const project = access?.project
         let spawnBody = body
         let repository: RepositoryStartTarget | undefined
+        let development: { defaultRepository: 'applied'; repositoryId: string } | undefined
+        let defaultRepository: DevelopmentDefaultRepository | null = null
         if (!project && body?.repositoryId !== undefined) return c.json({ error: 'Repository selection requires Evolved project access.' }, 400)
         if (!project && (typeof body?.directory !== 'string' || !body.directory.trim())) return c.json({ error: 'Directory is required.' }, 400)
         if (project && body && typeof body === 'object' && !Array.isArray(body)) {
@@ -102,7 +105,24 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null, opt
                     if (!options.repositoryStart) throw new EvolvedError('repository_unavailable', 'Repository starts are unavailable.', 409)
                     repository = await options.repositoryStart(access!, body.repositoryId, machineId)
                     spawnBody = { ...body, directory: repository.directory }
-                } else spawnBody = { ...body, directory: projectSpawnDirectory(project, body.directory, body.sessionType, body.worktreeName) }
+                } else {
+                    spawnBody = { ...body, directory: projectSpawnDirectory(project, body.directory, body.sessionType, body.worktreeName) }
+                    // Without an explicit repository or directory, a development-mode project starts in its configured, authorised checkout.
+                    // An unusable default fails clearly; the project folder is used only when chosen explicitly.
+                    defaultRepository = body.directory === undefined || (typeof body.directory === 'string' && !body.directory.trim()) ? options.developmentRepository?.(project.id) ?? null : null
+                    if (defaultRepository) {
+                        const unavailable = (reason: string) => c.json({ error: 'Das Projekt-Repository ist für diesen Start nicht verfügbar. Bitte Freigabe und Klon prüfen oder ausdrücklich den Projektordner wählen.', code: 'development_default_repository_unavailable', reason, repositoryId: defaultRepository!.repositoryId }, 409)
+                        if (!options.repositoryStart) return unavailable('repository_unavailable')
+                        try { repository = await options.repositoryStart(access!, defaultRepository.repositoryId, machineId) }
+                        catch (error) {
+                            if (!(error instanceof EvolvedError) || error.status === 401) throw error
+                            return unavailable(error.code)
+                        }
+                        defaultRepository.verify()
+                        spawnBody = { ...body, directory: repository.directory }
+                        development = { defaultRepository: 'applied', repositoryId: defaultRepository.repositoryId }
+                    }
+                }
             } catch (error) {
                 if (error instanceof EvolvedError) return c.json({ error: error.message, code: error.code }, error.status as 400)
                 throw error
@@ -128,7 +148,7 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null, opt
             const currentMachine = requireMachine(c, engine, machineId)
             if (currentMachine instanceof Response) return currentMachine
             try {
-                if (repository) { await repository.recheck(); parsed.data.directory = repository.directory }
+                if (repository) { await repository.recheck(); defaultRepository?.verify(); parsed.data.directory = repository.directory }
                 else parsed.data.directory = projectSpawnDirectory(access.project, parsed.data.directory, parsed.data.sessionType, parsed.data.worktreeName)
             }
             catch (error) {
@@ -158,9 +178,23 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null, opt
             namespace,
             // A lost project mount must fail, never silently create a replacement.
             project ? false : undefined,
-            repository?.onReserved
-        )
-        return c.json(result)
+            // The configured default is rechecked when the session is reserved, before the runner is asked to start it.
+            defaultRepository ? (sessionId: string) => { defaultRepository!.verify(); repository!.onReserved(sessionId) } : repository?.onReserved
+        ).catch(error => {
+            if (error instanceof EvolvedError) return { type: 'error' as const, message: error.message, code: error.code, status: error.status }
+            throw error
+        })
+        if ('status' in result) return c.json({ error: result.message, code: result.code }, result.status as 409)
+        if (defaultRepository && result.type === 'success') {
+            try { defaultRepository.verify() }
+            catch (error) {
+                // Changed while the runner started: never report the stale checkout as the configured one.
+                await engine.archiveSession(result.sessionId).catch(() => { /* remains visible for manual diagnosis */ })
+                const changed = error as EvolvedError
+                return c.json({ error: changed.message, code: changed.code, sessionId: result.sessionId, archived: true }, 409)
+            }
+        }
+        return c.json(development ? { ...result, development } : result)
     })
 
     app.get('/machines/:id/agent-availability', async (c) => {

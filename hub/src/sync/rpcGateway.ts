@@ -616,6 +616,11 @@ export class RpcGateway {
         return this.machineRpc(machineId, RPC_METHODS.EvolvedRepositories, params, timeoutMs)
     }
 
+    /** Fixed `evolved-development` doctor/inspect RPC; the caller validates params and result. */
+    async evolvedDevelopment(machineId: string, params: unknown, timeoutMs = 30_000): Promise<unknown> {
+        return this.machineRpc(machineId, RPC_METHODS.EvolvedDevelopment, params, timeoutMs)
+    }
+
     private async sessionRpc(
         sessionId: string,
         method: string,

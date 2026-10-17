@@ -6,6 +6,16 @@ or container image.
 
 ## Unreleased
 
+- Per-project Odoo 19/20, iOS and Android development modes, with revision-checked
+  settings, a default repository and prepared specialist sessions.
+- Bundled, versioned development handbooks available to Claude and Codex without
+  graph indexing; read-only toolchain diagnostics and static repository inspection.
+- Odoo.sh integration through existing GitHub repository grants and combined
+  commit status, with explicit dashboard and SSH references.
+- Optional development runner and project-local setup/test helpers for Odoo,
+  Android and portable Swift. Native iOS builds require macOS or an external
+  workflow; Android SDK setup retains explicit human licence acknowledgement.
+
 - Project MCP shop with Context7 and custom public HTTPS Streamable HTTP servers,
   encrypted credentials, connection checks, explicit tool grants, read-only access
   and bounded call diagnostics shared by Claude and Codex.

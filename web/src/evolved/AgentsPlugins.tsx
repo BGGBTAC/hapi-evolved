@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEvolved } from './auth'
 import { RepositoryPicker } from './RepositoryPicker'
 import { useProjectRepositories } from './repositoryCatalog'
+import { useDevelopmentConfig } from './developmentApi'
 import { useProjectWorkflow } from './ProjectWorkflowContext'
 import { canWriteProject, EvolvedApiError, projectPath } from './api'
 import { ConfirmButton, Empty, ErrorNotice, Field, Loading, Panel, formatDate } from './ui'
@@ -20,7 +21,9 @@ type Manifest = { schemaVersion: 1; id: string; name: string; description: strin
 type Plugin = { id: string; repository: string; repositoryId: string; commitSha: string; manifestSha256: string; manifest: Manifest; enabled: boolean; installedAt: number; updatedAt: number; invalid?: boolean }
 type Preview = Omit<Plugin, 'id' | 'enabled' | 'installedAt' | 'updatedAt'> & { previewId: string; pluginId: string | null; expiresAt: number }
 type Catalog = { agents: Agent[]; skills: Skill[]; themes: Theme[]; canManage: boolean; machines?: { id: string; name: string }[] }
-type Start = { agentId: string; operationId: string; machineId: string; task: string; provider: 'codex' | 'claude'; model: string; repositoryId?: string; review?: { snapshotId: string; paths: string[] } }
+// `repositorySource: 'default'` follows the project's development default until the user or a
+// workflow chooses explicitly; the effective ID is frozen into the start before it is sent.
+type Start = { agentId: string; operationId: string; machineId: string; task: string; provider: 'codex' | 'claude'; model: string; repositoryId?: string; repositorySource: 'default' | 'explicit'; review?: { snapshotId: string; paths: string[] } }
 const emptyDefinition = (): Definition => ({ name: '', description: '', instructions: '', providerPreference: 'either', skills: [] })
 const originLabels = { builtin: 'Mitgeliefert', custom: 'Eigener Agent', plugin: 'Plugin' }
 
@@ -37,8 +40,12 @@ function AgentsPluginsForContext() {
     const [search, setSearch] = useState(''), [editor, setEditor] = useState<(Definition & { id?: string }) | null>(null)
     const [start, setStart] = useState<Start | null>(null), [startUncertain, setStartUncertain] = useState(false), [sessionId, setSessionId] = useState('')
     const repositories = useProjectRepositories({ api, me, project }, !!start)
-    const selectedRepository = repositories.current?.repositories.find(item => item.id === start?.repositoryId)
-    const repositoryReady = !start?.repositoryId || selectedRepository?.local.state === 'ready' && selectedRepository.job?.state !== 'running' && repositories.current?.runner.status === 'ready'
+    const development = useDevelopmentConfig({ api, me, project }, !!start && !!project)
+    const defaultRepositoryId = development.current?.config.settings.repositoryId ?? null
+    // null = the configured default is not known yet; nothing is assumed, not even the project folder.
+    const effectiveRepositoryId = !start ? '' : start.repositorySource === 'explicit' ? start.repositoryId ?? '' : development.current ? defaultRepositoryId ?? '' : null
+    const selectedRepository = effectiveRepositoryId ? repositories.current?.repositories.find(item => item.id === effectiveRepositoryId) : undefined
+    const repositoryReady = effectiveRepositoryId === '' || !!effectiveRepositoryId && selectedRepository?.local.state === 'ready' && selectedRepository.job?.state !== 'running' && repositories.current?.runner.status === 'ready'
     const [repository, setRepository] = useState(''), [ref, setRef] = useState('HEAD'), [preview, setPreview] = useState<Preview | null>(null)
     const catalog = useQuery({ queryKey: ['evolved', 'agent-catalog', api.baseUrl, me.user.id, project?.id ?? 'global'], queryFn: ({ signal }) => api.request<Catalog>(project ? `${projectPath(project.id)}/agent-catalog` : '/agent-catalog', { signal }) })
     const plugins = useQuery({ queryKey: ['evolved', 'plugins', api.baseUrl, me.user.id], queryFn: ({ signal }) => api.request<{ plugins: Plugin[] }>('/plugins', { signal }) })
@@ -74,7 +81,7 @@ function AgentsPluginsForContext() {
     }
     const beginStart = (agent: Agent) => {
         setError(null); setNotice(''); setSessionId(''); setStartUncertain(false)
-        setStart({ agentId: agent.id, operationId: crypto.randomUUID(), machineId: machines[0]?.id ?? '', task: '', provider: agent.providerPreference === 'codex' ? 'codex' : 'claude', model: agent.providerPreference === 'either' ? '' : agent.model ?? '', ...(workflow?.repositoryId ? { repositoryId: workflow.repositoryId } : {}) })
+        setStart({ agentId: agent.id, operationId: crypto.randomUUID(), machineId: machines[0]?.id ?? '', task: '', provider: agent.providerPreference === 'codex' ? 'codex' : 'claude', model: agent.providerPreference === 'either' ? '' : agent.model ?? '', ...(workflow?.repositoryId ? { repositoryId: workflow.repositoryId, repositorySource: 'explicit' as const } : { repositorySource: 'default' as const }) })
         workflow?.setRepositoryId(null)
     }
     useEffect(() => {
@@ -82,12 +89,14 @@ function AgentsPluginsForContext() {
         const reviewer = catalog.data?.agents.find(agent => agent.id === 'builtin:review' && agent.available)
         if (!reviewer || !machines.length) return
         const { repositoryId, ...review } = workflow.review
-        setStart({ agentId: reviewer.id, operationId: crypto.randomUUID(), machineId: machines[0]!.id, task: 'Prüfe die ausgewählten Änderungen auf belegbare Fehler, Sicherheitslücken und Regressionen. Berichte Befunde mit Datei und Zeile.', provider: 'claude', model: '', repositoryId, review })
+        setStart({ agentId: reviewer.id, operationId: crypto.randomUUID(), machineId: machines[0]!.id, task: 'Prüfe die ausgewählten Änderungen auf belegbare Fehler, Sicherheitslücken und Regressionen. Berichte Befunde mit Datei und Zeile.', provider: 'claude', model: '', repositoryId, repositorySource: 'explicit', review })
         workflow.setReview(null)
     }, [workflow?.review, project, start, catalog.data, machines])
     const launch = () => {
-        if (!start || !project || (!startUncertain && !repositoryReady)) return
-        const saved = start
+        if (!start || !project || effectiveRepositoryId === null || (!startUncertain && !repositoryReady)) return
+        // Freeze the effective target so a retry of this operation sends exactly the same body.
+        const saved: Start = { ...start, repositoryId: effectiveRepositoryId || undefined, repositorySource: 'explicit' }
+        setStart(saved)
         void run(async signal => {
             try {
                 const result = await api.request<{ sessionId: string; operationId: string; acknowledged: 'persisted' }>(`${projectPath(project.id)}/agent-catalog/${encodeURIComponent(saved.agentId)}/start`, {
@@ -145,11 +154,16 @@ function AgentsPluginsForContext() {
             <div className="ev-agent-actions"><button className="ev-primary" disabled={busy}>Agent speichern</button><button type="button" disabled={busy} onClick={() => setEditor(null)}>Abbrechen</button></div>
         </form></Panel>}
         {start && project && <Panel title={`Aufgabe für ${catalog.data?.agents.find(agent => agent.id === start.agentId)?.name ?? 'Agent'}`} description={`Die Sitzung wird im Projekt „${project.name}“ gestartet. Profil und vorhandene Freigaben begrenzen weiterhin alle Aktionen.`}><form className="ev-form" onSubmit={event => { event.preventDefault(); launch() }}>
-            <RepositoryPicker choices={repositories} value={start.repositoryId ?? ''} onChange={repositoryId => setStart({ ...start, repositoryId: repositoryId || undefined, review: undefined })} projectId={project.id} disabled={busy || startUncertain || !!start.review} />
+            {effectiveRepositoryId === null && (development.error
+                ? <p className="ev-callout" role="alert">Entwicklungsmodus konnte nicht geladen werden, daher ist ein Standard-Repository unbekannt. Lade erneut oder wähle den Arbeitsort ausdrücklich. <button type="button" disabled={development.isFetching} onClick={() => void development.refetch()}>Erneut laden</button></p>
+                : <p className="ev-muted" role="status">Standard-Repository wird geladen …</p>)}
+            <RepositoryPicker choices={repositories} value={effectiveRepositoryId ?? ''} unselected={effectiveRepositoryId === null} onChange={repositoryId => setStart({ ...start, repositoryId: repositoryId || undefined, repositorySource: 'explicit', review: undefined })} projectId={project.id} disabled={busy || startUncertain || !!start.review}
+                defaultRepositoryId={defaultRepositoryId} showFolder projectRoot={project.rootPath}
+                hint={start.repositorySource === 'default' && defaultRepositoryId ? 'Standard-Repository des Entwicklungsmodus vorausgewählt; „Projektordner“ oder ein anderes Repository sind möglich.' : undefined} />
             {start.review && <p className="ev-callout">Review der ausgewählten {start.review.paths.length} Dateien. Der Server prüft den Arbeitsstand erneut und startet den Review mit eingeschränktem Schreibmodus. <WorkspaceLink tab="github" projectId={project.id}>Arbeitsstand erneut prüfen</WorkspaceLink></p>}
             <Field label="Runner"><select required disabled={busy || startUncertain} value={start.machineId} onChange={event => setStart({ ...start, machineId: event.target.value, model: '' })}>{machines.map(machine => <option key={machine.id} value={machine.id}>{machine.name}</option>)}</select></Field><Field label="Aufgabe"><textarea aria-label="Aufgabe" required rows={5} maxLength={16384} disabled={busy || startUncertain} value={start.task} onChange={event => setStart({ ...start, task: event.target.value })} /></Field><Field label="Anbieter"><select disabled={busy || startUncertain} value={start.provider} onChange={event => setStart({ ...start, provider: event.target.value as Start['provider'], model: '' })}><option value="codex">Codex</option><option value="claude">Claude</option></select></Field><p className="ev-muted">Der gewählte Anbieter muss auf diesem Runner angemeldet sein. <WorkspaceLink tab="providers" projectId={project.id}>Abos verbinden</WorkspaceLink></p><ModelCatalogInput key={start.provider} provider={start.provider} projectId={project.id} value={start.model} defaultValue="" label="Modell für diesen Start (optional)" disabled={busy || startUncertain} onChange={model => setStart({ ...start, model })} />
             {startUncertain && <p className="ev-callout" role="status">Die Startbestätigung fehlt. Eine Wiederholung verwendet dieselbe Vorgangskennung und prüft die bestehende Übergabe. Aufgabe und Runner bleiben dafür unverändert. <Link to="/sessions">Sitzungen ansehen</Link></p>}
-            <div className="ev-agent-actions"><button className="ev-primary" disabled={busy || !start.task.trim() || !start.machineId || (!startUncertain && !repositoryReady)}>{startUncertain ? 'Startbestätigung erneut prüfen' : 'Jetzt starten'}</button>{!startUncertain && <button type="button" disabled={busy} onClick={() => setStart(null)}>Abbrechen</button>}</div>
+            <div className="ev-agent-actions"><button className="ev-primary" disabled={busy || !start.task.trim() || !start.machineId || effectiveRepositoryId === null || (!startUncertain && !repositoryReady)}>{startUncertain ? 'Startbestätigung erneut prüfen' : 'Jetzt starten'}</button>{!startUncertain && <button type="button" disabled={busy} onClick={() => setStart(null)}>Abbrechen</button>}</div>
         </form>{startUncertain && <div className="ev-agent-actions"><ConfirmButton label="Nach Sitzungsprüfung neuen Auftrag vorbereiten" detail="Ich habe die Projektsitzungen geprüft. Ein neuer Auftrag erhält eine neue Kennung und kann eine weitere Sitzung erzeugen; ein schon laufender Auftrag wird dadurch nicht abgebrochen." disabled={busy} onConfirm={() => { setStart({ ...start, operationId: crypto.randomUUID() }); setStartUncertain(false); setError(null) }} /></div>}</Panel>}
         <Panel title="Plugins" description="Öffentliche GitHub-Repositories können geprüfte Agentenvorlagen, Fähigkeiten und Themes beitragen. Vor jeder Installation oder Aktualisierung siehst du die genaue Fassung und ihren Inhalt.">
             {canManage && <form className="ev-form" onSubmit={event => { event.preventDefault(); loadPreview() }}><Field label="GitHub-Repository" hint="Öffentliches Repository im Format owner/repo mit hapi-evolved.plugin.json."><input required pattern="[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+" placeholder="owner/repo" value={repository} onChange={event => { setRepository(event.target.value); setPreview(null) }} /></Field><Field label="Branch, Tag oder Commit" hint="Diese Referenz wird für neue Plugins und die nächste Update-Vorschau verwendet."><input maxLength={200} value={ref} onChange={event => { setRef(event.target.value); setPreview(null) }} /></Field><button disabled={busy || !repository.trim()}>Plugin prüfen</button></form>}

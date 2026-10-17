@@ -12,6 +12,8 @@ import { useProviderModels } from '@/evolved/useProviderModels'
 import { ModelCatalogInput } from '@/evolved/ModelCatalogInput'
 import { RepositoryPicker } from '@/evolved/RepositoryPicker'
 import { useProjectRepositories } from '@/evolved/repositoryCatalog'
+import { describeMode, useDevelopmentConfig } from '@/evolved/developmentApi'
+import type { DevelopmentSettings } from '@hapi/protocol/evolvedDevelopment'
 import type { EvolvedSession } from '@/evolved/auth'
 import { useCursorModelsForMachine } from '@/hooks/queries/useCursorModelsForMachine'
 import { useAgyModels } from '@/hooks/queries/useAgyModels'
@@ -111,18 +113,45 @@ export function NewSession(props: NewSessionProps) {
 }
 
 function ProjectNewSession(props: NewSessionProps & { evolved: EvolvedSession }) {
-    const [repositoryId, setRepositoryId] = useState(props.initialRepositoryId ?? '')
+    // null = the user has not chosen yet; then the development mode's bound
+    // repository is preselected visibly. An explicit "Projektordner" stays ''.
+    const [choice, setChoice] = useState<string | null>(props.initialRepositoryId ?? null)
+    const development = useDevelopmentConfig(props.evolved)
     const choices = useProjectRepositories(props.evolved)
+    const settings = development.current?.config.settings
+    const boundRepositoryId = settings?.repositoryId ?? null
+    const repositoryId = choice ?? boundRepositoryId ?? ''
     const repository = choices.current?.repositories.find(item => item.id === repositoryId)
     const ready = repository?.local.state === 'ready' && repository.job?.state !== 'running' && choices.current?.runner.status === 'ready'
     const directory = repositoryId ? ready ? repository!.path : '' : props.evolved.project!.rootPath ?? ''
     if (props.initialRepositoryId && (props.initialProjectId !== props.evolved.project!.id || !/^[1-9][0-9]{0,19}$/.test(props.initialRepositoryId))) {
         return <p role="alert" className="p-4">Diese Repository-Auswahl gehört nicht zum aktuellen Projekt. Öffne das zugehörige Projekt und wähle das Repository dort erneut.</p>
     }
+    // Wait for the bound default so the visible work location never changes after the form appears.
+    if (choice === null && development.isPending) return <p role="status" className="p-4 text-sm text-[var(--app-hint)]">Entwicklungsmodus wird geladen …</p>
+    // Without a loaded configuration the default is unknown: no work location is assumed until
+    // the configuration loads or the user explicitly picks one (including "Projektordner").
+    const unresolved = choice === null && !settings
     return <>
-        <div className="px-3 py-3"><RepositoryPicker choices={choices} value={repositoryId} onChange={setRepositoryId} projectId={props.evolved.project!.id} /></div>
-        <NewSessionForm key={`${repositoryId}:${directory}`} {...props} projectDirectory={directory} repositoryId={repositoryId || undefined} />
+        <div className="px-3 py-3">
+            {unresolved ? <p role="alert" className="mb-2 text-xs">Entwicklungsmodus konnte nicht geladen werden, daher ist ein Standard-Repository unbekannt. Lade erneut oder wähle den Arbeitsort ausdrücklich.{' '}
+                <button type="button" className="underline text-[var(--app-link)]" disabled={development.isFetching} onClick={() => void development.refetch()}>{development.isFetching ? 'Wird geladen …' : 'Erneut laden'}</button></p>
+                : <DevelopmentModeNotice settings={settings ?? null} boundRepositoryId={boundRepositoryId} usingDefault={choice === null && !!boundRepositoryId}
+                    defaultUnavailable={choice === null && !!boundRepositoryId && !!choices.current && !repository} />}
+            <RepositoryPicker choices={choices} value={repositoryId} unselected={unresolved} onChange={setChoice} projectId={props.evolved.project!.id} defaultRepositoryId={boundRepositoryId}
+                hint={boundRepositoryId ? 'Das Standard-Repository des Entwicklungsmodus ist vorausgewählt. „Projektordner“ startet ausdrücklich im Projektordner.' : undefined} />
+        </div>
+        {!unresolved && <NewSessionForm key={`${repositoryId}:${directory}`} {...props} projectDirectory={directory} repositoryId={repositoryId || undefined} />}
     </>
+}
+
+function DevelopmentModeNotice({ settings, boundRepositoryId, usingDefault, defaultUnavailable }: { settings: DevelopmentSettings | null; boundRepositoryId: string | null; usingDefault: boolean; defaultUnavailable: boolean }) {
+    if (!settings) return null
+    return <p className="mb-2 text-xs text-[var(--app-hint)]" aria-label="Entwicklungsmodus">
+        Entwicklungsmodus: <strong>{describeMode(settings)}</strong>
+        {boundRepositoryId ? usingDefault ? ' · Standard-Repository vorausgewählt' : ' · eigene Auswahl statt Standard-Repository' : ''}
+        {defaultUnavailable && <span role="alert" className="block text-[var(--app-danger,#b42318)]">Das Standard-Repository ist nicht mehr freigegeben. Es wird nicht auf den Projektordner ausgewichen; wähle ausdrücklich einen Arbeitsort.</span>}
+    </p>
 }
 
 function NewSessionForm(props: NewSessionProps & { projectDirectory: string | null; repositoryId?: string }) {

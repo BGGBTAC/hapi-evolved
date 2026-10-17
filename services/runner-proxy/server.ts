@@ -9,6 +9,7 @@ import { boundedGitResponse, GIT_TIMEOUT_MS, gitPath } from '../../hub/src/evolv
 import { parseRunnerGitRequest, readRunnerGitBody } from './gitRequest'
 import { readCredentialResponse } from '../../shared/src/credentialTransport'
 import { fetchPublicGit, streamPublicGit, type PublicGitFetcher } from './publicGit'
+import { DevelopmentKnowledgeQuerySchema, GitRefSchema } from '../../shared/src/evolvedDevelopment'
 
 type Grant = { token: string; expiresAt: number; projectId: string }
 const MAX_PENDING_BYTES = 8 * 1024 * 1024
@@ -33,7 +34,36 @@ export function queuedPacketBytes(value: unknown, depth = 0): number {
     }
     return 8
 }
+const DEVELOPMENT_QUERY_KEYS: Record<string, readonly string[]> = { knowledge: ['topic', 'q', 'limit'], 'build-status': ['ref'] }
+/** Exact agent reads of the project development mode; configuration (GET/PUT .../development) stays browser-only. */
+export function allowedDevelopmentRequest(operation: string | undefined, method: string, search: string): boolean {
+    if (!operation) return false
+    if (operation === 'doctor' || operation === 'inspect') return method === 'POST' && search === ''
+    if (method !== 'GET') return false
+    if (operation === 'context') return search === ''
+    const allowed = DEVELOPMENT_QUERY_KEYS[operation]
+    if (!allowed) return false
+    if (search === '') return true
+    if (!search.startsWith('?') || search.length > 700 || search.includes('#')) return false
+    let params: URLSearchParams
+    try { params = new URLSearchParams(search.slice(1)); for (const part of search.slice(1).split('&')) decodeURIComponent(part.replace(/\+/g, ' ')) } catch { return false }
+    const seen = new Set<string>()
+    for (const [key, value] of params) {
+        if (!allowed.includes(key) || seen.has(key) || value === '') return false
+        seen.add(key)
+    }
+    if (seen.size === 0) return false
+    const topic = params.get('topic'), q = params.get('q'), limit = params.get('limit'), ref = params.get('ref')
+    // Same rules as the Hub (shared contract), no narrower ad-hoc whitelist.
+    if (operation === 'knowledge') return DevelopmentKnowledgeQuerySchema.safeParse(Object.fromEntries(params)).success
+        && (q === null || !/[\u0000-\u001f\u007f]/.test(q)) && (limit === null || /^(?:[1-9]|1[0-9]|20)$/.test(limit)) && (topic === null || q === null)
+    return ref !== null && GitRefSchema.safeParse(ref).success
+}
 export function allowedProxyPath(path: string, method = 'GET', search = ''): boolean {
+    if (/^\/api\/evolved\/projects\/[^/]+\/development(?:\/|$)/.test(path)) {
+        const development = /^\/api\/evolved\/projects\/[A-Za-z0-9_-]{1,80}\/development\/(context|knowledge|build-status|doctor|inspect)$/.exec(path)
+        return allowedDevelopmentRequest(development?.[1], method, search)
+    }
     if (/^\/api\/evolved\/projects\/[A-Za-z0-9_-]{1,80}\/agent-credentials$/.test(path)) return method === 'GET' && search === ''
     const mcp = /^\/api\/evolved\/projects\/[A-Za-z0-9_-]{1,80}\/mcp\/servers(?:\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\/(tools|query|call))?$/.exec(path)
     if (mcp) return search === '' && method === (mcp[2] === 'call' || mcp[2] === 'query' ? 'POST' : 'GET')
@@ -306,8 +336,13 @@ export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; p
                 const access = await current(repositorySync ? 360_000 : 30_000)
                 const headers = new Headers({ authorization: `Bearer ${access.token}` })
                 for (const name of ['content-type', 'idempotency-key']) { const value = request.headers.get(name); if (value) headers.set(name, value) }
+                const body = ['GET', 'HEAD'].includes(request.method) ? undefined : await request.arrayBuffer()
+                // Development doctor/inspect take no parameters; the Hub supplies settings and the checkout.
+                if (/\/development\/(?:doctor|inspect)$/.test(url.pathname) && ((body?.byteLength ?? 0) > 64 || !['', '{}'].includes(Buffer.from(body ?? new ArrayBuffer(0)).toString('utf8').trim()))) {
+                    return new Response('Development actions take an empty body', { status: 400, headers: { 'cache-control': 'no-store' } })
+                }
                 const response = await fetch(new URL(url.pathname + url.search, hub), { method: request.method, headers,
-                    body: ['GET', 'HEAD'].includes(request.method) ? undefined : await request.arrayBuffer(),
+                    body,
                     redirect: 'error', signal: AbortSignal.timeout(70_000) })
                 if (response.status === 401) grant = null
                 return new Response(response.body, { status: response.status, headers: { 'content-type': response.headers.get('content-type') ?? 'application/json', 'cache-control': 'no-store' } })

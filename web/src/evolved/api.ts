@@ -64,7 +64,9 @@ export type CodeStatus = {
 export type CodeDetail = { node: CodeNode; source: string; callers: CodeNode[]; callees: CodeNode[] }
 
 export class EvolvedApiError extends Error {
-    constructor(message: string, public readonly status: number, public readonly code?: string, public readonly reserved?: boolean) {
+    // `payload` keeps the parsed error body for callers that validate it with a
+    // shared schema (for example a CAS conflict carrying the current config).
+    constructor(message: string, public readonly status: number, public readonly code?: string, public readonly reserved?: boolean, public readonly payload?: unknown) {
         super(message)
         this.name = 'EvolvedApiError'
     }
@@ -108,6 +110,7 @@ export class EvolvedApi {
                 response.status,
                 typeof payload.code === 'string' ? payload.code : undefined,
                 typeof payload.reserved === 'boolean' ? payload.reserved : undefined,
+                body ?? undefined,
             )
         }
         return body as T

@@ -296,7 +296,7 @@ function createWebApp(options: {
     app.route('/api', createSessionsRoutes(options.getSyncEngine))
     app.route('/api', createMessagesRoutes(options.getSyncEngine))
     app.route('/api', createPermissionsRoutes(options.getSyncEngine))
-    app.route('/api', createMachinesRoutes(options.getSyncEngine, { repositoryStart: options.evolved?.repositoryStart }))
+    app.route('/api', createMachinesRoutes(options.getSyncEngine, { repositoryStart: options.evolved?.repositoryStart, developmentRepository: options.evolved?.developmentRepository }))
     app.route('/api', createStorageRoutes(configuration.dbPath))
     app.route('/api', createHubSettingsRoutes(configuration.dataDir))
     app.route('/api', createUsageRoutes(options.store))

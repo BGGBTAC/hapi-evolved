@@ -51,9 +51,26 @@ function registeredRouteModules(readSource: (path: string) => ts.SourceFile = so
                 module: literal(statement.moduleSpecifier),
             })
         }
+        // Services that mount their own routes: `const x = createFooService(...)` and later `x.routes(...)`.
+        const services = new Map<string, { name: string; module: string }>()
+        visit(file, node => {
+            if (!ts.isVariableDeclaration(node) || !ts.isIdentifier(node.name) || !node.initializer) return
+            const initializer = unwrap(node.initializer)
+            if (!ts.isCallExpression(initializer) || !ts.isIdentifier(initializer.expression)) return
+            const imported = imports.get(initializer.expression.text)
+            if (imported && /^create.*Service$/.test(imported.name)) services.set(node.name.text, imported)
+        })
         visit(file, node => {
             if (!ts.isCallExpression(node)) return
             const expression = node.expression
+            if (ts.isPropertyAccessExpression(expression) && expression.name.text === 'routes' && ts.isIdentifier(expression.expression) && services.has(expression.expression.text)) {
+                const service = services.get(expression.expression.text)!
+                if (!service.module.startsWith('.')) throw new Error(`Inspect external route service ${path}: ${service.module}`)
+                const importedPath = relative(repositoryRoot, resolve(repositoryRoot, dirname(path), service.module.replace(/\.(?:js|ts)$/, '') + '.ts')).split('\\').join('/')
+                modules.add(importedPath)
+                pending.push(importedPath)
+                return
+            }
             let imported = ts.isIdentifier(expression) ? imports.get(expression.text) : undefined
             if (ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.expression)) {
                 const module = namespaces.get(expression.expression.text)
@@ -159,14 +176,15 @@ describe('Evolved capability surface inventory (not prose or individual API-rout
 
     it('discovers new called feature factories and nested aliases without a hardcoded module list', () => {
         const files: Record<string, string> = {
-            'hub/src/evolved/runtime.ts': `import { createFutureRoutes as wire, createUnusedRoutes } from './future'; wire()`,
+            'hub/src/evolved/runtime.ts': `import { createFutureRoutes as wire, createUnusedRoutes } from './future'; import { createMountedService, createUnmountedService } from './mounted'; wire(); const mounted = createMountedService(); routes.route('/', mounted.routes(origin)); const other = createUnmountedService()`,
+            'hub/src/evolved/mounted.ts': 'export function createMountedService() {}',
             'hub/src/evolved/future.ts': `import * as child from './child'; child.createChildRoutes()`,
             'hub/src/evolved/child.ts': 'export function createChildRoutes() {}',
         }
         expect(registeredRouteModules(path => {
             if (!(path in files)) throw new Error(`Unexpected inventory lookup: ${path}`)
             return ts.createSourceFile(path, files[path], ts.ScriptTarget.Latest, true)
-        })).toEqual(['hub/src/evolved/child.ts', 'hub/src/evolved/future.ts'])
+        })).toEqual(['hub/src/evolved/child.ts', 'hub/src/evolved/future.ts', 'hub/src/evolved/mounted.ts'])
     })
 
     it('keeps the human-only side channel distinct from agent peer communication', () => {
