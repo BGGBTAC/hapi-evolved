@@ -1,0 +1,70 @@
+/* Project setup wizard. Compact step list (no large selection tiles), readable on 320 px. */
+.ev-setup { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.ev-setup-title-row { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 16px; }
+.ev-setup-title-row > div { min-width: 0; flex: 1 1 260px; }
+.ev-setup-title-row h2 { overflow-wrap: anywhere; }
+.ev-setup-steps { list-style: none; margin: 14px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr)); gap: 6px; }
+.ev-setup-step { width: 100%; justify-content: stretch !important; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 8px; align-items: center; text-align: left; min-height: 44px; padding: 6px 10px !important; overflow-wrap: normal !important; }
+.ev-setup-step[aria-current="step"] { border-color: var(--ev-accent); box-shadow: inset 3px 0 0 var(--ev-accent); background: var(--ev-accent-soft); }
+.ev-setup-number { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--ev-line); font-size: .75rem; font-weight: 700; }
+.ev-setup-step > * { justify-self: start; }
+.ev-setup-step > .ev-setup-badge { justify-self: end; }
+.ev-setup-label { text-align: left; font-weight: 600; font-size: .8125rem; overflow-wrap: anywhere; }
+.ev-setup-step .ev-setup-badge { justify-self: end; }
+.ev-setup-badge { display: inline-block; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--ev-line); font-size: .6875rem; font-weight: 650; white-space: nowrap; color: var(--ev-muted); }
+.ev-setup-badge[data-state="done"] { color: var(--ev-accent); background: var(--ev-accent-soft); border-color: transparent; }
+.ev-setup-badge[data-state="todo"], .ev-setup-badge[data-state="draft"] { color: #93370d; border-color: #fec84b; }
+.ev-setup-badge[data-state="blocked"] { color: #b42318; border-color: #fda29b; }
+[data-theme="dark"] .ev-setup-badge[data-state="blocked"], [data-theme="oled"] .ev-setup-badge[data-state="blocked"] { color: #fda29b; }
+[data-theme="dark"] .ev-setup-badge[data-state="todo"], [data-theme="dark"] .ev-setup-badge[data-state="draft"], [data-theme="oled"] .ev-setup-badge[data-state="todo"], [data-theme="oled"] .ev-setup-badge[data-state="draft"] { color: #fec84b; }
+.ev-setup-body { display: flex; flex-direction: column; gap: 14px; }
+.ev-setup-body > h2 { outline: none; }
+.ev-setup-body > h2:focus-visible { outline: 3px solid var(--ev-accent); outline-offset: 3px; }
+.ev-setup-progress { color: var(--app-hint); font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; margin: 0; }
+.ev-setup-status { overflow-wrap: anywhere; margin: 0; }
+/* Embedded tool panels keep their own layout but lose the double card frame. */
+.ev-setup-body .ev-dev > .ev-panel, .ev-setup-body .ev-stack > .ev-panel { box-shadow: none; }
+.ev-setup-nav { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 10px 0; background: var(--ev-bg); border-top: 1px solid var(--ev-line); }
+.ev-setup-nav > button { flex: 0 1 auto; }
+.ev-setup-facts, .ev-setup-choices { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.ev-setup-facts > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 10px 0; border-bottom: 1px solid var(--ev-line); align-items: center; }
+.ev-setup-facts > li > small { grid-column: 1 / -1; color: var(--app-hint); overflow-wrap: anywhere; }
+.ev-setup-facts > li > span:first-child { font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
+.ev-setup-choices > li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 10px 12px; border: 1px solid var(--ev-line); border-radius: 10px; margin-bottom: 6px; }
+.ev-setup-choices > li[data-current] { border-color: var(--ev-accent); background: var(--ev-accent-soft); }
+.ev-setup-choices > li > div { min-width: 0; flex: 1 1 240px; }
+.ev-setup-choices small { display: block; color: var(--app-hint); }
+.ev-setup-sequence { margin: 0; padding-left: 1.25rem; display: flex; flex-direction: column; gap: 4px; overflow-wrap: anywhere; }
+.ev-setup-help > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 600; }
+.ev-setup-enterprise a, .ev-setup-help a { color: var(--ev-accent); text-decoration: underline; }
+.ev-primary-link { display: inline-flex; align-items: center; min-height: 44px; padding: 9px 14px; border-radius: 10px; background: var(--app-button); color: var(--app-button-text); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+.ew-setup-return a { color: var(--ev-accent); text-decoration: underline; font-weight: 600; }
+
+/* Odoo.sh: one shared project link, two independent stage cards. */
+.ev-dev-odoosh { border: 1px solid var(--ev-line); border-radius: 12px; padding: 12px 16px 16px; margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.ev-dev-odoosh > legend { font-weight: 650; padding: 0 6px; }
+.ev-dev-environments { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 12px; }
+.ev-dev-environment { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 12px; border: 1px solid var(--ev-line); border-radius: 10px; background: var(--ev-bg); }
+.ev-dev-environment[data-environment="production"] { border-color: #fda29b; }
+.ev-dev-environment h3 { margin: 0; }
+.ev-dev-environment-links { overflow-wrap: anywhere; font-size: .8125rem; }
+.ev-dev-environment-links a { color: var(--ev-accent); text-decoration: underline; }
+.ev-dev-environment-links code { overflow-wrap: anywhere; }
+.ev-dev-status-target { display: flex; flex-wrap: wrap; gap: 0 16px; flex: 1 1 100%; }
+.ev-dev-remedy { display: block; margin-top: 4px; }
+.ev-dev-remedy .ev-actions { margin-top: 4px; }
+
+@media (max-width: 640px) {
+    /* Inside the wizard the embedded tool panels are part of the step card: no second frame, no extra side padding. */
+    .ev-setup-body { padding: 14px 12px; }
+    .ev-setup-body .ev-panel { padding: 0; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+    .ev-setup-body .ev-dev, .ev-setup-body .ev-stack { gap: 14px; }
+    .ev-setup-body .ev-dev-savebar { margin: 14px 0 0; padding: 12px 0; border-radius: 0; }
+    .ev-setup-body .ev-dev-odoosh { padding: 8px 0 0; border-width: 1px 0 0; border-radius: 0; }
+    .ev-setup-body .ev-dev-odoosh > legend { padding: 0 6px 0 0; }
+    .ev-setup-body .ev-dev-environment { padding: 10px 8px; }
+    .ev-setup-steps { gap: 4px; }
+    .ev-setup-step { min-height: 40px; padding: 4px 8px !important; }
+    .ev-setup-nav > button { flex: 1 1 100%; }
+    .ev-dev-odoosh { padding: 10px; }
+}

@@ -21,30 +21,68 @@ import {
     developmentScope, formatTimestamp, invalidateDevelopmentQueries, modeHints, modeLabels, moduleStateLabels, sameSettings, settingsInput, settingsIssues,
     shortDigest, useDevelopmentModuleContext, useDevelopmentModuleDetail, useDevelopmentModules, validateSettings,
 } from './developmentApi'
+import type { SetupIntent } from './setupIntent'
 import './development.css'
 
-export function ProjectDevelopmentPanel() {
+/**
+ * `settings` shows only the module form, `checks` only checks, tasks and handbook of the saved module (both used by the
+ * setup wizard); `all` is the development tab. An `intent` is a browser-local draft (intended module and values, repository
+ * to bind, or the whole form as last edited in the wizard) that is put into the unsaved form and marked as such. With
+ * `onDraftChange` the wizard keeps the current unsaved form across its steps and reloads; `null` means nothing is pending
+ * any more (saved, discarded, or already exactly what is saved). Nothing is ever saved without the explicit button.
+ */
+type PanelProps = { section?: 'all' | 'settings' | 'checks'; intent?: SetupIntent | null; onDraftChange?: (draft: DevelopmentModuleSettingsInput | null, baseRevision: number) => void }
+export function ProjectDevelopmentPanel(props: PanelProps = {}) {
     const evolved = useEvolved()
     if (!evolved.project) return null
     // Account, project, role or profile changes discard drafts, results and late responses.
-    return <DevelopmentForProject key={JSON.stringify(developmentScope(evolved))} />
+    return <DevelopmentForProject key={JSON.stringify(developmentScope(evolved))} {...props} />
 }
 
-function DevelopmentForProject() {
+function DevelopmentForProject(props: PanelProps) {
     const evolved = useEvolved()
     const modules = useDevelopmentModules(evolved)
     // Only a load without validated data replaces the workspace; a failed refresh keeps the form and draft.
     if (!modules.current) return modules.error ? <section className="ev-panel ev-dev" aria-labelledby="ev-dev-error"><h2 id="ev-dev-error">Entwicklungsmodul nicht geladen</h2>
         <p className="ev-error" role="alert">{describeDevelopmentError(modules.error)}</p>
         <button disabled={modules.isFetching} onClick={() => void modules.refetch()}>Erneut laden</button></section> : <Loading />
-    return <DevelopmentWorkspace response={modules.current} refetching={modules.isFetching} refreshError={modules.refreshError} reload={() => void modules.refetch()} />
+    if (props.section === 'checks') return <div className="ev-dev">{modules.current.config.settings.activeModuleId
+        ? <ModuleWorkspace config={modules.current.config} unsaved={false} />
+        : <section className="ev-panel"><h2>Kein Modul gespeichert</h2><p className="ev-muted">Prüfungen und Einrichtungsaufgaben gehören zu einem gespeicherten Entwicklungsmodul. Ohne Modul arbeiten Sitzungen allgemein.</p></section>}</div>
+    return <DevelopmentWorkspace response={modules.current} refetching={modules.isFetching} refreshError={modules.refreshError} reload={() => void modules.refetch()} section={props.section ?? 'all'} intent={props.intent ?? null} onDraftChange={props.onDraftChange} />
+}
+
+/**
+ * Puts a setup intent into an editable draft; returns null when the saved configuration already is exactly that.
+ * The same active module id alone is not enough: the reviewed revision and the typed values must match as well.
+ */
+export function applyIntent(draft: DevelopmentModuleSettingsInput, intent: SetupIntent | null): DevelopmentModuleSettingsInput | null {
+    if (!intent) return null
+    if (intent.draft) return sameSettings(intent.draft.settings, draft) ? null : intent.draft.settings
+    let next = draft
+    if (intent.moduleId) {
+        const mode = modeForBuiltinModuleId(intent.moduleId)
+        if (mode && mode !== 'none') {
+            if (intent.moduleId !== next.activeModuleId) next = { ...next, activeModuleId: intent.moduleId, ...(next[mode] ? {} : { [mode]: builtinDefaults[mode]() }) }
+        } else if (intent.moduleDigest) {
+            const current = next.modules[intent.moduleId]
+            const values = intent.values ?? current?.values ?? {}
+            if (intent.moduleId !== next.activeModuleId || current?.moduleDigest !== intent.moduleDigest || !sameSettings(current.values, values))
+                next = { ...next, activeModuleId: intent.moduleId, modules: { ...next.modules, [intent.moduleId]: { moduleDigest: intent.moduleDigest, values: { ...values } } } }
+        }
+    }
+    if (intent.repositoryId && intent.repositoryId !== next.repositoryId) next = { ...next, repositoryId: intent.repositoryId }
+    return next === draft ? null : next
 }
 
 type Issue = { path: string[]; message: string }
 const fieldsOf = (detail: DevelopmentModuleDetail | undefined): readonly DevelopmentModuleField[] | null => detail?.form.kind === 'fields' ? detail.form.fields : null
 const builtinDefaults = { odoo: defaultOdooSettings, ios: defaultIosSettings, android: defaultAndroidSettings } as const
 
-function DevelopmentWorkspace({ response, refetching, refreshError, reload }: { response: DevelopmentModulesResponse; refetching: boolean; refreshError: unknown; reload: () => void }) {
+function DevelopmentWorkspace({ response, refetching, refreshError, reload, section, intent, onDraftChange }: {
+    response: DevelopmentModulesResponse; refetching: boolean; refreshError: unknown; reload: () => void
+    section: 'all' | 'settings'; intent: SetupIntent | null; onDraftChange?: (draft: DevelopmentModuleSettingsInput | null, baseRevision: number) => void
+}) {
     const evolved = useEvolved()
     const { api, project } = evolved
     const client = useQueryClient()
@@ -52,8 +90,14 @@ function DevelopmentWorkspace({ response, refetching, refreshError, reload }: { 
     const canEdit = response.canEdit
     const catalog = response.catalog.modules
     const [persisted, setPersisted] = useState<ProjectDevelopmentModuleConfig>(response.config)
-    const [draft, setDraft] = useState<DevelopmentModuleSettingsInput>(() => settingsInput(response.config.settings))
-    const [baseRevision, setBaseRevision] = useState(response.config.revision)
+    // Only administrators can turn an intent into a draft; for everyone else it stays a visible, unapplied note.
+    const [initial] = useState(() => canEdit ? applyIntent(settingsInput(response.config.settings), intent) : null)
+    const [draft, setDraft] = useState<DevelopmentModuleSettingsInput>(() => initial ?? settingsInput(response.config.settings))
+    const intentOpen = !!initial
+    // Saved meanwhile (another tab or administrator) with other values or another revision of the same module.
+    const [savedDiffers] = useState(() => !!initial && !intent?.draft && !!intent?.moduleId && intent.moduleId === response.config.settings.activeModuleId)
+    // A restored wizard draft keeps the revision it was based on, so a newer saved revision shows the existing conflict choice.
+    const [baseRevision, setBaseRevision] = useState(initial && intent?.draft ? intent.draft.baseRevision : response.config.revision)
     const [draftKey, setDraftKey] = useState(0)
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -192,6 +236,8 @@ function DevelopmentWorkspace({ response, refetching, refreshError, reload }: { 
     }
     useEffect(() => { if (serverIssues.length) focusFirstInvalid() }, [serverIssues])
     const discard = () => { resetDraft(persisted); setError(null); setNotice('') }
+    // The wizard keeps exactly the current unsaved form (browser-local, scoped); a clean form means nothing is pending.
+    useEffect(() => { if (canEdit) onDraftChange?.(changed ? draft : null, baseRevision) }, [draft, baseRevision, changed])
     const update = (next: DevelopmentModuleSettingsInput) => { setNotice(''); setDraft(next) }
     const chooseModule = (id: string | null) => {
         const modules = { ...draft.modules }
@@ -252,6 +298,12 @@ function DevelopmentWorkspace({ response, refetching, refreshError, reload }: { 
                 {(persisted.active.state === 'unsupported' || persisted.active.state === 'invalid') && persisted.active.reasons.length > 0 && <ul className="ev-dev-links">{persisted.active.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>}
             </div>}
 
+            {intentOpen && changed && <div className="ev-callout" role="status" id="ev-dev-intent">
+                <p><strong>Vorgemerkt, noch nicht gespeichert.</strong> {draft.activeModuleId && draft.activeModuleId !== savedActive ? `Modul ${describeActiveModule({ activeModuleId: draft.activeModuleId, odoo: draft.odoo }, catalog)} ist nur ein Entwurf und noch nicht aktiv. ` : ''}{draft.repositoryId && draft.repositoryId !== persisted.settings.repositoryId ? 'Das gewählte Standard-Repository ist vorgemerkt. ' : ''}Erst „Speichern“ übernimmt die Angaben; „Verwerfen“ entfernt die Vormerkung.</p>
+                {savedDiffers && <p>Inzwischen ist dieses Modul mit anderen Werten oder einer anderen Fassung gespeichert (Revision {persisted.revision}). Angezeigt wird deine Vormerkung; „Speichern“ ersetzt die gespeicherte Konfiguration, „Verwerfen“ behält sie.</p>}
+            </div>}
+            {!canEdit && applyIntent(persistedInput, intent) && <p className="ev-callout" role="note">In diesem Browser ist für dieses Projekt ein Entwurf vorgemerkt. Nur Projektadministratoren können ihn prüfen und speichern; er bleibt unverändert erhalten.</p>}
+
             {stale && <div className="ev-callout" role="alert">
                 <p><strong>Die Konfiguration wurde inzwischen geändert</strong> (Revision {persisted.revision}{persisted.updatedBy ? ` von ${persisted.updatedBy.displayName}` : ''}{persisted.updatedAt ? `, ${formatTimestamp(persisted.updatedAt)}` : ''}): {persistedLabel}. Dein Entwurf wurde nicht gespeichert und ist erhalten.</p>
                 <div className="ev-actions"><button type="button" onClick={discard}>Gespeicherte Fassung übernehmen (Entwurf verwerfen)</button><button type="button" onClick={() => { setBaseRevision(persisted.revision); setNotice('') }}>Entwurf behalten und auf Revision {persisted.revision} aufbauen</button></div>
@@ -311,14 +363,16 @@ function DevelopmentWorkspace({ response, refetching, refreshError, reload }: { 
             </form>
         </section>
 
-        {savedActive && <ModuleWorkspace config={persisted} unsaved={changed} />}
-        {!savedActive && <section className="ev-panel"><h2>Was ein Modul bringt</h2><p className="ev-muted">Handbuch, Werkzeug- und Projektprüfung sowie passende Aufgaben zum Starten.</p></section>}
+        {section === 'all' && savedActive && <ModuleWorkspace config={persisted} unsaved={changed} />}
+        {section === 'all' && !savedActive && <section className="ev-panel"><h2>Was ein Modul bringt</h2><p className="ev-muted">Handbuch, Werkzeug- und Projektprüfung sowie passende Aufgaben zum Starten.</p></section>}
     </div>
 }
 
 /** Tools, tasks and handbook of the saved, ready module; anything else is reported, never substituted. */
 function ModuleWorkspace({ config, unsaved }: { config: ProjectDevelopmentModuleConfig; unsaved: boolean }) {
     const evolved = useEvolved()
+    // A doctor remedy may open the start form of the matching task; starting stays an explicit click there.
+    const [requestedTask, setRequestedTask] = useState<{ id: string; nonce: number } | null>(null)
     const context = useDevelopmentModuleContext(evolved, config.revision)
     const current = context.current
     const refresh = () => void context.refetch()
@@ -336,8 +390,9 @@ function ModuleWorkspace({ config, unsaved }: { config: ProjectDevelopmentModule
         {!current && !context.error && <Loading />}
         {current && !matches && <p className="ev-callout" role="status">{current.active.state !== 'ready' ? `${moduleStateLabels[current.active.state]}: ${describeModuleState(current.active.state)}` : `Der Projektkontext stammt von Revision ${current.revision} oder einer anderen Modulfassung.`} <button type="button" disabled={context.isFetching} onClick={refresh}>Aktualisieren</button></p>}
         {current && matches && <>
-            <DevelopmentTools config={config} context={current} module={current.module!} unsaved={unsaved} canRun={canWriteProject(evolved.project!.role)} onContextRefresh={refresh} onModuleChanged={moduleChanged} />
-            <DevelopmentTasks config={config} module={current.module!} unsaved={unsaved} onModuleChanged={moduleChanged} />
+            <DevelopmentTools config={config} context={current} module={current.module!} unsaved={unsaved} canRun={canWriteProject(evolved.project!.role)} onContextRefresh={refresh} onModuleChanged={moduleChanged}
+                onOpenTask={id => setRequestedTask(previous => ({ id, nonce: (previous?.nonce ?? 0) + 1 }))} />
+            <DevelopmentTasks config={config} module={current.module!} unsaved={unsaved} onModuleChanged={moduleChanged} requestedTask={requestedTask} />
             <DevelopmentHandbook config={config} module={current.module!} />
         </>}
     </>
@@ -403,6 +458,7 @@ export function DevelopmentOverviewCard() {
         <div><h2>Entwicklung</h2>
             <p role="status">{!current && modules.error ? `Nicht verfügbar: ${describeDevelopmentError(modules.error)}` : !current || !settings ? 'Wird geladen …' : !settings.activeModuleId ? 'Allgemein – kein Modul gespeichert.'
                 : `${describeActiveModule(settings, current.catalog.modules)}${state && state !== 'ready' ? ` · ${moduleStateLabels[state]}` : ''}${settings.repositoryId ? ' · mit Standard-Repository' : ' · ohne Standard-Repository'}`}</p></div>
-        <WorkspaceLink tab="development" projectId={projectId} className="ew-text-link">{settings?.activeModuleId ? state === 'ready' ? 'Handbuch, Prüfungen und Aufgaben' : 'Status ansehen' : 'Modul wählen'}</WorkspaceLink>
+        <div className="ev-actions"><WorkspaceLink tab="development" projectId={projectId} className="ew-text-link">{settings?.activeModuleId ? state === 'ready' ? 'Handbuch, Prüfungen und Aufgaben' : 'Status ansehen' : 'Modul wählen'}</WorkspaceLink>
+            <WorkspaceLink tab="setup" projectId={projectId} className="ew-text-link">Einrichtung Schritt für Schritt</WorkspaceLink></div>
     </section>
 }

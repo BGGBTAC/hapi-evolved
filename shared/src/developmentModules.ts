@@ -4,7 +4,7 @@ import {
     DevelopmentRecipeSchema, DevelopmentRepositoryContextSchema, DevelopmentRevisionSchema, DevelopmentRpcRepositorySchema, DevelopmentRunnerStatusSchema,
     DevelopmentIntegrationStatusSchema, DoctorCheckCategorySchema, GitShaSchema, HttpsOutputUrlSchema, IosSettingsSchema, OdooSettingsSchema,
     RepoSubdirectorySchema, RepositoryIdSchema, GitBranchSchema, ResourceReferenceSchema, BuildFileInventorySchema, OdooModuleInventorySchema,
-    type DevelopmentMode, type DevelopmentSettings, type SpecializedDevelopmentMode,
+    type DevelopmentEffect, type DevelopmentMode, type DevelopmentSettings, type SpecializedDevelopmentMode,
 } from './evolvedDevelopment'
 
 /**
@@ -271,6 +271,22 @@ export const DevelopmentModuleTaskSchema = z.object({
     preconditions: z.array(z.enum(DEVELOPMENT_TASK_PRECONDITIONS)).max(4).default([]), when,
 }).strict()
 export type DevelopmentModuleTask = z.infer<typeof DevelopmentModuleTaskSchema>
+/**
+ * Effects that change the project, its checkout, local services or remote state. A task whose effective effects
+ * contain one of them needs a writable execution profile; a `restricted` project only allows read-only planning.
+ */
+export const DEVELOPMENT_CONSEQUENTIAL_EFFECTS: readonly DevelopmentEffect[] = Object.freeze([
+    'writes_repository', 'network_download', 'installs_in_project', 'creates_local_database', 'runs_project_code', 'git_push_may_deploy', 'remote_cost',
+] as DevelopmentEffect[])
+/** Effective effects of a task: its own plus those of every referenced recipe, in DEVELOPMENT_EFFECTS order. */
+export function developmentTaskEffects(task: { effects: readonly DevelopmentEffect[]; recipeIds: readonly string[] }, recipes: ReadonlyArray<{ id: string; effects: readonly DevelopmentEffect[] }>): DevelopmentEffect[] {
+    const effects = new Set<DevelopmentEffect>(task.effects)
+    for (const recipe of recipes) if (task.recipeIds.includes(recipe.id)) for (const effect of recipe.effects) effects.add(effect)
+    return DEVELOPMENT_EFFECTS.filter(effect => effects.has(effect))
+}
+export function developmentTaskRequiresWritableProfile(effects: readonly DevelopmentEffect[]): boolean {
+    return effects.some(effect => DEVELOPMENT_CONSEQUENTIAL_EFFECTS.includes(effect))
+}
 export const DevelopmentModuleDoctorInputSchema = z.object({
     provider: DevelopmentProviderRefSchema,
     checks: z.array(z.object({ id: DevelopmentIdSchema, required: z.boolean().default(false), when }).strict()).max(DEVELOPMENT_MODULE_LIMITS.pluginDoctorChecks),
@@ -606,6 +622,11 @@ export const DevelopmentModuleContextSchema = z.object({
     lastDoctor: z.object({
         observedAt: z.number().int().nonnegative(), revision: DevelopmentRevisionSchema, moduleId: DevelopmentModuleIdSchema, moduleDigest: DevelopmentModuleDigestSchema,
         ready: z.number().int().nonnegative(), missing: z.number().int().nonnegative(), unsupported: z.number().int().nonnegative(), unknown: z.number().int().nonnegative(), warning: z.number().int().nonnegative(),
+        /** Required checks of that run that were not `ready`, with their remedy kind (hub process memory only). */
+        missingRequired: z.array(z.object({
+            id: DevelopmentIdSchema, state: z.enum(['missing', 'unsupported', 'unknown', 'warning']),
+            remedyKind: z.enum(['recipe', 'operator', 'manual', 'docs']).nullable(), recipeId: DevelopmentIdSchema.nullable(),
+        }).strict()).max(64).optional(),
     }).strict().nullable(),
 }).strict()
 export type DevelopmentModuleContext = z.infer<typeof DevelopmentModuleContextSchema>

@@ -42,16 +42,21 @@ export function useDevelopmentCreation(evolved: Pick<EvolvedSession, 'api' | 'me
     const newFields = fields && values ? new Set(fields.filter(field => !Object.hasOwn(values, field.id)).map(field => field.id)) : undefined
     const staleSelected = !!stale && stale.moduleId === moduleId
 
+    // A new project has no repository grants. A module that requires a repository is therefore created in two phases:
+    // the project starts general and the module is only noted as a draft (see `intent`); its repository fields are
+    // chosen after the grant and clone in the same project, then the module is activated with the regular save.
+    const repositoryFields = new Set(fields?.filter(field => field.kind === 'repository').map(field => field.id) ?? [])
+    const needsRepository = fields?.some(field => field.kind === 'repository' && field.required) ?? false
     const issues: Record<string, string> = { ...serverIssues }
     let general: string | null = null
     if (fields && shown) {
         const result = validateDevelopmentModuleValues(fields, shown)
         if (!result.ok) for (const issue of result.issues) {
+            if (issue.field && needsRepository && repositoryFields.has(issue.field)) continue
             if (issue.field) issues[issue.field] ??= describeFieldIssue(issue.message)
             else general = describeFieldIssue(issue.message)
         }
     }
-    const needsRepository = fields?.some(field => field.kind === 'repository' && field.required) ?? false
     const blocker = !moduleId ? null
         : staleSelected ? 'Das Modul wurde seit dem Laden geändert, deaktiviert oder entfernt. Lade die Modulliste neu und prüfe die Einstellungen, bevor du erneut anlegst.'
         : !entry ? 'Dieses Modul ist nicht mehr im Katalog. Wähle „Allgemein“ oder ein anderes Modul.'
@@ -60,8 +65,8 @@ export function useDevelopmentCreation(evolved: Pick<EvolvedSession, 'api' | 'me
                     : detail.error ? `Moduldetails nicht geladen: ${describeDevelopmentError(detail.error)}`
                         : detail.changed ? 'Das Modul wurde gerade geändert. Lade die Modulliste neu.'
                             : !fields ? 'Moduldetails werden geladen …'
-                                : needsRepository ? 'Dieses Modul braucht ein Repository, das ein neues Projekt noch nicht hat. Lege das Projekt allgemein an und wähle das Modul danach unter „Entwicklung“.'
-                                    : general ?? (Object.keys(issues).length ? `Ungültige Moduleinstellungen: ${fields.filter(field => issues[field.id]).map(field => field.label).join(', ')}.` : null)
+                                : general ?? (Object.keys(issues).length ? `Ungültige Moduleinstellungen: ${fields.filter(field => issues[field.id]).map(field => field.label).join(', ')}.` : null)
+    const deferred = !!moduleId && !blocker && needsRepository
 
     const choose = (id: string | null) => { setModuleId(id); setValues(null); setServerIssues({}) }
     /** Reload catalog and module details (both keyed by digest, gcTime 0); nothing is submitted or installed. */
@@ -88,7 +93,7 @@ export function useDevelopmentCreation(evolved: Pick<EvolvedSession, 'api' | 'me
     }
     /** Contract-v2 creation body, or undefined for a general project. */
     const development = (): Creation | undefined => {
-        if (!moduleId) return undefined
+        if (!moduleId || deferred) return undefined
         const mode = modeForBuiltinModuleId(moduleId)
         const settings: Creation['settings'] = { activeModuleId: moduleId, repositoryId: null, odoo: null, ios: null, android: null, modules: {} }
         if (mode === 'odoo') settings.odoo = defaultOdooSettings(odooMajor)
@@ -103,11 +108,16 @@ export function useDevelopmentCreation(evolved: Pick<EvolvedSession, 'api' | 'me
         for (const issue of list) if (issue.path[0] === 'modules' && issue.path[1] === moduleId && issue.path[3]) next[issue.path[3]] ??= describeFieldIssue(issue.message)
         setServerIssues(next)
     }
+    /** The reviewed module revision and typed values of a deferred (two-phase) module; repository fields stay empty. */
+    const intent = (): { moduleId: string; moduleDigest: string; values: Record<string, unknown> } | null => {
+        if (!deferred || !moduleId || !detail.current || !shown) return null
+        return { moduleId, moduleDigest: detail.current.digest, values: Object.fromEntries(Object.entries(shown).map(([key, value]) => [key, repositoryFields.has(key) ? null : value])) }
+    }
     const reset = () => { setModuleId(null); setOdooMajor(20); setValues(null); setServerIssues({}); setStale(null) }
     // Inputs such as lists keep their raw text while typing; an explicit reset remounts them (not on every keystroke).
     const [resetGeneration, setResetGeneration] = useState(0)
     const resetValues = () => { setValues(null); setServerIssues({}); setResetGeneration(generation => generation + 1) }
-    return { catalog, moduleId, entry, choose, odooMajor, setOdooMajor, fields, values: shown, setValue, issues, blocker, development, showServerIssues, handleFailure, reset,
+    return { catalog, moduleId, entry, choose, odooMajor, setOdooMajor, fields, values: shown, setValue, issues, blocker, deferred, intent, development, showServerIssues, handleFailure, reset,
         stale: staleSelected ? stale : null, refreshModules, droppedValues, discardDroppedValues, resetValues, fieldsKey: `${moduleId ?? ''}:${resetGeneration}`, newFields, detailChanged: detail.changed, refetchDetail: () => void detail.refetch() }
 }
 
@@ -142,7 +152,11 @@ export function DevelopmentCreationFields({ creation, disabled }: { creation: Re
                 <button type="button" disabled={disabled} onClick={creation.resetValues}>Alle Moduleinstellungen auf Vorgaben zurücksetzen</button></div>
         </div>}
         {creation.fields && creation.values && <div className="ev-dev-form"><DevelopmentModuleFields key={creation.fieldsKey} fields={creation.fields} values={creation.values} onChange={creation.setValue} disabled={disabled || !!creation.stale} issues={creation.issues} choices={null} projectId={null} idPrefix="ev-create-field" newFields={creation.newFields} /></div>}
-        <p className="ev-dev-mode-hint" id="ev-create-module-hint">{mode && mode !== 'none' ? modeHints[mode] : entry?.summary ?? modeHints.none} Repository und weitere Details legst du später unter „Entwicklung“ fest. Das Modul ändert keine Rechte und installiert nichts.</p>
+        {creation.deferred && <div className="ev-callout" role="status" id="ev-create-module-deferred">
+            <p><strong>Zweistufige Einrichtung.</strong> {entry?.title ?? 'Dieses Modul'} braucht ein Repository, das ein neues Projekt noch nicht hat. Das Projekt wird zunächst allgemein angelegt; das Modul wird nur in diesem Browser <strong>vorgemerkt</strong> (Entwurf, nicht gespeichert und nicht aktiv).</p>
+            <p className="ev-muted">Danach führt dich die Einrichtung durch GitHub-Freigabe und Klonen. Erst wenn das Repository gewählt ist, aktivierst du das Modul ausdrücklich mit „Speichern“.</p>
+        </div>}
+        <p className="ev-dev-mode-hint" id="ev-create-module-hint">{mode && mode !== 'none' ? modeHints[mode] : entry?.summary ?? modeHints.none} Repository und weitere Details legst du anschließend in der Einrichtung fest. Das Modul ändert keine Rechte und installiert nichts.</p>
         {creation.blocker && <p className="ev-dev-invalid" role="status" id="ev-create-module-blocker">{creation.blocker}</p>}
     </div>
 }

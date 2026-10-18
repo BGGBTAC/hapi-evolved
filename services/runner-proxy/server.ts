@@ -9,7 +9,7 @@ import { boundedGitResponse, GIT_TIMEOUT_MS, gitPath } from '../../hub/src/evolv
 import { parseRunnerGitRequest, readRunnerGitBody } from './gitRequest'
 import { readCredentialResponse } from '../../shared/src/credentialTransport'
 import { fetchPublicGit, streamPublicGit, type PublicGitFetcher } from './publicGit'
-import { DevelopmentKnowledgeQuerySchema, GitRefSchema } from '../../shared/src/evolvedDevelopment'
+import { DevelopmentKnowledgeQuerySchema, GitRefSchema, OdooShEnvironmentIdSchema } from '../../shared/src/evolvedDevelopment'
 import { DevelopmentModuleActionBodySchema } from '../../shared/src/developmentModules'
 
 type Grant = { token: string; expiresAt: number; projectId: string }
@@ -35,7 +35,7 @@ export function queuedPacketBytes(value: unknown, depth = 0): number {
     }
     return 8
 }
-const DEVELOPMENT_QUERY_KEYS: Record<string, readonly string[]> = { knowledge: ['topic', 'q', 'limit'], 'modules-knowledge': ['topic', 'q', 'limit'], 'build-status': ['ref'] }
+const DEVELOPMENT_QUERY_KEYS: Record<string, readonly string[]> = { knowledge: ['topic', 'q', 'limit'], 'modules-knowledge': ['topic', 'q', 'limit'], 'build-status': ['ref', 'environment'] }
 /**
  * Exact agent reads of the project development mode/module. Configuration (GET/PUT .../development and
  * .../development/modules), module details and catalogue stay browser-only.
@@ -47,7 +47,7 @@ export function allowedDevelopmentRequest(operation: string | undefined, method:
     if (operation === 'context' || operation === 'modules-context') return search === ''
     const allowed = DEVELOPMENT_QUERY_KEYS[operation]
     if (!allowed) return false
-    if (search === '') return true
+    if (search === '') return operation !== 'build-status'
     if (!search.startsWith('?') || search.length > 700 || search.includes('#')) return false
     let params: URLSearchParams
     try { params = new URLSearchParams(search.slice(1)); for (const part of search.slice(1).split('&')) decodeURIComponent(part.replace(/\+/g, ' ')) } catch { return false }
@@ -61,7 +61,11 @@ export function allowedDevelopmentRequest(operation: string | undefined, method:
     // Same rules as the Hub (shared contract), no narrower ad-hoc whitelist.
     if (operation === 'knowledge' || operation === 'modules-knowledge') return DevelopmentKnowledgeQuerySchema.safeParse(Object.fromEntries(params)).success
         && (q === null || !/[\u0000-\u001f\u007f]/.test(q)) && (limit === null || /^(?:[1-9]|1[0-9]|20)$/.test(limit)) && (topic === null || q === null)
-    return ref !== null && GitRefSchema.safeParse(ref).success
+    const environment = params.get('environment')
+    // The Hub resolves the environment's saved branch and rejects a conflicting explicit ref.
+    return (ref !== null || environment !== null)
+        && (ref === null || GitRefSchema.safeParse(ref).success)
+        && (environment === null || OdooShEnvironmentIdSchema.safeParse(environment).success)
 }
 const DEVELOPMENT_ACTIONS = new Set(['doctor', 'inspect', 'modules-doctor', 'modules-inspect'])
 const MAX_MODULE_ACTION_BODY_BYTES = 256

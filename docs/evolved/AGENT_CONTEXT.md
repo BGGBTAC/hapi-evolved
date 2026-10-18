@@ -146,6 +146,17 @@ Hub ab. Einzelheiten: Thema `development`,
 [Entwicklungsmodi](DEVELOPMENT_MODES.md) und
 [Entwicklungsmodule als Plugin bereitstellen](DEVELOPMENT_MODULES.md).
 
+Der Browser führt neue und bestehende Projekte unter **Einrichtung** durch Profil,
+Anbieter, GitHub, Modul und Werkzeugprüfung. Eine Vormerkung im Assistenten ist
+noch keine gespeicherte Konfiguration. Agenten lesen weiterhin den aktuellen
+Modulkontext. Bei Odoo.sh sind Staging und Produktion unabhängig konfiguriert;
+Statusabfragen brauchen ausdrücklich `environment: "staging" | "production"`
+oder einen `ref`. Arbeitsbranch, Build-ID und GitHub-Repository sind verschiedene
+Angaben. Unzugeordnete Altdaten dürfen nicht als Produktionsziel geraten werden.
+Odoo.sh stellt Enterprise-Addons selbst bereit; ein zusätzlicher lokaler Checkout
+ist optional und benötigt einen eigenen berechtigten Quellenzugang. Die Auswahl
+einer Enterprise-Quelle bindet sie nicht automatisch in lokale Tests ein.
+
 ## Kommunikation zwischen Agenten
 
 Der Überblick weist ausdrücklich auf die Peer-Werkzeuge hin. Ihre Detailhilfe

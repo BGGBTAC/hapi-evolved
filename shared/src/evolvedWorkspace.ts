@@ -41,8 +41,14 @@ export type RepoImpact = {
 export type ReadinessState = 'ok' | 'missing' | 'stale' | 'denied' | 'unknown'
 export type ProjectReadiness = {
     projectId: string; checkedAt: number
-    purposes: { plan: ReadinessState; code: ReadinessState }
-    items: Array<{ key: string; label: string; state: ReadinessState; reasonCode: string; detail: string; action?: { kind: 'providers' | 'github' | 'runner' | 'codegraph' | 'memory' | 'projects'; label: string } }>
+    /** Development configuration revision the result was computed for; null = never saved or unreadable. */
+    configRevision: number | null
+    /**
+     * `code` covers the configured default repository when one is bound (another ready checkout does not count).
+     * `module`: null without an active development module; otherwise `code` plus the module being available.
+     */
+    purposes: { plan: ReadinessState; code: ReadinessState; module: ReadinessState | null }
+    items: Array<{ key: string; label: string; state: ReadinessState; reasonCode: string; detail: string; action?: { kind: 'providers' | 'github' | 'runner' | 'codegraph' | 'memory' | 'projects' | 'development'; label: string } }>
 }
 
 export const RepositoryCatalogSchema = z.object({

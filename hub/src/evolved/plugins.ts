@@ -128,7 +128,7 @@ export class PluginService {
         const prefix = `plugin:${pluginId}:`, kept = new Set(next.developmentModules.map(module => module.id))
         for (const row of this.store.db.query('SELECT settings FROM evolved_project_development').all() as Array<{ settings: string }>) {
             let value: unknown; try { value = JSON.parse(row.settings) } catch { continue }
-            const active = value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 2 && 'settings' in value && value.settings && typeof value.settings === 'object'
+            const active = value && typeof value === 'object' && 'schemaVersion' in value && typeof value.schemaVersion === 'number' && value.schemaVersion >= 2 && 'settings' in value && value.settings && typeof value.settings === 'object'
                 && 'activeModuleId' in value.settings ? value.settings.activeModuleId : null
             if (typeof active === 'string' && active.startsWith(prefix) && !kept.has(active.slice(prefix.length))) throw new EvolvedError('plugin_dependency', 'A project still uses a development module this update removes. Select another module in that project before updating.', 409)
         }

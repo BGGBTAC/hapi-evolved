@@ -40,6 +40,13 @@ if (process.env.EVOLVED_TEST_PLUGINS === '1') {
                 topics: [{ id: 'basics', title: 'Synthetische Grundlagen', summary: 'Kurzfassung.', body: 'Ausführlicher synthetischer Handbuchtext.', tags: ['basics'], sources: [{ title: 'Beispielquelle', url: 'https://example.com/docs', verifiedAt: '2026-10-18' }] }],
                 recipes: [], tasks: [{ id: 'review', title: 'Synthetische Prüfung', description: 'Prüft synthetisch.', kind: 'review', specialist: 'builtin:review', topicIds: ['basics'], defaultTask: 'Prüfe die Änderungen.', requiresRepository: false }],
                 doctor: { provider: { id: 'hapi.toolchain', version: 1 }, checks: [{ id: 'git', required: true }] }, inspect: null },
+            // Generic module that needs a repository: created in two phases (general project, then grant/clone/bind, then activation).
+            { apiVersion: 1, id: `repo-${suffix}`, title: 'Repository-Szenario', summary: 'Generisches Modul mit Pflicht-Repository.', contentVersion: '2026.10.18-1',
+                fields: [
+                    { id: 'source', kind: 'repository', label: 'Quell-Repository', required: true },
+                    { id: 'packageName', kind: 'text', format: 'identifier', label: 'Paketname im Repository', required: true, default: null },
+                ],
+                tasks: [{ id: 'review', title: 'Repository prüfen', description: 'Liest das Repository.', kind: 'review', specialist: 'builtin:review', defaultTask: 'Prüfe das Repository.', requiresRepository: true }] },
             { apiVersion: 1, id: `other-${suffix}`, title: `Zufallsszenario ${suffix} mit ausführlichem Titel für schmale Bildschirme`, summary: 'Zweites unbekanntes Modul mit anderer Feldreihenfolge.', contentVersion: '1.0.0',
                 fields: [
                     { id: 'path', kind: 'select', label: 'Pfadvariante', options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }], default: 'a' },

@@ -6,7 +6,7 @@ import { MACHINE_CAPABILITIES } from '@hapi/protocol'
 import { EVOLVED_DEVELOPMENT_CAPABILITY, defaultAndroidSettings, defaultDevelopmentSettings, defaultOdooSettings, type DevelopmentSettings } from '@hapi/protocol/evolvedDevelopment'
 import {
     DevelopmentConfigVersionUnsupportedSchema, DevelopmentModuleCatalogResponseSchema, DevelopmentModuleContextSchema, DevelopmentModuleDoctorResponseSchema, DevelopmentModulesResponseSchema, DevelopmentModuleDetailResponseSchema, DevelopmentModuleKnowledgeResponseSchema,
-    type DevelopmentModuleDefinitionInput, type DevelopmentModulesResponse,
+    developmentSettingsToModuleSettings, type DevelopmentModuleDefinitionInput, type DevelopmentModulesResponse,
 } from '@hapi/protocol/developmentModules'
 import type { PluginManifestInput } from '@hapi/protocol/pluginManifest'
 import { createDevelopmentService, DevelopmentConfigInvalidError } from './development'
@@ -67,6 +67,8 @@ function setup() {
     const team = store.createTeam('admin', 'Team')
     store.setMember('admin', team.id, 'member', 'member'); store.setMember('admin', team.id, 'viewer', 'viewer')
     const project = store.createProject('admin', team.id, 'Project')
+    // Writable profile: consequential development tasks are refused under `restricted` (covered separately).
+    store.db.prepare("UPDATE evolved_projects SET profile='workspace' WHERE id=?").run(project.id)
     const sessions = Object.fromEntries(['admin', 'member', 'viewer'].map(user => [user, store.createSession(user)]))
     // Plugin source (isolated fake GitHub).
     const localA = `mod-${randomUUID().slice(0, 8)}`, localB = `alt-${randomUUID().slice(0, 8)}`
@@ -189,7 +191,7 @@ describe('plugin development modules', () => {
         expect(saved.config.active).toMatchObject({ moduleId, state: 'ready', installedDigest: entry.digest, adoptedDigest: entry.digest })
         expect(saved.config.settings.modules[moduleId]).toMatchObject({ moduleDigest: entry.digest, values: { appDirectory: '.', channel: 'stable', retries: 0, strict: false, extraRepository: null },
             adopted: { pluginId, commitSha: commit, pluginVersion: '1.0.0' } })
-        expect(JSON.parse((t.store.db.query('SELECT settings FROM evolved_project_development').get() as { settings: string }).settings).schemaVersion).toBe(2)
+        expect(JSON.parse((t.store.db.query('SELECT settings FROM evolved_project_development').get() as { settings: string }).settings).schemaVersion).toBe(3)
 
         const context = DevelopmentModuleContextSchema.parse(await (await t.dev('/modules-context', { token: t.capability() })).json())
         expect(context.module).toMatchObject({ id: moduleId, digest: entry.digest })
@@ -238,8 +240,8 @@ describe('plugin development modules', () => {
         const t = setup(), pluginId = await t.install(), moduleId = t.moduleId(pluginId, t.localA)
         const odoo: DevelopmentSettings = { ...defaultDevelopmentSettings('odoo'), odoo: defaultOdooSettings(19), android: { ...defaultAndroidSettings(), variant: 'freeDebug' } }
         expect((await t.dev('', { method: 'PUT', body: { expectedRevision: 0, settings: odoo } })).status).toBe(200)
-        // Builtin-only configurations stay in the v1 storage format (older binaries can still read them).
-        expect(JSON.parse((t.store.db.query('SELECT settings FROM evolved_project_development').get() as { settings: string }).settings)).toEqual(odoo)
+        // Every write uses the v3 envelope: binaries that know only v1/v2 refuse it instead of dropping Odoo.sh environments.
+        expect(JSON.parse((t.store.db.query('SELECT settings FROM evolved_project_development').get() as { settings: string }).settings)).toEqual({ schemaVersion: 3, settings: developmentSettingsToModuleSettings(odoo) })
         const v2 = await t.modules()
         expect(v2.config.settings).toMatchObject({ activeModuleId: 'builtin:odoo', odoo: { major: 19 }, android: { variant: 'freeDebug' }, modules: {} })
         // Keep Odoo active, add an inactive plugin configuration.
@@ -607,10 +609,10 @@ describe('core follow-up: lifecycle generation, digest scope, catalogue, quarant
     test('a configuration written by a newer HAPI is reported and never overwritten, not even by the corrupt-record recovery', async () => {
         const t = setup()
         expect((await t.dev('', { method: 'PUT', body: { expectedRevision: 0, settings: { ...defaultDevelopmentSettings('odoo'), repositoryId: repo.id } } })).status).toBe(200)
-        const raw = '{"schemaVersion":3,"settings":{"activeModuleId":"builtin:odoo","repositoryId":"123456","future":{"x":1}}}'
+        const raw = '{"schemaVersion":4,"settings":{"activeModuleId":"builtin:odoo","repositoryId":"123456","future":{"x":1}}}'
         t.store.db.prepare('UPDATE evolved_project_development SET settings=? WHERE project_id=?').run(raw, t.project.id)
         const row = () => t.store.db.query('SELECT revision,settings FROM evolved_project_development WHERE project_id=?').get(t.project.id)
-        const expected = { status: 409, code: 'development_config_version_unsupported', revision: 1, schemaVersion: 3 }
+        const expected = { status: 409, code: 'development_config_version_unsupported', revision: 1, schemaVersion: 4 }
         expect(DevelopmentConfigVersionUnsupportedSchema.safeParse((({ status: _status, ...body }) => body)(await t.json(await t.dev('/modules')))).success).toBe(true)
         for (const [path, method] of [['', 'GET'], ['/modules', 'GET'], ['/context', 'GET'], ['/modules-context', 'GET'], ['/modules-knowledge', 'GET']] as const) expect(await t.json(await t.dev(path, { method }))).toMatchObject(expected)
         expect(await t.json(await t.dev('', { method: 'PUT', body: { expectedRevision: 1, settings: defaultDevelopmentSettings() } }))).toMatchObject(expected)

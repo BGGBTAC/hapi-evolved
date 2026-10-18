@@ -83,6 +83,8 @@ export function createEvolvedRuntime(dataDir: string, secret: Uint8Array, depend
     routes.route('/', repositories.routes)
     routes.route('/', createReadinessRoutes({ store, origin, getEngine: () => getSyncEngine(),
         graphConfigured: !!graphOptions.adapterUrl && !!serviceToken, graphStatus: id => graphStatus.get(id), memoryAvailable: id => memory.backend.available(id),
+        // Resolved at request time; the development service is created below.
+        development: id => development.readinessSnapshot(id),
         readResource: async (request, projectId, resource) => {
             // Only fixed internal diagnostic routes. No caller-supplied URL or mutation method.
             const response = await routes.request(new Request(`${origin}/projects/${encodeURIComponent(projectId)}/${resource}`, { headers: request.headers }))

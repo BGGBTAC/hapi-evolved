@@ -11,7 +11,9 @@ vi.mock('./auth', async () => {
     const useContext = () => { useSyncExternalStore(listener => { state.listeners.add(listener); return () => { state.listeners.delete(listener) } }, () => state.version); return state.value }
     return { useEvolved: useContext, useOptionalEvolved: useContext }
 })
-vi.mock('./ProjectsTeam', () => ({ ProjectsPanel: ({ onSelectProject }: { onSelectProject: (id: string) => void }) => <button onClick={() => onSelectProject('project-2')}>Choose second project</button>, TeamPanel: () => <p>Team panel content</p> }))
+const pendingCreation = vi.hoisted(() => ({ callback: null as null | ((id: string) => void) }))
+vi.mock('./ProjectsTeam', () => ({ ProjectsPanel: ({ onSelectProject, onProjectCreated }: { onSelectProject: (id: string) => void; onProjectCreated: (id: string) => void }) => <><button onClick={() => onSelectProject('project-2')}>Choose second project</button><button onClick={() => onProjectCreated('project-3')}>Simulate created project</button><button onClick={() => { pendingCreation.callback = onProjectCreated }}>Start slow creation</button></>, TeamPanel: () => <p>Team panel content</p> }))
+vi.mock('./ProjectSetup', () => ({ ProjectSetupPanel: ({ step, onStep }: { step?: string; onStep: (step: string) => void }) => <><p>Setup {state.value.project?.id} step {step ?? 'auto'}</p><button onClick={() => onStep('github')}>Setup next</button></> }))
 vi.mock('./Dashboard', () => ({ Dashboard: () => <p>Dashboard {state.value.project?.id ?? 'onboarding'}</p> }))
 vi.mock('./Capacity', () => ({ CapacityPanel: () => <p>Capacity {state.value.project?.id}</p> }))
 vi.mock('./Github', () => ({ GithubPanel: () => <p>GitHub {state.value.project?.id}</p> }))
@@ -40,6 +42,52 @@ beforeEach(() => {
     vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
     localStorage.clear(); state.value.api.baseUrl = 'https://hub.example'; state.value.me = { user: { id: 'user-1', displayName: 'Test User', isAdmin: false }, accessibleProjects: [project('project-1'), project('project-2')] }; state.value.project = state.value.me.accessibleProjects[0]; state.value.selectProject.mockReset(); state.value.logout.mockReset(); state.version++
 })
+describe('project setup navigation', () => {
+    it('keeps only known setup steps and a bare return marker in the URL', () => {
+        expect(parseWorkspaceSearch({ tab: 'setup', project: 'p', step: 'github' })).toEqual({ tab: 'setup', project: 'p', step: 'github' })
+        expect(parseWorkspaceSearch({ tab: 'setup', step: 'install-everything' })).toEqual({ tab: 'setup' })
+        expect(parseWorkspaceSearch({ tab: 'mcp', from: 'setup', step: 'summary' })).toEqual({ tab: 'mcp', from: 'setup', step: 'summary' })
+        expect(parseWorkspaceSearch({ tab: 'mcp', from: 'elsewhere' })).toEqual({ tab: 'mcp' })
+    })
+    it('enters a created project in the setup only once the authorized context lists it, and steps are browser history', async () => {
+        const { router, history } = await mount('/evolved?tab=projects&project=project-1')
+        fireEvent.click(await screen.findByRole('button', { name: 'Simulate created project' }))
+        expect(await screen.findByText(/Dieses Projekt ist für dein Konto nicht verfügbar/)).toBeInTheDocument()
+        expect(state.value.selectProject).not.toHaveBeenCalled()
+        // The refreshed account context now lists the project: the URL selects it, nothing else.
+        state.value.me = { ...state.value.me, accessibleProjects: [...state.value.me.accessibleProjects, project('project-3')] }
+        act(() => update())
+        await waitFor(() => expect(state.value.selectProject).toHaveBeenCalledWith('project-3'))
+        state.value.project = state.value.me.accessibleProjects[2]!
+        act(() => update())
+        expect(await screen.findByText('Setup project-3 step profile')).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Setup next' }))
+        expect(await screen.findByText('Setup project-3 step github')).toBeInTheDocument()
+        expect(router.state.location.search).toEqual({ tab: 'setup', project: 'project-3', step: 'github' })
+        await act(async () => history.back())
+        expect(await screen.findByText('Setup project-3 step profile')).toBeInTheDocument()
+    })
+    it('ignores a creation that completes after the account changed: no navigation for the new account', async () => {
+        const { router } = await mount('/evolved?tab=projects&project=project-1')
+        fireEvent.click(await screen.findByRole('button', { name: 'Start slow creation' }))
+        // Account switch while the creation's refresh is still pending.
+        state.value.me = { user: { id: 'user-2', displayName: 'Other', isAdmin: false }, accessibleProjects: [project('project-1'), project('project-3')] }
+        act(() => update())
+        await screen.findByRole('navigation', { name: 'Arbeitsbereich' })
+        const before = router.state.location.href
+        act(() => pendingCreation.callback!('project-3'))
+        await new Promise(resolve => setTimeout(resolve, 50))
+        expect(router.state.location.href).toBe(before)
+        expect(screen.queryByText(/Setup project-3/)).not.toBeInTheDocument()
+    })
+    it('offers the way back to the setup step on a tool opened from it', async () => {
+        await mount('/evolved?tab=mcp&project=project-1&from=setup&step=summary')
+        const back = await screen.findByRole('link', { name: 'Zurück zur Einrichtung' })
+        expect(back.getAttribute('href')).toContain('tab=setup')
+        expect(back.getAttribute('href')).toContain('step=summary')
+    })
+})
+
 describe('workspace navigation', () => {
     it('validates query values and scopes remembered pages by account and hub', () => {
         expect(parseWorkspaceSearch({ tab: '<script>', project: '../foreign' })).toEqual({})

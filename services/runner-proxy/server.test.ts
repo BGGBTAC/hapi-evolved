@@ -512,7 +512,8 @@ test('development proxy admits only exact agent reads and the two fixed runner c
         [`${base}/context`, 'GET', ''],
         [`${base}/knowledge`, 'GET', ''], [`${base}/knowledge`, 'GET', '?topic=odoo-orm'], [`${base}/knowledge`, 'GET', '?q=record%20rules&limit=5'],
         [`${base}/knowledge`, 'GET', '?limit=20'], [`${base}/knowledge`, 'GET', '?q=a+b'],
-        [`${base}/build-status`, 'GET', ''], [`${base}/build-status`, 'GET', '?ref=main'], [`${base}/build-status`, 'GET', `?ref=${'a'.repeat(40)}`],
+        [`${base}/build-status`, 'GET', '?ref=main'], [`${base}/build-status`, 'GET', `?ref=${'a'.repeat(40)}`],
+        [`${base}/build-status`, 'GET', '?environment=staging'], [`${base}/build-status`, 'GET', '?environment=production&ref=main'],
         [`${base}/build-status`, 'GET', '?ref=feature%2Flogin'],
         // Same branch rules as the shared contract (non-ASCII, + and @ are valid Git branch characters).
         [`${base}/build-status`, 'GET', `?${new URLSearchParams({ ref: 'release+next' })}`], [`${base}/build-status`, 'GET', `?${new URLSearchParams({ ref: 'feature/änderung' })}`],
@@ -529,6 +530,8 @@ test('development proxy admits only exact agent reads and the two fixed runner c
         [`${base}/knowledge`, 'GET', `?q=${'x'.repeat(201)}`], [`${base}/knowledge`, 'GET', '?q=%00'], [`${base}/knowledge`, 'GET', '?q=%E0%A4%A'], [`${base}/knowledge`, 'GET', '?url=https://x'],
         [`${base}/knowledge`, 'GET', '?'], [`${base}/knowledge`, 'GET', '?&'],
         [`${base}/build-status`, 'GET', '?ref=main&ref=dev'], [`${base}/build-status`, 'GET', '?ref=-x'], [`${base}/build-status`, 'GET', '?ref=a..b'],
+        [`${base}/build-status`, 'GET', ''], [`${base}/build-status`, 'GET', '?environment='], [`${base}/build-status`, 'GET', '?environment=prod'],
+        [`${base}/build-status`, 'GET', '?environment=production&environment=staging'], [`${base}/build-status`, 'GET', '?environment=staging&ref=-x'],
         [`${base}/build-status`, 'GET', '?ref=main&repo=other%2Frepo'], [`${base}/build-status`, 'GET', '?repositoryId=42'], [`${base}/build-status`, 'POST', ''],
         [`${base}/build-status`, 'GET', '?ref=a%20b'],
         [`${base}/build-status`, 'GET', '?ref=HEAD'], [`${base}/build-status`, 'GET', '?ref=a@{1}'], [`${base}/build-status`, 'GET', '?ref=x.lock'],
@@ -560,6 +563,8 @@ test('development requests keep project isolation, broker credentials and empty 
     expect(forwarded[1].path).toBe(`${base}/knowledge?q=record%20rules&limit=3`)
     expect((await fetch(new URL(`${base}/doctor`, proxy.server.url), { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(200)
     expect(forwarded[2]).toMatchObject({ path: `${base}/doctor`, method: 'POST', body: '{}' })
+    expect((await fetch(new URL(`${base}/build-status?environment=production&ref=main`, proxy.server.url))).status).toBe(200)
+    expect(forwarded[3]).toEqual({ path: `${base}/build-status?environment=production&ref=main`, method: 'GET', authorization: `Bearer ${'x'.repeat(43)}`, cookie: null, body: '' })
     for (const [path, options, status] of [
         ['/api/evolved/projects/b/development/context', {}, 403],
         [base, { method: 'PUT', body: '{}' }, 403],
@@ -567,8 +572,10 @@ test('development requests keep project isolation, broker credentials and empty 
         [`${base}/inspect`, { method: 'POST', body: JSON.stringify({ checkout: '/etc' }) }, 400],
         [`${base}/doctor`, { method: 'POST', body: `{}${' '.repeat(80)}x` }, 400],
         [`${base}/context`, { headers: { origin: 'https://browser.test' } }, 403],
+        [`${base}/build-status?environment=production&environment=staging`, {}, 403],
+        [`${base}/build-status?environment=unknown`, {}, 403],
     ] as const) expect((await fetch(new URL(path, proxy.server.url), options)).status).toBe(status)
-    expect(forwarded).toHaveLength(3)
+    expect(forwarded).toHaveLength(4)
 })
 
 test('development module routes: exact v2 reads and bound actions only; configuration, details and catalogue stay browser-only', () => {

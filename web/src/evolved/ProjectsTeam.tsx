@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useEvolved, enrollPasskey, RecoveryCodes } from './auth'
-import { isProjectAdmin, projectPath, type ExecutionProfile, type ProjectRole, type Team, type TeamMember } from './api'
+import { EvolvedApiError, isProjectAdmin, projectPath, type EvolvedProject, type ExecutionProfile, type ProjectRole, type Team, type TeamMember } from './api'
+import { writeSetupIntent, type SetupIntent } from './setupIntent'
 import { ActionStatus, ConfirmButton, Empty, ErrorNotice, Field, Loading, Panel, formatDate, submit, useAction } from './ui'
 import { CapacityPanel } from './Capacity'
 import { DevelopmentOverviewCard } from './ProjectDevelopment'
@@ -62,13 +63,29 @@ function WorkspacePicker({ disabled, onChoose }: { disabled: boolean; onChoose: 
     </div>
 }
 
-export function ProjectsPanel({ onSelectProject }: { onSelectProject?: (id: string) => void } = {}) {
+export function ProjectsPanel({ onSelectProject, onProjectCreated }: { onSelectProject?: (id: string) => void; onProjectCreated?: (id: string) => void } = {}) {
     const { api, me } = useEvolved()
     // A changed account or installation-admin role must discard drafts and directory listings.
-    return <ProjectsForUser key={`${api.baseUrl}:${me.user.id}:${me.user.isAdmin}`} onSelectProject={onSelectProject} />
+    return <ProjectsForUser key={`${api.baseUrl}:${me.user.id}:${me.user.isAdmin}`} onSelectProject={onSelectProject} onProjectCreated={onProjectCreated} />
 }
 
-function ProjectsForUser({ onSelectProject }: { onSelectProject?: (id: string) => void }) {
+/** A created project that is entered only once the refreshed, authorized account context lists it. */
+type Handoff = { id: string; name: string; state: 'refreshing' | 'refresh_failed' | 'waiting'; intentKept: boolean }
+/**
+ * A creation whose acknowledgement was lost: it may exist, or the request may still be running. The project list cannot
+ * prove which project it was (another tab or person can create the same name), so candidates are only offered for an
+ * explicit choice; nothing is resubmitted or selected automatically.
+ */
+type Uncertain = { name: string; teamId: string; before: string[]; state: 'checking' | 'check_failed' | 'checked'; candidates: EvolvedProject[] }
+const createdProjectId = (value: unknown): string | null => {
+    const project = value && typeof value === 'object' ? (value as { project?: unknown }).project : null
+    const id = project && typeof project === 'object' ? (project as { id?: unknown }).id : null
+    return typeof id === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(id) ? id : null
+}
+/** Only a definite refusal proves that nothing was created; lost connections, timeouts and server errors do not. */
+const definitelyRefused = (failure: unknown) => failure instanceof EvolvedApiError && failure.status >= 400 && failure.status < 500 && failure.status !== 408
+
+function ProjectsForUser({ onSelectProject, onProjectCreated }: { onSelectProject?: (id: string) => void; onProjectCreated?: (id: string) => void }) {
     const evolved = useEvolved()
     const { api, me, project, selectProject, refresh } = evolved
     const teams = useQuery({ queryKey: ['evolved', 'teams', api.baseUrl, me.user.id], queryFn: ({ signal }) => api.request<{ teams: Team[] }>('/teams', { signal }) })
@@ -78,10 +95,14 @@ function ProjectsForUser({ onSelectProject }: { onSelectProject?: (id: string) =
     const [showPicker, setShowPicker] = useState(false)
     const [teamId, setTeamId] = useState('')
     const [projectFilter, setProjectFilter] = useState('')
+    const [handoff, setHandoff] = useState<Handoff | null>(null)
+    const [uncertain, setUncertain] = useState<Uncertain | null>(null)
     const development = useDevelopmentCreation(evolved)
     const creating = useRef(false)
     const creation = useRef<AbortController | null>(null)
-    useEffect(() => () => creation.current?.abort(), [])
+    const mounted = useRef(true)
+    // StrictMode runs setup, cleanup and setup again: mark mounted in the setup, not only unmounted in the cleanup.
+    useEffect(() => { mounted.current = true; return () => { mounted.current = false; creation.current?.abort() } }, [])
     const action = useAction()
     const adminTeams = teams.data?.teams.filter(team => isProjectAdmin(team.role)) ?? []
     const selectedTeam = adminTeams.find(team => team.id === teamId)?.id ?? adminTeams[0]?.id
@@ -90,8 +111,51 @@ function ProjectsForUser({ onSelectProject }: { onSelectProject?: (id: string) =
     const visibleProjects = canFilter && projectFilter.trim()
         ? me.accessibleProjects.filter(item => item.name.toLocaleLowerCase().includes(projectFilter.trim().toLocaleLowerCase()))
         : me.accessibleProjects
+    // Without a URL-aware host: select the new project once the refreshed authorized context lists it.
+    useEffect(() => {
+        if (!handoff || handoff.state !== 'waiting' || !me.accessibleProjects.some(item => item.id === handoff.id)) return
+        setHandoff(null)
+        selectProject(handoff.id)
+    }, [handoff, me.accessibleProjects, selectProject])
+    type Intent = ReturnType<typeof development.intent>
+    const enter = async (id: string, projectName: string, intent: Intent) => {
+        // The intended (two-phase) module is a browser-local draft of the new project, never a saved configuration.
+        const intentKept = !intent || writeSetupIntent(api.baseUrl, me.user.id, id, { moduleId: intent.moduleId, moduleDigest: intent.moduleDigest, values: intent.values as SetupIntent['values'], repositoryId: null, createdAt: Date.now() })
+        setHandoff({ id, name: projectName, state: 'refreshing', intentKept })
+        try { await refresh() } catch (failure) {
+            if (mounted.current) setHandoff({ id, name: projectName, state: 'refresh_failed', intentKept })
+            throw failure
+        }
+        // URL navigation is owned by the workspace, which outlives this panel: refreshing can select the new project by itself
+        // (first project) and remount this panel, so the hand-over must not depend on this component's state.
+        if (onProjectCreated) { onProjectCreated(id); if (mounted.current) setHandoff(null); return }
+        if (mounted.current) setHandoff({ id, name: projectName, state: 'waiting', intentKept })
+    }
+    const retryHandoff = () => {
+        if (!handoff || handoff.state === 'refreshing' || action.busy) return
+        void action.run(() => enter(handoff.id, handoff.name, null))
+    }
+    /** Read-only: lists projects that appeared with the submitted name and team since the submission. */
+    const reconcile = (pending: Uncertain) => {
+        setUncertain({ ...pending, state: 'checking' })
+        void action.run(async () => {
+            let list: EvolvedProject[]
+            try { list = (await api.request<{ projects: EvolvedProject[] }>('/projects')).projects } catch (failure) {
+                if (mounted.current) setUncertain({ ...pending, state: 'check_failed' })
+                throw failure
+            }
+            if (mounted.current) setUncertain({ ...pending, state: 'checked', candidates: list.filter(item => !pending.before.includes(item.id) && item.name === pending.name && item.teamId === pending.teamId) })
+        })
+    }
+    /** The user explicitly identifies the created project; its module draft is not attached because identity is not proven. */
+    const chooseCandidate = (candidate: EvolvedProject) => {
+        if (action.busy) return
+        setUncertain(null); resetForm()
+        void action.run(() => enter(candidate.id, candidate.name, null), 'Projekt geöffnet. Wähle das Entwicklungsmodul in der Einrichtung bei Bedarf erneut.')
+    }
+    const resetForm = () => { setName(''); setRootPath(''); setManual(false); setShowPicker(false); setTeamId(''); development.reset() }
     const createProject = () => {
-        if (creating.current || action.busy) return
+        if (creating.current || action.busy || uncertain || handoff) return
         creating.current = true
         const controller = new AbortController()
         creation.current = controller
@@ -101,16 +165,26 @@ function ProjectsForUser({ onSelectProject }: { onSelectProject?: (id: string) =
             if (development.blocker) throw new Error(development.blocker)
             // The module is validated by the hub against the revision shown before the project exists; repositories are bound later.
             const module = development.development()
+            const intent = development.intent()
+            const projectName = name.trim()
+            // Projects known before submitting: after a lost acknowledgement only projects outside this list are offered for an explicit choice.
+            const before = me.accessibleProjects.map(item => item.id)
+            let id: string | null
             try {
-                await api.request('/projects', { method: 'POST', body: { name: name.trim(), teamId: selectedTeam, ...(useManualPath ? { rootPath: rootPath.trim() } : {}), ...(module ? { development: module } : {}) }, signal: controller.signal })
+                id = createdProjectId(await api.request('/projects', { method: 'POST', body: { name: projectName, teamId: selectedTeam, ...(useManualPath ? { rootPath: rootPath.trim() } : {}), ...(module ? { development: module } : {}) }, signal: controller.signal }))
             } catch (failure) {
-                development.handleFailure(failure)
-                throw failure
+                if (controller.signal.aborted) throw failure
+                if (definitelyRefused(failure)) { development.handleFailure(failure); throw failure }
+                id = null
             }
             controller.signal.throwIfAborted()
-            setName(''); setRootPath(''); setManual(false); setShowPicker(false); setTeamId(''); development.reset()
-            await refresh()
-        }, 'Projekt angelegt.').finally(() => { creating.current = false; if (creation.current === controller) creation.current = null })
+            if (!id) {
+                setUncertain({ name: projectName, teamId: selectedTeam, before, state: 'check_failed', candidates: [] })
+                throw new Error('Die Bestätigung der Projektanlage fehlt. Das Projekt kann angelegt worden sein oder noch angelegt werden; es wird nicht automatisch erneut angelegt.')
+            }
+            resetForm()
+            await enter(id, projectName, intent)
+        }, 'Projekt angelegt. Die Einrichtung wird geöffnet …').finally(() => { creating.current = false; if (creation.current === controller) creation.current = null })
     }
     return <div className="ev-stack ew-projects"><Panel title="Deine Projekte" description="Jedes Projekt hat eigene Zugriffsrechte, einen Tresor und ein Gedächtnis.">
         {canFilter && <div className="ew-project-filter"><Field label="Projekte durchsuchen"><input type="search" value={projectFilter} onChange={event => setProjectFilter(event.target.value)} placeholder="Projektname" /></Field><span className="ew-caption" role="status">{visibleProjects.length} von {me.accessibleProjects.length} Projekten</span>{projectFilter && <button onClick={() => setProjectFilter('')}>Filter zurücksetzen</button>}</div>}
@@ -137,8 +211,24 @@ function ProjectsForUser({ onSelectProject }: { onSelectProject?: (id: string) =
                 {showPicker && <WorkspacePicker disabled={action.busy} onChoose={path => { setRootPath(path); setShowPicker(false) }} />}
             </div>}
         </div>}
-        <div className="ev-actions ev-form-wide"><button className="ev-primary" disabled={action.busy || !name.trim() || !selectedTeam || (useManualPath && !rootPath.trim()) || !!development.blocker} aria-describedby={development.blocker ? 'ev-create-module-blocker' : undefined}>Projekt anlegen</button></div>
+        {uncertain && <div className="ev-callout ev-form-wide" role="status">
+            <p><strong>Unklar, ob „{uncertain.name}“ angelegt wurde.</strong> Die Anfrage kann angekommen sein oder noch laufen. Es wird nichts automatisch erneut angelegt oder ausgewählt.</p>
+            {uncertain.state === 'checking' && <p>Die Projektliste wird gelesen …</p>}
+            {uncertain.state === 'checked' && (uncertain.candidates.length
+                ? <><p>Seit dem Absenden neu sichtbar (Name und Team stimmen; ob es genau deine Anlage ist, kann HAPI nicht beweisen):</p>
+                    <ul className="ev-list">{uncertain.candidates.map(candidate => <li className="ev-row" key={candidate.id}><span>{candidate.name} · <code>{candidate.id}</code></span>
+                        <button type="button" disabled={action.busy} onClick={() => chooseCandidate(candidate)}>Dieses Projekt öffnen</button></li>)}</ul></>
+                : <p>Noch kein passendes neues Projekt sichtbar. Das beweist nicht, dass nichts angelegt wurde.</p>)}
+            {uncertain.state !== 'checking' && <div className="ev-actions"><button type="button" disabled={action.busy} onClick={() => reconcile(uncertain)}>Projektliste prüfen</button>
+                <ConfirmButton label="Eingaben behalten und Anlage freigeben" disabled={action.busy} detail="Ich habe die Projektliste geprüft. Ein erneutes Anlegen kann ein zweites Projekt erzeugen." onConfirm={() => setUncertain(null)} /></div>}
+        </div>}
+        <div className="ev-actions ev-form-wide"><button className="ev-primary" disabled={action.busy || !!uncertain || !!handoff || !name.trim() || !selectedTeam || (useManualPath && !rootPath.trim()) || !!development.blocker} aria-describedby={development.blocker ? 'ev-create-module-blocker' : development.deferred ? 'ev-create-module-deferred' : undefined}>{development.deferred ? 'Allgemein anlegen und Modul vormerken' : 'Projekt anlegen'}</button></div>
     </form></Panel>}
+    {handoff && <div className="ev-callout" role="status" aria-live="polite">
+        <p><strong>Projekt „{handoff.name}“ angelegt.</strong> {handoff.state === 'refresh_failed' ? 'Dein Projektzugang konnte nicht aktualisiert werden; das Projekt besteht trotzdem und wird nicht erneut angelegt.' : 'Die Einrichtung des neuen Projekts wird geöffnet …'}</p>
+        {!handoff.intentKept && <p className="ev-error">Dieser Browser konnte das vorgemerkte Modul nicht aufbewahren. Wähle es in der Einrichtung erneut.</p>}
+        {handoff.state === 'refresh_failed' && <div className="ev-actions"><button type="button" className="ev-primary" disabled={action.busy} onClick={retryHandoff}>Zugang aktualisieren und Projekt öffnen</button></div>}
+    </div>}
     <ActionStatus action={action} /></div>
 }
 

@@ -1,7 +1,7 @@
 import { closeSync, constants, fstatSync, openSync, readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod/v3'
-import { DevelopmentIdSchema, GitRefSchema } from '@hapi/protocol/evolvedDevelopment'
+import { DevelopmentIdSchema, GitRefSchema, OdooShEnvironmentIdSchema, type OdooShEnvironmentId } from '@hapi/protocol/evolvedDevelopment'
 import { DevelopmentModuleActionBodySchema, type DevelopmentModuleActionBody } from '@hapi/protocol/developmentModules'
 
 const repositoryIdSchema = z.string().regex(/^[1-9][0-9]{0,19}$/)
@@ -86,9 +86,14 @@ export class EvolvedClient {
         const body = DevelopmentModuleActionBodySchema.parse(binding)
         return this.request(this.projectPath(`/development/modules-${action}`), 'POST', { moduleId: body.moduleId, moduleDigest: body.moduleDigest }, {}, { timeoutMs: action === 'doctor' ? 40_000 : 55_000 })
     }
-    developmentBuildStatus(ref?: string): Promise<unknown> {
+    /** Explicit target only: a ref, an Odoo.sh environment (its declared branch) or both (must agree). Nothing is inferred. */
+    developmentBuildStatus(target: { ref?: string; environment?: OdooShEnvironmentId }): Promise<unknown> {
+        const { ref, environment } = target
+        if (ref === undefined && environment === undefined) throw new Error('Give a ref (branch or full SHA) or an Odoo.sh environment (staging or production)')
         if (ref !== undefined && !GitRefSchema.safeParse(ref).success) throw new Error('ref must be a full commit SHA or a branch name')
-        return this.request(this.projectPath(`/development/build-status${ref === undefined ? '' : `?${new URLSearchParams({ ref })}`}`), 'GET', undefined, {}, { timeoutMs: 30_000 })
+        if (environment !== undefined && !OdooShEnvironmentIdSchema.safeParse(environment).success) throw new Error('environment must be staging or production')
+        const query = new URLSearchParams({ ...(ref !== undefined ? { ref } : {}), ...(environment !== undefined ? { environment } : {}) })
+        return this.request(this.projectPath(`/development/build-status?${query}`), 'GET', undefined, {}, { timeoutMs: 30_000 })
     }
     /** Fixed read-only runner checks through the Hub; the Hub supplies settings and the authorised checkout. */
     developmentAction(action: 'doctor' | 'inspect'): Promise<unknown> {

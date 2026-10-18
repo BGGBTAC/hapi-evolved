@@ -73,7 +73,10 @@ export const IosDeploymentTargetSchema = z.string().regex(/^[1-9][0-9]?(?:\.[0-9
 /** Existing Vault resource / MCP server identifiers are references only, never secret values. */
 export const ResourceReferenceSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/)
 export const OdooShBuildIdSchema = z.string().regex(/^[1-9][0-9]{0,11}$/)
-/** Exact build host copied from Odoo.sh, e.g. `project-branch-12345678.dev.odoo.com`. */
+/**
+ * Exact SSH build host copied from Odoo.sh, e.g. `project-staging-12345678.dev.odoo.com`. The public production
+ * website domain is not an SSH build host and is not accepted.
+ */
 export const OdooShBuildHostSchema = z.string().max(253).regex(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.dev\.odoo\.com$/)
 /** Odoo.sh dashboard link: https://www.odoo.sh/project/<name>[/...], no credentials, port, query or fragment. */
 export const OdooShDashboardUrlSchema = z.string().max(500).refine(value => {
@@ -86,39 +89,80 @@ export const OdooShDashboardUrlSchema = z.string().max(500).refine(value => {
 
 // ---------------------------------------------------------------- settings
 
+export const ODOO_SH_ENVIRONMENTS = ['staging', 'production'] as const
+export const OdooShEnvironmentIdSchema = z.enum(ODOO_SH_ENVIRONMENTS)
+export type OdooShEnvironmentId = z.infer<typeof OdooShEnvironmentIdSchema>
+/**
+ * One Odoo.sh stage. `branch` is the remote Odoo.sh branch of that stage (pushing to it builds, for production deploys);
+ * build ID/host are copied from Odoo.sh and identify one build. References name existing Vault resources of this stage only.
+ */
+export const OdooShEnvironmentSchema = z.object({
+    branch: GitBranchSchema.nullable(),
+    buildId: OdooShBuildIdSchema.nullable(),
+    buildHost: OdooShBuildHostSchema.nullable(),
+    /** Existing operator-configured Vault SSH action used for this stage's build (may also be named by the other stage); HAPI never generates or copies keys. */
+    sshResourceId: ResourceReferenceSchema.nullable(),
+    /** Existing Vault resource for the JSON-2 API of this stage's database. Not an Odoo.sh control plane. */
+    applicationResourceId: ResourceReferenceSchema.nullable(),
+}).strict().superRefine((value, context) => {
+    if (!!value.buildId !== !!value.buildHost) context.addIssue({ code: 'custom', path: [], message: 'Build ID and build host belong together' })
+    if (value.sshResourceId && !value.buildId) context.addIssue({ code: 'custom', path: ['sshResourceId'], message: 'SSH requires the copied build ID and host' })
+    if (value.buildId && !value.branch) context.addIssue({ code: 'custom', path: ['branch'], message: 'Declare the branch of this build' })
+})
+export type OdooShEnvironment = z.infer<typeof OdooShEnvironmentSchema>
+/**
+ * Pre-environment Odoo.sh details whose stage was `development` or not declared. Kept read-only until a human maps them:
+ * never used as an environment, for links, SSH or status. A save may only keep it unchanged or drop it (null).
+ */
+export const OdooShUnassignedSchema = z.object({
+    declaredStage: z.literal('development').nullable(),
+    branch: GitBranchSchema.nullable(),
+    buildId: OdooShBuildIdSchema.nullable(),
+    buildHost: OdooShBuildHostSchema.nullable(),
+    sshResourceId: ResourceReferenceSchema.nullable(),
+    applicationResourceId: ResourceReferenceSchema.nullable(),
+}).strict()
+export type OdooShUnassigned = z.infer<typeof OdooShUnassignedSchema>
+
 export const OdooSettingsSchema = z.object({
     major: OdooMajorSchema,
     edition: z.enum(['community', 'enterprise']),
+    /** Only `odoo_sh` uses the `odooSh` section; other values keep it stored but unused (switching back restores it). */
     hosting: z.enum(['odoo_sh', 'self_hosted', 'local']),
     /** Repository-relative addons directories in the bound repository; '.' means the repository root. */
     addonsPaths: z.array(RepoSubdirectorySchema).max(16),
     /** Technical module names the specialised tasks focus on (tests, upgrades). Empty = discover via inspect. */
     modules: z.array(OdooModuleNameSchema).max(32),
-    /** Branch HAPI sessions should work on; pushing to an Odoo.sh branch can deploy (see stage). */
+    /**
+     * Local working branch for HAPI sessions. Not an Odoo.sh stage; it may deliberately equal a staging/production branch
+     * (then pushing from it builds or deploys that stage, which the integrations state explicitly).
+     */
     developmentBranch: GitBranchSchema.nullable(),
-    /** Declared Odoo.sh stage of `developmentBranch`; null = not declared. */
-    stage: z.enum(['development', 'staging', 'production']).nullable(),
     /** Optional granted repository containing authorised Enterprise addons. Never cloned automatically. */
     enterpriseRepositoryId: RepositoryIdSchema.nullable(),
     /** Local disposable databases are named `hapi_test_<slug>`. */
     testDatabaseSlug: OdooDatabaseSlugSchema,
     odooSh: z.object({
+        /** Shared Odoo.sh project dashboard link. */
         dashboardUrl: OdooShDashboardUrlSchema.nullable(),
-        buildId: OdooShBuildIdSchema.nullable(),
-        buildHost: OdooShBuildHostSchema.nullable(),
-        /** Existing operator-configured Vault SSH action for that build; HAPI never generates or copies keys. */
-        sshResourceId: ResourceReferenceSchema.nullable(),
+        staging: OdooShEnvironmentSchema,
+        production: OdooShEnvironmentSchema,
+        unassigned: OdooShUnassignedSchema.nullable(),
     }).strict(),
-    /** Existing Vault resource for an Odoo *application* (JSON-2) endpoint. Not an Odoo.sh control plane. */
+    /** Existing Vault resource for the application (JSON-2) API of a self-hosted or local database; unused with Odoo.sh hosting. */
     applicationResourceId: ResourceReferenceSchema.nullable(),
 }).strict().superRefine((value, context) => {
     if (new Set(value.addonsPaths).size !== value.addonsPaths.length) context.addIssue({ code: 'custom', path: ['addonsPaths'], message: 'Duplicate addons path' })
     if (new Set(value.modules).size !== value.modules.length) context.addIssue({ code: 'custom', path: ['modules'], message: 'Duplicate module' })
     if (value.edition === 'community' && value.enterpriseRepositoryId) context.addIssue({ code: 'custom', path: ['enterpriseRepositoryId'], message: 'Community edition has no Enterprise addons repository' })
-    if (value.hosting !== 'odoo_sh' && (value.odooSh.dashboardUrl || value.odooSh.buildId || value.odooSh.buildHost || value.odooSh.sshResourceId)) context.addIssue({ code: 'custom', path: ['odooSh'], message: 'Odoo.sh metadata requires Odoo.sh hosting' })
-    if (!!value.odooSh.buildId !== !!value.odooSh.buildHost) context.addIssue({ code: 'custom', path: ['odooSh'], message: 'Build ID and build host belong together' })
-    if (value.odooSh.sshResourceId && !value.odooSh.buildId) context.addIssue({ code: 'custom', path: ['odooSh', 'sshResourceId'], message: 'SSH requires the copied build ID and host' })
-    if (value.stage && !value.developmentBranch) context.addIssue({ code: 'custom', path: ['stage'], message: 'Declare a branch before its stage' })
+    const { staging, production } = value.odooSh
+    const distinct = (field: keyof OdooShEnvironment, message: string) => {
+        if (staging[field] && staging[field] === production[field]) context.addIssue({ code: 'custom', path: ['odooSh', 'production', field], message })
+    }
+    distinct('branch', 'Staging and production need different branches')
+    distinct('buildId', 'Staging and production need different builds')
+    distinct('buildHost', 'Staging and production need different build hosts')
+    // Vault references (SSH, application API) may deliberately name the same authorised resource for both stages; they are never copied automatically.
 })
 export type OdooSettings = z.infer<typeof OdooSettingsSchema>
 
@@ -175,9 +219,23 @@ export const DevelopmentSettingsSchema = z.object({
 })
 export type DevelopmentSettings = z.infer<typeof DevelopmentSettingsSchema>
 
+export function emptyOdooShEnvironment(): OdooShEnvironment {
+    return { branch: null, buildId: null, buildHost: null, sshResourceId: null, applicationResourceId: null }
+}
+export function defaultOdooShSettings(): OdooSettings['odooSh'] {
+    return { dashboardUrl: null, staging: emptyOdooShEnvironment(), production: emptyOdooShEnvironment(), unassigned: null }
+}
 export function defaultOdooSettings(major: OdooMajor = 20): OdooSettings {
-    return { major, edition: 'community', hosting: 'local', addonsPaths: ['.'], modules: [], developmentBranch: null, stage: null, enterpriseRepositoryId: null, testDatabaseSlug: 'dev',
-        odooSh: { dashboardUrl: null, buildId: null, buildHost: null, sshResourceId: null }, applicationResourceId: null }
+    return { major, edition: 'community', hosting: 'local', addonsPaths: ['.'], modules: [], developmentBranch: null, enterpriseRepositoryId: null, testDatabaseSlug: 'dev',
+        odooSh: defaultOdooShSettings(), applicationResourceId: null }
+}
+/** Build and online-editor links derived from the copied build host; null without a host. */
+export function odooShEnvironmentLinks(environment: Pick<OdooShEnvironment, 'buildHost'>): { build: string; editor: string } | null {
+    return environment.buildHost ? { build: `https://${environment.buildHost}/`, editor: `https://${environment.buildHost}/odoo-sh/editor` } : null
+}
+/** Copyable SSH argv `ssh <build id>@<build host>` (never executed by HAPI); null without both values. */
+export function odooShEnvironmentSshCommand(environment: Pick<OdooShEnvironment, 'buildId' | 'buildHost'>): string[] | null {
+    return environment.buildId && environment.buildHost ? ['ssh', `${environment.buildId}@${environment.buildHost}`] : null
 }
 export function defaultIosSettings(): IosSettings {
     return { projectDirectory: '.', projectFile: null, scheme: null, bundleId: null, deploymentTarget: null, buildStrategy: 'undecided', xcodeCloudResourceId: null }
@@ -412,6 +470,10 @@ export const DevelopmentIntegrationStatusSchema = z.object({
     links: z.array(z.object({ label: z.string().max(80), url: HttpsOutputUrlSchema }).strict()).max(6),
     /** Copyable argv for a documented manual command (e.g. SSH to a build); never executed by HAPI. */
     command: z.array(z.string().max(300)).max(8).optional(),
+    /** Exact Odoo.sh stage this entry describes (only the per-stage entries). */
+    environment: OdooShEnvironmentIdSchema.optional(),
+    /** Declared branch of that stage; null = not declared. */
+    branch: GitBranchSchema.nullable().optional(),
 }).strict()
 export type DevelopmentIntegrationStatus = z.infer<typeof DevelopmentIntegrationStatusSchema>
 
@@ -639,7 +701,7 @@ export const GithubCommitStatusSchema = z.object({
     statuses: z.array(CommitStatusEntrySchema).max(100),
 }).strict()
 export type GithubCommitStatus = z.infer<typeof GithubCommitStatusSchema>
-/** GET .../development/build-status?ref= response. */
+/** GET .../development/build-status?ref=&environment= response. */
 export const DevelopmentBuildStatusResponseSchema = z.object({
     projectId: z.string().max(128),
     revision: DevelopmentRevisionSchema,
@@ -654,9 +716,16 @@ export const DevelopmentBuildStatusResponseSchema = z.object({
     statuses: z.array(CommitStatusEntrySchema).max(100),
     /** Honest explanation, e.g. that Odoo.sh reports only when its GitHub status option is enabled. */
     message: z.string().max(500),
+    /** Echo of the requested Odoo.sh stage; null when only a ref was requested. */
+    environment: OdooShEnvironmentIdSchema.nullable(),
 }).strict()
 export type DevelopmentBuildStatusResponse = z.infer<typeof DevelopmentBuildStatusResponseSchema>
-export const DevelopmentBuildStatusQuerySchema = z.object({ ref: GitRefSchema.optional() }).strict()
+/**
+ * Query of GET .../development/build-status. An explicit target is required: `ref` (branch or full SHA) and/or
+ * `environment` (the declared branch of that Odoo.sh stage). With both, `ref` must equal the stage branch.
+ */
+export const DevelopmentBuildStatusQuerySchema = z.object({ ref: GitRefSchema.optional(), environment: OdooShEnvironmentIdSchema.optional() }).strict()
+    .refine(value => value.ref !== undefined || value.environment !== undefined, 'Request a ref or an Odoo.sh environment')
 
 // ---------------------------------------------------------------- session start integration
 

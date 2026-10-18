@@ -42,6 +42,7 @@ Rechte. Konkret:
 | `contentVersion` | je Moduldefinition | Frei gewählte Inhaltsversion zur Anzeige, z. B. `2026.10.18-1` (`^[0-9A-Za-z][0-9A-Za-z.+-]{0,39}$`). |
 | `version` | Plugin-Manifest | SemVer des Plugins (`1.2.0`). |
 | Vertrag 2 | Hub-API und Runner-RPC | Routen `/development/modules…`, `module_doctor`/`module_inspect`. Der ältere Vertrag 1 bleibt für die mitgelieferten Module erhalten. |
+| `schemaVersion: 3` | Gespeicherte Projektkonfiguration | Neues Speicher-Envelope für unabhängige Odoo.sh-Umgebungen. Kein Plugin-Manifestwechsel. V1/V2 bleiben lesbar; erst ein ausdrückliches Speichern schreibt V3. Ältere Binaries verweigern dieses Format statt Werte zu verwerfen. |
 | Modul-ID | Hub | `plugin:<Plugin-UUID>:<lokale ID>`. Die UUID vergibt die Installation. |
 | Digest | Hub | `sha256:<64 hex>` über die kanonische Definition plus die Spezialisten und Skills desselben Plugins, auf die Aufgaben verweisen. |
 
@@ -57,6 +58,13 @@ das Modul dann neu wählen. Verwaiste Einstellungen werden nicht automatisch
 übertragen.
 
 ## Lebenszyklus
+
+Der allgemeine Einrichtungsassistent verwendet auch Module aus Plugins. Felder,
+Prüfungen, Rezepte und Aufgaben stammen aus derselben geprüften Definition wie auf
+der Entwicklungsseite. Ein Modul mit einem obligatorischen Repository-Feld wird bei
+der Projektanlage zunächst vorgemerkt: erst Projekt und Repository einrichten, dann
+die gültigen Modulwerte speichern. Eine Vormerkung ist kein aktives Modul und keine
+Freigabe. Dafür ist kein neues `setup`-Skript im Manifest erforderlich.
 
 1. **Installation.** Ein Installationsadmin gibt `owner/repo` und Branch, Tag oder
    Commit an. Die Vorschau zeigt Quelle, Commit, Manifest-Prüfsumme und je Modul Titel,
@@ -355,7 +363,7 @@ mitgelieferten Module:
 | `evolved_development_knowledge` | `GET …/development/modules-knowledge` |
 | `evolved_development_doctor` | `GET modules-context`, dann `POST …/development/modules-doctor` mit `{moduleId, moduleDigest}` |
 | `evolved_development_inspect` | ebenso mit `POST …/development/modules-inspect` |
-| `evolved_development_build_status` | unverändert `GET …/development/build-status` |
+| `evolved_development_build_status` | `GET …/development/build-status` mit ausdrücklich gewähltem `ref` oder Odoo.sh-`environment` (`staging` / `production`) |
 
 Der Runner-Proxy lässt genau diese Routen zu (Body der Aktionen höchstens 256 Byte,
 exakt `{moduleId, moduleDigest}`). Konfiguration, Übernahme, Moduldetails und der

@@ -36,3 +36,15 @@ it.each(['v1 Hub', 'v2 Hub'] as const)('local --odoo-major/--addons override the
     await expect(runDevelopmentCommand(['inspect', '--local', '--mode', 'android', '--odoo-major', '20', '--checkout', checkout], client)).rejects.toThrow(/only to the odoo mode/)
     await expect(runDevelopmentCommand(['inspect', '--local', '--addons', '../x', '--checkout', checkout], client)).rejects.toThrow()
 })
+
+it('build-status passes only an explicit ref and/or Odoo.sh environment to the Hub', async () => {
+    const calls: unknown[] = []
+    const client = () => ({ developmentBuildStatus: async (target: unknown) => { calls.push(target); return { ok: true } } }) as unknown as EvolvedClient
+    await runDevelopmentCommand(['build-status', 'main'], client)
+    await runDevelopmentCommand(['build-status', '--environment', 'staging'], client)
+    await runDevelopmentCommand(['build-status', 'main', '--environment', 'production'], client)
+    expect(calls).toEqual([{ ref: 'main', environment: undefined }, { ref: undefined, environment: 'staging' }, { ref: 'main', environment: 'production' }])
+    await expect(runDevelopmentCommand(['build-status', '--environment', 'development'], client)).rejects.toThrow()
+    await expect(runDevelopmentCommand(['build-status', 'a', 'b'], client)).rejects.toThrow()
+    expect(calls).toHaveLength(3)
+})
