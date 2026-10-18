@@ -1,0 +1,273 @@
+{
+  "schemaVersion": 2,
+  "id": "django-kit",
+  "name": "Django Kit",
+  "description": "Entwicklungsmodul für Django-Projekte mit projekteigenem venv, Tests über manage.py und einem Review-Spezialisten",
+  "version": "1.0.0",
+  "skills": [
+    {
+      "id": "django-migrations-review",
+      "name": "Django-Migrationen prüfen",
+      "description": "Modelländerungen und Migrationen gemeinsam bewerten",
+      "instructions": "Prüfe zu jeder Modelländerung, ob eine passende Migration im migrations-Ordner der App liegt und mit dem Code eingecheckt ist. Achte auf Datenmigrationen, die auf großen Tabellen lange laufen, auf nicht umkehrbare Operationen und auf Abhängigkeiten zwischen Apps. Nenne Datei und Zeile."
+    }
+  ],
+  "agents": [
+    {
+      "id": "django-reviewer",
+      "name": "Django-Review",
+      "description": "Prüft Django-Änderungen auf Migrationen, Berechtigungen, Einstellungen und Tests",
+      "instructions": "Prüfe die Änderung wie ein erfahrener Django-Entwickler: Modelle und Migrationen, Views und Berechtigungsprüfungen, Formulare und Validierung, Querysets (N+1, fehlende select_related/prefetch_related), Einstellungen und Tests. Melde jeden Befund mit Datei, Zeile, Auslöser und Schweregrad. Verändere beim Review keine Projektdateien ohne ausdrücklichen Auftrag und halte Projektregeln und Berechtigungen ein.",
+      "providerPreference": "either",
+      "skills": ["django-migrations-review"]
+    }
+  ],
+  "themes": [],
+  "developmentModules": [
+    {
+      "apiVersion": 1,
+      "id": "django",
+      "title": "Django",
+      "summary": "Django-Projekte mit projekteigenem venv, Tests über manage.py, Migrations- und Systemprüfungen sowie einem Review-Spezialisten.",
+      "contentVersion": "2026.10.18-1",
+      "brief": [
+        "Django-Projekte werden über manage.py im Projektverzeichnis gesteuert; die Einstellungen kommen aus DJANGO_SETTINGS_MODULE oder --settings.",
+        "Python-Abhängigkeiten des Projekts gehören in ein projekteigenes venv unter .hapi/.cache/toolchain/python/django-venv. Sie werden nur durch die ausdrückliche Aufgabe „Projekt-venv einrichten“ installiert, nie beim Aktivieren des Moduls.",
+        "Die im Handbuch genannten Django-Reihen und Python-Versionen sind Stand 2026-10-18. Die im Projekt festgelegte Django-Version (requirements, pyproject, Lockdatei) hat Vorrang."
+      ],
+      "constraints": [
+        "Kein Deployment und keine Produktionsdatenbank: Rezepte arbeiten nur im Projektordner und mit Testdatenbanken.",
+        "Der Doctor prüft nur Werkzeuge des Runners (Git, Python, Checkout); er startet weder Django noch Migrationen noch Projektcode.",
+        "Kein sudo und keine globalen Pakete; Pakete werden nur in das projekteigene venv installiert."
+      ],
+      "fields": [
+        { "id": "projectDirectory", "kind": "repo_path", "label": "Projektverzeichnis", "required": true, "default": ".", "help": "Ordner mit manage.py, relativ zum Repository-Stamm." },
+        { "id": "djangoSeries", "kind": "select", "label": "Django-Reihe", "required": true, "default": "6.1",
+          "help": "Die Reihe, gegen die das Projekt entwickelt wird. Maßgeblich bleibt die im Projekt festgelegte Version.",
+          "options": [ { "value": "5.2", "label": "5.2 LTS" }, { "value": "6.0", "label": "6.0" }, { "value": "6.1", "label": "6.1" } ] },
+        { "id": "settingsModule", "kind": "text", "format": "dotted_identifier", "label": "DJANGO_SETTINGS_MODULE", "required": false, "maxLength": 200, "default": null,
+          "help": "Zum Beispiel mysite.settings. Leer = was manage.py selbst setzt." },
+        { "id": "testLabels", "kind": "text_list", "format": "dotted_identifier", "label": "Test-Labels", "maxItems": 16, "maxLength": 120, "default": [],
+          "help": "Apps, Module oder TestCase-Pfade für manage.py test. Leer = alle Tests." },
+        { "id": "keepTestDatabase", "kind": "boolean", "label": "Testdatenbank zwischen Läufen behalten (--keepdb)", "default": false }
+      ],
+      "topics": [
+        {
+          "id": "django-versions",
+          "title": "Unterstützte Django-Reihen und Python-Versionen",
+          "summary": "Stand 2026-10-18: 5.2 LTS, 6.0 und 6.1 erhalten Sicherheitskorrekturen; 6.0 und 6.1 brauchen Python 3.12 bis 3.14.",
+          "body": "Laut Download-Seite des Django-Projekts (abgerufen 2026-10-18) ist 6.1.2 die neueste Version. Unterstützt werden 5.2 LTS (neueste 5.2.18, erweiterte Unterstützung bis April 2028), 6.0 (neueste 6.0.9, Hauptunterstützung bis 4. August 2026, erweiterte Unterstützung bis April 2027) und 6.1 (neueste 6.1.2, Hauptunterstützung bis April 2027, erweiterte Unterstützung bis Dezember 2027). Für 6.2 LTS ist April 2027 angekündigt; ab 2028 heißen Funktionsversionen nach dem Jahr (2028, 2029) und erscheinen jeweils im Januar.\n\nPython laut FAQ der Django-6.1-Dokumentation: 5.2 unterstützt Python 3.10 bis 3.14 (3.14 ab 5.2.8), 6.0 und 6.1 unterstützen Python 3.12, 3.13 und 3.14. Offiziell unterstützt ist jeweils nur der neueste Patchstand einer Python-Reihe.\n\nVorgehen: Zuerst die im Projekt festgelegte Django-Version aus requirements.txt, pyproject.toml oder der Lockdatei lesen und mit der Python-Version aus dem Doctor (Prüfung python) vergleichen. Patch-Updates innerhalb einer Reihe sind laut Django-Projekt kompatibel und sollten eingespielt werden; ein Reihenwechsel ist ein eigener Auftrag.",
+          "tags": ["versions", "python"],
+          "sources": [
+            { "title": "Download Django – Supported Versions", "url": "https://www.djangoproject.com/download/", "verifiedAt": "2026-10-18" },
+            { "title": "FAQ: Installation – What Python version can I use with Django?", "url": "https://docs.djangoproject.com/en/6.1/faq/install/", "verifiedAt": "2026-10-18", "version": "6.1" }
+          ]
+        },
+        {
+          "id": "django-testing",
+          "title": "Tests mit manage.py test",
+          "summary": "Testlabels wählen Pakete, Module, Klassen oder Methoden; Django legt eigene Testdatenbanken an und entfernt sie danach, außer mit --keepdb.",
+          "body": "manage.py test findet Tests über die unittest-Erkennung (Dateien test*.py unterhalb des aktuellen Verzeichnisses). Testlabels sind gepunktete Python-Pfade zu Paket, Modul, TestCase-Klasse oder Testmethode, zum Beispiel animals.tests. Der Rückgabewert ist 0, wenn alle Tests bestehen.\n\nTests, die eine Datenbank brauchen, verwenden nie die eigentliche Datenbank: Django legt getrennte, leere Testdatenbanken an (Name mit Präfix test_) und entfernt sie nach dem Lauf. Mit SQLite liegt die Testdatenbank standardmäßig im Speicher. --keepdb behält die Testdatenbank zwischen Läufen und wendet fehlende Migrationen an; --noinput unterdrückt Rückfragen, zum Beispiel vor dem Löschen einer vorhandenen Testdatenbank. --parallel startet getrennte Prozesse mit je eigener Datenbank; die Testklassen müssen dafür isoliert sein.\n\nWarnung aus der Django-Dokumentation: Code, der schon beim Import auf die Datenbank zugreift, läuft vor dem Anlegen der Testdatenbank und kann so echte Daten lesen. Vor einem Testlauf prüfen, auf welche Datenbank die gewählten Einstellungen zeigen; nie gegen Produktionszugänge testen.",
+          "tags": ["testing", "database"],
+          "sources": [
+            { "title": "Writing and running tests", "url": "https://docs.djangoproject.com/en/6.1/topics/testing/overview/", "verifiedAt": "2026-10-18", "version": "6.1" },
+            { "title": "django-admin and manage.py – test", "url": "https://docs.djangoproject.com/en/6.1/ref/django-admin/", "verifiedAt": "2026-10-18", "version": "6.1" }
+          ]
+        },
+        {
+          "id": "django-migrations",
+          "title": "Migrationen erzeugen und prüfen",
+          "summary": "makemigrations --check erkennt Modelländerungen ohne Migration, migrate --check offene Migrationen; Migrationsdateien gehören in den Code.",
+          "body": "makemigrations verpackt Modelländerungen in Migrationsdateien, migrate wendet sie an. Die Dateien liegen im migrations-Ordner der App und werden mit dem Code eingecheckt und verteilt.\n\nmakemigrations --check endet mit einem Status ungleich 0, wenn Modelländerungen ohne Migration vorliegen, und schreibt dabei keine Dateien (impliziert --dry-run). migrate --check endet mit einem Status ungleich 0, wenn noch nicht angewendete Migrationen existieren. Mit --noinput endet makemigrations mit Code 3, wenn eine unterdrückte Rückfrage nicht automatisch beantwortet werden kann.\n\nBeide Prüfungen laden die Projekteinstellungen und damit Projektcode; migrate --check braucht zusätzlich eine erreichbare Datenbank. Nur gegen eine lokale oder Testdatenbank ausführen.",
+          "tags": ["migrations"],
+          "sources": [
+            { "title": "Migrations", "url": "https://docs.djangoproject.com/en/6.1/topics/migrations/", "verifiedAt": "2026-10-18", "version": "6.1" },
+            { "title": "django-admin and manage.py – makemigrations, migrate", "url": "https://docs.djangoproject.com/en/6.1/ref/django-admin/", "verifiedAt": "2026-10-18", "version": "6.1" }
+          ]
+        },
+        {
+          "id": "django-settings",
+          "title": "Einstellungen und DJANGO_SETTINGS_MODULE",
+          "summary": "DJANGO_SETTINGS_MODULE nennt das Einstellungsmodul in Python-Pfadschreibweise; es muss auf sys.path liegen. Alternativ --settings.",
+          "body": "Django erfährt über die Umgebungsvariable DJANGO_SETTINGS_MODULE, welche Einstellungen gelten. Der Wert ist in Python-Pfadschreibweise angegeben, zum Beispiel mysite.settings, und das Modul muss auf sys.path liegen. django-admin und manage.py akzeptieren statt der Variablen auch --settings.\n\nIm Modul ist das Feld DJANGO_SETTINGS_MODULE optional. Ist es gesetzt, gilt es für Rezepte als ausdrücklich gewünschtes Einstellungsmodul; sonst gilt, was manage.py selbst setzt. Einstellungsdateien sind Python-Code und können Zugangsdaten aus der Umgebung lesen: nie Werte von Geheimnissen ausgeben oder in Dateien, Gedächtnis oder Protokolle schreiben.",
+          "tags": ["settings"],
+          "sources": [
+            { "title": "Django settings – Designating the settings", "url": "https://docs.djangoproject.com/en/6.1/topics/settings/", "verifiedAt": "2026-10-18", "version": "6.1" }
+          ]
+        },
+        {
+          "id": "django-checks",
+          "title": "Systemprüfungen mit check und check --deploy",
+          "summary": "manage.py check führt die Systemprüfungen aus; --deploy ergänzt Prüfungen für den Produktivbetrieb und sollte mit den Produktiveinstellungen laufen.",
+          "body": "manage.py check startet das Systemprüfungs-Framework. --deploy aktiviert zusätzliche Prüfungen, die nur für einen Produktivbetrieb relevant sind. Weil lokale Entwicklungseinstellungen viele Produktiveinstellungen nicht enthalten, empfiehlt die Django-Dokumentation, check --deploy mit einem anderen Einstellungsmodul auszuführen (DJANGO_SETTINGS_MODULE oder --settings). --fail-level legt fest, ab welcher Meldungsstufe der Befehl mit einem Status ungleich 0 endet (Standard: ERROR).\n\nIn einer Agentensitzung check --deploy nur mit einem ausdrücklich genannten Einstellungsmodul ausführen und das Ergebnis berichten, keine Produktivumgebung verändern.",
+          "tags": ["checks", "deployment"],
+          "sources": [
+            { "title": "django-admin and manage.py – check", "url": "https://docs.djangoproject.com/en/6.1/ref/django-admin/", "verifiedAt": "2026-10-18", "version": "6.1" },
+            { "title": "django-admin and manage.py – check (5.2)", "url": "https://docs.djangoproject.com/en/5.2/ref/django-admin/", "verifiedAt": "2026-10-18", "version": "5.2" }
+          ]
+        },
+        {
+          "id": "python-venv",
+          "title": "Projekteigenes venv",
+          "summary": "python -m venv <Ordner> legt eine virtuelle Umgebung mit bin/python und eigenem site-packages an; Pakete kommen per python -m pip install -r hinein.",
+          "body": "python -m venv /pfad/zum/venv legt den Zielordner an, schreibt pyvenv.cfg mit dem Verweis auf die erzeugende Python-Installation und legt bin/ (Kopie oder Verknüpfung des Interpreters) sowie lib/pythonX.Y/site-packages an. Ein venv gehört zu genau der Python-Installation, mit der es erzeugt wurde.\n\nAbhängigkeiten werden mit dem Interpreter des venv installiert: <venv>/bin/python -m pip install -r requirements.txt oder für ein Projekt mit pyproject.toml <venv>/bin/python -m pip install -e <projektordner>. Das lädt Pakete aus dem Internet und führt bei Quellpaketen Build-Code aus; es ist deshalb eine ausdrückliche Einrichtungsaufgabe.\n\nIn HAPI liegt das venv unter .hapi/.cache/toolchain/python/django-venv im Projekt. Ein vorhandenes venv wird weiterverwendet, nie gelöscht oder ersetzt.",
+          "tags": ["python", "setup"],
+          "sources": [
+            { "title": "venv — Creation of virtual environments", "url": "https://docs.python.org/3/library/venv.html", "verifiedAt": "2026-10-18" },
+            { "title": "pip install", "url": "https://pip.pypa.io/en/stable/cli/pip_install/", "verifiedAt": "2026-10-18" }
+          ]
+        }
+      ],
+      "recipes": [
+        {
+          "id": "django-venv",
+          "title": "Projekt-venv anlegen und Abhängigkeiten installieren",
+          "summary": "Legt bei Bedarf das venv unter {toolchainDir}/python/django-venv an und installiert die Abhängigkeiten des Projekts hinein.",
+          "kind": "setup",
+          "effects": ["network_download", "installs_in_project"],
+          "prerequisites": ["python"],
+          "steps": [
+            { "title": "venv anlegen", "detail": "Nur anlegen, wenn {toolchainDir}/python/django-venv fehlt; ein vorhandenes venv weiterverwenden, nie löschen.", "argv": ["python3", "-m", "venv", "{toolchainDir}/python/django-venv"] },
+            { "title": "Abhängigkeiten lesen", "detail": "Im Ordner {checkout}/{projectDirectory} zuerst requirements.txt, pyproject.toml oder eine Lockdatei lesen und die festgelegte Django-Version nennen." },
+            { "title": "Abhängigkeiten installieren", "detail": "Mit requirements.txt diesen Befehl verwenden; bei pyproject.toml stattdessen pip install -e mit dem Projektordner. Nichts außerhalb des venv installieren.", "argv": ["{toolchainDir}/python/django-venv/bin/python", "-m", "pip", "install", "-r", "{checkout}/{projectDirectory}/requirements.txt"] },
+            { "title": "Bericht", "detail": "Python-, pip- und Django-Version aus dem venv berichten (python -m django --version)." }
+          ],
+          "outputs": [".hapi/.cache/toolchain/python/django-venv"],
+          "guardrails": ["Kein sudo, keine globalen Pakete, kein --break-system-packages.", "Ein vorhandenes venv nie löschen oder neu anlegen, ohne dass der Auftrag es verlangt."],
+          "sources": [
+            { "title": "venv — Creation of virtual environments", "url": "https://docs.python.org/3/library/venv.html", "verifiedAt": "2026-10-18" },
+            { "title": "pip install", "url": "https://pip.pypa.io/en/stable/cli/pip_install/", "verifiedAt": "2026-10-18" }
+          ]
+        },
+        {
+          "id": "django-test",
+          "title": "Tests ausführen",
+          "summary": "manage.py test mit den konfigurierten Labels im Projekt-venv; Protokoll unter {artifactsDir}/django/.",
+          "kind": "test",
+          "effects": ["runs_project_code", "reads_repository", "creates_local_database"],
+          "prerequisites": ["repository.checkout", "python"],
+          "steps": [
+            { "title": "Einstellungen prüfen", "detail": "Mit gesetztem Feld {settingsModule} dieses Einstellungsmodul verwenden, sonst die Vorgabe von manage.py. Vorher prüfen, auf welche Datenbank es zeigt; nie gegen Produktionszugänge testen." },
+            { "title": "Tests", "detail": "{testLabels} sind die konfigurierten Labels; ohne Labels alle Tests. Mit keepTestDatabase zusätzlich --keepdb. Ausgabe nach {artifactsDir}/django/<zeit>/test.log schreiben.", "argv": ["{toolchainDir}/python/django-venv/bin/python", "{checkout}/{projectDirectory}/manage.py", "test", "--noinput", "{testLabels}"] },
+            { "title": "Bericht", "detail": "Anzahl, Fehlschläge und Fehler je Label zusammenfassen; ein Importfehler ist ein Fehlschlag. Rückgabewert nennen." }
+          ],
+          "outputs": [".hapi/.cache/artifacts/django/"],
+          "guardrails": ["Keine Tests löschen, überspringen oder abschwächen, um grün zu werden."],
+          "sources": [
+            { "title": "Writing and running tests", "url": "https://docs.djangoproject.com/en/6.1/topics/testing/overview/", "verifiedAt": "2026-10-18", "version": "6.1" }
+          ]
+        },
+        {
+          "id": "django-migration-check",
+          "title": "Fehlende Migrationen erkennen",
+          "summary": "makemigrations --check im Projekt-venv; schreibt keine Migrationsdateien.",
+          "kind": "diagnose",
+          "effects": ["runs_project_code", "reads_repository"],
+          "prerequisites": ["repository.checkout", "python"],
+          "steps": [
+            { "title": "Prüfen", "detail": "Status 0 = keine fehlenden Migrationen; ungleich 0 = Modelländerungen ohne Migration (Ausgabe nennt die Apps).", "argv": ["{toolchainDir}/python/django-venv/bin/python", "{checkout}/{projectDirectory}/manage.py", "makemigrations", "--check", "--noinput"] },
+            { "title": "Bericht", "detail": "Betroffene Apps und Modelle nennen. Migrationen nur erzeugen, wenn der Auftrag es verlangt." }
+          ],
+          "outputs": [],
+          "guardrails": ["Kein migrate gegen eine nicht lokale Datenbank."],
+          "sources": [
+            { "title": "django-admin and manage.py – makemigrations", "url": "https://docs.djangoproject.com/en/6.1/ref/django-admin/", "verifiedAt": "2026-10-18", "version": "6.1" }
+          ]
+        },
+        {
+          "id": "django-system-check",
+          "title": "Systemprüfungen ausführen",
+          "summary": "manage.py check; check --deploy nur mit einem ausdrücklich genannten Einstellungsmodul.",
+          "kind": "diagnose",
+          "effects": ["runs_project_code", "reads_repository"],
+          "prerequisites": ["repository.checkout", "python"],
+          "steps": [
+            { "title": "check", "detail": "Systemprüfungen mit den Projekteinstellungen.", "argv": ["{toolchainDir}/python/django-venv/bin/python", "{checkout}/{projectDirectory}/manage.py", "check"] },
+            { "title": "check --deploy", "detail": "Nur wenn der Auftrag ein Einstellungsmodul für den Produktivbetrieb nennt; Meldungen berichten, nichts an einer Produktivumgebung ändern.", "argv": ["{toolchainDir}/python/django-venv/bin/python", "{checkout}/{projectDirectory}/manage.py", "check", "--deploy", "--settings={settingsModule}"] }
+          ],
+          "outputs": [],
+          "guardrails": ["Keine Zugangsdaten aus Einstellungen ausgeben."],
+          "sources": [
+            { "title": "django-admin and manage.py – check", "url": "https://docs.djangoproject.com/en/6.1/ref/django-admin/", "verifiedAt": "2026-10-18", "version": "6.1" }
+          ]
+        }
+      ],
+      "tasks": [
+        {
+          "id": "django-setup",
+          "title": "Projekt-venv einrichten",
+          "description": "Legt das projekteigene venv an und installiert die Abhängigkeiten des Projekts.",
+          "kind": "setup",
+          "specialist": "builtin:implementation",
+          "recipeIds": ["django-venv"],
+          "topicIds": ["python-venv", "django-versions"],
+          "defaultTask": "Richte das Django-venv nach Rezept django-venv ein. Berichte Python-, pip- und Django-Version und ob die Django-Version zur gewählten Reihe passt.",
+          "effects": [],
+          "requiresRepository": true,
+          "notes": ["Braucht ein schreibbares Ausführungsprofil und lädt Pakete aus dem Internet."]
+        },
+        {
+          "id": "django-run-tests",
+          "title": "Tests ausführen",
+          "description": "Führt die Django-Tests der konfigurierten Labels im Projekt-venv aus.",
+          "kind": "test",
+          "specialist": "builtin:tests",
+          "recipeIds": ["django-test"],
+          "topicIds": ["django-testing", "django-settings"],
+          "defaultTask": "Führe die Django-Tests nach Rezept django-test aus und fasse das Ergebnis je Label zusammen.",
+          "effects": [],
+          "requiresRepository": true,
+          "notes": ["Setzt ein eingerichtetes Projekt-venv voraus (Aufgabe „Projekt-venv einrichten“)."]
+        },
+        {
+          "id": "django-health-check",
+          "title": "Migrationen und Systemprüfungen",
+          "description": "Prüft auf fehlende Migrationen und führt die Django-Systemprüfungen aus.",
+          "kind": "diagnose",
+          "specialist": "builtin:tests",
+          "recipeIds": ["django-migration-check", "django-system-check"],
+          "topicIds": ["django-migrations", "django-checks"],
+          "defaultTask": "Prüfe nach den Rezepten django-migration-check und django-system-check auf fehlende Migrationen und Systemprüfungsmeldungen. Erzeuge keine Migrationen ohne ausdrücklichen Auftrag.",
+          "effects": [],
+          "requiresRepository": true,
+          "notes": []
+        },
+        {
+          "id": "django-review",
+          "title": "Django-Änderung reviewen",
+          "description": "Review der aktuellen Änderungen mit dem Django-Spezialisten dieses Plugins.",
+          "kind": "review",
+          "specialist": "django-reviewer",
+          "recipeIds": [],
+          "topicIds": ["django-migrations", "django-testing", "django-checks"],
+          "defaultTask": "Prüfe die aktuellen Änderungen auf fehlende oder riskante Migrationen, Berechtigungsprüfungen, Querysets und Tests.",
+          "effects": ["reads_repository"],
+          "requiresRepository": true,
+          "notes": []
+        }
+      ],
+      "doctor": {
+        "provider": { "id": "hapi.toolchain", "version": 1 },
+        "checks": [
+          { "id": "repository.checkout", "required": true },
+          { "id": "git", "required": true },
+          { "id": "python", "required": true },
+          { "id": "image.marker", "required": false }
+        ]
+      },
+      "inspect": { "provider": { "id": "hapi.repository-inventory", "version": 1 }, "directoryField": "projectDirectory" },
+      "integrations": [
+        { "id": "github-status", "title": "GitHub-Commit-Status", "kind": "live_read", "provider": "github.commit-status",
+          "description": "Kombinierter Commit-Status des gebundenen Repositorys über die Projektfreigabe (zum Beispiel aus GitHub Actions).", "limits": ["Kein Status ist kein Erfolg."], "sources": [], "links": [] },
+        { "id": "django-docs", "title": "Django-Dokumentation", "kind": "reference",
+          "description": "Offizielle Dokumentation der unterstützten Reihen.", "limits": [],
+          "sources": [ { "title": "Django documentation", "url": "https://docs.djangoproject.com/en/6.1/", "verifiedAt": "2026-10-18", "version": "6.1" } ],
+          "links": [
+            { "label": "Django 6.1", "url": "https://docs.djangoproject.com/en/6.1/" },
+            { "label": "Django 6.0", "url": "https://docs.djangoproject.com/en/6.0/" },
+            { "label": "Django 5.2 LTS", "url": "https://docs.djangoproject.com/en/5.2/" }
+          ] }
+      ]
+    }
+  ]
+}

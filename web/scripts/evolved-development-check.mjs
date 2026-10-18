@@ -1,31 +1,33 @@
 import { workspaceArea } from './evolved-navigation.mjs';
 
 /**
- * Real Hub round trip for the project development mode: activate, persist,
- * reload, compact mobile layout and switching back to the general mode.
- * Fails if activation triggers any check, status read or session start.
+ * Real Hub round trip for the project development module (contract v2): activate,
+ * persist, reload, compact mobile layout and switching back to the general mode.
+ * Fails if activation triggers any check, status read or session start, or if the
+ * web app still uses the v1 configuration routes.
  */
 export async function checkDevelopment(page) {
-    const actions = [];
+    const actions = [], legacy = [];
     const track = request => {
         const path = new URL(request.url()).pathname;
-        if (/\/development\/(?:doctor|inspect|build-status)$/.test(path) || /\/agent-catalog\/[^/]+\/start$/.test(path)) actions.push(`${request.method()} ${path}`);
+        if (/\/development\/(?:modules-doctor|modules-inspect|doctor|inspect|build-status)$/.test(path) || /\/agent-catalog\/[^/]+\/start$/.test(path)) actions.push(`${request.method()} ${path}`);
+        if (/\/projects\/[^/]+\/development(?:\/context|\/knowledge)?$/.test(path)) legacy.push(`${request.method()} ${path}`);
     };
     page.on('request', track);
     try {
         await workspaceArea(page, 'Entwicklung');
-        await page.getByRole('heading', { name: 'Entwicklungsmodus', exact: true }).waitFor();
+        await page.getByRole('heading', { name: 'Entwicklungsmodul', exact: true }).waitFor();
         const save = page.getByRole('button', { name: 'Speichern', exact: true });
         if (await save.isEnabled()) throw Error('Save is enabled without changes');
-        await page.getByRole('radio', { name: 'Odoo', exact: true }).check();
+        await page.getByRole('radio', { name: 'Odoo 19 / 20', exact: true }).check();
         await page.getByRole('radio', { name: '19.0', exact: true }).check();
         await page.getByText('Ungespeicherter Entwurf', { exact: true }).waitFor();
-        const saved = page.waitForResponse(r => /\/api\/evolved\/projects\/[^/]+\/development$/.test(new URL(r.url()).pathname) && r.request().method() === 'PUT');
+        const saved = page.waitForResponse(r => /\/api\/evolved\/projects\/[^/]+\/development\/modules$/.test(new URL(r.url()).pathname) && r.request().method() === 'PUT');
         await save.click();
         const response = await saved;
         if (response.status() !== 200) throw Error(`Development save failed with ${response.status()}`);
         const body = response.request().postDataJSON();
-        if (body.expectedRevision !== 0 || body.settings.mode !== 'odoo' || body.settings.odoo.major !== 19 || body.settings.repositoryId !== null) throw Error('Unexpected development save body');
+        if (body.expectedRevision !== 0 || body.settings.activeModuleId !== 'builtin:odoo' || body.settings.odoo.major !== 19 || body.settings.repositoryId !== null || Object.keys(body.settings.modules).length) throw Error('Unexpected development save body');
         await page.getByText(/Gespeichert als Revision 1\./).waitFor();
         await page.reload();
         await page.getByText(/Gespeichert: Odoo 19 · Community · lokal · Revision 1/).waitFor();
@@ -41,8 +43,11 @@ export async function checkDevelopment(page) {
             return { page: document.documentElement.scrollWidth - window.innerWidth, content: content ? content.scrollWidth - content.clientWidth : 0 };
         });
         if (overflow.page > 1 || overflow.content > 1) throw Error(`Development page overflows horizontally on mobile: ${JSON.stringify(overflow)}`);
+        // One compact row per module (touch target, no selection cards), the list scrolls instead of growing.
         const radioBox = await page.getByRole('radio', { name: 'Allgemein', exact: true }).locator('xpath=..').boundingBox();
-        if (!radioBox || radioBox.height < 40 || radioBox.width > 390 / 2) throw Error(`Mode picker is not compact on mobile: ${JSON.stringify(radioBox)}`);
+        if (!radioBox || radioBox.height < 40 || radioBox.height > 96) throw Error(`Module picker is not compact on mobile: ${JSON.stringify(radioBox)}`);
+        const list = await page.locator('.ev-dev-picker-list').boundingBox();
+        if (!list || list.height > 19 * 16 + 4) throw Error(`Module picker grows beyond its scroll height: ${JSON.stringify(list)}`);
         await page.setViewportSize({ width: 320, height: 740 });
         await page.getByRole('radio', { name: 'iOS', exact: true }).check();
         const mobileSave = page.getByRole('button', { name: 'Speichern', exact: true });
@@ -54,12 +59,13 @@ export async function checkDevelopment(page) {
         if (viewport) await page.setViewportSize(viewport);
 
         await page.getByRole('radio', { name: 'Allgemein', exact: true }).check();
-        const reverted = page.waitForResponse(r => /\/development$/.test(new URL(r.url()).pathname) && r.request().method() === 'PUT');
+        const reverted = page.waitForResponse(r => /\/development\/modules$/.test(new URL(r.url()).pathname) && r.request().method() === 'PUT');
         await page.getByRole('button', { name: 'Speichern', exact: true }).click();
         if ((await reverted).status() !== 200) throw Error('Switching back to the general mode failed');
         await page.getByText(/Gespeichert als Revision 2\./).waitFor();
-        if (actions.length) throw Error(`Mode changes triggered actions: ${actions.join(', ')}`);
-        console.log('PASS development mode activation persists, reloads, stays compact on mobile and triggers no checks');
+        if (actions.length) throw Error(`Module changes triggered actions: ${actions.join(', ')}`);
+        if (legacy.length) throw Error(`Web app used v1 development routes: ${legacy.join(', ')}`);
+        console.log('PASS development module activation persists through contract v2, reloads, stays compact on mobile and triggers no checks');
     } finally {
         page.off('request', track);
     }

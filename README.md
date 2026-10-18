@@ -45,7 +45,7 @@ currently German; the setup and pilot guides are available in English.
 | Connect your coding subscriptions | Native Claude/Codex browser sign-in, persistent private credentials and automatically managed project runners |
 | Choose models as providers evolve | Native model catalogs, refresh, provider defaults and a custom model ID |
 | Start a project without setup chores | An automatic folder for every project; new sessions use it automatically, with optional manual folder selection when creating the project |
-| Specialize a development project | Odoo 19/20, iOS and Android modes with versioned handbooks, toolchain checks, repository inspection and prepared agent tasks |
+| Specialize a development project | Odoo 19/20, iOS and Android modules, plus declarative modules from GitHub plugins, with versioned handbooks, toolchain checks, repository inspection and prepared agent tasks |
 | Work with GitHub directly | Clone and update project repositories, explicitly start sessions in a checkout, and inspect local changes without starting a model |
 | Review changes in context | Repository diffs, Codegraph impact hints and a review specialist in the same checkout |
 | Know what is ready | Project diagnostics for the working folder, live runner RPC, native login, repositories, Codegraph and memory |
@@ -138,6 +138,7 @@ experimentation. See [data handling](docs/evolved/DATA_HANDLING.md) and
 | [Provider connections](docs/evolved/PROVIDER_LOGIN.md) | Browser subscription login, persistent access and models |
 | [GitHub integration](docs/evolved/GITHUB.md) | Repository grants and native Git operations |
 | [Development modes](docs/evolved/DEVELOPMENT_MODES.md) | Odoo 19/20, Odoo.sh, iOS, Android and project toolchains |
+| [Development modules](docs/evolved/DEVELOPMENT_MODULES.md) | Author guide for plugin development modules, providers and validation |
 | [Project MCP shop](docs/evolved/MCP_SHOP.md) | Context7, shared remote tools and project permissions |
 | [Agents and plugins](docs/evolved/EXTENSIONS.md) | Reusable specialists and extension manifests |
 | [Subscription capacity](docs/evolved/CAPACITY.md) | Usage sources, reset times and freshness |

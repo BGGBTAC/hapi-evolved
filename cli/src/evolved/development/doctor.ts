@@ -1,6 +1,8 @@
 import { realpath } from 'node:fs/promises'
 import { containsCredential } from '@hapi/protocol/evolvedSourcePolicy'
+import { HAPI_TOOLCHAIN_CHECKS, type DevelopmentModuleDoctorResult } from '@hapi/protocol/developmentModules'
 import {
+    defaultDevelopmentSettings,
     DEVELOPMENT_CONTRACT_VERSION,
     type DevelopmentDoctorCheck,
     type DevelopmentDoctorResult,
@@ -55,8 +57,9 @@ export type DoctorInput = {
     deadlineMs?: number
 }
 
-type Context = Omit<DoctorInput, 'system' | 'now'> & { system: ProbeSystem; deadline: number; cache: Map<string, Promise<unknown>> }
-type Probe = { label: string; category: Category; modes: readonly SpecializedDevelopmentMode[] | 'all'; run: (context: Context) => Promise<Omit<Check, 'id' | 'label' | 'category'>> }
+type Context = Omit<DoctorInput, 'system' | 'now' | 'mode' | 'checks'> & { system: ProbeSystem; deadline: number; cache: Map<string, Promise<unknown>> }
+type Outcome = Omit<Check, 'id' | 'label' | 'category'>
+type Probe = { label: string; category: Category; modes: readonly SpecializedDevelopmentMode[] | 'all'; run: (context: Context) => Promise<Outcome> }
 
 const clean = (value: string, max: number) => {
     const text = value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ' ').slice(0, max)
@@ -670,34 +673,129 @@ export function doctorCheckLabel(id: string): string | null {
     return Object.hasOwn(PROBES, id) ? PROBES[id].label : null
 }
 
+type PlannedProbe = { label: string; category: Category; run: (context: Context) => Promise<Outcome> }
+
+/** Runs the requested probes in order under the per-probe and total time limits; unknown ids are reported, never run. */
+async function runPlan(context: Context, ids: readonly string[], probe: (id: string) => PlannedProbe | null): Promise<{ checks: Check[]; truncated: boolean }> {
+    const requested = ids.slice(0, 64)
+    const checks: Check[] = []
+    let truncated = ids.length > 64
+    for (const id of requested) {
+        const planned = probe(id)
+        if (!planned) { checks.push({ id, label: 'Unbekannte Prüfung', category: 'runtime', state: 'unknown', detail: 'Diese Prüfung kennt dieser Runner nicht; ggf. ist ein neueres Runner-Image nötig.' }); continue }
+        if (Date.now() >= context.deadline) { truncated = true; checks.push({ id, label: planned.label, category: planned.category, state: 'unknown', detail: 'Zeitlimit des Doctors erreicht; nicht geprüft.' }); continue }
+        let outcome: Outcome
+        try {
+            outcome = await Promise.race([
+                planned.run(context),
+                new Promise<Outcome>(resolve => setTimeout(() => resolve({ state: 'unknown', detail: 'Zeitlimit dieser Prüfung erreicht.' }), Math.max(1, Math.min(PROBE_TIMEOUT_MS + 1000, context.deadline - Date.now()))).unref?.()),
+            ])
+        } catch { outcome = { state: 'unknown', detail: 'Die Prüfung ist fehlgeschlagen.' } }
+        checks.push({ id, label: planned.label, category: planned.category, ...outcome,
+            ...(outcome.detail ? { detail: clean(outcome.detail, 500) } : {}), ...(outcome.version ? { version: clean(outcome.version, 120) } : {}) })
+    }
+    return { checks, truncated }
+}
+
+function doctorContext(input: Omit<DoctorInput, 'mode' | 'checks'>, started: number): Context {
+    return { ...input, system: input.system ?? createProbeSystem(), deadline: started + Math.min(input.deadlineMs ?? DOCTOR_TOTAL_TIMEOUT_MS, DOCTOR_TOTAL_TIMEOUT_MS), cache: new Map() }
+}
+
+async function hostInfo(context: Context) {
+    const marker = await readImageMarker(context).catch(() => null)
+    return { os: clean(context.system.platform, 40), arch: clean(context.system.arch, 40), image: marker?.variant ? clean(`${marker.variant}${marker.schema ? ` v${marker.schema}` : ''}`, 120) : null }
+}
+
 /** Bounded, read-only toolchain doctor. Fixed probes only; never runs project scripts or contacts the network. */
 export async function runDevelopmentDoctor(input: DoctorInput): Promise<DevelopmentDoctorResult> {
     const now = input.now ?? Date.now, started = Date.now()
-    const system = input.system ?? createProbeSystem()
-    const context: Context = { ...input, system, deadline: started + Math.min(input.deadlineMs ?? DOCTOR_TOTAL_TIMEOUT_MS, DOCTOR_TOTAL_TIMEOUT_MS), cache: new Map() }
+    const context = doctorContext(input, started)
     const base = input.checks.length ? input.checks : defaultDoctorChecks(input.mode)
-    const all = [...new Set([...base, ...EXTRA_CHECKS[input.mode]])]
-    const requested = all.slice(0, 64)
-    const checks: Check[] = []
-    let truncated = all.length > 64
-    for (const id of requested) {
-        const probe = Object.hasOwn(PROBES, id) ? PROBES[id] : null
-        if (!probe) { checks.push({ id, label: 'Unbekannte Prüfung', category: 'runtime', state: 'unknown', detail: 'Diese Prüfung kennt dieser Runner nicht; ggf. ist ein neueres Runner-Image nötig.' }); continue }
-        if (Date.now() >= context.deadline) { truncated = true; checks.push({ id, label: probe.label, category: probe.category, state: 'unknown', detail: 'Zeitlimit des Doctors erreicht; nicht geprüft.' }); continue }
-        let outcome: Omit<Check, 'id' | 'label' | 'category'>
-        try {
-            outcome = await Promise.race([
-                probe.run(context),
-                new Promise<Omit<Check, 'id' | 'label' | 'category'>>(resolve => setTimeout(() => resolve({ state: 'unknown', detail: 'Zeitlimit dieser Prüfung erreicht.' }), Math.max(1, Math.min(PROBE_TIMEOUT_MS + 1000, context.deadline - Date.now()))).unref?.()),
-            ])
-        } catch { outcome = { state: 'unknown', detail: 'Die Prüfung ist fehlgeschlagen.' } }
-        checks.push({ id, label: probe.label, category: probe.category, ...outcome,
-            ...(outcome.detail ? { detail: clean(outcome.detail, 500) } : {}), ...(outcome.version ? { version: clean(outcome.version, 120) } : {}) })
-    }
-    const marker = await readImageMarker(context).catch(() => null)
+    const { checks, truncated } = await runPlan(context, [...new Set([...base, ...EXTRA_CHECKS[input.mode]])], id => Object.hasOwn(PROBES, id) ? PROBES[id] : null)
     return {
         contractVersion: DEVELOPMENT_CONTRACT_VERSION, mode: input.mode, observedAt: now(), durationMs: Math.min(120_000, Date.now() - started),
-        host: { os: clean(system.platform, 40), arch: clean(system.arch, 40), image: marker?.variant ? clean(`${marker.variant}${marker.schema ? ` v${marker.schema}` : ''}`, 120) : null },
-        checks, truncated,
+        host: await hostInfo(context), checks, truncated,
     }
+}
+
+/**
+ * Provider `hapi.toolchain` v1 for development modules: a closed set of settings-independent presence/version probes.
+ * Executables are found only in trusted system directories and run with exactly these argv (clean environment, cwd `/`,
+ * 4 s per probe, 16 KiB output). Module data selects check ids; it never supplies programs, arguments or paths.
+ */
+export const TOOLCHAIN_PROBE_ARGV = Object.freeze({
+    git: ['git', '--version'],
+    python: ['python3', '--version'],
+    node: ['node', '--version'],
+    java: ['java', '-Xmx64m', '-XX:+UseSerialGC', '-version'],
+    ssh: ['ssh', '-V'],
+} as const satisfies Record<string, readonly string[]>)
+
+async function fixedVersion(context: Context, check: keyof typeof TOOLCHAIN_PROBE_ARGV, pattern: RegExp) {
+    const [name, ...argv] = TOOLCHAIN_PROBE_ARGV[check]
+    const executable = await tool(context, name)
+    return { executable, version: executable ? await versionOf(context, executable, argv, pattern) : null }
+}
+
+const TOOLCHAIN_PROBES: Record<string, (context: Context) => Promise<Outcome>> = {
+    // Static reads (no process): image marker file and the authorised checkout's Git files.
+    'image.marker': PROBES['image.marker'].run,
+    'repository.checkout': PROBES['repository.checkout'].run,
+    git: async context => {
+        const { executable, version } = await fixedVersion(context, 'git', /git version ([0-9][^\s]{0,40})/)
+        if (!executable) return { state: 'missing', detail: 'git wurde in den Systemverzeichnissen nicht gefunden.', remedy: operator(IMAGE_HINT) }
+        return version ? { state: 'ready', version, detail: executable.path } : { state: 'unknown', detail: 'git antwortete nicht auf --version.' }
+    },
+    python: async context => {
+        const { executable, version } = await fixedVersion(context, 'python', /Python ([0-9]+\.[0-9]+\.[0-9]+)/)
+        if (!executable) return { state: 'missing', detail: 'python3 wurde in den Systemverzeichnissen nicht gefunden.', remedy: operator(IMAGE_HINT) }
+        return version ? { state: 'ready', version: `Python ${version}`, detail: `${executable.path}; System-Python. Projekt-venvs und -Abhängigkeiten werden nicht geprüft.` }
+            : { state: 'unknown', detail: 'python3 lieferte keine Version.' }
+    },
+    node: async context => {
+        const { executable, version } = await fixedVersion(context, 'node', /v([0-9]+\.[0-9]+\.[0-9]+)/)
+        if (!executable) return { state: 'missing', detail: 'node wurde in den Systemverzeichnissen nicht gefunden.', remedy: operator(IMAGE_HINT) }
+        return version ? { state: 'ready', version: `Node ${version}`, detail: `${executable.path}; Projektabhängigkeiten (node_modules) werden nicht geprüft.` }
+            : { state: 'unknown', detail: 'node lieferte keine Version.' }
+    },
+    java: async context => {
+        const { executable, version } = await fixedVersion(context, 'java', /version "([0-9][^"]{0,30})"/)
+        if (!executable) return { state: 'missing', detail: 'java wurde in den Systemverzeichnissen nicht gefunden.', remedy: operator(IMAGE_HINT) }
+        if (!version) return { state: 'unknown', detail: 'java lieferte keine Version.' }
+        // Presence only: javac is located, never executed.
+        if (!await tool(context, 'javac')) return { state: 'warning', version: `Java ${version}`, detail: 'Nur eine JRE: javac fehlt.', remedy: operator(IMAGE_HINT) }
+        return { state: 'ready', version: `Java ${version}`, detail: `${executable.path}; javac vorhanden.` }
+    },
+    ssh: async context => {
+        const { executable, version } = await fixedVersion(context, 'ssh', /(OpenSSH_[0-9][^\s,]{0,30})/)
+        if (!executable) return { state: 'missing', detail: 'ssh wurde in den Systemverzeichnissen nicht gefunden.', remedy: operator(IMAGE_HINT) }
+        return { state: version ? 'ready' : 'unknown', version: version ?? undefined, detail: 'Nur der Client ist vorhanden. Es wurde keine Verbindung aufgebaut; Zugriffe brauchen eigene, freigegebene Schlüssel.' }
+    },
+    kvm: async context => {
+        if (context.system.platform !== 'linux') return { state: 'unsupported', detail: 'KVM gibt es nur unter Linux.' }
+        const kind = await context.system.exists('/dev/kvm')
+        if (kind === 'missing') return { state: 'missing', detail: '/dev/kvm ist in diesem Runner nicht vorhanden; Hardware-Virtualisierung ist nicht verfügbar.' }
+        if (kind !== 'char') return { state: 'warning', detail: '/dev/kvm ist kein Gerät.' }
+        return await context.system.accessible('/dev/kvm', ACCESS.R_OK | ACCESS.W_OK)
+            ? { state: 'ready', detail: '/dev/kvm ist les- und schreibbar.' }
+            : { state: 'missing', detail: '/dev/kvm existiert, ist für diesen Benutzer aber nicht zugänglich.', remedy: operator('Der Betreiber müsste den Gerätezugriff ausdrücklich freigeben; das ändert die Isolation des Runners.') }
+    },
+}
+export const TOOLCHAIN_CHECK_IDS: readonly string[] = Object.keys(TOOLCHAIN_PROBES)
+
+export type ToolchainDoctorInput = Pick<DoctorInput, 'projectRoot' | 'checkout' | 'system' | 'now' | 'imageMarkerPath' | 'deadlineMs'> & {
+    /** Check ids exactly as requested by the module (no defaults, no extras); unknown ids are reported as `unknown`. */
+    checks: readonly string[]
+}
+export type ToolchainDoctorReport = Pick<DevelopmentModuleDoctorResult, 'observedAt' | 'durationMs' | 'host' | 'checks' | 'truncated'>
+
+/** `hapi.toolchain` v1. No settings are read: a plugin module's values cannot influence what runs. */
+export async function runToolchainDoctor(input: ToolchainDoctorInput): Promise<ToolchainDoctorReport> {
+    const now = input.now ?? Date.now, started = Date.now()
+    const context = doctorContext({ ...input, settings: defaultDevelopmentSettings('none') }, started)
+    const { checks, truncated } = await runPlan(context, [...new Set(input.checks)], id => {
+        const label = Object.hasOwn(HAPI_TOOLCHAIN_CHECKS, id) ? HAPI_TOOLCHAIN_CHECKS[id] : null
+        return label && Object.hasOwn(TOOLCHAIN_PROBES, id) ? { ...label, run: TOOLCHAIN_PROBES[id] } : null
+    })
+    return { observedAt: now(), durationMs: Math.min(120_000, Date.now() - started), host: await hostInfo(context), checks, truncated }
 }

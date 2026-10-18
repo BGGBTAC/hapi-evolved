@@ -15,6 +15,16 @@ or container image.
 - Optional development runner and project-local setup/test helpers for Odoo,
   Android and portable Swift. Native iOS builds require macOS or an external
   workflow; Android SDK setup retains explicit human licence acknowledgement.
+- Development modules from GitHub plugins (`schemaVersion: 2`, `developmentModules`):
+  declarative settings, handbook, recipes and specialist tasks bound to a module
+  digest, with explicit per-project adoption of plugin updates. Runners implement
+  the fixed `hapi.toolchain` v1 and `hapi.repository-inventory` v1 providers and
+  advertise them as capabilities; module data cannot supply commands or code.
+- Agent tools and `hapi evolved development` use the contract-2 module routes
+  (operating context v8), the runner proxy admits exactly the module
+  context/knowledge/doctor/inspect reads, and `hapi evolved plugin validate`
+  plus `--local --definition` check a plugin manifest offline. Django example
+  plugin and author guide in `docs/evolved/DEVELOPMENT_MODULES.md`.
 
 - Project MCP shop with Context7 and custom public HTTPS Streamable HTTP servers,
   encrypted credentials, connection checks, explicit tool grants, read-only access

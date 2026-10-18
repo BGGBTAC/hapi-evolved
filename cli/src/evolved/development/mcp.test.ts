@@ -30,8 +30,9 @@ async function connect(respond: (url: URL) => Response = () => Response.json({ m
 }
 const text = (result: unknown) => (result as { content: Array<{ text: string }> }).content[0].text
 
-it('development tools call only the exact project-bound Hub routes and label results as data', async () => {
-    const t = await connect()
+it('development tools fall back to the exact v1 routes only when the Hub does not know contract 2', async () => {
+    // Older Hub: modules routes are unknown (plain 404 without an error code).
+    const t = await connect(url => url.pathname.includes('/development/modules-') ? new Response('404 Not Found', { status: 404 }) : Response.json({ mode: 'odoo' }))
     try {
         const listing = await t.caller.listTools()
         for (const name of ['evolved_development_context', 'evolved_development_knowledge', 'evolved_development_build_status', 'evolved_development_doctor', 'evolved_development_inspect']) {
@@ -50,14 +51,14 @@ it('development tools call only the exact project-bound Hub routes and label res
         await t.caller.callTool({ name: 'evolved_development_inspect', arguments: {} })
         const base = 'https://evolved.test/api/evolved/projects/project-one/development'
         expect(t.calls.map(call => [call.method, call.url, call.body])).toEqual([
-            ['GET', `${base}/context`, ''],
-            ['GET', `${base}/knowledge?q=record+rules&limit=3`, ''],
-            ['GET', `${base}/knowledge?topic=odoo-security`, ''],
-            ['GET', `${base}/knowledge`, ''],
+            ['GET', `${base}/modules-context`, ''], ['GET', `${base}/context`, ''],
+            ['GET', `${base}/modules-knowledge?q=record+rules&limit=3`, ''], ['GET', `${base}/knowledge?q=record+rules&limit=3`, ''],
+            ['GET', `${base}/modules-knowledge?topic=odoo-security`, ''], ['GET', `${base}/knowledge?topic=odoo-security`, ''],
+            ['GET', `${base}/modules-knowledge`, ''], ['GET', `${base}/knowledge`, ''],
             ['GET', `${base}/build-status?ref=main`, ''],
             ['GET', `${base}/build-status`, ''],
-            ['POST', `${base}/doctor`, '{}'],
-            ['POST', `${base}/inspect`, '{}'],
+            ['GET', `${base}/modules-context`, ''], ['POST', `${base}/doctor`, '{}'],
+            ['GET', `${base}/modules-context`, ''], ['POST', `${base}/inspect`, '{}'],
         ])
         expect(JSON.stringify(context)).not.toContain(t.token)
     } finally { await t.close() }

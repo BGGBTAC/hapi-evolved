@@ -14,7 +14,8 @@ import { RepoImpactRequestSchema, RepositoryIdSchema, type RepoImpactRequest } f
 import type { RepositoryAuthority, RepositoryStartResolver } from './repositoryWorkflow'
 import type { PluginService } from './plugins'
 import { DevelopmentTaskStartSchema } from '@hapi/protocol/evolvedDevelopment'
-import type { DevelopmentService } from './development'
+import { DevelopmentModuleTaskStartSchema } from '@hapi/protocol/developmentModules'
+import { DevelopmentDetailedError, type DevelopmentService } from './development'
 
 type Source = { pluginId: string; repository: string; commitSha: string }
 export type CatalogAgent = AgentDefinition & { id: string; origin: 'builtin' | 'custom' | 'plugin'; source?: Source; available: boolean; invalid?: true }
@@ -117,7 +118,7 @@ export function createAgentCatalogRoutes(config: { store: EvolvedStore; plugins:
         }).immediate()
         return c.json({ ok: true })
     })
-    const startSchema = z.object({ operationId: z.string().uuid(), machineId: z.string().min(1).max(200), task: z.string().trim().min(1).max(24_576), provider: z.enum(['claude', 'codex']).optional(), model: modelPreferenceSchema.optional(), repositoryId: RepositoryIdSchema.optional(), review: RepoImpactRequestSchema.optional(), development: DevelopmentTaskStartSchema.optional() }).strict()
+    const startSchema = z.object({ operationId: z.string().uuid(), machineId: z.string().min(1).max(200), task: z.string().trim().min(1).max(24_576), provider: z.enum(['claude', 'codex']).optional(), model: modelPreferenceSchema.optional(), repositoryId: RepositoryIdSchema.optional(), review: RepoImpactRequestSchema.optional(), development: z.union([DevelopmentTaskStartSchema, DevelopmentModuleTaskStartSchema]).optional() }).strict()
     app.post('/projects/:id/agent-catalog/:agentId/start', async c => {
         let reserved = false
         try {
@@ -139,7 +140,7 @@ export function createAgentCatalogRoutes(config: { store: EvolvedStore; plugins:
                 if (previous.state === 'done' && previous.session_id && engine.getSessionByNamespace(previous.session_id, project.namespace)) return c.json({ sessionId: previous.session_id, operationId: body.operationId, acknowledged: 'persisted' })
                 throw new EvolvedError('agent_start_indeterminate', 'Inspect existing project sessions before starting again. This start cannot be repeated safely.', 409)
             }
-            // Development tasks resolve a static pack recipe against the current config revision; the bound repository is the default checkout.
+            // Development tasks resolve against the current config revision and (v2) the module digest the user saw; the bound repository is the default checkout.
             if (body.development && !config.development) throw new EvolvedError('development_unavailable', 'Entwicklungsaufgaben sind nicht verfügbar.', 409)
             const development = body.development ? config.development!.resolveTask(project, agentId, body.development) : undefined
             const repositoryId = body.repositoryId ?? development?.repositoryId ?? undefined
@@ -213,7 +214,7 @@ export function createAgentCatalogRoutes(config: { store: EvolvedStore; plugins:
                 throw new EvolvedError('agent_start_indeterminate', 'Start outcome is uncertain. Inspect project sessions before starting again.', 409)
             }
         } catch (error) {
-            if (error instanceof EvolvedError) return c.json({ error: error.message, code: error.code, reserved }, error.status as 400)
+            if (error instanceof EvolvedError) return c.json({ error: error.message, code: error.code, reserved, ...(error instanceof DevelopmentDetailedError ? error.details : {}) }, error.status as 400)
             return c.json({ error: reserved ? 'Start outcome is uncertain. Inspect project sessions before starting again.' : 'The specialist could not be prepared. No start was reserved.', code: reserved ? 'agent_start_indeterminate' : 'agent_start_unavailable', reserved }, reserved ? 409 : 503)
         }
     })

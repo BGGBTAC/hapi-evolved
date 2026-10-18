@@ -10,6 +10,7 @@ import { parseRunnerGitRequest, readRunnerGitBody } from './gitRequest'
 import { readCredentialResponse } from '../../shared/src/credentialTransport'
 import { fetchPublicGit, streamPublicGit, type PublicGitFetcher } from './publicGit'
 import { DevelopmentKnowledgeQuerySchema, GitRefSchema } from '../../shared/src/evolvedDevelopment'
+import { DevelopmentModuleActionBodySchema } from '../../shared/src/developmentModules'
 
 type Grant = { token: string; expiresAt: number; projectId: string }
 const MAX_PENDING_BYTES = 8 * 1024 * 1024
@@ -34,13 +35,16 @@ export function queuedPacketBytes(value: unknown, depth = 0): number {
     }
     return 8
 }
-const DEVELOPMENT_QUERY_KEYS: Record<string, readonly string[]> = { knowledge: ['topic', 'q', 'limit'], 'build-status': ['ref'] }
-/** Exact agent reads of the project development mode; configuration (GET/PUT .../development) stays browser-only. */
+const DEVELOPMENT_QUERY_KEYS: Record<string, readonly string[]> = { knowledge: ['topic', 'q', 'limit'], 'modules-knowledge': ['topic', 'q', 'limit'], 'build-status': ['ref'] }
+/**
+ * Exact agent reads of the project development mode/module. Configuration (GET/PUT .../development and
+ * .../development/modules), module details and catalogue stay browser-only.
+ */
 export function allowedDevelopmentRequest(operation: string | undefined, method: string, search: string): boolean {
     if (!operation) return false
-    if (operation === 'doctor' || operation === 'inspect') return method === 'POST' && search === ''
+    if (DEVELOPMENT_ACTIONS.has(operation)) return method === 'POST' && search === ''
     if (method !== 'GET') return false
-    if (operation === 'context') return search === ''
+    if (operation === 'context' || operation === 'modules-context') return search === ''
     const allowed = DEVELOPMENT_QUERY_KEYS[operation]
     if (!allowed) return false
     if (search === '') return true
@@ -55,13 +59,23 @@ export function allowedDevelopmentRequest(operation: string | undefined, method:
     if (seen.size === 0) return false
     const topic = params.get('topic'), q = params.get('q'), limit = params.get('limit'), ref = params.get('ref')
     // Same rules as the Hub (shared contract), no narrower ad-hoc whitelist.
-    if (operation === 'knowledge') return DevelopmentKnowledgeQuerySchema.safeParse(Object.fromEntries(params)).success
+    if (operation === 'knowledge' || operation === 'modules-knowledge') return DevelopmentKnowledgeQuerySchema.safeParse(Object.fromEntries(params)).success
         && (q === null || !/[\u0000-\u001f\u007f]/.test(q)) && (limit === null || /^(?:[1-9]|1[0-9]|20)$/.test(limit)) && (topic === null || q === null)
     return ref !== null && GitRefSchema.safeParse(ref).success
 }
+const DEVELOPMENT_ACTIONS = new Set(['doctor', 'inspect', 'modules-doctor', 'modules-inspect'])
+const MAX_MODULE_ACTION_BODY_BYTES = 256
+/** Canonical JSON of a valid module action body (`{moduleId, moduleDigest}`, ≤ 256 bytes), else null. */
+export function developmentModuleActionBody(body: ArrayBuffer | undefined): string | null {
+    if (!body || body.byteLength === 0 || body.byteLength > MAX_MODULE_ACTION_BODY_BYTES) return null
+    let value: unknown
+    try { value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(body)) } catch { return null }
+    const parsed = DevelopmentModuleActionBodySchema.safeParse(value)
+    return parsed.success ? JSON.stringify({ moduleId: parsed.data.moduleId, moduleDigest: parsed.data.moduleDigest }) : null
+}
 export function allowedProxyPath(path: string, method = 'GET', search = ''): boolean {
     if (/^\/api\/evolved\/projects\/[^/]+\/development(?:\/|$)/.test(path)) {
-        const development = /^\/api\/evolved\/projects\/[A-Za-z0-9_-]{1,80}\/development\/(context|knowledge|build-status|doctor|inspect)$/.exec(path)
+        const development = /^\/api\/evolved\/projects\/[A-Za-z0-9_-]{1,80}\/development\/(context|knowledge|build-status|doctor|inspect|modules-context|modules-knowledge|modules-doctor|modules-inspect)$/.exec(path)
         return allowedDevelopmentRequest(development?.[1], method, search)
     }
     if (/^\/api\/evolved\/projects\/[A-Za-z0-9_-]{1,80}\/agent-credentials$/.test(path)) return method === 'GET' && search === ''
@@ -341,8 +355,16 @@ export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; p
                 if (/\/development\/(?:doctor|inspect)$/.test(url.pathname) && ((body?.byteLength ?? 0) > 64 || !['', '{}'].includes(Buffer.from(body ?? new ArrayBuffer(0)).toString('utf8').trim()))) {
                     return new Response('Development actions take an empty body', { status: 400, headers: { 'cache-control': 'no-store' } })
                 }
+                // Module doctor/inspect take exactly the module id and digest the agent read; nothing else is forwarded.
+                let forwarded: ArrayBuffer | string | undefined = body
+                if (/\/development\/modules-(?:doctor|inspect)$/.test(url.pathname)) {
+                    const binding = developmentModuleActionBody(body)
+                    if (!binding) return new Response('Development module actions take exactly {moduleId, moduleDigest}', { status: 400, headers: { 'cache-control': 'no-store' } })
+                    forwarded = binding
+                    headers.set('content-type', 'application/json')
+                }
                 const response = await fetch(new URL(url.pathname + url.search, hub), { method: request.method, headers,
-                    body,
+                    body: forwarded,
                     redirect: 'error', signal: AbortSignal.timeout(70_000) })
                 if (response.status === 401) grant = null
                 return new Response(response.body, { status: response.status, headers: { 'content-type': response.headers.get('content-type') ?? 'application/json', 'cache-control': 'no-store' } })

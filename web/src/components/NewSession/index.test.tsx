@@ -48,7 +48,8 @@ const mocks = vi.hoisted(() => ({
     nextModelValue: 'gpt-5.6-terra',
     refetchSessions: vi.fn(),
     addToast: vi.fn(),
-    developmentSettings: null as null | { mode: string; repositoryId: string | null; odoo?: { major: number } | null },
+    developmentSettings: null as null | { activeModuleId: string | null; repositoryId: string | null; odoo?: { major: number } | null },
+    developmentState: 'ready' as string,
     developmentPending: false,
     developmentError: null as Error | null,
     developmentRefetch: vi.fn(),
@@ -57,8 +58,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/evolved/auth', () => ({ useOptionalEvolved: () => mocks.evolved ? { api: { baseUrl: '' }, me: { user: { id: 'human' } }, project: { id: mocks.projectId, rootPath: mocks.projectRoot, role: 'admin', profile: 'workspace' } } : null }))
 vi.mock('@/evolved/repositoryCatalog', () => ({ useProjectRepositories: () => ({ current: { runner: { status: 'ready' }, repositories: mocks.repositoryChoices }, isFetching: false, error: null, refetch: vi.fn() }) }))
 vi.mock('@/evolved/developmentApi', () => ({
-    useDevelopmentConfig: () => ({ current: mocks.developmentSettings ? { config: { settings: mocks.developmentSettings } } : undefined, isPending: mocks.developmentPending, error: mocks.developmentError, isFetching: false, refetch: mocks.developmentRefetch }),
-    describeMode: (settings: { mode: string; odoo?: { major: number } | null }) => settings.mode === 'odoo' ? `Odoo ${settings.odoo?.major}` : settings.mode,
+    useDevelopmentModules: () => ({ current: mocks.developmentSettings ? { config: { settings: mocks.developmentSettings, active: { state: mocks.developmentState } }, catalog: { modules: [] } } : undefined, isPending: mocks.developmentPending, error: mocks.developmentError, isFetching: false, refetch: mocks.developmentRefetch }),
+    describeActiveModule: (settings: { activeModuleId: string | null; odoo?: { major: number } | null }) => settings.activeModuleId === 'builtin:odoo' ? `Odoo ${settings.odoo?.major}` : settings.activeModuleId ?? 'Allgemein',
+    moduleStateLabels: { adoption_required: 'Neue Fassung muss übernommen werden', disabled: 'Plugin deaktiviert' },
 }))
 vi.mock('@/evolved/workspaceNavigation', () => ({ WorkspaceLink: ({ children }: React.PropsWithChildren) => <span>{children}</span> }))
 vi.mock('@/evolved/useProviderModels', () => ({ useProviderModels: () => ({ enabled: mocks.evolved, canRefresh: true, data: { provider: 'codex', status: 'ready', models: [{ id: 'new-native-model', label: 'Fresh native model', reasoningEfforts: ['high'] }] }, isLoading: false, error: null, refresh: vi.fn() }) }))
@@ -339,9 +341,10 @@ describe('NewSession launch preferences', () => {
         )
         mocks.evolved = false
         mocks.repositoryChoices = []
-        mocks.developmentSettings = { mode: 'none', repositoryId: null }
+        mocks.developmentSettings = { activeModuleId: null, repositoryId: null }
         mocks.developmentPending = false
         mocks.developmentError = null
+        mocks.developmentState = 'ready'
         mocks.developmentRefetch.mockReset()
         mocks.projectId = 'project-1'
         mocks.projectRoot = '/projects/project-1'
@@ -441,11 +444,11 @@ describe('NewSession launch preferences', () => {
 
     it('preselects the bound development repository visibly and sends it explicitly', async () => {
         mocks.evolved = true
-        mocks.developmentSettings = { mode: 'odoo', repositoryId: '101', odoo: { major: 20 } }
+        mocks.developmentSettings = { activeModuleId: 'builtin:odoo', repositoryId: '101', odoo: { major: 20 } }
         mocks.repositoryChoices = [{ id: '101', fullName: 'example/odoo', path: '/projects/project-1/repositories/example/odoo', local: { state: 'ready' } }]
         mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'bound-session' })
         render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
-        expect(screen.getByLabelText('Entwicklungsmodus')).toHaveTextContent('Odoo 20')
+        expect(screen.getByLabelText('Entwicklungsmodul')).toHaveTextContent('Odoo 20')
         expect(screen.getByLabelText(/^Arbeitsort/)).toHaveValue('101')
         expect(screen.getByRole('option', { name: 'example/odoo · Standard' })).toBeInTheDocument()
         expect(screen.getByText('/projects/project-1/repositories/example/odoo')).toBeInTheDocument()
@@ -454,14 +457,28 @@ describe('NewSession launch preferences', () => {
         expect(mocks.spawnSession.mock.calls[0][0]).toMatchObject({ repositoryId: '101', directory: undefined })
     })
 
+    it('keeps the bound default repository while a plugin module waits for adoption and names that state', async () => {
+        mocks.evolved = true
+        mocks.developmentSettings = { activeModuleId: 'plugin:00000000-0000-4000-8000-000000000001:flutter', repositoryId: '101' }
+        mocks.developmentState = 'adoption_required'
+        mocks.repositoryChoices = [{ id: '101', fullName: 'example/app', path: '/projects/project-1/repositories/example/app', local: { state: 'ready' } }]
+        mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'plugin-session' })
+        render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        expect(screen.getByLabelText('Entwicklungsmodul')).toHaveTextContent('Neue Fassung muss übernommen werden')
+        expect(screen.getByLabelText(/^Arbeitsort/)).toHaveValue('101')
+        fireEvent.click(screen.getByTestId('create'))
+        await waitFor(() => expect(mocks.spawnSession).toHaveBeenCalled())
+        expect(mocks.spawnSession.mock.calls[0][0]).toMatchObject({ repositoryId: '101', directory: undefined })
+    })
+
     it('keeps an explicit project folder choice even when a development repository is bound', async () => {
         mocks.evolved = true
-        mocks.developmentSettings = { mode: 'odoo', repositoryId: '101', odoo: { major: 19 } }
+        mocks.developmentSettings = { activeModuleId: 'builtin:odoo', repositoryId: '101', odoo: { major: 19 } }
         mocks.repositoryChoices = [{ id: '101', fullName: 'example/odoo', path: '/projects/project-1/repositories/example/odoo', local: { state: 'ready' } }]
         mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'root-session' })
         render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
         fireEvent.change(screen.getByLabelText(/^Arbeitsort/), { target: { value: '' } })
-        expect(screen.getByLabelText('Entwicklungsmodus')).toHaveTextContent('eigene Auswahl statt Standard-Repository')
+        expect(screen.getByLabelText('Entwicklungsmodul')).toHaveTextContent('eigene Auswahl statt Standard-Repository')
         expect(screen.getByText(mocks.projectRoot)).toBeInTheDocument()
         await waitFor(() => expect(screen.getByTestId('create')).toBeEnabled())
         fireEvent.click(screen.getByTestId('create'))
@@ -471,7 +488,7 @@ describe('NewSession launch preferences', () => {
 
     it('reports an unavailable bound repository clearly and never falls back to the project folder', () => {
         mocks.evolved = true
-        mocks.developmentSettings = { mode: 'odoo', repositoryId: '999', odoo: { major: 20 } }
+        mocks.developmentSettings = { activeModuleId: 'builtin:odoo', repositoryId: '999', odoo: { major: 20 } }
         mocks.repositoryChoices = [{ id: '101', fullName: 'example/app', path: '/projects/project-1/repositories/example/app', local: { state: 'ready' } }]
         render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
         expect(screen.getByRole('alert')).toHaveTextContent('Das Standard-Repository ist nicht mehr freigegeben. Es wird nicht auf den Projektordner ausgewichen')
@@ -486,7 +503,7 @@ describe('NewSession launch preferences', () => {
         mocks.developmentSettings = null
         mocks.developmentPending = true
         const view = render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
-        expect(screen.getByRole('status')).toHaveTextContent('Entwicklungsmodus wird geladen')
+        expect(screen.getByRole('status')).toHaveTextContent('Entwicklungsmodul wird geladen')
         expect(screen.queryByTestId('create')).not.toBeInTheDocument()
         mocks.developmentPending = false
         mocks.developmentError = new Error('unavailable')

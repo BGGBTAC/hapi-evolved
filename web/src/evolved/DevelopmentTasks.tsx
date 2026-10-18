@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import type { DevelopmentContext, DevelopmentRecipe, DevelopmentTask, ProjectDevelopmentConfig } from '@hapi/protocol/evolvedDevelopment'
+import { DEVELOPMENT_MODULE_CONTRACT_VERSION, type DevelopmentModuleContext, type DevelopmentModuleRecipe, type DevelopmentModuleResolvedTask, type ProjectDevelopmentModuleConfig } from '@hapi/protocol/developmentModules'
 import { useEvolved } from './auth'
 import { canWriteProject, EvolvedApiError, projectPath } from './api'
 import { useProjectRepositories } from './repositoryCatalog'
@@ -13,12 +13,13 @@ import { consequentialEffects, describeDevelopmentError, effectLabels, kindLabel
 
 type CatalogAgent = { id: string; available: boolean }
 type AgentCatalog = { agents: CatalogAgent[]; machines?: { id: string; name: string }[] }
-type Start = { taskId: string; revision: number; operationId: string; machineId: string; provider: 'claude' | 'codex'; model: string; task: string; repositoryId: string }
+// The displayed module id/digest and config revision are frozen when the form opens; a retry sends exactly the same body.
+type Start = { taskId: string; revision: number; moduleId: string; moduleDigest: string; operationId: string; machineId: string; provider: 'claude' | 'codex'; model: string; task: string; repositoryId: string }
+type ModuleView = NonNullable<DevelopmentModuleContext['module']>
 
-export function DevelopmentTasks({ config, context, unsaved }: { config: ProjectDevelopmentConfig; context: DevelopmentContext; unsaved: boolean }) {
+export function DevelopmentTasks({ config, module, unsaved, onModuleChanged }: { config: ProjectDevelopmentModuleConfig; module: ModuleView; unsaved: boolean; onModuleChanged: () => void }) {
     const { api, me, project } = useEvolved()
     const navigate = useNavigate()
-    const pack = context.pack
     const writable = canWriteProject(project!.role)
     const [start, setStart] = useState<Start | null>(null)
     const [uncertain, setUncertain] = useState(false)
@@ -36,14 +37,13 @@ export function DevelopmentTasks({ config, context, unsaved }: { config: Project
     useEffect(() => {
         if (start && !start.machineId && machines[0]) setStart({ ...start, machineId: machines[0].id })
     }, [start, machines])
-    if (!pack) return null
-    const recipes = new Map(pack.recipes.map(recipe => [recipe.id, recipe]))
-    const task = start ? pack.tasks.find(item => item.id === start.taskId) : undefined
+    const recipes = new Map(module.recipes.map(recipe => [recipe.id, recipe]))
+    const task = start ? module.tasks.find(item => item.id === start.taskId) : undefined
     const boundRepository = config.settings.repositoryId
 
-    const open = (item: DevelopmentTask) => {
+    const open = (item: DevelopmentModuleResolvedTask) => {
         setError(null); setUncertain(false)
-        setStart({ taskId: item.id, revision: config.revision, operationId: crypto.randomUUID(), machineId: machines[0]?.id ?? '', provider: 'claude', model: '', task: item.defaultTask, repositoryId: boundRepository ?? '' })
+        setStart({ taskId: item.id, revision: config.revision, moduleId: module.id, moduleDigest: module.digest, operationId: crypto.randomUUID(), machineId: machines[0]?.id ?? '', provider: 'claude', model: '', task: item.defaultTask, repositoryId: boundRepository ?? '' })
     }
     const selected = start?.repositoryId ? repositories.current?.repositories.find(item => item.id === start.repositoryId) : undefined
     const repositoryReady = !start?.repositoryId || (selected?.local.state === 'ready' && selected.job?.state !== 'running' && repositories.current?.runner.status === 'ready')
@@ -55,6 +55,7 @@ export function DevelopmentTasks({ config, context, unsaved }: { config: Project
         : uncertain ? null
             : unsaved ? 'Speichere oder verwirf zuerst deine Änderungen. Aufgaben nutzen nur die gespeicherte Konfiguration.'
                 : start.revision !== config.revision ? 'Die Konfiguration hat sich geändert. Schließe das Formular und öffne die Aufgabe erneut.'
+                    : start.moduleId !== module.id || start.moduleDigest !== module.digest ? 'Die Modulfassung hat sich geändert. Schließe das Formular und öffne die Aufgabe erneut.'
                     : catalog.isPending ? 'Runner und Spezialisten werden geladen …'
                         : catalog.error ? describeDevelopmentError(catalog.error)
                             : !machines.length ? 'Kein ausführender Runner für dieses Projekt verbunden.'
@@ -79,7 +80,8 @@ export function DevelopmentTasks({ config, context, unsaved }: { config: Project
                 const result = await api.request<{ sessionId: string; operationId: string; acknowledged: 'persisted' }>(`${projectPath(project!.id)}/agent-catalog/${encodeURIComponent(task.specialist)}/start`, {
                     method: 'POST', signal: controller.signal,
                     body: { operationId: saved.operationId, machineId: saved.machineId, task: saved.task, provider: saved.provider, ...(saved.model.trim() ? { model: saved.model.trim() } : {}),
-                        ...(saved.repositoryId ? { repositoryId: saved.repositoryId } : {}), development: { taskId: saved.taskId, revision: saved.revision } },
+                        ...(saved.repositoryId ? { repositoryId: saved.repositoryId } : {}),
+                        development: { contractVersion: DEVELOPMENT_MODULE_CONTRACT_VERSION, moduleId: saved.moduleId, moduleDigest: saved.moduleDigest, taskId: saved.taskId, revision: saved.revision } },
                 })
                 if (result?.operationId !== saved.operationId || result.acknowledged !== 'persisted' || typeof result.sessionId !== 'string' || !result.sessionId) throw new Error('Startbestätigung konnte nicht geprüft werden.')
                 if (controller.signal.aborted) return
@@ -91,6 +93,8 @@ export function DevelopmentTasks({ config, context, unsaved }: { config: Project
                 const safe = !uncertain && failure instanceof EvolvedApiError && failure.reserved === false
                 setUncertain(!safe)
                 setError(describeDevelopmentError(failure))
+                // A refused start for a changed module or configuration refreshes the shown state; the open form keeps its old binding and stays blocked.
+                if (safe && failure instanceof EvolvedApiError && ['development_module_changed', 'development_module_unavailable', 'development_revision_conflict', 'agent_start_changed'].includes(failure.code ?? '')) onModuleChanged()
             } finally {
                 if (inFlight.current === controller) inFlight.current = null
                 if (!controller.signal.aborted) setBusy(false)
@@ -100,20 +104,21 @@ export function DevelopmentTasks({ config, context, unsaved }: { config: Project
     const locked = busy || uncertain
     return <section className="ev-panel" aria-labelledby="ev-dev-tasks">
         <h2 id="ev-dev-tasks">Aufgaben</h2>
-        <p className="ev-muted">Jede Aufgabe startet eine Agentensitzung mit passendem Spezialisten.</p>
+        <p className="ev-muted">Jede Aufgabe startet eine Agentensitzung mit passendem Spezialisten. Aufgaben aus {module.title}, Fassung {module.contentVersion}.</p>
         {!writable && <p className="ev-callout">Mit lesendem Zugang kannst du Aufgaben ansehen, aber nicht starten.</p>}
-        <div className="ev-dev-recipes">{pack.tasks.map(item => <article className="ev-dev-recipe" key={item.id} aria-labelledby={`ev-dev-task-${item.id}`}>
+        <div className="ev-dev-recipes">{module.tasks.map(item => <article className="ev-dev-recipe" key={item.id} aria-labelledby={`ev-dev-task-${item.id}`}>
             <header><strong id={`ev-dev-task-${item.id}`}>{item.title}</strong><span className="ev-dev-pill">{kindLabels[item.kind]}</span></header>
             <p>{item.description}</p>
             {item.effects.length > 0 && <div className="ev-dev-pills" aria-label="Auswirkungen">{item.effects.map(effect => <span key={effect} className="ev-dev-pill" data-tone={consequentialEffects.includes(effect) ? 'warn' : undefined}>{effectLabels[effect]}</span>)}</div>}
             {item.notes.length > 0 && <ul>{item.notes.map(note => <li key={note}>{note}</li>)}</ul>}
-            {item.recipeIds.length > 0 && <details><summary>Ablauf ansehen ({item.recipeIds.length})</summary>{item.recipeIds.map(id => recipes.get(id)).filter((recipe): recipe is DevelopmentRecipe => !!recipe).map(recipe => <RecipeDetails key={recipe.id} recipe={recipe} />)}</details>}
+            {item.recipeIds.length > 0 && <details><summary>Ablauf ansehen ({item.recipeIds.length})</summary>{item.recipeIds.map(id => recipes.get(id)).filter((recipe): recipe is DevelopmentModuleRecipe => !!recipe).map(recipe => <RecipeDetails key={recipe.id} recipe={recipe} />)}</details>}
             <button type="button" disabled={!writable || unsaved || locked || start?.taskId === item.id} onClick={() => open(item)}>{start?.taskId === item.id ? 'Formular geöffnet' : 'Sitzung vorbereiten'}</button>
         </article>)}</div>
-        {!pack.tasks.length && <p className="ev-muted">Für diese Version gibt es keine Aufgaben.</p>}
+        {!module.tasks.length && <p className="ev-muted">Für diese Fassung und die gespeicherten Einstellungen gibt es keine Aufgaben.</p>}
 
         {start && task && <form className="ev-dev-start" aria-label={`Sitzung starten: ${task.title}`} onSubmit={event => { event.preventDefault(); launch() }}>
             <h3>{task.title}</h3>
+            <p className="ev-muted">Modul: {module.title} · Fassung {module.contentVersion}{module.source.kind === 'plugin' ? ` · Plugin ${module.source.pluginName} ${module.source.pluginVersion}` : ''}</p>
             {task.effects.length > 0 && <p className="ev-muted">Auswirkungen: {task.effects.map(effect => effectLabels[effect]).join(' · ')}</p>}
             <RepositoryPicker choices={repositories} value={start.repositoryId} onChange={repositoryId => setStart({ ...start, repositoryId })} projectId={project!.id} disabled={locked}
                 allowProjectRoot={!boundRepository} defaultRepositoryId={boundRepository}
@@ -132,12 +137,12 @@ export function DevelopmentTasks({ config, context, unsaved }: { config: Project
                 {!uncertain && <button type="button" disabled={busy} onClick={() => { setStart(null); setError(null) }}>Abbrechen</button>}
             </div>
             {uncertain && <ConfirmButton label="Nach Sitzungsprüfung neuen Auftrag vorbereiten" detail="Ich habe die Projektsitzungen geprüft. Ein neuer Auftrag erhält eine neue Kennung und kann eine weitere Sitzung erzeugen." disabled={busy}
-                onConfirm={() => { setStart({ ...start, operationId: crypto.randomUUID(), revision: config.revision }); setUncertain(false); setError(null) }} />}
+                onConfirm={() => { setStart({ ...start, operationId: crypto.randomUUID(), revision: config.revision, moduleId: module.id, moduleDigest: module.digest }); setUncertain(false); setError(null) }} />}
         </form>}
     </section>
 }
 
-function RecipeDetails({ recipe }: { recipe: DevelopmentRecipe }) {
+function RecipeDetails({ recipe }: { recipe: DevelopmentModuleRecipe }) {
     return <div className="ev-stack" style={{ gap: 6, marginTop: 8 }}>
         <strong>{recipe.title}</strong><p>{recipe.summary}</p>
         <ol>{recipe.steps.map(step => <li key={step.title}><span>{step.title}: {step.detail}</span>{step.argv && <><br /><code>{step.argv.join(' ')}</code></>}</li>)}</ol>

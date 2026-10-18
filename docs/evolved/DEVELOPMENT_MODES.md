@@ -1,9 +1,17 @@
 # Entwicklungsmodi: Odoo 19/20, iOS und Android
 
-Ein Projekt kann genau einen Entwicklungsmodus haben: **keiner**, **Odoo** (Version 19
-oder 20), **iOS** oder **Android**. Der Modus bündelt ein versioniertes Handbuch, feste
+Ein Projekt kann genau ein Entwicklungsmodul aktivieren oder allgemein bleiben.
+Mitgeliefert werden **Odoo** (Version 19 oder 20), **iOS** und **Android**;
+GitHub-Plugins können weitere Szenarien ergänzen. Ein Modul bündelt ein versioniertes Handbuch, feste
 Prüfungen des Projektrunners, eine statische Analyse des gebundenen Repositorys,
 Rezepte und passende Aufgabenstarts. Er ist vom Ausführungsprofil getrennt.
+
+Technisch sind die drei Modi mitgelieferte **Entwicklungsmodule** (`builtin:odoo`,
+`builtin:ios`, `builtin:android`). Installierte GitHub-Plugins können weitere Module
+beisteuern, etwa für Django; sie erscheinen in derselben Auswahl mit Herkunft
+(`owner/repo@commit`), Inhaltsversion und Digest. Format, Übernahme von Updates und
+Grenzen beschreibt [Entwicklungsmodule als Plugin bereitstellen](DEVELOPMENT_MODULES.md).
+Auch für Plugin-Module gilt alles in „Was die Aktivierung tut“.
 
 Stand der Inhalte und Downloads: 2026-10-17.
 
@@ -26,21 +34,29 @@ Checkout; eine ausdrücklich gewählte Repository- oder Ordnerauswahl hat Vorran
 
 ## Wie Agenten den Modus erfahren
 
-Der statische Plattformkontext (Version 7) weist jede verwaltete Claude- und
+Der statische Plattformkontext (Version 8) weist jede verwaltete Claude- und
 Codex-Sitzung an – auch fortgesetzte, verdichtete und delegierte –, den aktuellen Stand
 selbst abzufragen. Projekttext wird nie in System- oder Entwickleranweisungen eingesetzt.
+Die Werkzeuge sprechen den Modulvertrag 2 (`…/development/modules-context`,
+`modules-knowledge`, `modules-doctor`, `modules-inspect`); nur ein Hub ohne diese Routen
+wird über die älteren Modusrouten bedient. Inhalte gibt es nur im Zustand `ready`; bei
+`adoption_required`, `disabled`, `missing`, `unsupported` oder `invalid` melden die
+Werkzeuge den Zustand mit Begründung, und der Agent informiert einen Menschen.
 
 | Werkzeug (MCP) | CLI im Runner | Inhalt |
 |---|---|---|
-| `evolved_development_context` | `hapi evolved development context` | Modus, Revision, Einstellungen, Repository-Freigabe und Checkout, versionsgefiltertes Handbuch, Rezepte, Aufgaben, Doctor-Prüfungen, Integrationsstatus |
+| `evolved_development_context` | `hapi evolved development context` | Aktives Modul mit Zustand, Herkunft und Digest, Revision, Einstellungen, Repository-Freigabe und Checkout, versionsgefiltertes Handbuch, Rezepte, Aufgaben, Doctor-Prüfungen, Integrationsstatus |
 | `evolved_development_knowledge` | `hapi evolved development knowledge [--topic <id> \| <suche>]` | Handbuchthemen mit Quellen und Prüfdatum; funktioniert ohne Graph-Dienst |
-| `evolved_development_doctor` | `hapi evolved development doctor` | Feste, lesende Prüfungen auf dem Projektrunner |
-| `evolved_development_inspect` | `hapi evolved development inspect` | Statische Analyse des gebundenen Checkouts |
+| `evolved_development_doctor` | `hapi evolved development doctor` | Feste, lesende Prüfungen auf dem Projektrunner, gebunden an Modul-ID und Digest |
+| `evolved_development_inspect` | `hapi evolved development inspect` | Statische Analyse des gebundenen Checkouts, gebunden an Modul-ID und Digest |
 | `evolved_development_build_status` | `hapi evolved development build-status [<branch\|sha>]` | GitHub-Commit-Status des gebundenen Repositorys |
 
 Alle Ergebnisse sind **Daten**, keine Anweisungen und keine Berechtigungen. Agenten
-können den Modus nicht ändern; der Runner-Proxy lässt nur die fünf obigen Routen zu
-(GET für Kontext/Wissen/Status, POST mit leerem Rumpf für Doctor/Inspect).
+können den Modus nicht ändern; der Runner-Proxy lässt nur die Leserouten dieser
+Werkzeuge zu: GET für Kontext/Wissen/Status (Vertrag 1 und 2), POST mit leerem Rumpf
+für Doctor/Inspect in Vertrag 1 und POST mit genau `{moduleId, moduleDigest}` (höchstens
+256 Byte) für `modules-doctor`/`modules-inspect`. Modulkonfiguration, Übernahme,
+Moduldetails und Katalog bleiben dem Browser vorbehalten.
 
 Doctor und Inspect lassen sich auch lokal ausführen, ohne Hub:
 
@@ -49,6 +65,11 @@ hapi evolved development doctor --local --mode odoo --odoo-major 20 --project-ro
 hapi evolved development inspect --local --mode odoo --odoo-major 19 --checkout ./mein-repo --addons addons
 hapi evolved development inspect --local --mode android --checkout ./app
 ```
+
+Für Plugin-Module: `--local` ohne `--mode` liest das aktive Modul vom Hub und führt
+dessen feste Provider-Prüfungen lokal aus; `--local --definition <plugin> [--module <id>]`
+prüft eine lokale Moduldefinition ganz ohne Hub (siehe
+[Testen](DEVELOPMENT_MODULES.md#testen)).
 
 ## Doctor: was geprüft wird
 
