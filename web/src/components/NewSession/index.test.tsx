@@ -21,7 +21,7 @@ const mocks = vi.hoisted(() => ({
     evolved: false,
     projectId: 'project-1',
     projectRoot: '/projects/project-1',
-    repositoryChoices: [] as Array<{ id: string; fullName: string; path: string; local: { state: string }; job?: { state: string } }>,
+    repositoryChoices: [] as Array<{ id: string; fullName: string; path: string; local: { state: string; message?: string }; job?: { state: string } }>,
     recentPaths: [] as string[],
     lastMachineId: null as string | null,
     pathProbes: [] as string[][],
@@ -455,6 +455,19 @@ describe('NewSession launch preferences', () => {
         fireEvent.click(screen.getByTestId('create'))
         await waitFor(() => expect(mocks.spawnSession).toHaveBeenCalled())
         expect(mocks.spawnSession.mock.calls[0][0]).toMatchObject({ repositoryId: '101', directory: undefined })
+    })
+
+    it('shows why the bound Odoo checkout is blocked without starting in the project folder', () => {
+        mocks.evolved = true
+        mocks.developmentSettings = { activeModuleId: 'builtin:odoo', repositoryId: '101', odoo: { major: 20 } }
+        const message = 'Die lokale Git-Konfiguration wird für automatische Aktionen nicht unterstützt. Bitte mit Git prüfen.'
+        mocks.repositoryChoices = [{ id: '101', fullName: 'example/odoo', path: '/projects/project-1/repositories/example/odoo', local: { state: 'blocked', message } }]
+        render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        expect(screen.getByLabelText(/^Arbeitsort/)).toHaveValue('101')
+        expect(screen.getByText(message, { exact: false })).toHaveTextContent('Es wird kein anderer Ordner gewählt.')
+        expect(screen.getByTestId('create')).toBeDisabled()
+        expect(mocks.spawnSession).not.toHaveBeenCalled()
+        expect(mocks.pathProbes.flat()).not.toContain('/projects/project-1')
     })
 
     it('keeps the bound default repository while a plugin module waits for adoption and names that state', async () => {

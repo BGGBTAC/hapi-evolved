@@ -39,11 +39,18 @@ Vault; connection responses and agent requests never return it.
 In **GitHub → Freigegebene Repositorys**, select **Ins Projekt klonen**. HAPI
 uses the saved repository identity and creates
 `<project folder>/repositories/<owner>/<repository>` automatically. Each
-repository has its own directory. A session defaults to the project folder;
-explicitly select a granted checkout to start directly inside that repository.
-The repository card shows its exact checkout path.
+repository has its own directory. A session defaults to the repository bound
+under **Entwicklung**, or to the project folder when none is bound. You can
+explicitly select another granted checkout or the project folder. The repository
+card shows its exact checkout path. If a checkout is blocked, the chat's workspace
+picker shows the reason; it does not silently choose another folder.
 
-After cloning, **Aktualisieren** fetches and fast-forwards the current branch.
+After cloning, **Aktualisieren** fetches the current branch's configured upstream
+on `origin` and fast-forwards the current branch. For example, a feature branch
+tracking `origin/main` updates from `main`. Without a configured merge target,
+the existing behavior uses the same-named branch on `origin`. Ordinary feature
+branches tracking a differently named branch do not block checkout inspection
+or new chats, even when those feature branches are inactive.
 It does not reset, clean, force-push, rebase or discard local commits. Dirty
 checkouts, detached HEADs, divergent history, conflicting directories and
 unsupported local Git configuration stop with an explanation. Resolve these
