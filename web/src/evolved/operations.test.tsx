@@ -5,13 +5,15 @@ import { AutomationPanel } from './Automation'
 import { RunnerPanel } from './Runner'
 import { PreviewsPanel } from './Previews'
 import { ProjectsPanel } from './ProjectsTeam'
-import type { ExecutionProfile, ProjectRole } from './api'
+import { EvolvedApiError, type ExecutionProfile, type ProjectRole } from './api'
 
 const context = vi.hoisted(() => ({ api: { request: vi.fn(), baseUrl: '' }, project: { id: 'project-1', role: 'admin' as ProjectRole, profile: 'restricted' as ExecutionProfile, rootPath: '/work/project' }, me: { user: { id: 'user-1', isAdmin: false }, accessibleProjects: [] }, refresh: vi.fn(), selectProject: vi.fn() }))
 vi.mock('./auth', () => ({ useEvolved: () => context }))
 // Module choice during creation has its own tests (ProjectsTeam.test.tsx); here it stays a general project.
-vi.mock('./DevelopmentModuleCreation', () => ({ useDevelopmentCreation: () => ({ blocker: null, development: () => undefined, reset: () => {}, showServerIssues: () => {}, handleFailure: () => {} }), DevelopmentCreationFields: () => null }))
+vi.mock('./DevelopmentModuleCreation', () => ({ useDevelopmentCreation: () => ({ blocker: null, development: () => undefined, intent: () => null, deferred: false, reset: () => {}, showServerIssues: () => {}, handleFailure: () => {} }), DevelopmentCreationFields: () => null }))
 beforeEach(() => { context.project.role = 'admin'; context.project.profile = 'restricted'; context.me.user.id = 'user-1'; context.me.user.isAdmin = false; context.api.request.mockReset(); context.refresh.mockReset() })
+/** Teams for the form; a created project carries its returned id (the hub's 201 body). */
+const creationResponses = () => context.api.request.mockImplementation(async (path: string, options?: { method?: string }) => path === '/projects' && options?.method === 'POST' ? { project: { id: 'created-1' } } : { teams: [{ id: 'team-1', name: 'Team', role: 'admin' }] })
 function mount(component: React.ReactNode) {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={client}>{component}</QueryClientProvider>)
@@ -20,7 +22,7 @@ function mount(component: React.ReactNode) {
 describe('Operator access', () => {
     it.each([false, true])('creates a project with an automatic directory by default (system admin: %s)', async (isAdmin) => {
         context.me.user.isAdmin = isAdmin
-        context.api.request.mockResolvedValue({ teams: [{ id: 'team-1', name: 'Team', role: 'admin' }] })
+        creationResponses()
         mount(<ProjectsPanel />)
         fireEvent.change(await screen.findByLabelText('Projektname'), { target: { value: 'Automatic project' } })
         expect(screen.queryByLabelText('Projektordner auf dem Server')).not.toBeInTheDocument()
@@ -32,7 +34,7 @@ describe('Operator access', () => {
     })
     it('requires a nonempty manual path, submits a typed path and resets after success', async () => {
         context.me.user.isAdmin = true
-        context.api.request.mockResolvedValue({ teams: [{ id: 'team-1', name: 'Team', role: 'admin' }] })
+        creationResponses()
         mount(<ProjectsPanel />)
         fireEvent.change(await screen.findByLabelText('Projektname'), { target: { value: 'Repository' } })
         fireEvent.click(screen.getByLabelText('Ordner manuell festlegen oder wählen'))
@@ -48,7 +50,7 @@ describe('Operator access', () => {
     })
     it('discards the manual path when returning to automatic creation', async () => {
         context.me.user.isAdmin = true
-        context.api.request.mockResolvedValue({ teams: [{ id: 'team-1', name: 'Team', role: 'admin' }] })
+        creationResponses()
         mount(<ProjectsPanel />)
         fireEvent.change(await screen.findByLabelText('Projektname'), { target: { value: 'Automatic again' } })
         fireEvent.click(screen.getByLabelText('Ordner manuell festlegen oder wählen'))
@@ -155,10 +157,11 @@ describe('Operator access', () => {
         expect(screen.getByLabelText('Projektname')).toBeDisabled()
         expect(screen.getByLabelText('Ordner manuell festlegen oder wählen')).toBeDisabled()
         expect(context.api.request.mock.calls.filter(([path]) => path === '/projects')).toHaveLength(1)
-        rejectCreate(new Error('Projekt konnte nicht angelegt werden'))
+        // A definite refusal (4xx) proves nothing was created; the input stays and a new attempt is allowed.
+        rejectCreate(new EvolvedApiError('Projekt konnte nicht angelegt werden', 400, 'invalid_name'))
         expect(await screen.findByRole('alert')).toHaveTextContent('Projekt konnte nicht angelegt werden')
         expect(screen.getByLabelText('Projektname')).toHaveValue('Retry me')
-        context.api.request.mockResolvedValue({ project: {} })
+        context.api.request.mockResolvedValue({ project: { id: 'created-2' } })
         fireEvent.click(button)
         await waitFor(() => expect(screen.getByLabelText('Projektname')).toHaveValue(''))
     })

@@ -1,6 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { readSetupIntent } from './setupIntent'
 import { EvolvedApiError, type EvolvedProject } from './api'
 import { builtinModule, flutterDefinition, pluginModule, type FixtureModule } from '../test/developmentModules'
 import { ProjectsPanel } from './ProjectsTeam'
@@ -21,12 +23,13 @@ function creationServer(plugins: FixtureModule[] = [], onCreate?: () => unknown,
 }
 const postedProject = () => context.api.request.mock.calls.find(([path, options]) => path === '/projects' && options?.method === 'POST')?.[1].body
 const projects: EvolvedProject[] = ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'].map((name, index) => ({ id: `project-${index}`, teamId: 'team-1', name, role: 'viewer', profile: 'restricted', rootPath: `/work/${name}` }))
-function mount(onSelectProject?: (id: string) => void) {
+function mount(onSelectProject?: (id: string) => void, onProjectCreated?: (id: string) => void, strict = false) {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const view = render(<QueryClientProvider client={client}><ProjectsPanel onSelectProject={onSelectProject} /></QueryClientProvider>)
-    return { ...view, rerenderPanel: () => view.rerender(<QueryClientProvider client={client}><ProjectsPanel onSelectProject={onSelectProject} /></QueryClientProvider>) }
+    const tree = () => { const panel = <QueryClientProvider client={client}><ProjectsPanel onSelectProject={onSelectProject} onProjectCreated={onProjectCreated} /></QueryClientProvider>; return strict ? <StrictMode>{panel}</StrictMode> : panel }
+    const view = render(tree())
+    return { ...view, rerenderPanel: () => view.rerender(tree()) }
 }
-beforeEach(() => { context.me.user.id = 'user-1'; context.me.accessibleProjects = [...projects]; context.project = projects[0]; context.api.request.mockReset().mockResolvedValue({ teams: [] }); context.selectProject.mockReset(); context.refresh.mockReset().mockResolvedValue(undefined) })
+beforeEach(() => { localStorage.clear(); context.me.user.id = 'user-1'; context.me.accessibleProjects = [...projects]; context.project = projects[0]; context.api.request.mockReset().mockResolvedValue({ teams: [] }); context.selectProject.mockReset(); context.refresh.mockReset().mockResolvedValue(undefined) })
 describe('project overview', () => {
     it('offers name search only when useful and restores the full list after an empty result', async () => {
         mount()
@@ -136,14 +139,22 @@ describe('project overview', () => {
         expect(screen.getByLabelText(/^Hinweis für Übergaben/)).toHaveAttribute('aria-invalid', 'true')
     })
 
-    it('explains that a module with a required repository field is chosen after creation', async () => {
-        const flutter = pluginModule(flutterDefinition({ fields: [{ id: 'assets', kind: 'repository', label: 'Asset-Repository', required: true }], recipes: [], tasks: [], inspect: null }))
-        creationServer([flutter])
-        mount()
+    it('creates a module with a required repository field in two phases: general project plus a browser-local draft', async () => {
+        const flutter = pluginModule(flutterDefinition({ fields: [{ id: 'assets', kind: 'repository', label: 'Asset-Repository', required: true }, { id: 'debug', kind: 'boolean', label: 'Debug', default: false }], recipes: [], tasks: [], inspect: null }))
+        creationServer([flutter], () => ({ project: { id: 'created-app' } }))
+        const entered = vi.fn()
+        context.refresh.mockImplementation(async () => { context.me.accessibleProjects = [...projects, { ...projects[0], id: 'created-app', name: 'App', role: 'admin' }] })
+        mount(undefined, entered)
         fireEvent.change(await screen.findByLabelText('Projektname'), { target: { value: 'App' } })
         fireEvent.click(await screen.findByRole('radio', { name: /^Flutter/ }))
-        expect(await screen.findByText(/braucht ein Repository, das ein neues Projekt noch nicht hat/)).toBeInTheDocument()
-        expect(screen.getByRole('button', { name: 'Projekt anlegen' })).toBeDisabled()
+        expect(await screen.findByText(/Zweistufige Einrichtung/)).toBeInTheDocument()
+        fireEvent.click(await screen.findByRole('button', { name: 'Allgemein anlegen und Modul vormerken' }))
+        await waitFor(() => expect(entered).toHaveBeenCalledWith('created-app'))
+        // No module is activated and no repository is invented: the project is created general.
+        expect(postedProject()).not.toHaveProperty('development')
+        expect(readSetupIntent('https://hub.example', 'user-1', 'created-app')).toMatchObject({ moduleId: flutter.entry.id, moduleDigest: flutter.entry.digest, values: { assets: null, debug: false }, repositoryId: null })
+        expect(readSetupIntent('https://hub.example', 'user-1', projects[0].id)).toBeNull()
+        expect(context.selectProject).not.toHaveBeenCalled()
     })
 
     it('keeps general creation possible and honest when the module catalog cannot be loaded', async () => {
@@ -348,5 +359,103 @@ describe('project creation after a plugin module changed', () => {
         expect(await screen.findByText(/Relativer Pfad im Repository/)).toBeInTheDocument()
         expect(screen.getByLabelText(/^App-Verzeichnis/)).toHaveAttribute('aria-invalid', 'true')
         expect(screen.queryByText('Modul nicht mehr aktuell.')).not.toBeInTheDocument()
+    })
+})
+
+describe('entering a created project', () => {
+    const created = { ...projects[0], id: 'created-1', name: 'Neu', role: 'admin' as const }
+    const listsCreated = () => context.refresh.mockImplementation(async () => { context.me.accessibleProjects = [...projects, created] })
+    async function submit(name = 'Neu') {
+        fireEvent.change(await screen.findByLabelText('Projektname'), { target: { value: name } })
+        fireEvent.click(screen.getByRole('button', { name: 'Projekt anlegen' }))
+    }
+    const posts = () => context.api.request.mock.calls.filter(([path, options]) => path === '/projects' && options?.method === 'POST')
+
+    it('enters exactly the returned project after the refreshed context lists it, also under StrictMode', async () => {
+        creationServer([], () => ({ project: { id: 'created-1' } }))
+        listsCreated()
+        const entered = vi.fn()
+        mount(undefined, entered, true)
+        await submit()
+        await waitFor(() => expect(entered).toHaveBeenCalledWith('created-1'))
+        expect(entered).toHaveBeenCalledTimes(1)
+        expect(context.refresh).toHaveBeenCalledTimes(1)
+        expect(context.selectProject).not.toHaveBeenCalled()
+        expect(posts()).toHaveLength(1)
+    })
+
+    it('hands over to the workspace even when the refresh remounts this panel (first project), exactly once', async () => {
+        creationServer([], () => ({ project: { id: 'created-1' } }))
+        let finishRefresh!: () => void
+        context.refresh.mockImplementation(() => new Promise<void>(resolve => { finishRefresh = () => { context.me.accessibleProjects = [...projects, created]; resolve() } }))
+        const entered = vi.fn()
+        const view = mount(undefined, entered)
+        await submit()
+        await waitFor(() => expect(context.refresh).toHaveBeenCalledTimes(1))
+        // The refreshed context selects the new project and the workspace remounts its content before the refresh settles.
+        view.unmount()
+        await act(async () => finishRefresh())
+        expect(entered).toHaveBeenCalledTimes(1)
+        expect(entered).toHaveBeenCalledWith('created-1')
+        expect(posts()).toHaveLength(1)
+    })
+
+    it('keeps a created project when the account refresh fails and never creates it again', async () => {
+        creationServer([], () => ({ project: { id: 'created-1' } }))
+        context.refresh.mockRejectedValueOnce(new EvolvedApiError('down', 503))
+        const entered = vi.fn()
+        mount(undefined, entered)
+        await submit()
+        expect(await screen.findByText(/das Projekt besteht trotzdem und wird nicht erneut angelegt/)).toBeInTheDocument()
+        expect(entered).not.toHaveBeenCalled()
+        expect(screen.getByRole('button', { name: 'Projekt anlegen' })).toBeDisabled()
+        listsCreated()
+        fireEvent.click(screen.getByRole('button', { name: 'Zugang aktualisieren und Projekt öffnen' }))
+        await waitFor(() => expect(entered).toHaveBeenCalledWith('created-1'))
+        expect(posts()).toHaveLength(1)
+    })
+
+    it('treats a lost acknowledgement as uncertain: no claim of absence, no guessed project, no automatic resubmission', async () => {
+        const flutter = pluginModule(flutterDefinition({ fields: [{ id: 'assets', kind: 'repository', label: 'Asset-Repository', required: true }], recipes: [], tasks: [], inspect: null }))
+        let listed: typeof projects = []
+        creationServer([flutter], () => { throw new TypeError('Failed to fetch') })
+        const base = context.api.request.getMockImplementation()!
+        context.api.request.mockImplementation(async (path: string, options?: { method?: string }) => path === '/projects' && !options?.method ? { projects: listed } : base(path, options))
+        const entered = vi.fn()
+        mount(undefined, entered)
+        fireEvent.change(await screen.findByLabelText('Projektname'), { target: { value: 'Neu' } })
+        fireEvent.click(await screen.findByRole('radio', { name: /^Flutter/ }))
+        fireEvent.click(await screen.findByRole('button', { name: 'Allgemein anlegen und Modul vormerken' }))
+        expect(await screen.findByText(/Unklar, ob „Neu“ angelegt wurde/)).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Allgemein anlegen und Modul vormerken' })).toBeDisabled()
+        // An empty list does not prove failure; the original request may still be running.
+        listed = [...projects]
+        fireEvent.click(screen.getByRole('button', { name: 'Projektliste prüfen' }))
+        expect(await screen.findByText(/Das beweist nicht, dass nichts angelegt wurde/)).toBeInTheDocument()
+        expect(screen.queryByText(/wurde nicht angelegt/)).not.toBeInTheDocument()
+        // A same-named project could come from another tab: it is offered, never selected by itself, and gets no draft.
+        listed = [...projects, created]
+        fireEvent.click(screen.getByRole('button', { name: 'Projektliste prüfen' }))
+        const open = await screen.findByRole('button', { name: 'Dieses Projekt öffnen' })
+        expect(entered).not.toHaveBeenCalled()
+        listsCreated()
+        fireEvent.click(open)
+        await waitFor(() => expect(entered).toHaveBeenCalledWith('created-1'))
+        expect(readSetupIntent('https://hub.example', 'user-1', 'created-1')).toBeNull()
+        expect(posts()).toHaveLength(1)
+    })
+
+    it('allows another attempt after an uncertain creation only after an explicit confirmation', async () => {
+        creationServer([], () => { throw new EvolvedApiError('gateway', 502) })
+        mount(undefined, vi.fn())
+        await submit()
+        expect(await screen.findByText(/Unklar, ob „Neu“ angelegt wurde/)).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Projekt anlegen' })).toBeDisabled()
+        expect(screen.getByLabelText('Projektname')).toHaveValue('Neu')
+        fireEvent.click(screen.getByRole('button', { name: 'Eingaben behalten und Anlage freigeben' }))
+        expect(screen.getByText(/Ein erneutes Anlegen kann ein zweites Projekt erzeugen/)).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Bestätigen' }))
+        expect(screen.getByRole('button', { name: 'Projekt anlegen' })).toBeEnabled()
+        expect(posts()).toHaveLength(1)
     })
 })

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
     DEVELOPMENT_MODULE_LIMITS, DevelopmentModuleDefinitionSchema, DevelopmentModuleSettingsSchema, DevelopmentModuleViewSchema, applicableModuleItems, developmentModuleDefaults,
-    developmentModuleSupportIssues, developmentSettingsToModuleSettings, moduleSettingsToDevelopmentSettings, parseDevelopmentModuleId, validateDevelopmentModuleValues,
+    developmentModuleSupportIssues, developmentSettingsToModuleSettings, developmentTaskEffects, developmentTaskRequiresWritableProfile, moduleSettingsToDevelopmentSettings, parseDevelopmentModuleId, validateDevelopmentModuleValues,
     type DevelopmentModuleDefinitionInput, type DevelopmentModuleField,
 } from './developmentModules'
 import { builtinDevelopmentModuleView } from './developmentModuleBuiltins'
@@ -182,5 +182,46 @@ describe('byte budgets keep valid modules startable and editable', () => {
         expect(result.ok).toBe(false)
         if (!result.ok) expect(result.issues[0]).toMatchObject({ field: '' })
         expect(validateDevelopmentModuleValues(fields, { a: items('a') }).ok).toBe(true)
+    })
+})
+
+describe('effective task effects', () => {
+    test('recipe effects belong to the task; only consequential effects need a writable profile', () => {
+        const odoo = applicablePack(defaultDevelopmentSettings('odoo'))!
+        const setup = odoo.tasks.find(task => task.id === 'odoo-setup-runtime')!
+        const effects = developmentTaskEffects(setup, odoo.recipes)
+        for (const recipe of odoo.recipes.filter(item => setup.recipeIds.includes(item.id))) for (const effect of recipe.effects) expect(effects).toContain(effect)
+        expect(developmentTaskRequiresWritableProfile(effects)).toBe(true)
+        // A task without own effects inherits them from its recipe; unrelated recipes do not count.
+        expect(developmentTaskEffects({ effects: [], recipeIds: ['r'] }, [{ id: 'r', effects: ['installs_in_project'] }, { id: 'x', effects: ['remote_cost'] }])).toEqual(['installs_in_project'])
+        expect(developmentTaskRequiresWritableProfile(developmentTaskEffects({ effects: ['reads_repository'], recipeIds: ['r'] }, [{ id: 'r', effects: ['manual_handoff'] }]))).toBe(false)
+        const review = odoo.tasks.find(task => task.id === 'odoo-sh-build')!
+        expect(developmentTaskRequiresWritableProfile(developmentTaskEffects(review, odoo.recipes))).toBe(false)
+    })
+})
+
+describe('Odoo.sh build task names no default stage', () => {
+    test('the task and its recipe require an explicitly named configured stage or ref and ask otherwise, for every hosting', () => {
+        for (const hosting of ['odoo_sh', 'local', 'self_hosted'] as const) {
+            const odoo = applicablePack({ ...defaultDevelopmentSettings('odoo'), odoo: { ...defaultOdooSettings(20), hosting } })!
+            const task = odoo.tasks.find(item => item.id === 'odoo-sh-build')!
+            // Still offered (reusable with an explicit ref), read-only, no new permission requirement.
+            expect(task).toBeDefined()
+            expect(developmentTaskRequiresWritableProfile(developmentTaskEffects(task, odoo.recipes))).toBe(false)
+            const recipe = odoo.recipes.find(item => item.id === 'odoo-sh-diagnose')!
+            for (const text of [task.defaultTask, task.description, ...recipe.steps.map(step => step.detail)]) {
+                // No preselected stage: neither a concrete environment parameter nor "staging/production" as the default.
+                expect(text).not.toMatch(/environment=(staging|production)/)
+                expect(text).not.toMatch(/(?:of|for) the (?:staging|production) environment/i)
+            }
+            const target = recipe.steps.find(step => step.title === 'Choose the target')!.detail
+            for (const text of [task.defaultTask, target]) {
+                expect(text).toMatch(/staging or production/)
+                expect(text).toMatch(/ref/)
+                expect(text).toMatch(/ask/)
+                expect(text).toMatch(/unavailable/)
+                expect(text).toMatch(/never (?:choose|assume)/)
+            }
+        }
     })
 })

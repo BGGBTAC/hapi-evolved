@@ -4,7 +4,7 @@ import {
     defaultDevelopmentSettings,
     DevelopmentContextSchema,
     DevelopmentSettingsSchema,
-    OdooMajorSchema,
+    OdooMajorSchema, OdooShEnvironmentIdSchema,
     RepoSubdirectorySchema,
     SpecializedDevelopmentModeSchema,
     type DevelopmentSettings,
@@ -31,7 +31,7 @@ import { runnerDevelopmentProvider } from './providers'
 
 export const DEVELOPMENT_USAGE = `hapi evolved development context
 hapi evolved development knowledge [--topic <id> | <search words>] [--limit <1-20>]
-hapi evolved development build-status [<branch-or-sha>]
+hapi evolved development build-status [<branch-or-sha>] [--environment staging|production]   (at least one; nothing is inferred)
 hapi evolved development doctor [--local [--mode odoo|ios|android] [--odoo-major 19|20] [--project-root <dir>] [--checkout <dir>]]
 hapi evolved development inspect [--local --checkout <dir> [--mode odoo|ios|android] [--odoo-major 19|20] [--addons <path,...>]]
 hapi evolved development doctor --local --definition <plugin-dir-or-manifest> [--module <id>] [--project-root <dir>] [--checkout <dir>]
@@ -156,7 +156,12 @@ export async function runDevelopmentCommand(args: string[], client: () => Evolve
         if (typeof flags.topic === 'string' && words.length) throw new Error('Use either --topic or search words')
         return developmentKnowledge(client(), { topic: typeof flags.topic === 'string' ? flags.topic : undefined, q: words.length ? words.join(' ') : undefined, limit })
     }
-    if (command === 'build-status' && rest.length <= 1) return client().developmentBuildStatus(rest[0])
+    if (command === 'build-status') {
+        const { flags, rest: refs } = parseFlags(rest, ['environment'])
+        if (refs.length > 1 || flags.environment === true) throw new Error('Usage: hapi evolved development build-status [<branch-or-sha>] [--environment staging|production]')
+        const environment = typeof flags.environment === 'string' ? OdooShEnvironmentIdSchema.parse(flags.environment) : undefined
+        return client().developmentBuildStatus({ ref: refs[0], environment })
+    }
     if (command === 'doctor' || command === 'inspect') {
         const { flags, rest: extra } = parseFlags(rest, ['local', 'mode', 'odoo-major', 'project-root', 'checkout', 'addons', 'definition', 'module', 'subdirectory'])
         if (extra.length) throw new Error('Unexpected argument. Run hapi evolved development --help')

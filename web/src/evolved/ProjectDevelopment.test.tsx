@@ -131,10 +131,10 @@ describe('development module configuration (builtins)', () => {
     it('keeps the save button disabled with a visible reason for invalid input', async () => {
         server.config = config(2, odoo(20))
         mount()
-        const branch = await screen.findByLabelText('Entwicklungs-Branch (optional)')
+        const branch = await screen.findByLabelText(/^Arbeitsbranch für Sitzungen/)
         fireEvent.change(branch, { target: { value: 'feature..bad' } })
         expect(saveButton()).toBeDisabled()
-        expect(screen.getByText('Entwicklungs-Branch: ist kein gültiger Branch-Name.')).toBeInTheDocument()
+        expect(screen.getByText('Arbeitsbranch: ist kein gültiger Branch-Name.')).toBeInTheDocument()
         expect(branch).toHaveAttribute('aria-invalid', 'true')
         fireEvent.change(branch, { target: { value: 'dev-feature' } })
         expect(saveButton()).toBeEnabled()
@@ -179,12 +179,12 @@ describe('development module configuration (builtins)', () => {
             server.config = moduleConfig(6, stored(body.settings), catalogEntries()); return { config: server.config }
         }
         mount()
-        fireEvent.change(await screen.findByLabelText('Entwicklungs-Branch (optional)'), { target: { value: 'my-branch' } })
+        fireEvent.change(await screen.findByLabelText(/^Arbeitsbranch für Sitzungen/), { target: { value: 'my-branch' } })
         fireEvent.click(saveButton())
         const alert = await screen.findByRole('alert')
         expect(alert).toHaveTextContent('Die Konfiguration wurde inzwischen geändert (Revision 5 von Alex')
         expect(alert).toHaveTextContent('Dein Entwurf wurde nicht gespeichert und ist erhalten.')
-        expect(screen.getByLabelText('Entwicklungs-Branch (optional)')).toHaveValue('my-branch')
+        expect(screen.getByLabelText(/^Arbeitsbranch für Sitzungen/)).toHaveValue('my-branch')
         expect(saveButton()).toBeDisabled()
         fireEvent.click(within(alert).getByRole('button', { name: 'Entwurf behalten und auf Revision 5 aufbauen' }))
         expect(saveButton()).toBeEnabled()
@@ -232,10 +232,10 @@ describe('development module configuration (builtins)', () => {
         const newer = config(5, odoo(19, { repositoryId: null }))
         server.put = () => { throw new EvolvedApiError('stale', 409, 'development_revision_conflict', false, { error: 'stale', code: 'development_revision_conflict', config: newer }) }
         mount()
-        fireEvent.change(await screen.findByLabelText('Entwicklungs-Branch (optional)'), { target: { value: 'mine' } })
+        fireEvent.change(await screen.findByLabelText(/^Arbeitsbranch für Sitzungen/), { target: { value: 'mine' } })
         fireEvent.click(saveButton())
         fireEvent.click(await screen.findByRole('button', { name: 'Gespeicherte Fassung übernehmen (Entwurf verwerfen)' }))
-        expect(screen.getByLabelText('Entwicklungs-Branch (optional)')).toHaveValue('')
+        expect(screen.getByLabelText(/^Arbeitsbranch für Sitzungen/)).toHaveValue('')
         expect(screen.getByRole('radio', { name: '19.0' })).toBeChecked()
         expect(screen.queryByText('Ungespeicherter Entwurf')).not.toBeInTheDocument()
     })
@@ -272,7 +272,7 @@ describe('development module configuration (builtins)', () => {
     it('keeps the dirty draft and last validated config when a background refresh fails, then recovers', async () => {
         server.config = config(4, odoo(20))
         mount()
-        const branch = await screen.findByLabelText('Entwicklungs-Branch (optional)')
+        const branch = await screen.findByLabelText(/^Arbeitsbranch für Sitzungen/)
         fireEvent.change(branch, { target: { value: 'unsaved-work' } })
         state.request.mockImplementation(async (path: string, options?: Options) => {
             if (path === '/projects/p1/development/modules' && !options?.method) throw new EvolvedApiError('upstream', 503)
@@ -282,28 +282,28 @@ describe('development module configuration (builtins)', () => {
         const alert = await screen.findByRole('alert')
         expect(alert).toHaveTextContent('Aktualisieren fehlgeschlagen: Der Dienst ist vorübergehend nicht verfügbar.')
         expect(alert).toHaveTextContent('(Revision 4); dein Entwurf bleibt erhalten')
-        expect(screen.getByLabelText('Entwicklungs-Branch (optional)')).toHaveValue('unsaved-work')
+        expect(screen.getByLabelText(/^Arbeitsbranch für Sitzungen/)).toHaveValue('unsaved-work')
         expect(screen.getByText('Ungespeicherter Entwurf')).toBeInTheDocument()
         expect(screen.getByRole('heading', { name: /Handbuch · Odoo/ })).toBeInTheDocument()
         state.request.mockImplementation(async (path: string, options?: Options) => route(path, options))
         fireEvent.click(within(alert).getByRole('button', { name: 'Erneut versuchen' }))
         await waitFor(() => expect(screen.queryByText(/Aktualisieren fehlgeschlagen/)).not.toBeInTheDocument())
-        expect(screen.getByLabelText('Entwicklungs-Branch (optional)')).toHaveValue('unsaved-work')
+        expect(screen.getByLabelText(/^Arbeitsbranch für Sitzungen/)).toHaveValue('unsaved-work')
         fireEvent.click(screen.getByRole('button', { name: 'Verwerfen' }))
-        expect(screen.getByLabelText('Entwicklungs-Branch (optional)')).toHaveValue('')
+        expect(screen.getByLabelText(/^Arbeitsbranch für Sitzungen/)).toHaveValue('')
     })
 
     it('drops cached data when a refresh reports lost access', async () => {
         server.config = config(4, odoo(20))
         mount()
-        await screen.findByLabelText('Entwicklungs-Branch (optional)')
+        await screen.findByLabelText(/^Arbeitsbranch für Sitzungen/)
         state.request.mockImplementation(async (path: string, options?: Options) => {
             if (path === '/projects/p1/development/modules' && !options?.method) throw new EvolvedApiError('denied', 403)
             return route(path, options)
         })
         fireEvent.click(screen.getByRole('button', { name: 'Gespeicherte Fassung neu laden' }))
         expect(await screen.findByRole('heading', { name: 'Entwicklungsmodul nicht geladen' })).toBeInTheDocument()
-        expect(screen.queryByLabelText('Entwicklungs-Branch (optional)')).not.toBeInTheDocument()
+        expect(screen.queryByLabelText(/^Arbeitsbranch für Sitzungen/)).not.toBeInTheDocument()
     })
 
     it('discards drafts on project change and ignores a late save response', async () => {
@@ -634,7 +634,7 @@ describe('development checks and status', () => {
         const { container } = mount()
         expect(await screen.findByText('Noch keine Werkzeugprüfung für diese Revision.')).toBeInTheDocument()
         expect(calls('modules-doctor')).toHaveLength(0)
-        fireEvent.change(screen.getByLabelText('Entwicklungs-Branch (optional)'), { target: { value: 'draft' } })
+        fireEvent.change(screen.getByLabelText(/^Arbeitsbranch für Sitzungen/), { target: { value: 'draft' } })
         expect(screen.getByRole('button', { name: 'Werkzeuge prüfen' })).toBeDisabled()
         expect(screen.getAllByText(/Prüfungen nutzen nur die gespeicherte Konfiguration/).length).toBeGreaterThan(0)
         fireEvent.click(screen.getByRole('button', { name: 'Verwerfen' }))
@@ -648,7 +648,7 @@ describe('development checks and status', () => {
         expect(within(result).getByText('Nicht unterstützt')).toBeInTheDocument()
         expect(within(result).getByText(/Image: unbekannt/)).toBeInTheDocument()
         expect(container.querySelector('a[href^="javascript:"]')).toBeNull()
-        fireEvent.change(screen.getByLabelText('Entwicklungs-Branch (optional)'), { target: { value: 'next' } })
+        fireEvent.change(screen.getByLabelText(/^Arbeitsbranch für Sitzungen/), { target: { value: 'next' } })
         fireEvent.click(saveButton())
         expect(await screen.findByText(/Gespeichert als Revision 3/)).toBeInTheDocument()
         await waitFor(() => expect(screen.queryByLabelText('Ergebnis der Werkzeugprüfung')).not.toBeInTheDocument())
@@ -701,16 +701,19 @@ describe('development checks and status', () => {
         server.other = path => {
             if (!path.includes('/build-status')) return undefined
             refs.push(path)
-            return { projectId: 'p1', revision: 2, repositoryId: '101', fullName: 'acme/odoo-addons', ref: 'main', observedAt: 1_760_000_300_000, truncated: false, ...responses.shift()! }
+            return { projectId: 'p1', revision: 2, repositoryId: '101', fullName: 'acme/odoo-addons', ref: 'main', observedAt: 1_760_000_300_000, truncated: false, environment: null, ...responses.shift()! }
         }
         const { container } = mount()
-        fireEvent.click(await screen.findByRole('button', { name: 'Status abrufen' }))
+        // No silent default target: without a branch or commit nothing is requested.
+        expect(await screen.findByRole('button', { name: 'Status abrufen' })).toBeDisabled()
+        fireEvent.change(screen.getByLabelText('Branch oder Commit'), { target: { value: 'main' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Status abrufen' }))
         expect(await screen.findByText('Berechtigung fehlt')).toBeInTheDocument()
         expect(screen.getByText(/Commit statuses: Read-only/)).toBeInTheDocument()
         expect(screen.getByText(/Schreibrechte auf Inhalte sind dafür nicht nötig/)).toBeInTheDocument()
-        fireEvent.change(screen.getByLabelText('Branch oder Commit (optional)'), { target: { value: 'bad ref' } })
+        fireEvent.change(screen.getByLabelText('Branch oder Commit'), { target: { value: 'bad ref' } })
         expect(screen.getByRole('button', { name: 'Status abrufen' })).toBeDisabled()
-        fireEvent.change(screen.getByLabelText('Branch oder Commit (optional)'), { target: { value: 'main' } })
+        fireEvent.change(screen.getByLabelText('Branch oder Commit'), { target: { value: 'main' } })
         fireEvent.click(screen.getByRole('button', { name: 'Status abrufen' }))
         expect(await screen.findByText('Keine Statusmeldung')).toBeInTheDocument()
         expect(screen.getByText(/Das ist kein Erfolg/)).toBeInTheDocument()
@@ -722,8 +725,7 @@ describe('development checks and status', () => {
         expect(await screen.findByText(/Antwort des Servers hat ein unerwartetes Format/)).toBeInTheDocument()
         expect(screen.queryByText('Build failed')).not.toBeInTheDocument()
         expect(container.querySelector('a[href^="javascript:"]')).toBeNull()
-        expect(refs[0]).toBe('/projects/p1/development/build-status')
-        expect(refs[1]).toBe('/projects/p1/development/build-status?ref=main')
+        expect(refs).toEqual(Array(4).fill('/projects/p1/development/build-status?ref=main'))
     })
 })
 

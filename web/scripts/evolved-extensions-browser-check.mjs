@@ -22,7 +22,7 @@ try{
     await workspaceArea(page,'Projekte');
     const projectIds=new Map();
     const switchProject=async name=>{const loaded=page.waitForResponse(r=>new URL(r.url()).pathname===`/api/evolved/projects/${projectIds.get(name)}/agent-catalog`&&r.status()===200);await page.getByLabel('Aktives Projekt',{exact:true}).selectOption({label:name});await loaded;};
-    for(const name of ['Extension Alpha','Extension Beta']){await page.getByLabel('Projektname',{exact:true}).fill(name);const saved=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/evolved/projects'&&r.request().method()==='POST'&&r.status()===201);await page.getByRole('button',{name:'Projekt anlegen',exact:true}).click();projectIds.set(name,(await(await saved).json()).project.id);await page.getByRole('heading',{name:'Ausführungsprofil'}).waitFor();}
+    for(const name of ['Extension Alpha','Extension Beta']){await page.getByLabel('Projektname',{exact:true}).fill(name);const saved=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/evolved/projects'&&r.request().method()==='POST'&&r.status()===201);await page.getByRole('button',{name:'Projekt anlegen',exact:true}).click();projectIds.set(name,(await(await saved).json()).project.id);await page.getByRole('heading',{name:`Einrichtung · ${name}`}).waitFor();await workspaceArea(page,'Projekte');await page.getByRole('heading',{name:'Ausführungsprofil'}).waitFor();}
     await page.getByLabel('Aktives Projekt',{exact:true}).selectOption({label:'Extension Alpha'});await workspaceArea(page,'Agenten & Plugins');
     let modelsUnavailable=false;
     await page.route(/\/api\/evolved\/projects\/[^/]+\/providers\/(claude|codex)\/models(?:\/refresh)?$/, async route=>{

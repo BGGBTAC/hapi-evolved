@@ -6,6 +6,14 @@ or container image.
 
 ## Unreleased
 
+- Guided project setup for new and existing projects, including repository-dependent
+  plugin modules; creation enters the new project and readiness follows its bound checkout.
+- Separate Odoo.sh staging and production settings, explicit environment status reads,
+  preserved legacy values and clearer Enterprise-source guidance. Project settings use
+  storage envelope 3 on explicit save; older binaries refuse this newer format.
+- Ordinary feature branches tracking a differently named origin branch no longer block
+  repository chat starts. Pull follows the validated upstream and retains fast-forward checks.
+
 - Per-project Odoo 19/20, iOS and Android development modes, with revision-checked
   settings, a default repository and prepared specialist sessions.
 - Bundled, versioned development handbooks available to Claude and Codex without

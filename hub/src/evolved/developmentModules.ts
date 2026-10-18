@@ -101,7 +101,8 @@ export function developmentModuleUsage(store: EvolvedStore): DevelopmentModuleUs
     const usage: DevelopmentModuleUsage = new Map()
     for (const row of store.db.query('SELECT settings FROM evolved_project_development').all() as Array<{ settings: string }>) {
         let value: unknown; try { value = JSON.parse(row.settings) } catch { continue }
-        const parsed = value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 2 ? StoredUsageSchema.safeParse(value) : null
+        // Envelopes v2 and v3 (current) carry plugin module entries; v1 JSON never does.
+        const parsed = value && typeof value === 'object' && 'schemaVersion' in value && (value.schemaVersion === 2 || value.schemaVersion === 3) ? StoredUsageSchema.safeParse(value) : null
         const active = parsed?.success ? parsed.data.settings.activeModuleId : null
         if (!active) continue
         const entry = usage.get(active) ?? { active: 0, adoptedDigests: [] }
@@ -110,7 +111,7 @@ export function developmentModuleUsage(store: EvolvedStore): DevelopmentModuleUs
     }
     return usage
 }
-const StoredUsageSchema = z.object({ schemaVersion: z.literal(2), settings: z.object({ activeModuleId: z.string().max(110).nullable(), modules: z.record(z.string(), z.object({ moduleDigest: z.string().max(80) }).passthrough()) }).passthrough() }).passthrough()
+const StoredUsageSchema = z.object({ schemaVersion: z.union([z.literal(2), z.literal(3)]), settings: z.object({ activeModuleId: z.string().max(110).nullable(), modules: z.record(z.string(), z.object({ moduleDigest: z.string().max(80) }).passthrough()) }).passthrough() }).passthrough()
 /**
  * Bounded per-plugin summary for plugin list and preview responses. `activeProjects` counts projects with the module
  * active; `affectedProjects` those whose adopted digest differs from this digest (they need adoption after the update).

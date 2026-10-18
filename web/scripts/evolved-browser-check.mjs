@@ -62,7 +62,9 @@ try {
  const autoResponse=await autoCreated, autoProject=(await autoResponse.json()).project;
  if('rootPath' in autoResponse.request().postDataJSON())throw Error('Automatic project submitted a manual folder');
  if(autoProject.rootPath!==join(state,'managed-workspaces',autoProject.id)||!statSync(autoProject.rootPath).isDirectory())throw Error('Automatic project directory was not created');
- await page.getByRole('heading',{name:'Ausführungsprofil'}).waitFor();
+ // A created project is entered directly in its setup; creating another one starts again from Projekte.
+ await page.getByRole('heading',{name:'Einrichtung · Automatic browser project'}).waitFor();
+ await workspaceArea(page,'Projekte');
  await page.getByLabel('Projektname',{exact:true}).fill('Browsercheck');
  await page.getByLabel('Ordner manuell festlegen oder wählen',{exact:true}).check();
  if(workspaceRequests.length)throw Error('Server folder list was fetched without an explicit request');
@@ -70,7 +72,7 @@ try {
  await page.getByRole('button',{name:'workspace verwenden',exact:true}).click();
  if(await page.getByLabel(/^Projektordner auf dem Server/).inputValue()!==join(state,'workspace'))throw Error('Server folder selection was not retained');
  await page.getByRole('button',{name:'Projekt anlegen',exact:true}).click();
- await page.locator('button.ev-project-card').filter({has:page.getByText('Browsercheck',{exact:true})}).click();
+ await page.getByRole('heading',{name:'Einrichtung · Browsercheck'}).waitFor();
  await page.waitForFunction(()=>document.querySelector('select[aria-label="Aktives Projekt"]')?.selectedOptions[0]?.textContent==='Browsercheck');
  console.log('PASS automatic per-project directory and explicit server-side manual directory selection');
  await checkGithub(page);

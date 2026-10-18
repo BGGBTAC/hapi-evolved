@@ -23,6 +23,9 @@
 /* Smaller inline segment for version/edition/target choices. */
 .ev-dev-segment { display: inline-grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 3px; padding: 3px; border: 1px solid var(--ev-line); border-radius: 10px; background: var(--ev-bg); margin: 0; min-width: 0; max-width: 100%; }
 .ev-dev-segment .ev-dev-mode { min-height: 38px; font-size: .8125rem; padding: 4px 12px; }
+/* Short choice labels (e.g. „Odoo.sh“) break only between words, never inside a token; columns are at least as wide as their longest word. */
+.ev-dev-segment { grid-auto-columns: minmax(min-content, 1fr); }
+.ev-dev-segment .ev-dev-mode { overflow-wrap: normal; word-break: normal; hyphens: manual; }
 .ev-dev-field-label { display: block; font-weight: 550; margin-bottom: 6px; }
 
 .ev-dev-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 16px; align-items: start; margin-top: 18px; }

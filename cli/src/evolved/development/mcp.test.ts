@@ -46,7 +46,8 @@ it('development tools fall back to the exact v1 routes only when the Hub does no
         await t.caller.callTool({ name: 'evolved_development_knowledge', arguments: { topic: 'odoo-security' } })
         await t.caller.callTool({ name: 'evolved_development_knowledge', arguments: {} })
         await t.caller.callTool({ name: 'evolved_development_build_status', arguments: { ref: 'main' } })
-        await t.caller.callTool({ name: 'evolved_development_build_status', arguments: {} })
+        await t.caller.callTool({ name: 'evolved_development_build_status', arguments: { environment: 'staging' } })
+        await t.caller.callTool({ name: 'evolved_development_build_status', arguments: { ref: 'main', environment: 'production' } })
         await t.caller.callTool({ name: 'evolved_development_doctor', arguments: {} })
         await t.caller.callTool({ name: 'evolved_development_inspect', arguments: {} })
         const base = 'https://evolved.test/api/evolved/projects/project-one/development'
@@ -56,7 +57,8 @@ it('development tools fall back to the exact v1 routes only when the Hub does no
             ['GET', `${base}/modules-knowledge?topic=odoo-security`, ''], ['GET', `${base}/knowledge?topic=odoo-security`, ''],
             ['GET', `${base}/modules-knowledge`, ''], ['GET', `${base}/knowledge`, ''],
             ['GET', `${base}/build-status?ref=main`, ''],
-            ['GET', `${base}/build-status`, ''],
+            ['GET', `${base}/build-status?environment=staging`, ''],
+            ['GET', `${base}/build-status?ref=main&environment=production`, ''],
             ['GET', `${base}/modules-context`, ''], ['POST', `${base}/doctor`, '{}'],
             ['GET', `${base}/modules-context`, ''], ['POST', `${base}/inspect`, '{}'],
         ])
@@ -73,6 +75,10 @@ it('development tools reject ambiguous or malformed arguments before any request
         }
         for (const ref of ['-x', 'a..b', 'main;rm -rf /']) {
             expect((await t.caller.callTool({ name: 'evolved_development_build_status', arguments: { ref } })).isError).toBe(true)
+        }
+        // No implicit target: neither a default branch nor production is inferred; only the two declared stages exist.
+        for (const args of [{}, { environment: 'development' }, { environment: 'prod' }]) {
+            expect((await t.caller.callTool({ name: 'evolved_development_build_status', arguments: args })).isError).toBe(true)
         }
         expect(t.calls).toHaveLength(0)
     } finally { await t.close() }

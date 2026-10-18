@@ -93,10 +93,10 @@ export function registerEvolvedTools(server: McpServer, client: EvolvedClient, a
         return developmentData(() => developmentKnowledge(client, input))
     })
     if (allowed('evolved_development_build_status')) server.registerTool<any, any>('evolved_development_build_status', {
-        description: 'Read GitHub’s combined commit status of the bound repository for a branch or full SHA (default: configured development branch or default branch). Shows what Odoo.sh or CI posted; no_status or unavailable is not success. Fixed read through the project GitHub grant; never triggers a build. Requires runner:connect and git:read.',
-        inputSchema: { ref: z.string().min(1).max(200).optional() },
+        description: 'Read GitHub’s combined commit status of the bound repository for an explicit target: ref (branch or full SHA) and/or environment (staging or production: the declared Odoo.sh branch of exactly that stage). No default: nothing is inferred, neither production nor the default or working branch. Check that the response echoes the same environment, ref and revision. Shows what Odoo.sh or CI posted; no_status or unavailable is not success. Fixed read through the project GitHub grant; never triggers a build, deploy or SSH. Requires runner:connect and git:read.',
+        inputSchema: { ref: z.string().min(1).max(200).optional(), environment: z.enum(['staging', 'production']).optional() },
         annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
-    }, async ({ ref }: { ref?: string }) => developmentData(() => client.developmentBuildStatus(ref)))
+    }, async ({ ref, environment }: { ref?: string; environment?: 'staging' | 'production' }) => developmentData(() => client.developmentBuildStatus({ ref, environment })))
     if (allowed('evolved_development_doctor')) server.registerTool<any, any>('evolved_development_doctor', {
         description: 'Run the project runner’s fixed, read-only development doctor for the active module, bound to the module id and digest from evolved_development_context: bundled modules check trusted system tool versions (Python, PostgreSQL, JDK, Swift, Xcode …), project toolchains under .hapi/.cache/toolchain, SDK licence files, KVM; plugin modules select checks of the fixed hapi.toolchain provider (git, python, node, java, ssh, kvm, image marker, checkout). Never runs project scripts, Gradle, manifests, module-supplied commands or network calls. Each check is ready, missing, unsupported, unknown or warning; only ready is evidence. Requires runner:connect.',
         inputSchema: {},

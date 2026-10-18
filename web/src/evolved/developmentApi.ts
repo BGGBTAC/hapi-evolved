@@ -121,7 +121,8 @@ export function useGlobalDevelopmentModuleDetail(evolved: Pick<EvolvedSession, '
 }
 /** After plugin or configuration mutations every development read (config, catalog, details, context, knowledge) is stale. */
 export function invalidateDevelopmentQueries(client: QueryClient) {
-    return client.invalidateQueries({ predicate: query => query.queryKey[0] === 'evolved' && typeof query.queryKey[1] === 'string' && query.queryKey[1].startsWith('development') })
+    // Readiness evaluates the bound repository and module of the saved configuration, so it is stale after every change too.
+    return client.invalidateQueries({ predicate: query => query.queryKey[0] === 'evolved' && typeof query.queryKey[1] === 'string' && (query.queryKey[1].startsWith('development') || query.queryKey[1] === 'readiness') })
 }
 
 /** Current config from a stale-tab 409, validated with the shared schema; otherwise null. */
@@ -195,6 +196,11 @@ const codeMessages: Record<string, string> = {
     development_topic_not_found: 'Dieses Handbuchthema gehört nicht zur gespeicherten Version.',
     agent_operation_conflict: 'Dieser Vorgang wurde bereits mit anderen Angaben gestartet. Es wurde keine zweite Sitzung erzeugt.',
     agent_start_changed: 'Projekt, Freigaben, Konfiguration oder Modulfassung haben sich während des Starts geändert. Die Aufgabe wurde nicht übergeben.',
+    development_profile_required: 'Das Profil „Eingeschränkt“ erlaubt diese Aufgabe nicht: Sie würde im Projekt schreiben, installieren, herunterladen oder Code ausführen. Es wurde keine Sitzung reserviert. Ein Projektadministrator kann das Profil bewusst auf „Arbeitsbereich“ ändern.',
+    development_status_target_required: 'Gib einen Branch, einen Commit oder eine Odoo.sh-Stufe an.',
+    development_environment_unavailable: 'Odoo.sh-Stufen gibt es nur, wenn das gespeicherte Odoo-Modul auf Odoo.sh betrieben wird.',
+    development_environment_undeclared: 'Für diese Odoo.sh-Stufe ist kein Branch gespeichert.',
+    development_environment_ref_conflict: 'Der angegebene Branch passt nicht zur gewählten Odoo.sh-Stufe.',
     development_module_changed: 'Das Entwicklungsmodul wurde inzwischen geändert (neue Fassung oder anderes aktives Modul). Es wurde nichts gespeichert oder gestartet; prüfe die aktuelle Fassung.',
     development_module_settings_invalid: 'Die Moduleinstellungen wurden vom Server abgelehnt. Prüfe die markierten Felder.',
     development_module_not_found: 'Dieses Entwicklungsmodul ist nicht (mehr) installiert.',
@@ -228,10 +234,14 @@ export function describeDevelopmentError(error: unknown): string {
 
 const fieldLabels: Record<string, string> = {
     repositoryId: 'Standard-Repository',
-    'odoo.addonsPaths': 'Addon-Pfade', 'odoo.modules': 'Module', 'odoo.developmentBranch': 'Entwicklungs-Branch', 'odoo.stage': 'Stufe',
-    'odoo.enterpriseRepositoryId': 'Enterprise-Repository', 'odoo.testDatabaseSlug': 'Testdatenbank-Kürzel', 'odoo.odooSh': 'Odoo.sh-Angaben',
-    'odoo.odooSh.dashboardUrl': 'Odoo.sh-Projektlink', 'odoo.odooSh.buildId': 'Build-ID', 'odoo.odooSh.buildHost': 'Build-Host',
-    'odoo.odooSh.sshResourceId': 'SSH-Ressource im Tresor', 'odoo.applicationResourceId': 'Ressource für die Anwendungs-API',
+    'odoo.addonsPaths': 'Addon-Pfade', 'odoo.modules': 'Module', 'odoo.developmentBranch': 'Arbeitsbranch',
+    'odoo.enterpriseRepositoryId': 'Enterprise-Quelle', 'odoo.testDatabaseSlug': 'Testdatenbank-Kürzel', 'odoo.odooSh': 'Odoo.sh-Angaben',
+    'odoo.odooSh.dashboardUrl': 'Odoo.sh-Projektlink', 'odoo.odooSh.unassigned': 'Ältere Odoo.sh-Angaben ohne Stufe', 'odoo.applicationResourceId': 'Ressource für die Anwendungs-API',
+    ...Object.fromEntries((['staging', 'production'] as const).flatMap(id => {
+        const stage = id === 'staging' ? 'Staging' : 'Produktion'
+        return [[`odoo.odooSh.${id}`, `${stage}: Build-Angaben`], [`odoo.odooSh.${id}.branch`, `${stage}-Branch`], [`odoo.odooSh.${id}.buildId`, `${stage} · Build-ID`],
+            [`odoo.odooSh.${id}.buildHost`, `${stage} · Build-Host`], [`odoo.odooSh.${id}.sshResourceId`, `${stage} · SSH-Ressource`], [`odoo.odooSh.${id}.applicationResourceId`, `${stage} · Anwendungs-API`]]
+    })),
     'ios.projectDirectory': 'App-Ordner', 'ios.projectFile': 'Projektdatei', 'ios.scheme': 'Scheme', 'ios.bundleId': 'Bundle-ID',
     'ios.deploymentTarget': 'Mindestversion', 'ios.xcodeCloudResourceId': 'Xcode-Cloud-Referenz',
     'android.projectDirectory': 'Projektordner im Repository', 'android.module': 'Modul', 'android.variant': 'Variante',
@@ -244,7 +254,14 @@ const reasonMessages: Record<string, string> = {
     'Odoo.sh metadata requires Odoo.sh hosting': 'sind nur beim Betrieb auf Odoo.sh erlaubt',
     'Build ID and build host belong together': 'Build-ID und Build-Host gehören zusammen; kopiere beide aus Odoo.sh',
     'SSH requires the copied build ID and host': 'braucht zuerst Build-ID und Build-Host',
-    'Declare a branch before its stage': 'braucht zuerst einen Entwicklungs-Branch',
+    'Declare the branch of this build': 'braucht zuerst den Branch dieser Stufe',
+    'Staging and production need different branches': 'muss sich vom Staging-Branch unterscheiden; Odoo.sh ordnet jedem Branch genau eine Stufe zu',
+    'Staging and production need different builds': 'muss ein anderer Build als Staging sein',
+    'Staging and production need different build hosts': 'muss ein anderer Build-Host als Staging sein',
+    'Use a separate SSH resource per environment': 'ist dieselbe SSH-Ressource wie bei Staging',
+    'Use a separate application resource per environment': 'ist dieselbe Anwendungsressource wie bei Staging',
+    'The local development branch must differ from the staging and production branches': 'ist zugleich ein Staging- oder Produktions-Branch',
+    'Use the build host shown in Odoo.sh': 'muss der in Odoo.sh angezeigte Build-Host sein',
     'Enterprise addons must be a separate repository': 'muss ein anderes Repository als das Standard-Repository sein',
     'minSdk must not exceed targetSdk': 'darf nicht größer als targetSdk sein',
     'targetSdk must not exceed compileSdk': 'darf nicht größer als compileSdk sein',

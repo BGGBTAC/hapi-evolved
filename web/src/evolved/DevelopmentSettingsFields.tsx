@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react'
-import type { AndroidSettings, IosSettings, OdooMajor, OdooSettings, ProjectDevelopmentConfig } from '@hapi/protocol/evolvedDevelopment'
+import { Fragment, useState, type ReactNode } from 'react'
+import { ODOO_SH_ENVIRONMENTS, odooShEnvironmentLinks, odooShEnvironmentSshCommand, type AndroidSettings, type IosSettings, type OdooMajor, type OdooSettings, type OdooShEnvironment, type OdooShEnvironmentId, type ProjectDevelopmentConfig } from '@hapi/protocol/evolvedDevelopment'
 import type { RepositoryChoices } from './repositoryCatalog'
 import { SegmentedChoice } from './DevelopmentModePicker'
 import { ANDROID_SDK_TERMS_URL, formatTimestamp } from './developmentApi'
@@ -63,7 +63,14 @@ export function RepositoryStatus({ choices, repositoryId, projectId }: { choices
 }
 
 const hostingLabels = { local: 'Lokal', self_hosted: 'Selbst gehostet', odoo_sh: 'Odoo.sh' } as const
-const stageLabels = { development: 'Entwicklung', staging: 'Staging', production: 'Produktion' } as const
+const environmentLabels: Record<OdooShEnvironmentId, string> = { staging: 'Staging', production: 'Produktion' }
+const environmentExamples: Record<OdooShEnvironmentId, { branch: string; buildId: string; buildHost: string; ssh: string }> = {
+    staging: { branch: 'staging', buildId: '25004381', buildHost: 'mein-projekt-staging-25004381.dev.odoo.com', ssh: 'odoo-sh-staging-ssh' },
+    production: { branch: 'main', buildId: '25004102', buildHost: 'mein-projekt-main-25004102.dev.odoo.com', ssh: 'odoo-sh-production-ssh' },
+}
+const hasOdooShValues = (odooSh: OdooSettings['odooSh']) => !!odooSh.dashboardUrl || !!odooSh.unassigned
+    || ODOO_SH_ENVIRONMENTS.some(id => Object.values(odooSh[id]).some(value => value !== null))
+const sameEnvironment = (a: OdooShEnvironment, b: OdooShEnvironment) => (Object.keys(a) as Array<keyof OdooShEnvironment>).every(key => a[key] === b[key])
 
 export function OdooFields({ value, onChange, majors, choices, repositoryId, ...common }: Common & {
     value: OdooSettings; onChange: (value: OdooSettings) => void; majors: readonly OdooMajor[]; choices: RepositoryChoices; repositoryId: string | null
@@ -71,44 +78,94 @@ export function OdooFields({ value, onChange, majors, choices, repositoryId, ...
     const { disabled, invalidField, projectId } = common
     const set = <K extends keyof OdooSettings>(key: K, next: OdooSettings[K]) => onChange({ ...value, [key]: next })
     const setSh = (next: Partial<OdooSettings['odooSh']>) => onChange({ ...value, odooSh: { ...value.odooSh, ...next } })
-    const sshCommand = value.odooSh.buildId && value.odooSh.buildHost ? `ssh ${value.odooSh.buildId}@${value.odooSh.buildHost}` : null
+    const { staging, production } = value.odooSh
+    const workOn = value.developmentBranch ? ODOO_SH_ENVIRONMENTS.find(id => value.odooSh[id].branch === value.developmentBranch) ?? null : null
+    const sharedSsh = !!staging.sshResourceId && staging.sshResourceId === production.sshResourceId
+    const sharedApplication = !!staging.applicationResourceId && staging.applicationResourceId === production.applicationResourceId
     return <>
         <div className="ev-dev-wide"><span className="ev-dev-field-label" id="ev-dev-odoo-major">Odoo-Version</span>
             <SegmentedChoice legend="Odoo-Version" describedBy="ev-dev-odoo-major" options={majors.map(major => ({ id: String(major) as `${OdooMajor}`, label: `${major}.0` }))} value={String(value.major) as `${OdooMajor}`} disabled={disabled} onChange={major => set('major', Number(major) as OdooMajor)} />
             <p className="ev-dev-mode-hint">{value.major === 19 ? 'Odoo 19 braucht Python ≥ 3.10 und PostgreSQL ≥ 13.' : 'Odoo 20 braucht Python ≥ 3.12 und PostgreSQL ≥ 16.'} Handbuch, Prüfungen und Aufgaben folgen nach dem Speichern dieser Version.</p>
         </div>
         <div><span className="ev-dev-field-label">Edition</span><SegmentedChoice legend="Edition" options={[{ id: 'community', label: 'Community' }, { id: 'enterprise', label: 'Enterprise' }]} value={value.edition} disabled={disabled} onChange={edition => onChange({ ...value, edition, enterpriseRepositoryId: edition === 'community' ? null : value.enterpriseRepositoryId })} /></div>
+        {/* Switching the hosting keeps every Odoo.sh value; it is only unused while another hosting is chosen. */}
         <div><span className="ev-dev-field-label">Betrieb</span><SegmentedChoice legend="Betrieb" options={(['local', 'self_hosted', 'odoo_sh'] as const).map(id => ({ id, label: hostingLabels[id] }))} value={value.hosting} disabled={disabled}
-            onChange={hosting => onChange({ ...value, hosting, ...(hosting === 'odoo_sh' ? {} : { odooSh: { dashboardUrl: null, buildId: null, buildHost: null, sshResourceId: null } }) })} />
-            {value.hosting !== 'odoo_sh' && <small className="ev-muted">Odoo.sh-Angaben werden nur beim Betrieb auf Odoo.sh gespeichert.</small>}</div>
-        {value.edition === 'enterprise' && <div className="ev-dev-wide"><RepositorySelect label="Enterprise-Repository (optional)" emptyLabel="Keines" choices={choices} value={value.enterpriseRepositoryId} exclude={repositoryId} disabled={disabled} onChange={id => set('enterpriseRepositoryId', id)}
-            hint="Nur ein bereits freigegebenes Repository mit berechtigtem Enterprise-Zugang. HAPI klont Enterprise-Quellen nie automatisch." /></div>}
+            onChange={hosting => set('hosting', hosting)} />
+            {value.hosting !== 'odoo_sh' && hasOdooShValues(value.odooSh) && <small className="ev-muted">Odoo.sh-Angaben bleiben gespeichert, werden aber nur beim Betrieb auf Odoo.sh verwendet.</small>}</div>
+        {value.edition === 'enterprise' && <div className="ev-dev-wide"><RepositorySelect label="Enterprise-Quelle für lokale Arbeit (optional)" emptyLabel="Keine" choices={choices} value={value.enterpriseRepositoryId} exclude={repositoryId} disabled={disabled} onChange={id => set('enterpriseRepositoryId', id)}
+            hint={<>Ein separat freigegebenes und geklontes GitHub-Repository mit Enterprise-Addons, auf das ihr berechtigt zugreift, im Branch <code>{value.major}.0</code>. {value.hosting === 'odoo_sh' ? 'Odoo.sh stellt Enterprise selbst bereit; diese Quelle braucht es nur für lokale Arbeit. ' : ''}Die Auswahl klont nichts und nimmt die Quelle nicht automatisch in die Addon-Pfade lokaler Tests auf. Das GitHub-Token eines Projekts gilt für genau einen Eigentümer. <WorkspaceLink tab="setup" projectId={projectId} step="github">Freigeben und klonen</WorkspaceLink></>} /></div>}
         <ListSetting label="Addon-Pfade im Repository" value={value.addonsPaths} disabled={disabled} isInvalid={invalid(invalidField, 'odoo.addonsPaths')} placeholder="." onChange={paths => set('addonsPaths', paths)} hint="Einer pro Zeile, relativ zum Repository. „.“ ist das Repository selbst." />
         <ListSetting label="Module im Fokus (optional)" value={value.modules} disabled={disabled} isInvalid={invalid(invalidField, 'odoo.modules')} placeholder="sale_custom" onChange={modules => set('modules', modules)} hint="Technische Namen. Leer lassen, um sie per Modulprüfung zu ermitteln." />
-        <TextSetting label="Entwicklungs-Branch (optional)" value={value.developmentBranch} disabled={disabled} isInvalid={invalid(invalidField, 'odoo.developmentBranch')} placeholder="z. B. dev-feature" onChange={branch => onChange({ ...value, developmentBranch: branch, stage: branch ? value.stage : null })} maxLength={200} />
-        <Labeled label="Stufe dieses Branches" hint={value.stage === 'production' ? 'Achtung: Ein Push auf einen Produktions-Branch kann sofort deployen.' : value.hosting === 'odoo_sh' ? 'Auf Odoo.sh kann ein Push einen Build oder ein Deployment auslösen.' : undefined}>
-            <select value={value.stage ?? ''} disabled={disabled || !value.developmentBranch} aria-invalid={invalid(invalidField, 'odoo.stage') || undefined} onChange={event => set('stage', (event.target.value || null) as OdooSettings['stage'])}>
-                <option value="">Nicht angegeben</option>{(['development', 'staging', 'production'] as const).map(stage => <option key={stage} value={stage}>{stageLabels[stage]}</option>)}
-            </select></Labeled>
+        <TextSetting label="Arbeitsbranch für Sitzungen (optional)" value={value.developmentBranch} disabled={disabled} isInvalid={invalid(invalidField, 'odoo.developmentBranch')} placeholder="z. B. feature-rechnungen" onChange={branch => set('developmentBranch', branch)} maxLength={200}
+            hint={workOn ? <strong className="ev-dev-invalid">{workOn === 'production' ? 'Das ist der Produktions-Branch: Ein Push dorthin kann sofort in Produktion deployen.' : 'Das ist der Staging-Branch: Ein Push dorthin baut Staging neu.'}</strong> : 'Gespeicherte Absicht für Sitzungen; schaltet keinen Checkout um. Leer: aktueller Branch des Checkouts.'} />
         <Labeled label="Kürzel der Testdatenbank" hint={<>Lokale Wegwerf-Datenbank <code>hapi_test_{value.testDatabaseSlug || '…'}</code>; Tests laufen nie gegen geteilte oder produktive Daten.</>}>
             <input value={value.testDatabaseSlug} disabled={disabled} maxLength={32} aria-invalid={invalid(invalidField, 'odoo.testDatabaseSlug') || undefined} spellCheck={false} autoCapitalize="off" onChange={event => set('testDatabaseSlug', event.target.value.trim())} /></Labeled>
-        {value.hosting === 'odoo_sh' && <details className="ev-dev-wide" open={!!(value.odooSh.dashboardUrl || value.odooSh.buildId)}>
-            <summary>Odoo.sh-Angaben (optional)</summary>
-            <p className="ev-muted">Aus dem Odoo.sh-Dashboard kopiert. HAPI hat keine Verbindung zu Odoo.sh; Build-Status kommt nur über GitHub-Commit-Statusmeldungen.</p>
-            <div className="ev-dev-form">
-                <div className="ev-dev-wide"><TextSetting label="Odoo.sh-Projektlink" value={value.odooSh.dashboardUrl} disabled={disabled} isInvalid={invalid(invalidField, 'odoo.odooSh.dashboardUrl')} placeholder="https://www.odoo.sh/project/mein-projekt" onChange={dashboardUrl => setSh({ dashboardUrl })} maxLength={500} /></div>
-                <TextSetting label="Build-ID" value={value.odooSh.buildId} disabled={disabled} isInvalid={invalid(invalidField, 'odoo.odooSh.buildId') || invalidField === 'odoo.odooSh'} placeholder="12345678" onChange={buildId => setSh({ buildId, sshResourceId: buildId ? value.odooSh.sshResourceId : null })} maxLength={12} />
-                <TextSetting label="Build-Host" value={value.odooSh.buildHost} disabled={disabled} isInvalid={invalid(invalidField, 'odoo.odooSh.buildHost') || invalidField === 'odoo.odooSh'} placeholder="projekt-branch-12345678.dev.odoo.com" onChange={buildHost => setSh({ buildHost: buildHost?.toLowerCase() ?? null })} maxLength={253} />
-                <div className="ev-dev-wide"><TextSetting label="Vorhandene SSH-Ressource im Tresor (optional)" value={value.odooSh.sshResourceId} disabled={disabled || !value.odooSh.buildId} isInvalid={invalid(invalidField, 'odoo.odooSh.sshResourceId')} onChange={sshResourceId => setSh({ sshResourceId })} maxLength={128}
-                    hint={<>Nur die ID einer vom Betreiber eingerichteten Ressource, kein Schlüssel. <WorkspaceLink tab="vault" projectId={projectId}>Tresor öffnen</WorkspaceLink></>} /></div>
-                {sshCommand && <div className="ev-dev-wide ev-callout"><p>Befehl zum Kopieren (HAPI führt ihn nicht aus): <code>{sshCommand}</code></p><p className="ev-muted">Hinterlege deinen öffentlichen Schlüssel in deinem Odoo.sh-Profil und prüfe den Host-Fingerabdruck beim ersten Verbinden selbst. Entwicklungs-Builds sind kurzlebig; der Host ändert sich mit jedem Build.</p></div>}
-            </div>
-        </details>}
-        <details className="ev-dev-wide"><summary>Anwendungs-API (optional)</summary>
+        {value.hosting === 'odoo_sh' && <fieldset className="ev-dev-wide ev-dev-odoosh">
+            <legend>Odoo.sh</legend>
+            <p className="ev-muted">Angaben aus dem Odoo.sh-Dashboard kopiert. HAPI hat keine Verbindung zu Odoo.sh: kein Push, kein Rebuild, kein SSH-Aufbau. Build-Status kommt nur über GitHub-Commit-Statusmeldungen.</p>
+            <TextSetting label="Odoo.sh-Projektlink (gemeinsam für alle Stufen)" value={value.odooSh.dashboardUrl} disabled={disabled} isInvalid={invalid(invalidField, 'odoo.odooSh.dashboardUrl')} placeholder="https://www.odoo.sh/project/mein-projekt" onChange={dashboardUrl => setSh({ dashboardUrl })} maxLength={500}
+                hint="Adresszeile des Projekts in Odoo.sh. Kein GitHub-Link." />
+            <details className="ev-setup-help"><summary>Begriffe: Build-ID, Build-Host, GitHub-Repository</summary><ul className="ev-dev-links">
+                <li><strong>Build-ID</strong>: die Zahl eines einzelnen Builds in Odoo.sh (z. B. <code>25004381</code>), zugleich SSH-Benutzer. Sie ändert sich mit jedem neuen Build.</li>
+                <li><strong>Build-Host</strong>: der Hostname dieses Builds aus Odoo.sh („Connect“/Shell-Hinweis), z. B. <code>mein-projekt-staging-25004381.dev.odoo.com</code>. Daraus leitet HAPI Build- und Editor-Link ab.</li>
+                <li><strong>GitHub-Repository</strong>: <code>owner/repository</code>, freigegeben im Bereich GitHub. Es gehört nicht in diese Felder.</li>
+                <li><strong>SSH-Ressource</strong>: ID einer vom Betreiber im Tresor eingerichteten Aktion, kein Schlüssel.</li>
+            </ul></details>
+            {value.odooSh.unassigned && <UnassignedOdooSh value={value} onChange={onChange} disabled={disabled} invalid={invalid(invalidField, 'odoo.odooSh.unassigned')} />}
+            <div className="ev-dev-environments">{ODOO_SH_ENVIRONMENTS.map(id => <OdooShEnvironmentCard key={id} id={id} value={value.odooSh[id]} onChange={next => setSh({ [id]: next })} disabled={disabled} invalidField={invalidField} projectId={projectId} />)}</div>
+            {(sharedSsh || sharedApplication) && <p className="ev-callout" role="note">Staging und Produktion verwenden {sharedSsh && sharedApplication ? 'dieselbe SSH- und Anwendungsressource' : sharedSsh ? 'dieselbe SSH-Ressource' : 'dieselbe Anwendungsressource'}. Das ist erlaubt, wenn es bewusst so eingerichtet ist; HAPI übernimmt Ressourcen nie automatisch von einer Stufe in die andere.</p>}
+        </fieldset>}
+        {value.hosting !== 'odoo_sh' && <details className="ev-dev-wide"><summary>Anwendungs-API (optional)</summary>
             <TextSetting label="Vorhandene Tresor-Ressource für JSON-2" value={value.applicationResourceId} disabled={disabled} isInvalid={invalid(invalidField, 'odoo.applicationResourceId')} onChange={applicationResourceId => set('applicationResourceId', applicationResourceId)} maxLength={128}
-                hint={<>Verweis auf die Geschäfts-API einer Odoo-Datenbank (ab Odoo 19), nicht auf Odoo.sh. Zugangsdaten bleiben im Tresor. <WorkspaceLink tab="vault" projectId={projectId}>Tresor öffnen</WorkspaceLink></>} />
-        </details>
+                hint={<>Verweis auf die Geschäfts-API einer Odoo-Datenbank (ab Odoo 19). Zugangsdaten bleiben im Tresor. <WorkspaceLink tab="vault" projectId={projectId}>Tresor öffnen</WorkspaceLink></>} />
+        </details>}
     </>
+}
+
+function OdooShEnvironmentCard({ id, value, onChange, disabled, invalidField, projectId }: { id: OdooShEnvironmentId; value: OdooShEnvironment; onChange: (value: OdooShEnvironment) => void; disabled: boolean; invalidField: string | null; projectId: string }) {
+    const path = `odoo.odooSh.${id}`
+    const example = environmentExamples[id]
+    const set = <K extends keyof OdooShEnvironment>(key: K, next: OdooShEnvironment[K]) => onChange({ ...value, [key]: next })
+    const links = odooShEnvironmentLinks(value)
+    const ssh = odooShEnvironmentSshCommand(value)
+    const pairInvalid = invalidField === path
+    return <section className="ev-dev-environment" data-environment={id} aria-labelledby={`ev-dev-env-${id}`}>
+        <h3 id={`ev-dev-env-${id}`}>{environmentLabels[id]}</h3>
+        {id === 'production' && <p className="ev-dev-invalid">Produktion: Ein Push auf diesen Branch kann sofort deployen. HAPI liest hier nur.</p>}
+        <TextSetting label={`${environmentLabels[id]}-Branch`} value={value.branch} disabled={disabled} isInvalid={invalid(invalidField, `${path}.branch`)} placeholder={`z. B. ${example.branch}`} onChange={branch => set('branch', branch)} maxLength={200}
+            hint="Branch dieser Stufe im Odoo.sh-Projekt (gleich dem GitHub-Branch)." />
+        <TextSetting label={`${environmentLabels[id]} · Build-ID`} value={value.buildId} disabled={disabled} isInvalid={invalid(invalidField, `${path}.buildId`) || pairInvalid} placeholder={`z. B. ${example.buildId}`} onChange={buildId => set('buildId', buildId)} maxLength={12}
+            hint="Nur Ziffern, aus der Build-Karte in Odoo.sh." />
+        <TextSetting label={`${environmentLabels[id]} · Build-Host`} value={value.buildHost} disabled={disabled} isInvalid={invalid(invalidField, `${path}.buildHost`) || pairInvalid} placeholder={`z. B. ${example.buildHost}`} onChange={buildHost => set('buildHost', buildHost?.toLowerCase() ?? null)} maxLength={253}
+            hint="Build-ID und Build-Host gehören zusammen und stammen vom selben Build." />
+        <TextSetting label={`${environmentLabels[id]} · SSH-Ressource im Tresor (optional)`} value={value.sshResourceId} disabled={disabled} isInvalid={invalid(invalidField, `${path}.sshResourceId`)} placeholder={`z. B. ${example.ssh}`} onChange={sshResourceId => set('sshResourceId', sshResourceId)} maxLength={128}
+            hint={<>ID einer vorhandenen Ressource, kein Schlüssel; braucht Build-ID und Build-Host. <WorkspaceLink tab="vault" projectId={projectId}>Tresor</WorkspaceLink></>} />
+        <TextSetting label={`${environmentLabels[id]} · Anwendungs-API im Tresor (optional)`} value={value.applicationResourceId} disabled={disabled} isInvalid={invalid(invalidField, `${path}.applicationResourceId`)} onChange={applicationResourceId => set('applicationResourceId', applicationResourceId)} maxLength={128}
+            hint="JSON-2-Zugang zur Datenbank dieser Stufe; Zugangsdaten bleiben im Tresor." />
+        {(links || ssh) && <div className="ev-dev-environment-links">
+            {links && <p><a href={links.build} target="_blank" rel="noopener noreferrer">Build öffnen ↗</a> · <a href={links.editor} target="_blank" rel="noopener noreferrer">Online-Editor ↗</a></p>}
+            {ssh && <p><small>Zum Kopieren, HAPI führt das nicht aus:</small> <code>{ssh.join(' ')}</code></p>}
+            <p className="ev-muted">Abgeleitet aus dem eingetragenen Build-Host. Nach einem neuen Build Build-ID und Build-Host aktualisieren.</p>
+        </div>}
+    </section>
+}
+
+/** Pre-environment values whose stage is unknown: shown as they are; a human assigns them to one stage or drops them. */
+function UnassignedOdooSh({ value, onChange, disabled, invalid: isInvalid }: { value: OdooSettings; onChange: (value: OdooSettings) => void; disabled: boolean; invalid: boolean }) {
+    const unassigned = value.odooSh.unassigned!
+    const [confirmDrop, setConfirmDrop] = useState(false)
+    const moved = (): OdooShEnvironment => ({ branch: unassigned.branch, buildId: unassigned.buildId, buildHost: unassigned.buildHost, sshResourceId: unassigned.sshResourceId, applicationResourceId: unassigned.applicationResourceId })
+    const assign = (id: OdooShEnvironmentId) => onChange({ ...value, odooSh: { ...value.odooSh, [id]: moved(), unassigned: null } })
+    const occupied = (id: OdooShEnvironmentId) => !sameEnvironment(value.odooSh[id], { branch: null, buildId: null, buildHost: null, sshResourceId: null, applicationResourceId: null })
+    const rows: Array<[string, string | null]> = [['Angegebene Stufe', unassigned.declaredStage === 'development' ? 'Entwicklung' : 'nicht angegeben'], ['Branch', unassigned.branch], ['Build-ID', unassigned.buildId], ['Build-Host', unassigned.buildHost], ['SSH-Ressource', unassigned.sshResourceId], ['Anwendungs-API', unassigned.applicationResourceId]]
+    return <div className="ev-callout ev-dev-unassigned" role="status" aria-invalid={isInvalid || undefined}>
+        <p><strong>Ältere Odoo.sh-Angaben ohne Stufe.</strong> Sie stammen aus der früheren Ein-Stufen-Einstellung und werden weder für Links noch SSH oder Status verwendet, bis du sie bewusst zuordnest. Nichts wird geraten.</p>
+        <dl className="ev-dev-provenance">{rows.map(([label, item]) => <Fragment key={label}><dt>{label}</dt><dd>{item ? <code>{item}</code> : '—'}</dd></Fragment>)}</dl>
+        <div className="ev-actions">{ODOO_SH_ENVIRONMENTS.map(id => <button type="button" key={id} disabled={disabled || occupied(id)} title={occupied(id) ? `${environmentLabels[id]} hat bereits Angaben` : undefined} onClick={() => assign(id)}>Als {environmentLabels[id]} übernehmen</button>)}
+            {confirmDrop ? <span className="ev-confirm"><span>Ältere Angaben beim Speichern verwerfen?</span><button type="button" className="ev-danger" disabled={disabled} onClick={() => { setConfirmDrop(false); onChange({ ...value, odooSh: { ...value.odooSh, unassigned: null } }) }}>Verwerfen</button><button type="button" onClick={() => setConfirmDrop(false)}>Abbrechen</button></span>
+                : <button type="button" className="ev-danger-subtle" disabled={disabled} onClick={() => setConfirmDrop(true)}>Verwerfen …</button>}</div>
+        <p className="ev-muted">Übernehmen oder Verwerfen wirkt erst mit „Speichern“. Eine Stufe mit eigenen Angaben wird nicht überschrieben.</p>
+    </div>
 }
 
 const strategyLabels = { undecided: 'Noch offen', local_mac: 'Eigener Mac', xcode_cloud: 'Xcode Cloud', github_actions: 'GitHub Actions' } as const

@@ -328,6 +328,7 @@ function GithubForProject({ initialRepositoryId, onRepositorySelect }: { initial
             <ol className="ev-github-steps">
                 <li>Erstelle bei GitHub ein <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">Fine-grained Token ↗</a> mit Ablaufdatum und nur den benötigten Repositorys.</li>
                 <li>Erlaube „Contents: Read-only“ für Clone/Fetch oder „Contents: Read and write“ für Push. „Metadata: Read-only“ bleibt erforderlich. Organisationen müssen das Token gegebenenfalls freigeben.</li>
+                <li>Optional „Commit statuses: Read-only“, wenn HAPI Build-Statusmeldungen (z. B. von Odoo.sh) lesen soll. Dass Odoo.sh solche Meldungen sendet, richtest du in Odoo.sh mit einem eigenen Token ein.</li>
                 <li>Trage das Token hier ein und gib anschließend jedes Repository für dieses Projekt frei.</li>
             </ol>
             <p className="ev-muted">Das Token wird verschlüsselt gespeichert und nicht an Projekt-Agenten ausgegeben. Es lässt sich hier nicht wieder anzeigen.</p>

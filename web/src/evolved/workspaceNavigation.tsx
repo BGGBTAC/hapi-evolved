@@ -6,6 +6,7 @@ export const workspacePages = [
     { id: 'projects', label: 'Projekte', group: 'Arbeitsplatz', description: 'Deine Projekte, Ordner und Ausführungsprofile.' },
     { id: 'agents', label: 'Agenten & Plugins', group: 'Arbeitsplatz', description: 'Agenten für alle Projekte und geprüfte Erweiterungen.' },
     { id: 'capacity', label: 'Kapazität', group: 'Arbeitsplatz', description: 'Gemeldete Nutzungslimits deiner Agentenanbieter.' },
+    { id: 'setup', label: 'Einrichtung', group: 'Projektwerkzeuge', description: 'Schritt für Schritt: Profil, Anbieter, GitHub, Modul und Prüfungen für dieses Projekt.' },
     { id: 'development', label: 'Entwicklung', group: 'Projektwerkzeuge', description: 'Entwicklungsmodul des Projekts: Handbuch, Prüfungen und passende Aufgaben.' },
     { id: 'github', label: 'GitHub', group: 'Projektwerkzeuge', description: 'Repositories verbinden und gezielt freigeben.' },
     { id: 'mcp', label: 'MCP-Shop', group: 'Projektwerkzeuge', description: 'Externe Werkzeuge zentral für deine Projektagenten verbinden.' },
@@ -19,7 +20,10 @@ export const workspacePages = [
     { id: 'team', label: 'Team & Konto', group: 'Verwaltung', description: 'Zusammenarbeit, Rollen und deinen Zugang verwalten.' },
 ] as const
 export type WorkspaceTab = typeof workspacePages[number]['id']
-export type WorkspaceSearch = { tab?: WorkspaceTab; project?: string; repository?: string }
+export const setupSteps = ['profile', 'provider', 'github', 'module', 'checks', 'summary'] as const
+export type SetupStep = typeof setupSteps[number]
+export type WorkspaceSearch = { tab?: WorkspaceTab; project?: string; repository?: string; step?: SetupStep; from?: 'setup' }
+export function isSetupStep(value: unknown): value is SetupStep { return typeof value === 'string' && (setupSteps as readonly string[]).includes(value) }
 export const workspaceGroups = ['Arbeitsplatz', 'Projektwerkzeuge', 'Verwaltung'] as const
 export function isWorkspaceTab(value: unknown): value is WorkspaceTab {
     return typeof value === 'string' && workspacePages.some(page => page.id === value)
@@ -35,6 +39,9 @@ export function parseWorkspaceSearch(search: Record<string, unknown>): Workspace
         ...(isWorkspaceTab(search.tab) ? { tab: search.tab } : {}),
         ...(typeof search.project === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(search.project) ? { project: search.project } : {}),
         ...(search.tab === 'github' && repositorySearchId(search.repository) ? { repository: repositorySearchId(search.repository) } : {}),
+        ...(search.tab === 'setup' && isSetupStep(search.step) ? { step: search.step } : {}),
+        // Return marker of a tool opened from the setup wizard; carries no state besides the step to return to.
+        ...(search.tab !== 'setup' && search.from === 'setup' ? { from: 'setup' as const, ...(isSetupStep(search.step) ? { step: search.step } : {}) } : {}),
     }
 }
 export function requiresProject(tab: WorkspaceTab) { return !['overview', 'projects', 'team', 'providers', 'agents'].includes(tab) }
@@ -51,6 +58,7 @@ const icons: Record<WorkspaceTab | 'sessions' | 'more' | 'close' | 'arrow', Reac
     projects: <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z" />,
     agents: <><rect x="4" y="7" width="16" height="13" rx="3" /><path d="M12 3v4M8 12h.01M16 12h.01M8 16h8M2 11v5m20-5v5" /></>,
     capacity: <><path d="M4 18a9 9 0 1 1 16 0M12 13l4-5" /><circle cx="12" cy="13" r="1" /></>,
+    setup: <><path d="M4 6h3m4 0h9M4 12h9m4 0h3M4 18h1m4 0h11" /><circle cx="9" cy="6" r="2" /><circle cx="15" cy="12" r="2" /><circle cx="7" cy="18" r="2" /></>,
     development: <><path d="m8 8-4 4 4 4m8-8 4 4-4 4m-2-11-4 14" /></>,
     github: <><circle cx="6" cy="5" r="2" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="7" r="2" /><path d="M6 7v10M18 9v2a5 5 0 0 1-5 5H6" /></>,
     mcp: <><path d="M8 3v5m8-5v5M6 8h12v3a6 6 0 0 1-6 6v4m0-4a6 6 0 0 1-6-6Z" /></>,
@@ -70,8 +78,10 @@ const icons: Record<WorkspaceTab | 'sessions' | 'more' | 'close' | 'arrow', Reac
 export function WorkspaceIcon({ name }: { name: keyof typeof icons }) {
     return <svg className="ew-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{icons[name]}</svg>
 }
-export function WorkspaceLink({ tab, projectId, children, className, onClick, current }: {
+export function WorkspaceLink({ tab, projectId, children, className, onClick, current, step, from }: {
     tab: WorkspaceTab; projectId?: string; children: ReactNode; className?: string; onClick?: () => void; current?: boolean
+    /** Setup step to open (tab `setup`) or to return to (`from: 'setup'`). */
+    step?: SetupStep; from?: 'setup'
 }) {
-    return <Link to="/evolved" search={{ tab, ...(projectId ? { project: projectId } : {}) }} className={className} onClick={onClick} aria-current={current ? 'page' : undefined}>{children}</Link>
+    return <Link to="/evolved" search={{ tab, ...(projectId ? { project: projectId } : {}), ...(step ? { step } : {}), ...(from ? { from } : {}) }} className={className} onClick={onClick} aria-current={current ? 'page' : undefined}>{children}</Link>
 }

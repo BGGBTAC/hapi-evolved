@@ -4,9 +4,9 @@ import { Hono } from 'hono'
 import { MACHINE_CAPABILITIES } from '@hapi/protocol'
 import {
     DevelopmentBuildStatusResponseSchema, DevelopmentConfigResponseSchema, DevelopmentContextSchema, DevelopmentDoctorResponseSchema, DevelopmentInspectResponseSchema,
-    DevelopmentKnowledgeResponseSchema, EVOLVED_DEVELOPMENT_CAPABILITY, defaultDevelopmentSettings, defaultOdooSettings, type DevelopmentSettings,
+    DevelopmentIntegrationStatusSchema, DevelopmentKnowledgeResponseSchema, DevelopmentSettingsSchema, EVOLVED_DEVELOPMENT_CAPABILITY, defaultAndroidSettings, defaultDevelopmentSettings, defaultOdooSettings, type DevelopmentSettings,
 } from '@hapi/protocol/evolvedDevelopment'
-import { createDevelopmentService } from './development'
+import { createDevelopmentService, developmentIntegrations } from './development'
 import { createEvolvedRoutes } from './api'
 import { createAgentCatalogRoutes } from './agentCatalog'
 import { PluginService } from './plugins'
@@ -188,14 +188,24 @@ describe('development configuration', () => {
 describe('development context and knowledge', () => {
     test('human viewers and exact-project runner leases read context; standalone, foreign and query variants are denied', async () => {
         const t = setup()
-        await t.save(t.odoo({ repositoryId: repo.id }, { hosting: 'odoo_sh', developmentBranch: 'dev', stage: 'development', odooSh: { dashboardUrl: 'https://www.odoo.sh/project/acme', buildId: '4242', buildHost: 'acme-dev-4242.dev.odoo.com', sshResourceId: null } }), 0)
+        expect((await t.save(t.odoo({ repositoryId: repo.id }, { hosting: 'odoo_sh', developmentBranch: 'dev', odooSh: { dashboardUrl: 'https://www.odoo.sh/project/acme', unassigned: null,
+            staging: { branch: 'staging', buildId: '4242', buildHost: 'acme-staging-4242.dev.odoo.com', sshResourceId: 'ssh-shared', applicationResourceId: null },
+            production: { branch: 'main', buildId: null, buildHost: null, sshResourceId: null, applicationResourceId: 'erp-prod' } } }), 0)).status).toBe(200)
         const human = DevelopmentContextSchema.parse(await (await t.call('/context', { user: 'viewer' })).json())
         expect(human.repository).toMatchObject({ state: 'granted', fullName: repo.fullName, relativePath: 'repositories/acme/addons' })
         expect(human.pack!.topics.some(topic => topic.id === 'odoo-runtime-20')).toBe(true)
         expect(human.pack!.topics.some(topic => topic.id === 'odoo-runtime-19')).toBe(false)
-        const ssh = human.integrations.find(item => item.id === 'odoo-sh-ssh')!
-        expect(ssh.command).toEqual(['ssh', '4242@acme-dev-4242.dev.odoo.com'])
-        expect(human.integrations.find(item => item.id === 'odoo-sh-dashboard')!.links.map(link => link.url)).toEqual(['https://www.odoo.sh/project/acme', 'https://acme-dev-4242.dev.odoo.com/', 'https://acme-dev-4242.dev.odoo.com/odoo-sh/editor'])
+        const staging = human.integrations.find(item => item.id === 'odoo-sh-staging')!, production = human.integrations.find(item => item.id === 'odoo-sh-production')!
+        expect(staging).toMatchObject({ environment: 'staging', branch: 'staging', state: 'configured', command: ['ssh', '4242@acme-staging-4242.dev.odoo.com'] })
+        expect(staging.links.map(link => link.url)).toEqual(['https://acme-staging-4242.dev.odoo.com/', 'https://acme-staging-4242.dev.odoo.com/odoo-sh/editor'])
+        // Production never borrows the staging build, links or SSH command; its own references stay its own.
+        expect(production).toMatchObject({ environment: 'production', branch: 'main', state: 'configured', links: [] })
+        expect(production.command).toBeUndefined()
+        expect(production.detail).toContain('erp-prod')
+        expect(production.detail).not.toContain('ssh-shared')
+        expect(human.integrations.find(item => item.id === 'odoo-sh-project')!.links.map(link => link.url)).toEqual(['https://www.odoo.sh/project/acme'])
+        expect(human.integrations.find(item => item.id === 'odoo-sh-unassigned')!.state).toBe('not_configured')
+        expect(human.integrations.some(item => item.id === 'odoo-sh-ssh' || item.id === 'odoo-sh-dashboard')).toBe(false)
         const runner = DevelopmentContextSchema.parse(await (await t.call('/context', { token: t.capability() })).json())
         expect(runner.revision).toBe(1)
         const noGit = DevelopmentContextSchema.parse(await (await t.call('/context', { token: t.capability(['runner:connect']) })).json())
@@ -349,14 +359,14 @@ describe('development doctor and inspect', () => {
 describe('development build status', () => {
     test('reads only the bound repository through the broker and keeps unknown distinct from success', async () => {
         const t = setup()
-        expect(DevelopmentBuildStatusResponseSchema.parse(await (await t.call('/build-status')).json()).state).toBe('unbound')
+        expect(DevelopmentBuildStatusResponseSchema.parse(await (await t.call('/build-status?ref=main')).json()).state).toBe('unbound')
         await t.save(t.odoo({ repositoryId: repo.id }, { hosting: 'odoo_sh', developmentBranch: 'odoo-dev' }), 0)
-        const ok = DevelopmentBuildStatusResponseSchema.parse(await (await t.call('/build-status', { user: 'viewer' })).json())
-        expect(ok).toMatchObject({ state: 'success', sha, repositoryId: repo.id, ref: 'odoo-dev' })
+        const ok = DevelopmentBuildStatusResponseSchema.parse(await (await t.call('/build-status?ref=odoo-dev', { user: 'viewer' })).json())
+        expect(ok).toMatchObject({ state: 'success', sha, repositoryId: repo.id, ref: 'odoo-dev', environment: null })
         const statusCall = t.vaultCalls.find(call => call.payload.action === 'commitStatus')!
         expect(statusCall.payload).toEqual({ action: 'commitStatus', repositoryId: repo.id, ref: 'odoo-dev' })
         const reads = () => t.vaultCalls.filter(call => call.payload.action === 'commitStatus').length
-        await t.call('/build-status')
+        await t.call('/build-status?ref=odoo-dev')
         // No cache: each read goes through the Vault grant check.
         expect(reads()).toBe(2)
         t.setStatus(request => ({ state: 'no_status', repositoryId: String(request.payload.repositoryId), fullName: repo.fullName, ref: sha, sha, observedAt: 1, totalCount: 0, truncated: false, statuses: [] }))
@@ -364,18 +374,50 @@ describe('development build status', () => {
         expect(none.state).toBe('no_status')
         expect(none.message).toContain('Odoo.sh')
         t.setStatus(() => { throw new EvolvedError('github_repository_changed', 'changed', 409) })
-        expect(DevelopmentBuildStatusResponseSchema.parse(await (await t.call('/build-status')).json()).state).toBe('not_granted')
+        expect(DevelopmentBuildStatusResponseSchema.parse(await (await t.call('/build-status?ref=main')).json()).state).toBe('not_granted')
         t.setStatus(() => ({ state: 'success', repositoryId: '1', fullName: 'other/repo', ref: 'x', sha, observedAt: 1, totalCount: 1, truncated: false, statuses: [] }))
-        expect(DevelopmentBuildStatusResponseSchema.parse(await (await t.call('/build-status')).json()).state).toBe('unavailable')
-        expect((await t.call('/build-status', { token: t.capability(['runner:connect']) })).status).toBe(403)
-        for (const query of ['?ref=-x', '?ref=a..b', '?url=https://evil.test', '?ref=a&ref=b', '?repositoryId=1']) expect((await t.call(`/build-status${query}`)).status).toBe(400)
+        expect(DevelopmentBuildStatusResponseSchema.parse(await (await t.call('/build-status?ref=main')).json()).state).toBe('unavailable')
+        // A broker answer for another ref than requested is not reported as this ref.
+        t.setStatus(request => ({ state: 'success', repositoryId: String(request.payload.repositoryId), fullName: repo.fullName, ref: 'other', sha, observedAt: 1, totalCount: 1, truncated: false, statuses: [] }))
+        expect(DevelopmentBuildStatusResponseSchema.parse(await (await t.call('/build-status?ref=main')).json()).state).toBe('unavailable')
+        expect((await t.call('/build-status?ref=main', { token: t.capability(['runner:connect']) })).status).toBe(403)
+        for (const query of ['?ref=-x', '?ref=a..b', '?url=https://evil.test', '?ref=a&ref=b', '?repositoryId=1', '?environment=development', '?environment=staging&environment=production']) expect((await t.call(`/build-status${query}`)).status).toBe(400)
+    })
+    test('no implicit target: environment reads use exactly the declared branch of that stage and echo it', async () => {
+        const t = setup()
+        const before = t.vaultCalls.length
+        // Neither the working branch nor GitHub's default branch nor production is inferred.
+        expect(await (await t.call('/build-status')).json()).toMatchObject({ code: 'development_status_target_required' })
+        expect(await (await t.call('/build-status?environment=staging')).json()).toMatchObject({ code: 'development_environment_unavailable' })
+        const env = (branch: string | null) => ({ branch, buildId: null, buildHost: null, sshResourceId: null, applicationResourceId: null })
+        await t.save(t.odoo({ repositoryId: repo.id }, { hosting: 'odoo_sh', developmentBranch: 'work', odooSh: { dashboardUrl: null, staging: env('staging'), production: env(null), unassigned: null } }), 0)
+        expect(await (await t.call('/build-status?environment=production')).json()).toMatchObject({ code: 'development_environment_undeclared' })
+        expect(await (await t.call('/build-status?environment=staging&ref=main')).json()).toMatchObject({ code: 'development_environment_ref_conflict' })
+        expect(t.vaultCalls.filter(call => call.payload.action === 'commitStatus')).toHaveLength(0)
+        const staging = DevelopmentBuildStatusResponseSchema.parse(await (await t.call('/build-status?environment=staging', { token: t.capability() })).json())
+        expect(staging).toMatchObject({ environment: 'staging', ref: 'staging', revision: 1, state: 'success' })
+        expect(DevelopmentBuildStatusResponseSchema.parse(await (await t.call('/build-status?environment=staging&ref=staging')).json()).environment).toBe('staging')
+        expect(t.vaultCalls.slice(before).filter(call => call.payload.action === 'commitStatus').map(call => call.payload.ref)).toEqual(['staging', 'staging'])
+        // Hosting switched away: stored stages are kept but no longer readable as environments.
+        await t.save(t.odoo({ repositoryId: repo.id }, { hosting: 'local', developmentBranch: 'work', odooSh: { dashboardUrl: null, staging: env('staging'), production: env(null), unassigned: null } }))
+        expect(await (await t.call('/build-status?environment=staging')).json()).toMatchObject({ code: 'development_environment_unavailable' })
+    })
+    test('a stage switch during the status read discards the result instead of labelling it with the new branch', async () => {
+        const t = setup()
+        const env = (branch: string | null) => ({ branch, buildId: null, buildHost: null, sshResourceId: null, applicationResourceId: null })
+        const settings = (branch: string) => t.odoo({ repositoryId: repo.id }, { hosting: 'odoo_sh', odooSh: { dashboardUrl: null, staging: env(branch), production: env('main'), unassigned: null } })
+        await t.save(settings('staging'), 0)
+        t.onVault(async request => { if (request.payload.action === 'commitStatus') { t.onVault(); expect((await t.save(settings('staging-2'), 1)).status).toBe(200) } })
+        expect(await (await t.call('/build-status?environment=staging')).json()).toMatchObject({ code: 'development_changed' })
+        const fresh = DevelopmentBuildStatusResponseSchema.parse(await (await t.call('/build-status?environment=staging')).json())
+        expect(fresh).toMatchObject({ environment: 'staging', ref: 'staging-2', revision: 2 })
     })
     test('a revoked repository grant takes effect on the very next status read (no cached private status)', async () => {
         const t = setup()
         await t.save(t.odoo({ repositoryId: repo.id }), 0)
-        expect(DevelopmentBuildStatusResponseSchema.parse(await (await t.call('/build-status')).json())).toMatchObject({ state: 'success', statuses: [{ context: 'ci' }] })
+        expect(DevelopmentBuildStatusResponseSchema.parse(await (await t.call('/build-status?ref=main')).json())).toMatchObject({ state: 'success', statuses: [{ context: 'ci' }] })
         t.setStatus(() => { throw new EvolvedError('github_revoked', 'revoked', 403) })
-        const after = DevelopmentBuildStatusResponseSchema.parse(await (await t.call('/build-status')).json())
+        const after = DevelopmentBuildStatusResponseSchema.parse(await (await t.call('/build-status?ref=main')).json())
         expect(after).toMatchObject({ state: 'not_granted', sha: null, statuses: [], fullName: null })
         expect(t.vaultCalls.filter(call => call.payload.action === 'commitStatus')).toHaveLength(2)
     })
@@ -434,6 +476,32 @@ describe('development task starts reuse the specialist start', () => {
         expect(conflicting.status).toBe(409)
         expect(((await conflicting.json()) as any).code).toBe('agent_operation_conflict')
         expect(t.started).toHaveLength(1)
+    })
+    test('a restricted profile refuses consequential tasks (recipe effects included) before reserving, but keeps read-only planning', async () => {
+        const t = startSetup()
+        await t.save(t.odoo({ repositoryId: repo.id }), 0)
+        t.store.db.prepare("UPDATE evolved_projects SET profile='restricted' WHERE id=?").run(t.project.id)
+        const refused = await t.start('builtin:implementation', { operationId: randomUUID(), machineId: 'machine-0', task: 'Set up.', development: { taskId: 'odoo-setup-runtime', revision: 1 } })
+        expect(await refused.json()).toMatchObject({ code: 'development_profile_required', reserved: false, requiredProfiles: ['workspace', 'extended'], effects: expect.arrayContaining(['network_download', 'installs_in_project']) })
+        expect(refused.status).toBe(409)
+        expect(t.started).toHaveLength(0)
+        expect(t.repositoryStarts).toHaveLength(0)
+        expect(t.store.db.query('SELECT COUNT(*) AS n FROM evolved_agent_starts').get()).toEqual({ n: 0 })
+        // A reviewing task whose effects (own and recipe) only read stays available as an explicit plan-mode session.
+        const review = await t.start('builtin:review', { operationId: randomUUID(), machineId: 'machine-0', task: 'Check staging.', development: { taskId: 'odoo-sh-build', revision: 1 } })
+        expect(review.status).toBe(201)
+        expect(t.started[0]![10]).toBe('plan')
+        const { sessionId } = await review.json() as { sessionId: string }
+        expect(t.messages.get(sessionId)![0]!.text).toContain('"effectiveEffects":["reads_repository","manual_handoff"]')
+    })
+    test('a profile downgrade during spawn aborts a consequential start', async () => {
+        const t = startSetup()
+        await t.save(t.odoo({ repositoryId: repo.id }), 0)
+        t.spawnHook(() => { t.store.db.prepare("UPDATE evolved_projects SET profile='restricted' WHERE id=?").run(t.project.id) })
+        const response = await t.start('builtin:implementation', { operationId: randomUUID(), machineId: 'machine-0', task: 'Set up.', development: { taskId: 'odoo-setup-runtime', revision: 1 } })
+        expect(response.status).toBe(409)
+        expect(((await response.json()) as any).code).toBe('agent_start_changed')
+        expect(t.messages.size).toBe(0)
     })
     test('stale revisions, wrong specialists, foreign versions and missing repositories create no session', async () => {
         const t = startSetup()
@@ -610,5 +678,113 @@ describe('ordinary project spawns default to the bound repository', () => {
         t.spawnHook(async () => { t.spawnHook(); await t.save(t.odoo({ repositoryId: null }), 1) })
         expect(await t.spawn({})).toMatchObject({ status: 409, code: 'development_default_changed', sessionId: 'session-1', archived: true })
         expect(t.archived).toEqual(['session-1'])
+    })
+})
+
+describe('Odoo.sh environments: legacy storage, CAS and retention', () => {
+    const write = (t: ReturnType<typeof setup>, raw: unknown, revision = 3) => t.store.db.prepare('INSERT INTO evolved_project_development VALUES(?,?,?,?,?,?,?,?)').run(t.project.id, revision, JSON.stringify(raw), null, 'admin', Date.now(), null, null)
+    const row = (t: ReturnType<typeof setup>) => t.store.db.query('SELECT revision,settings FROM evolved_project_development WHERE project_id=?').get(t.project.id) as { revision: number; settings: string }
+    const legacyOdoo = (patch: Record<string, unknown> = {}, sh: Record<string, unknown> = {}) => ({ major: 20, edition: 'community', hosting: 'odoo_sh', addonsPaths: ['.'], modules: [], developmentBranch: 'main', stage: null,
+        enterpriseRepositoryId: null, testDatabaseSlug: 'dev', odooSh: { dashboardUrl: 'https://www.odoo.sh/project/acme', buildId: '77', buildHost: 'acme-main-77.dev.odoo.com', sshResourceId: 'ssh-77', ...sh }, applicationResourceId: 'erp', ...patch })
+    const v1 = (odoo: unknown) => ({ mode: 'odoo', repositoryId: repo.id, odoo, ios: null, android: null })
+    test('explicit legacy stages map only to that environment; the working branch is preserved; reads never write', async () => {
+        for (const [stage, target, other] of [['staging', 'staging', 'production'], ['production', 'production', 'staging']] as const) {
+            const t = setup()
+            write(t, v1(legacyOdoo({ stage })))
+            const before = row(t)
+            const settings = (await (await t.call('')).json() as any).config.settings
+            expect(settings.odoo.developmentBranch).toBe('main')
+            expect(settings.odoo.odooSh[target]).toEqual({ branch: 'main', buildId: '77', buildHost: 'acme-main-77.dev.odoo.com', sshResourceId: 'ssh-77', applicationResourceId: null })
+            expect(settings.odoo.odooSh[other]).toEqual({ branch: null, buildId: null, buildHost: null, sshResourceId: null, applicationResourceId: null })
+            // The application resource never had a stage: it stays unassigned instead of being guessed.
+            expect(settings.odoo.odooSh.unassigned).toEqual({ declaredStage: null, branch: null, buildId: null, buildHost: null, sshResourceId: null, applicationResourceId: 'erp' })
+            expect(settings.odoo.odooSh.dashboardUrl).toBe('https://www.odoo.sh/project/acme')
+            expect(row(t)).toEqual(before)
+        }
+    })
+    test('development or undeclared legacy builds stay exactly unassigned (v1 and v2 envelopes)', async () => {
+        for (const stage of ['development', null] as const) for (const envelope of ['v1', 'v2'] as const) {
+            const t = setup()
+            const odoo = legacyOdoo({ stage, hosting: 'odoo_sh' })
+            write(t, envelope === 'v1' ? v1(odoo) : { schemaVersion: 2, settings: { activeModuleId: 'builtin:odoo', repositoryId: repo.id, odoo, ios: null, android: null, modules: {} } })
+            const settings = (await (await t.call('/modules')).json() as any).config.settings
+            expect(settings.odoo.developmentBranch).toBe('main')
+            expect(settings.odoo.odooSh.staging.branch).toBeNull()
+            expect(settings.odoo.odooSh.production.branch).toBeNull()
+            expect(settings.odoo.odooSh.unassigned).toEqual({ declaredStage: stage, branch: 'main', buildId: '77', buildHost: 'acme-main-77.dev.odoo.com', sshResourceId: 'ssh-77', applicationResourceId: 'erp' })
+            const context = DevelopmentContextSchema.parse(await (await t.call('/context')).json())
+            const unassigned = context.integrations.find(item => item.id === 'odoo-sh-unassigned')!
+            expect(unassigned).toMatchObject({ state: 'manual', links: [] })
+            expect(unassigned.command).toBeUndefined()
+            expect(context.integrations.find(item => item.id === 'odoo-sh-staging')!.command).toBeUndefined()
+            expect(await (await t.call('/build-status?environment=production')).json()).toMatchObject({ code: 'development_environment_undeclared' })
+        }
+    })
+    test('legacy local hosting keeps its application resource top-level and is written back as v3 only by an explicit save', async () => {
+        const t = setup()
+        write(t, v1(legacyOdoo({ hosting: 'local', stage: null }, { dashboardUrl: null, buildId: null, buildHost: null, sshResourceId: null })))
+        const config = (await (await t.call('')).json() as any).config
+        expect(config.settings.odoo).toMatchObject({ applicationResourceId: 'erp', developmentBranch: 'main', odooSh: { unassigned: null } })
+        expect(JSON.parse(row(t).settings).schemaVersion).toBeUndefined()
+        expect((await t.save(config.settings, 3)).status).toBe(200)
+        expect(JSON.parse(row(t).settings)).toMatchObject({ schemaVersion: 3, settings: { odoo: { applicationResourceId: 'erp' } } })
+    })
+    test('unassigned legacy details can only be kept unchanged or removed', async () => {
+        const t = setup()
+        write(t, v1(legacyOdoo({ stage: 'development' })))
+        const settings = (await (await t.call('')).json() as any).config.settings
+        const edited = structuredClone(settings); edited.odoo.odooSh.unassigned.sshResourceId = 'other'
+        expect(await (await t.save(edited, 3)).json()).toMatchObject({ code: 'development_module_settings_invalid', issues: [{ path: ['odoo', 'odooSh', 'unassigned'] }] })
+        expect(row(t).revision).toBe(3)
+        expect((await t.save(settings, 3)).status).toBe(200)
+        // Explicit mapping: the human enters the staging stage and drops the legacy slot in the same CAS write.
+        const mapped = structuredClone(settings)
+        mapped.odoo.odooSh.staging = { branch: 'main', buildId: '77', buildHost: 'acme-main-77.dev.odoo.com', sshResourceId: 'ssh-77', applicationResourceId: null }
+        mapped.odoo.odooSh.unassigned = null
+        expect((await t.save(mapped, 4)).status).toBe(200)
+        const fresh = setup()
+        const created = await fresh.app.request(`${origin}/api/evolved/projects`, { method: 'POST', headers: { origin, 'content-type': 'application/json', cookie: `${SESSION_COOKIE}=${fresh.sessions.admin}` },
+            body: JSON.stringify({ teamId: fresh.team.id, name: 'New', development: { settings: { ...settings, repositoryId: null } } }) })
+        expect({ status: created.status, ...(await created.json() as any) }).toMatchObject({ status: 400, code: 'development_module_settings_invalid' })
+    })
+    test('switching modules with odoo:null (v1 and v2 routes) keeps the stored environments as inactive data', async () => {
+        const t = setup()
+        const env = (branch: string, buildId: string) => ({ branch, buildId, buildHost: `acme-${branch}-${buildId}.dev.odoo.com`, sshResourceId: 'ssh', applicationResourceId: null })
+        const odoo = t.odoo({ repositoryId: repo.id }, { hosting: 'odoo_sh', odooSh: { dashboardUrl: null, staging: env('staging', '1'), production: env('main', '2'), unassigned: null } })
+        expect((await t.save(odoo, 0)).status).toBe(200)
+        expect((await t.save({ ...defaultDevelopmentSettings('ios'), repositoryId: repo.id, odoo: null }, 1)).status).toBe(200)
+        const v2 = (await (await t.call('/modules')).json() as any).config
+        expect(v2.settings).toMatchObject({ activeModuleId: 'builtin:ios', odoo: { odooSh: { production: { branch: 'main', buildId: '2' } } } })
+        expect((await t.call('/modules', { method: 'PUT', body: { expectedRevision: 2, settings: { ...v2.settings, activeModuleId: 'builtin:android', android: defaultAndroidSettings(), odoo: null } } })).status).toBe(200)
+        const after = (await (await t.call('/modules')).json() as any).config.settings
+        expect(after.odoo.odooSh.staging).toEqual(env('staging', '1'))
+        expect(after.activeModuleId).toBe('builtin:android')
+        // Switching back restores both stages.
+        expect((await t.save({ ...odoo, odoo: after.odoo }, 3)).status).toBe(200)
+    })
+    test('a pre-environment Odoo shape is refused on write instead of being stored', async () => {
+        const t = setup()
+        expect((await t.save(v1(legacyOdoo({ stage: 'staging' })) as never, 0)).status).toBe(400)
+        expect(row(t)).toBeNull()
+    })
+})
+
+describe('Odoo.sh integration details at the length boundary', () => {
+    test('maximum-length branches and references never truncate the qualification or the stage warnings', () => {
+        const settings = defaultDevelopmentSettings('odoo'), branch = 'a'.repeat(200)
+        settings.odoo = { ...settings.odoo!, hosting: 'odoo_sh', developmentBranch: branch, odooSh: { dashboardUrl: null, unassigned: { declaredStage: 'development', branch: 'u'.repeat(200), buildId: '999999999998', buildHost: `${'h'.repeat(63)}.dev.odoo.com`, sshResourceId: 'x'.repeat(128), applicationResourceId: 'y'.repeat(128) },
+            staging: { branch: 'b'.repeat(200), buildId: '999999999998', buildHost: 'synthetic-999999999998.dev.odoo.com', sshResourceId: 's'.repeat(128), applicationResourceId: 'j'.repeat(128) },
+            production: { branch, buildId: '999999999999', buildHost: 'synthetic-999999999999.dev.odoo.com', sshResourceId: 's'.repeat(128), applicationResourceId: 'j'.repeat(128) } } }
+        const rows = developmentIntegrations(DevelopmentSettingsSchema.parse(settings), { state: 'unbound', repositoryId: null, fullName: null, permission: null, checkoutPath: null, relativePath: null })
+        const detail = (id: string) => DevelopmentIntegrationStatusSchema.parse(rows.find(row => row.id === id)).detail
+        const production = detail('odoo-sh-production'), staging = detail('odoo-sh-staging'), unassigned = detail('odoo-sh-unassigned')
+        for (const text of [production, staging, unassigned]) expect(text.length).toBeLessThanOrEqual(500)
+        expect(production).toContain('Nur gespeicherte Angaben; HAPI öffnet keine Verbindung und startet keinen Build.')
+        expect(production).toContain('Live-Datenbank')
+        expect(production).toContain('Achtung: Der lokale Arbeitsbranch ist dieser Produktion-Branch')
+        expect(production).toContain('…')
+        expect(staging).toContain('neutralisierte Kopie')
+        expect(staging).not.toContain('Arbeitsbranch')
+        expect(unassigned).toContain('weder für Staging noch Produktion verwendet')
     })
 })

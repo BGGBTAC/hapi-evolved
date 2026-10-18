@@ -5,6 +5,7 @@ import {
     DEVELOPMENT_ARTIFACTS_DIRECTORY, DEVELOPMENT_TOOLCHAIN_DIRECTORY,
     GitRefSchema, OdooShBuildHostSchema, OdooShDashboardUrlSchema, RepoRelativePathSchema, XcodeSchemeSchema, GradleModuleSchema,
     defaultAndroidSettings, defaultDevelopmentSettings, defaultIosSettings, defaultOdooSettings, developmentApplies, developmentContentHash,
+    DevelopmentBuildStatusQuerySchema, defaultOdooShSettings, emptyOdooShEnvironment, odooShEnvironmentLinks, odooShEnvironmentSshCommand,
 } from './evolvedDevelopment'
 
 describe('development settings contract', () => {
@@ -50,13 +51,39 @@ describe('development settings contract', () => {
     test('odoo cross-field rules', () => {
         const base = defaultDevelopmentSettings('odoo')
         const withOdoo = (patch: object) => DevelopmentSettingsSchema.safeParse({ ...base, odoo: { ...base.odoo!, ...patch } }).success
-        expect(withOdoo({ odooSh: { dashboardUrl: 'https://www.odoo.sh/project/acme', buildId: null, buildHost: null, sshResourceId: null } })).toBe(false)
-        expect(withOdoo({ hosting: 'odoo_sh', odooSh: { dashboardUrl: null, buildId: '12', buildHost: null, sshResourceId: null } })).toBe(false)
-        expect(withOdoo({ hosting: 'odoo_sh', odooSh: { dashboardUrl: null, buildId: '12', buildHost: 'p-12.dev.odoo.com', sshResourceId: 'ssh-build' } })).toBe(true)
-        expect(withOdoo({ enterpriseRepositoryId: '5' })).toBe(false)
+        const env = (patch: object) => ({ ...emptyOdooShEnvironment(), ...patch })
+        const sh = (patch: object) => ({ hosting: 'odoo_sh', odooSh: { ...defaultOdooShSettings(), ...patch } })
+        // Hosting switches keep Odoo.sh values as inactive data.
+        expect(withOdoo({ odooSh: { ...defaultOdooShSettings(), dashboardUrl: 'https://www.odoo.sh/project/acme', staging: env({ branch: 'staging' }) } })).toBe(true)
+        expect(withOdoo(sh({ staging: env({ branch: 'staging', buildId: '12' }) }))).toBe(false)
+        expect(withOdoo(sh({ staging: env({ branch: 'staging', buildId: '12', buildHost: 'p-staging-12.dev.odoo.com', sshResourceId: 'ssh-build' }) }))).toBe(true)
+        expect(withOdoo(sh({ staging: env({ buildId: '12', buildHost: 'p-staging-12.dev.odoo.com' }) }))).toBe(false)
+        expect(withOdoo(sh({ staging: env({ sshResourceId: 'ssh-build' }) }))).toBe(false)
+        // SSH build hosts stay *.dev.odoo.com; a public website domain is not an SSH endpoint.
+        expect(withOdoo(sh({ production: env({ branch: 'main', buildId: '13', buildHost: 'acme.odoo.com' }) }))).toBe(false)
+        expect(withOdoo(sh({ staging: env({ branch: 'main' }), production: env({ branch: 'main' }) }))).toBe(false)
+        expect(withOdoo(sh({ staging: env({ branch: 's', buildId: '12', buildHost: 'p-12.dev.odoo.com' }), production: env({ branch: 'main', buildId: '12', buildHost: 'p-13.dev.odoo.com' }) }))).toBe(false)
+        expect(withOdoo(sh({ staging: env({ branch: 's', buildId: '12', buildHost: 'p-12.dev.odoo.com' }), production: env({ branch: 'main', buildId: '13', buildHost: 'p-12.dev.odoo.com' }) }))).toBe(false)
+        // The same authorised Vault resource may be named deliberately for both stages; the working branch may equal a stage branch.
+        expect(withOdoo({ ...sh({ staging: env({ branch: 's', buildId: '12', buildHost: 'p-12.dev.odoo.com', sshResourceId: 'ssh', applicationResourceId: 'api' }),
+            production: env({ branch: 'main', buildId: '13', buildHost: 'p-13.dev.odoo.com', sshResourceId: 'ssh', applicationResourceId: 'api' }) }), developmentBranch: 'main' })).toBe(true)
         expect(withOdoo({ stage: 'production' })).toBe(false)
+        expect(withOdoo({ odooSh: { dashboardUrl: null, buildId: '12', buildHost: 'p-12.dev.odoo.com', sshResourceId: null } })).toBe(false)
+        expect(withOdoo({ enterpriseRepositoryId: '5' })).toBe(false)
         expect(withOdoo({ major: 18 })).toBe(false)
         expect(withOdoo({ modules: ['sale', 'sale'] })).toBe(false)
+    })
+    test('Odoo.sh environment links and SSH argv derive only from the validated host of that stage', () => {
+        expect(odooShEnvironmentLinks({ buildHost: 'p-12.dev.odoo.com' })).toEqual({ build: 'https://p-12.dev.odoo.com/', editor: 'https://p-12.dev.odoo.com/odoo-sh/editor' })
+        expect(odooShEnvironmentLinks({ buildHost: null })).toBeNull()
+        expect(odooShEnvironmentSshCommand({ buildId: '12', buildHost: 'p-12.dev.odoo.com' })).toEqual(['ssh', '12@p-12.dev.odoo.com'])
+        expect(odooShEnvironmentSshCommand({ buildId: '12', buildHost: null })).toBeNull()
+    })
+    test('build-status needs an explicit ref or environment', () => {
+        expect(DevelopmentBuildStatusQuerySchema.safeParse({}).success).toBe(false)
+        expect(DevelopmentBuildStatusQuerySchema.safeParse({ environment: 'staging' }).success).toBe(true)
+        expect(DevelopmentBuildStatusQuerySchema.safeParse({ environment: 'development' }).success).toBe(false)
+        expect(DevelopmentBuildStatusQuerySchema.safeParse({ ref: 'main', environment: 'production' }).success).toBe(true)
     })
     test('creation mode cannot reference repositories', () => {
         expect(DevelopmentCreationSchema.safeParse({ settings: defaultDevelopmentSettings('odoo') }).success).toBe(true)

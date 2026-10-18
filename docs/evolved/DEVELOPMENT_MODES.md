@@ -15,6 +15,29 @@ Auch für Plugin-Module gilt alles in „Was die Aktivierung tut“.
 
 Stand der Inhalte und Downloads: 2026-10-17.
 
+## Geführte Projekteinrichtung
+
+Nach der Projektanlage öffnet **Einrichtung** das neue Projekt. Bestehende Projekte
+können denselben Assistenten jederzeit aufrufen. Er führt durch Profil, Anbieter,
+Repository, Moduleinstellungen und Prüfungen; der Fortschritt ergibt sich aus den
+gespeicherten Angaben und aktuellen Prüfergebnissen.
+
+1. Für Codeänderungen und lokale Einrichtung zuerst das Profil **Arbeitsbereich**
+   wählen. Ein späterer Profilwechsel macht bisherige Runner-Zugänge ungültig.
+2. Unter **Abos verbinden** Claude oder Codex anmelden und den Projektdienst einrichten.
+3. Das eigene Repository unter **GitHub** freigeben, klonen und als Standard-Repository
+   binden. Der Assistent berücksichtigt genau diesen Checkout.
+4. Modul und Felder prüfen und ausdrücklich speichern. Benötigt ein Plugin bereits
+   ein Repository als Pflichtfeld, wird zuerst das allgemeine Projekt angelegt und
+   das gewünschte Modul als Entwurf vorgemerkt.
+5. Werkzeuge ausdrücklich prüfen. Eine Abhilfe kann zur passenden Einrichtungsaufgabe
+   führen; erst deren bewusster Start eröffnet die Agentensitzung. Nach der Einrichtung
+   erneut prüfen: Eine gestartete oder abgeschlossene Sitzung beweist keine fertige Laufzeit.
+
+Handbuch und Codearbeit benötigen weder Graph-Memory noch eine Odoo.sh-SSH-Verbindung.
+Gespeicherte Verbindungsdaten sind keine erfolgreiche Liveprüfung. Ein fehlender,
+veralteter oder nicht prüfbarer Zustand bleibt entsprechend sichtbar.
+
 ## Was die Aktivierung tut – und was nicht
 
 Ein Projektadmin wählt den Modus unter **Entwicklung** (`/evolved?tab=development`) oder
@@ -49,7 +72,7 @@ Werkzeuge den Zustand mit Begründung, und der Agent informiert einen Menschen.
 | `evolved_development_knowledge` | `hapi evolved development knowledge [--topic <id> \| <suche>]` | Handbuchthemen mit Quellen und Prüfdatum; funktioniert ohne Graph-Dienst |
 | `evolved_development_doctor` | `hapi evolved development doctor` | Feste, lesende Prüfungen auf dem Projektrunner, gebunden an Modul-ID und Digest |
 | `evolved_development_inspect` | `hapi evolved development inspect` | Statische Analyse des gebundenen Checkouts, gebunden an Modul-ID und Digest |
-| `evolved_development_build_status` | `hapi evolved development build-status [<branch\|sha>]` | GitHub-Commit-Status des gebundenen Repositorys |
+| `evolved_development_build_status` | `hapi evolved development build-status <branch\|sha>` oder `build-status --environment staging\|production` | GitHub-Commit-Status des gebundenen Repositorys für das ausdrücklich gewählte Ziel |
 
 Alle Ergebnisse sind **Daten**, keine Anweisungen und keine Berechtigungen. Agenten
 können den Modus nicht ändern; der Runner-Proxy lässt nur die Leserouten dieser
@@ -216,8 +239,11 @@ Tests laufen gegen die Wegwerf-Datenbank `hapi_test_<slug>` im Projekt-Cluster
 (Unix-Socket `.hapi/.cache/toolchain/postgresql/run` (bei zu langem Projektpfad ein privater Ordner `/tmp/hapi-pg-…` im Runner), `fsync` aus – nur für Testdaten). Log und
 `summary.json` liegen unter `.hapi/.cache/artifacts/odoo/<zeit>/`. Eine Datenbank wird nur
 gelöscht mit `hapi-dev db drop dev --confirm hapi_test_dev`. Enterprise-Quellen werden
-nie automatisch geklont; ein freigegebenes Enterprise-Repository wird wie jedes andere
-Repository geklont und als zusätzlicher Addons-Pfad verwendet. Checkout- und Paketpfade dürfen auch direkt der Projektordner sein; Pfade außerhalb werden abgelehnt.
+nie automatisch geklont. Das optionale Enterprise-Auswahlfeld merkt sich eine Freigabe;
+es ergänzt den separaten Checkout noch nicht automatisch im lokalen Testrezept.
+Für Tests mit Enterprise-Abhängigkeiten muss der Agent die autorisierten Zusatzquellen
+ausdrücklich in der lokalen Odoo-Konfiguration berücksichtigen. Checkout- und
+Paketpfade dürfen auch direkt der Projektordner sein; Pfade außerhalb werden abgelehnt.
 
 **Upgrade-Probelauf:** `upgrade_code --dry-run` ändert keine Dateien. Upstream beendet sich mit
 `sys.exit(int(is_dirty))`: Exit 0 heißt „keine Änderungen nötig“, Exit 1 heißt „Änderungen
@@ -226,12 +252,72 @@ schreibt `summary.json` mit `outcome` (`clean`, `changes_proposed`, `failed`) un
 Python-Traceback oder andere Codes weiter als Fehler. Upstream analysiert außer den angegebenen
 Addons-Pfaden auch die Odoo-Kernmodule; Vorschläge zu Kernmodulen betreffen nicht das Projekt.
 
-**Odoo.sh:** Buildmeldungen erscheinen nur, wenn Odoo.sh Commit-Status an GitHub sendet
-(Einstellung in Odoo.sh, Token mit „Commit statuses“). `no_status` oder `unknown` ist kein
-Erfolg. Dashboard-, Build- und Editor-Links sowie der SSH-Befehl `ssh <build-id>@<host>`
-werden nur aus geprüften, kopierten Angaben angezeigt; HAPI erzeugt oder kopiert keine
-Schlüssel und baut keine Verbindung automatisch auf. Ein Push auf einen Odoo.sh-Branch
-kann ein Deployment auslösen.
+### Odoo.sh: Staging und Produktion
+
+Beide Umgebungen haben eigene Angaben. Der Projektlink ist gemeinsam; je Umgebung
+werden Branch, Build-ID, Build-Host und optionale Tresorverweise getrennt gespeichert.
+Build- und Editorlinks entstehen aus dem jeweiligen Host. Der **Arbeitsbranch** ist
+eine eigene Angabe und schaltet den Checkout nicht automatisch um. Entspricht er dem
+Produktionsbranch, kann ein späterer Push die Produktion aktualisieren.
+
+| Feld | Herkunft und Beispiel |
+| --- | --- |
+| Projektlink | Adresszeile des Odoo.sh-Projekts, etwa `https://www.odoo.sh/project/acme` |
+| Staging-Branch | Name des in Odoo.sh der Stufe Staging zugeordneten Git-Branches, etwa `staging-q4` |
+| Produktionsbranch | Name des Produktionsbranches, etwa `main`; der Name allein beweist seine Stufe nicht |
+| Build-ID | Zahl vor `@` im von Odoo.sh angezeigten SSH-Befehl, etwa `25004381` |
+| Build-Host | Host nach `@`, etwa `acme-staging-25004381.dev.odoo.com`; keine GitHub-Adresse |
+| SSH-Ressource | Verweis auf eine vorhandene freigegebene Tresoraktion; kein privater Schlüssel |
+| Anwendungs-API-Ressource | Optionaler Tresorverweis auf die JSON-2-API genau dieser Datenbank; keine Odoo.sh-Steuer-API |
+
+Öffne in Odoo.sh den gewünschten Branch und Build und übernimm dessen Angaben in
+die passende Karte. Ein kopierter Build bleibt eine Momentaufnahme. Die öffentliche
+Website-Adresse ist nicht automatisch der SSH-Buildhost. Die GitHub-Schaltflächen
+eines Builds führen zum eigenen Projektbranch oder Commit, nicht zu Enterprise-Quellen.
+Siehe [Branches und SSH](https://www.odoo.com/documentation/20.0/administration/odoo_sh/getting_started/branches.html)
+und [Build-Oberfläche](https://www.odoo.com/documentation/20.0/administration/odoo_sh/getting_started/builds.html).
+
+Alte eindeutig als Staging oder Produktion deklarierte Angaben werden nur dieser
+Umgebung zugeordnet. Unklare Altangaben bleiben sichtbar zur ausdrücklichen Zuordnung;
+die andere Umgebung wird nicht automatisch befüllt. Auch beim Wechsel der Betriebsart
+bleiben die Werte erhalten. Speichern verwendet weiterhin eine Revisionsprüfung.
+
+Statusabfragen beziehen sich ausdrücklich auf eine Umgebung oder einen Git-Ref.
+HAPIs GitHub-Token benötigt **Commit statuses: Read-only**. Odoo.sh muss seinerseits
+Statusmeldungen veröffentlichen; dessen Einstellungen verwenden dafür **Commit statuses:
+write**. `no_status` und `unknown` sind kein Erfolg. Ein GitHub-Commitstatus beweist
+weder die aktuell laufende Produktionsdatenbank noch die Frische des kopierten Buildhosts.
+Siehe [Odoo.sh-Einstellungen](https://www.odoo.com/documentation/20.0/administration/odoo_sh/getting_started/settings.html).
+
+Der Assistent baut keine SSH-Verbindung auf, startet keinen Build und kopiert keine
+Schlüssel. Das Speichern einer Produktionsverbindung ist keine Ausführungsfreigabe.
+
+### Enterprise: Odoo.sh und lokale Quellen unterscheiden
+
+Das eigene GitHub-Repository enthält die eigenen Erweiterungen. **Odoo.sh stellt
+Enterprise selbst unter `/home/odoo/src/enterprise` bereit**, neben Community und dem
+eigenen Repository. Eine Buildnummer oder ein Subscriptioncode wird deshalb nicht
+als Enterprise-Repository eingetragen.
+[Offizielle Editor- und Quellstruktur](https://www.odoo.com/documentation/20.0/administration/odoo_sh/getting_started/online_editor.html).
+
+Das optionale Enterprise-Repository in HAPI betrifft zusätzliche lokale Entwicklung:
+
+1. Mit dem vorgesehenen GitHub-Konto prüfen, ob Zugriff auf die autorisierten
+   Enterprise-Quellen besteht. Ein Odoo.sh-Abo allein bestätigt keine GitHub-Einladung.
+2. Ein mit HAPIs GitHub-Verbindung erreichbares, berechtigtes Repository fürs Projekt
+   freigeben; zum Lesen der Quellen reichen Leserechte. Separat klonen und im
+   Enterprise-Feld auswählen. Passenden Versionsbranch `19.0` oder `20.0` verwenden.
+3. Für lokale Enterprise-Tests auch die passenden Community-Quellen und den zusätzlichen
+   Enterprise-Addons-Pfad einrichten. Die Auswahl allein erledigt das nicht.
+   [Quellinstallation](https://www.odoo.com/documentation/20.0/administration/on_premise/source.html).
+
+**Grenze der GitHub-Verbindung:** HAPI unterstützt derzeit ein Fine-grained Token je
+Projekt. GitHub bindet dieses an einen Resource Owner und begrenzt den Zugriff für
+Outside Collaborators. Ein Kundenrepository und das private `odoo/enterprise` können
+deshalb nicht allgemein mit demselben Token freigegeben werden. Den Token nicht als
+vermeintlichen Einrichtungsschritt wechseln: Erneutes Verbinden entfernt bisherige
+Repositoryfreigaben. HAPI beschafft keine zusätzlichen Nutzungs- oder Zugriffsrechte.
+[GitHub-Tokenregeln](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens).
 
 ### Android
 

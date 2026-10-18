@@ -230,7 +230,8 @@ try {
     if (await creator.getByLabel(/^Paketname für Übergänge/).inputValue() !== 'race_pkg' || await creator.getByLabel(/^Parallele Jobs/).inputValue() !== '3') fail('Compatible module values lost after reload');
     await raceTarget.fill('aab');
     await createRace.click();
-    await creator.getByText('Projekt angelegt.', { exact: true }).waitFor();
+    // A created project is entered directly: its setup opens for exactly that project.
+    await creator.getByRole('heading', { name: 'Einrichtung · Module Race' }).waitFor();
     const raceBody = creations.at(-1);
     const raceEntry = raceBody?.body.development?.settings.modules?.[moduleId];
     if (creations.length !== 2 || raceBody.status !== 201 || !raceEntry || raceEntry.moduleDigest === r1Digest || raceEntry.values.packageName !== 'race_pkg' || raceEntry.values.jobs !== 3 || raceEntry.values.target !== 'aab' || raceBody.body.name !== 'Module Race')

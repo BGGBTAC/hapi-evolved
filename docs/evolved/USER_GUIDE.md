@@ -148,6 +148,20 @@ Beim Anlegen reichen **Projektname und Team**: Im Hintergrund entsteht für jede
 neue Projekt ein eigener Ordner. Gleiche Namen führen trotzdem zu getrennten
 Verzeichnissen. Die Projektkarte zeigt nach dem Anlegen den tatsächlichen Pfad.
 
+Danach führt **Einrichtung** im neu angelegten Projekt durch die nächsten Schritte.
+Der Assistent lässt sich auch für bestehende Projekte erneut öffnen: zunächst das
+passende Arbeitsprofil, dann Anbieteranmeldung und GitHub, anschließend Modul und
+Prüfungen. Gespeicherte Angaben und aktuelle Ergebnisse bestimmen den Status;
+optionale Verbindungen müssen nicht ausgefüllt werden, um Code zu bearbeiten.
+Profilwechsel sollten vor der Anbieteranmeldung erfolgen, weil sie bestehende
+Runner-Zugänge ungültig machen.
+
+Für Odoo.sh gibt es **Staging und Produktion getrennt**, jeweils mit Branch,
+Buildangaben und Tresorverweisen. Das Enterprise-Feld betrifft zusätzliche lokale
+Quellen; in Odoo.sh selbst sind Enterprise-Addons bereits vorhanden. Feldbeispiele,
+Einrichtung und GitHub-Zugriffsgrenzen erklärt
+[Odoo.sh und Enterprise](DEVELOPMENT_MODES.md#odoo-sh-staging-und-produktion).
+
 **Neue Sessions starten automatisch im Ordner des aktiven Projekts.** Du musst
 den Pfad weder suchen noch eingeben. Das Formular zeigt den Projektordner nur
 zur Orientierung; alte Pfadvorschläge, gespeicherte Formulare und Direktlinks
