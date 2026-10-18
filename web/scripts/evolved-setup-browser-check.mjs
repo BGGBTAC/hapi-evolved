@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-import { readFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs';
+import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,8 +17,8 @@ import { workspaceArea } from './evolved-navigation.mjs';
  * no real Git transfer, provider, model or Odoo.sh is contacted.
  */
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..'), state = mkdtempSync('/tmp/hapi-evolved-ui-');
-const evidence = process.env.EVOLVED_SETUP_EVIDENCE_DIR ?? join(state, 'evidence');
-mkdirSync(evidence, { recursive: true });
+// Screenshots go to a fresh directory of their own (kept after the run, separate from the removed fixture state).
+const evidence = mkdtempSync('/tmp/hapi-odoo-setup-evidence-');
 async function freePort() { const server = createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); const port = server.address().port; await new Promise(resolve => server.close(resolve)); return port; }
 const hubPort = await freePort(), vaultPort = await freePort(), origin = `http://localhost:${hubPort}`;
 const suffix = randomBytes(4).toString('hex');
@@ -61,7 +61,7 @@ try {
         await page.getByRole('button', { name: 'Projekt anlegen', exact: true }).click();
         const id = (await (await response).json()).project.id;
         await page.getByRole('heading', { name: `Einrichtung · ${name}` }).waitFor().catch(async error => {
-            await page.screenshot({ path: join(evidence, `failed-handoff-${id}.png`) });
+            await page.screenshot({ path: join(evidence, 'failed-handoff.png') });
             fail(`${error.message}\nURL ${page.url()}\n${(await page.locator('main').innerText()).slice(0, 1500)}`);
         });
         const url = new URL(page.url());
