@@ -29,7 +29,10 @@ export function RepositoryPicker({ choices, value, onChange, projectId, disabled
         {choices.isFetching && <p role="status" className="ev-muted">Repository-Status wird geprüft …</p>}
         <ErrorNotice error={choices.error} />
         {showFolder && !unselected && <div className="ev-muted" role="group" aria-label="Arbeitsordner">Ordner: <code>{value ? usable ? repository!.path : 'nicht verfügbar' : choices.current?.rootPath ?? projectRoot ?? 'unbekannt'}</code></div>}
-        {!unselected && value && !usable && !choices.isFetching && <p role="status" className="ev-muted">Dieses Repository kann noch nicht als Arbeitsort verwendet werden. Prüfe Freigabe, Clone und Projektdienst. Es wird kein anderer Ordner gewählt.</p>}
+        {!unselected && value && !usable && !choices.isFetching && <p role="status" className="ev-muted">
+            {repository?.local.message ?? 'Dieses Repository kann noch nicht als Arbeitsort verwendet werden. Prüfe Freigabe, Clone und Projektdienst.'}{' '}
+            Es wird kein anderer Ordner gewählt.
+        </p>}
         <div className="ev-actions"><button type="button" disabled={disabled || choices.isFetching} onClick={() => void choices.refetch()}>Repositorys prüfen</button><WorkspaceLink tab="github" projectId={projectId}>Repositorys verwalten</WorkspaceLink></div>
     </div>
 }

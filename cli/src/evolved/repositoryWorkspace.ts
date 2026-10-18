@@ -194,7 +194,7 @@ export function createRepositoryWorkspace(options: { proxyOrigin?: string; comma
         if (!paths.git) fail('configuration')
         const data = await file(join(fdPath(paths.git.handle), 'config'), 32_768)
         const parsed = await git(['config', '--file', '-', '--no-includes', '--null', '--list'], { input: data, timeout: paths.remaining(3000) })
-        const seen = new Set<string>()
+        const seen = new Set<string>(), merges = new Map<string, string>()
         for (const record of parsed.output.split('\0').filter(Boolean)) {
             const split = record.indexOf('\n'), key = record.slice(0, split), value = record.slice(split + 1)
             if (split < 1 || seen.has(key) || /[\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}]/u.test(value)) fail('configuration')
@@ -205,10 +205,14 @@ export function createRepositoryWorkspace(options: { proxyOrigin?: string; comma
             if (key === 'remote.origin.fetch' && value === '+refs/heads/*:refs/remotes/origin/*') continue
             if (/^user\.(name|email)$/.test(key) && value.length <= 255) continue
             const branch = /^branch\.(.+)\.(remote|merge)$/.exec(key)
-            if (branch && safeBranch(branch[1]!) && (branch[2] === 'remote' && value === 'origin' || branch[2] === 'merge' && value === `refs/heads/${branch[1]}`)) continue
+            if (branch && safeBranch(branch[1]!) && branch[2] === 'remote' && value === 'origin') continue
+            // Ordinary tracking, including a feature branch created from origin/main.
+            if (branch && safeBranch(branch[1]!) && branch[2] === 'merge' && value.startsWith('refs/heads/') && safeBranch(value.slice(11))) { merges.set(branch[1]!, value.slice(11)); continue }
             fail('configuration')
         }
         if (!seen.has('remote.origin.url') || !seen.has('remote.origin.fetch') || !seen.has('core.repositoryformatversion') || !seen.has('core.bare')) fail('configuration')
+        // A differently named upstream is only unambiguous with its explicit origin remote.
+        for (const [local, merge] of merges) if (merge !== local && !seen.has(`branch.${local}.remote`)) fail('configuration')
         // Git follows these metadata paths even with hooks and all external transports disabled.
         let entries = 0
         const walk = async (directory: string, relative = ''): Promise<void> => {
@@ -224,13 +228,13 @@ export function createRepositoryWorkspace(options: { proxyOrigin?: string; comma
         }
         await walk(fdPath(paths.git.handle))
         await paths.check()
-        return digest(data)
+        return { snapshot: digest(data), merges }
     }
     async function verify(paths: Paths, expected: string) {
-        if (await configuration(paths) !== expected) fail('changed')
+        if ((await configuration(paths)).snapshot !== expected) fail('changed')
     }
     async function state(paths: Paths, authorize?: () => Promise<void>, allowDetached = false) {
-        const snapshot = await configuration(paths)
+        const { snapshot, merges } = await configuration(paths)
         const branchReply = await git(['symbolic-ref', '--quiet', '--short', 'HEAD'], { paths, authorize, allowedFailure: true, timeout: 3000 })
         const branch = branchReply.output.trim()
         const detached = branchReply.code === 1
@@ -244,7 +248,9 @@ export function createRepositoryWorkspace(options: { proxyOrigin?: string; comma
         await verify(paths, snapshot)
         const status = await git(['status', '--porcelain=v1', '-z', '--untracked-files=normal', '--ignore-submodules=all'], { paths, authorize, timeout: 5000 })
         await verify(paths, snapshot)
-        return { snapshot, head, branch: head === null || detached ? null : branch, dirty: status.output.length > 0 }
+        const current = head === null || detached ? null : branch
+        // Pull follows the configured upstream like Git; without one, the same-name branch.
+        return { snapshot, head, branch: current, upstream: current === null ? null : merges.get(current) ?? current, dirty: status.output.length > 0 }
     }
 
     const decoder = new TextDecoder('utf-8', { fatal: true })
@@ -318,7 +324,7 @@ export function createRepositoryWorkspace(options: { proxyOrigin?: string; comma
         } finally { await handle.close() }
     }
     async function readState(paths: Paths): Promise<RepoWorktree> {
-        const configHash = await configuration(paths), indexBefore = await indexIdentity(paths)
+        const configHash = (await configuration(paths)).snapshot, indexBefore = await indexIdentity(paths)
         const reply = await git(['status', '--porcelain=v2', '-z', '--branch', '--ahead-behind', '--untracked-files=all', '--ignore-submodules=all', '--renames'], { paths, readOnly: true, timeout: 5000 })
         const records: Buffer[] = []
         let offset = 0
@@ -482,7 +488,7 @@ export function createRepositoryWorkspace(options: { proxyOrigin?: string; comma
                 await permission(authorize)
                 await git(['config', '--local', 'remote.origin.url', repository.cloneUrl], { paths })
                 await permission(authorize)
-                const snapshot = await configuration(paths)
+                const { snapshot } = await configuration(paths)
                 await permission(authorize)
                 await verify(paths, snapshot)
                 const head = await git(['rev-parse', '--verify', 'HEAD'], { paths, authorize, allowedFailure: true, timeout: 3000 })
@@ -495,17 +501,18 @@ export function createRepositoryWorkspace(options: { proxyOrigin?: string; comma
             } else {
                 await paths.openGit()
                 const before = await state(paths, authorize)
-                if (before.head === null || before.branch === null) fail('unborn')
+                if (before.head === null || before.branch === null || before.upstream === null) fail('unborn')
+                const upstream = before.upstream
                 if (before.dirty) fail('dirty')
                 await verify(paths, before.snapshot)
-                await git(['fetch', '--quiet', '--no-tags', '--no-recurse-submodules', '--no-auto-maintenance', '--no-write-fetch-head', '--', transport, `+refs/heads/${before.branch}:refs/remotes/origin/${before.branch}`], { paths, authorize })
+                await git(['fetch', '--quiet', '--no-tags', '--no-recurse-submodules', '--no-auto-maintenance', '--no-write-fetch-head', '--', transport, `+refs/heads/${upstream}:refs/remotes/origin/${upstream}`], { paths, authorize })
                 await permission(authorize)
                 const current = await state(paths, authorize)
-                if (current.snapshot !== before.snapshot || current.head !== before.head || current.branch !== before.branch) fail('changed')
+                if (current.snapshot !== before.snapshot || current.head !== before.head || current.branch !== before.branch || current.upstream !== upstream) fail('changed')
                 if (current.dirty) fail('dirty')
                 // FETCH_HEAD belongs to the whole checkout and can be overwritten
                 // by an agent fetching another branch while this job is running.
-                const next = (await git(['rev-parse', '--verify', '--end-of-options', `refs/remotes/origin/${before.branch}^{commit}`], { paths, authorize, timeout: 3000 })).output.trim()
+                const next = (await git(['rev-parse', '--verify', '--end-of-options', `refs/remotes/origin/${upstream}^{commit}`], { paths, authorize, timeout: 3000 })).output.trim()
                 if (!/^[0-9a-f]{40}$/.test(next)) fail('configuration')
                 const ancestor = await git(['merge-base', '--is-ancestor', before.head, next], { paths, authorize, allowedFailure: true, timeout: 5000 })
                 if (ancestor.code !== 0) {

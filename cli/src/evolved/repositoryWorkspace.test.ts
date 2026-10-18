@@ -378,6 +378,90 @@ describe('project repository workspace', () => {
         expect((await workspace.inspectRepositories(root, [repo]))[0]?.local.state).toBe('blocked')
         await expect(pull()).rejects.toMatchObject({ code: 'configuration' }); expect(requests).toHaveLength(0)
     })
+    it('accepts ordinary feature branches tracking origin/main and pulls the configured upstream', async () => {
+        await clone()
+        // Same shape as `git switch -c <feature> --track origin/main`, plus a same-name tracking branch.
+        for (const feature of ['feature/a', 'feature/b', 'fix-c', 'chore/d']) git(repo.path, 'branch', '--track', feature, 'origin/main')
+        git(source, 'switch', '-c', 'feature/e'); git(source, 'push', 'origin', 'feature/e'); git(source, 'switch', 'main')
+        git(repo.path, 'fetch', '--no-tags', bare, 'refs/heads/feature/e:refs/remotes/origin/feature/e'); git(repo.path, 'branch', '--track', 'feature/e', 'origin/feature/e')
+        expect(git(repo.path, 'config', '--local', 'branch.feature/a.merge')).toBe('refs/heads/main')
+        expect((await workspace.inspectRepositories(root, [repo]))[0]?.local).toMatchObject({ state: 'ready', branch: 'main', dirty: false })
+        git(repo.path, 'switch', 'feature/a'); await upstream(); requests.length = 0
+        expect(await pull()).toMatchObject({ state: 'ready', branch: 'feature/a', dirty: false })
+        expect(git(repo.path, 'rev-parse', 'HEAD')).toBe(git(source, 'rev-parse', 'main'))
+        expect(git(repo.path, 'rev-parse', 'refs/remotes/origin/main')).toBe(git(source, 'rev-parse', 'main'))
+        expect(await readFile(join(repo.path, 'README.md'), 'utf8')).toBe('updated\n')
+        expect(requests.length).toBeGreaterThan(0)
+        expect(await workspace.readRepositoryWorktree(root, repo)).toMatchObject({ state: 'ready', branch: 'feature/a', upstream: { name: 'origin/main', ahead: 0, behind: 0 } })
+    })
+    // A remote branch that is a valid fast-forward of the clone's HEAD but differs from main.
+    async function remoteBranch(name: string, contents: string) {
+        git(source, 'switch', '-c', name); await writeFile(join(source, 'README.md'), contents)
+        git(source, 'add', '.'); git(source, 'commit', '-m', name); git(source, 'push', 'origin', name); git(source, 'switch', 'main')
+        return git(source, 'rev-parse', name)
+    }
+    it('pulls the configured origin/main upstream even when a different same-name remote branch exists', async () => {
+        await clone()
+        const sameName = await remoteBranch('feature/a', 'same-name remote branch\n')
+        git(repo.path, 'switch', '-c', 'feature/a', '--track', 'origin/main'); await upstream(); requests.length = 0
+        expect(await pull()).toMatchObject({ state: 'ready', branch: 'feature/a', dirty: false })
+        expect(git(repo.path, 'branch', '--show-current')).toBe('feature/a')
+        expect(git(repo.path, 'rev-parse', 'HEAD')).toBe(git(source, 'rev-parse', 'main'))
+        expect(git(repo.path, 'rev-parse', 'HEAD')).not.toBe(sameName)
+        expect(await readFile(join(repo.path, 'README.md'), 'utf8')).toBe('updated\n')
+        // Only the configured upstream is fetched; the same-name remote branch is never mapped locally.
+        expect(() => git(repo.path, 'rev-parse', '--verify', '--quiet', 'refs/remotes/origin/feature/a')).toThrow()
+        expect(git(repo.path, 'config', '--local', 'branch.feature/a.merge')).toBe('refs/heads/main')
+        expect(requests.length).toBeGreaterThan(0)
+    })
+    it.each([
+        ['no tracking configuration', [] as string[][]],
+        ['an origin remote without a merge upstream', [['branch.feature/a.remote', 'origin']]],
+        ['a same-name merge upstream without a remote', [['branch.feature/a.merge', 'refs/heads/feature/a']]],
+    ])('keeps the same-name fallback for %s', async (_name, entries) => {
+        await clone()
+        const sameName = await remoteBranch('feature/a', 'same-name remote branch\n'); await upstream()
+        git(repo.path, 'switch', '--no-track', '-c', 'feature/a')
+        for (const [key, value] of entries) git(repo.path, 'config', '--local', key!, value!)
+        expect(await pull()).toMatchObject({ state: 'ready', branch: 'feature/a', dirty: false })
+        expect(git(repo.path, 'rev-parse', 'HEAD')).toBe(sameName)
+        expect(await readFile(join(repo.path, 'README.md'), 'utf8')).toBe('same-name remote branch\n')
+        expect(git(repo.path, 'rev-parse', 'refs/remotes/origin/feature/a')).toBe(sameName)
+    })
+    it('rejects an upstream configuration change during the broker fetch without fast-forwarding', async () => {
+        await clone()
+        await remoteBranch('feature/a', 'same-name remote branch\n')
+        git(repo.path, 'switch', '-c', 'feature/a', '--track', 'origin/main'); await upstream()
+        const before = git(repo.path, 'rev-parse', 'HEAD'); let changed = false
+        beforeResponse = async () => { if (!changed) { changed = true; git(repo.path, 'config', '--local', 'branch.feature/a.merge', 'refs/heads/feature/a') } }
+        await expect(pull()).rejects.toMatchObject({ code: 'changed' })
+        expect(changed).toBe(true)
+        expect(git(repo.path, 'branch', '--show-current')).toBe('feature/a')
+        expect(git(repo.path, 'rev-parse', 'HEAD')).toBe(before)
+        expect(await readFile(join(repo.path, 'README.md'), 'utf8')).toBe('initial\n')
+        expect(git(repo.path, 'status', '--porcelain')).toBe('')
+        // The caller's concurrent change is retained, not rewritten.
+        expect(git(repo.path, 'config', '--local', 'branch.feature/a.merge')).toBe('refs/heads/feature/a')
+    })
+    it.each([
+        ['an upstream without its explicit remote', ['branch.side.merge', 'refs/heads/main']],
+        ['a non-branch upstream', ['branch.main.merge', 'refs/tags/v1']],
+        ['an unqualified upstream', ['branch.main.merge', 'main']],
+        ['an unsafe upstream name', ['branch.main.merge', 'refs/heads/../x']],
+        ['another remote', ['branch.main.remote', 'upstream']],
+        ['a local remote', ['branch.main.remote', '.']],
+    ])('still rejects branch tracking with %s before any transport', async (_name, [key, value]) => {
+        await clone(); requests.length = 0
+        if (key === 'branch.side.merge') git(repo.path, 'branch', 'side')
+        git(repo.path, 'config', '--local', key!, value!)
+        expect((await workspace.inspectRepositories(root, [repo]))[0]?.local.state).toBe('blocked')
+        await expect(pull()).rejects.toMatchObject({ code: 'configuration' }); expect(requests).toHaveLength(0)
+    })
+    it('rejects multiple merge upstreams for one branch', async () => {
+        await clone(); requests.length = 0
+        git(repo.path, 'config', '--local', '--add', 'branch.main.merge', 'refs/heads/other')
+        await expect(pull()).rejects.toMatchObject({ code: 'configuration' }); expect(requests).toHaveLength(0)
+    })
     it('disables ordinary hooks and rejects an external remote and duplicate remote URL', async () => {
         await clone(); const sentinel = join(root, 'hook-executed')
         await mkdir(join(repo.path, '.git/hooks'))
