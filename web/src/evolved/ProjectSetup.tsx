@@ -12,7 +12,7 @@ import { describeActiveModule, describeDevelopmentError, developmentScope, forma
 import { applyIntent, ProjectDevelopmentPanel } from './ProjectDevelopment'
 import { GithubPanel } from './Github'
 import { ProviderLoginPanel } from './ProviderLogin'
-import { intendedSettings, readSetupIntent, writeSetupIntent, type SetupIntent } from './setupIntent'
+import { readSetupIntent, writeSetupIntent, type SetupIntent } from './setupIntent'
 import './setup.css'
 
 /**
@@ -61,11 +61,12 @@ export function deriveSetupSteps(input: SetupInput): SetupStepStatus[] {
     const { project, readiness, repositories, modules, intent } = input
     const config = modules?.config
     const savedModule = config?.settings.activeModuleId ?? null
-    const intended = intendedSettings(intent)
-    const intendedModule = intended.moduleId && intent && config && applyIntent(settingsInput(config.settings), intent) && intended.moduleId !== savedModule ? intended.moduleId : null
-    const draftPending = !!intent && !!config && !!applyIntent(settingsInput(config.settings), intent)
-    const moduleId = intendedModule ?? savedModule
-    const odoo = moduleId === 'builtin:odoo' ? (intent?.draft?.settings.odoo ?? config?.settings.odoo ?? null) : null
+    // The pending form exactly as the module step would show it; null when the intent is already what is saved (stale notes don't count).
+    const pending = intent && config ? applyIntent(settingsInput(config.settings), intent) : null
+    const draftPending = !!pending
+    const intendedModule = pending?.activeModuleId && pending.activeModuleId !== savedModule ? pending.activeModuleId : null
+    const moduleId = pending ? pending.activeModuleId : savedModule
+    const odoo = moduleId === 'builtin:odoo' ? (pending?.odoo ?? config?.settings.odoo ?? null) : null
     const boundId = config?.settings.repositoryId ?? null
     const catalog = repositories.error ? undefined : repositories.data
     const bound = boundId ? catalog?.repositories.find(item => item.id === boundId) : undefined
@@ -86,12 +87,14 @@ export function deriveSetupSteps(input: SetupInput): SetupStepStatus[] {
     const needed: boolean | null = !moduleId ? false : input.repositoryRequired
     const missingState = (detail: string): SetupStepStatus => needed === null ? { id: 'github', state: 'unknown', detail: `${detail} Ob das Modul ein Repository braucht, wird noch geprüft.` }
         : { id: 'github', state: needed ? 'todo' : 'optional', detail: needed ? detail : `${detail} Für dieses Modul nicht nötig.` }
+    // An unsaved draft that changes the default repository is judged by the repository it would bind, never by the saved one.
+    const repositoryChange = pending && pending.repositoryId !== boundId ? { to: pending.repositoryId } : null
     const github: SetupStepStatus = repositories.error ? { id: 'github', state: 'unknown', detail: 'Repository-Status konnte nicht geladen werden.' }
         : !catalog ? { id: 'github', state: 'unknown', detail: 'Wird geprüft …' }
+            : repositoryChange ? draftRepositoryStep(repositoryChange.to, catalog, needed, boundId)
             : !catalog.connected ? missingState('GitHub ist für dieses Projekt nicht verbunden.')
                 : boundId && !bound ? { id: 'github', state: 'blocked', detail: `Das gespeicherte Standard-Repository (${boundId}) ist nicht mehr freigegeben.` }
                     : bound ? repositoryStep(bound, catalog)
-                        : intended.repositoryId && draftPending ? { id: 'github', state: 'draft', detail: 'Ein Standard-Repository ist vorgemerkt, aber noch nicht gespeichert.' }
                             : missingState(catalog.repositories.some(item => item.local.state === 'ready') ? 'Ein Repository ist geklont, aber nicht als Standard gespeichert. Wähle es im Schritt Modul.' : catalog.repositories.length ? 'Repository freigegeben, aber noch nicht geklont.' : 'Noch kein Repository freigegeben.')
     // A separate Enterprise checkout is optional local tooling (Odoo.sh ships Enterprise itself): it is reported, never a blocker.
     if (odoo?.edition === 'enterprise' && odoo.enterpriseRepositoryId) {
@@ -124,6 +127,22 @@ function doctorStep(doctor: SetupInput['doctor'], config: ProjectDevelopmentModu
     if (!last.missingRequired) return { id: 'checks', state: 'unknown', detail: `Letzte Prüfung ${formatTimestamp(last.observedAt)}: Pflichtprüfungen sind nicht einzeln bekannt. Prüfe erneut.` }
     if (!last.missingRequired.length) return { id: 'checks', state: 'done', detail: `Alle Pflichtprüfungen bestanden (${formatTimestamp(last.observedAt)}, Revision ${last.revision}).${last.missing + last.unknown + last.unsupported + last.warning ? ' Optionale Prüfungen haben Hinweise.' : ''}` }
     return { id: 'checks', state: 'todo', detail: `${last.missingRequired.length} Pflichtprüfung${last.missingRequired.length === 1 ? '' : 'en'} offen (${formatTimestamp(last.observedAt)}). Die Abhilfe steht im Schritt.` }
+}
+
+/**
+ * Default repository of an unsaved draft that differs from the saved one: the target is checked like a saved binding, but a
+ * usable target is only „Entwurf“ (nothing is bound before the explicit save) and a missing or unusable target stays open/blocked.
+ */
+function draftRepositoryStep(target: string | null, catalog: RepositoryCatalog, needed: boolean | null, savedId: string | null): SetupStepStatus {
+    const prefix = 'Ungespeicherter Entwurf:'
+    if (!target) return needed ? { id: 'github', state: 'todo', detail: `${prefix} entfernt das Standard-Repository${savedId ? ` ${savedId}` : ''}; dieses Modul braucht eines.` }
+        : { id: 'github', state: 'draft', detail: `${prefix} entfernt das Standard-Repository${savedId ? ` ${savedId}` : ''}; noch nicht gespeichert.` }
+    if (!catalog.connected) return { id: 'github', state: 'todo', detail: `${prefix} Repository ${target} ist vorgemerkt, aber GitHub ist für dieses Projekt nicht verbunden.` }
+    const repository = catalog.repositories.find(item => item.id === target)
+    if (!repository) return { id: 'github', state: 'blocked', detail: `${prefix} Das vorgemerkte Repository ${target} ist nicht freigegeben.` }
+    const step = repositoryStep(repository, catalog)
+    if (step.state === 'done') return { id: 'github', state: 'draft', detail: `${repository.fullName} ist geklont und als Standard vorgemerkt, aber noch nicht gespeichert.` }
+    return { ...step, detail: `${prefix} ${step.detail.replace(' ist Standard-Repository,', ' ist als Standard vorgemerkt,')}` }
 }
 
 function repositoryStep(bound: Repo, catalog: RepositoryCatalog): SetupStepStatus {
@@ -171,8 +190,8 @@ function SetupForProject({ step, onStep }: { step: SetupStep | null; onStep: (st
         void readiness.refetch()
     }, [config?.revision, readiness.current, readinessMatches, readiness.isFetching])
     // Prerequisites come from the definition of the intended (or saved) module, never from the mere presence of a module.
-    const intended = intendedSettings(intent)
-    const moduleId = (config && intent && applyIntent(settingsInput(config.settings), intent) ? intended.moduleId : null) ?? config?.settings.activeModuleId ?? null
+    const pending = config && intent ? applyIntent(settingsInput(config.settings), intent) : null
+    const moduleId = pending ? pending.activeModuleId : config?.settings.activeModuleId ?? null
     const entry = moduleId ? modules.current?.catalog.modules.find(item => item.id === moduleId) : undefined
     const detail = useDevelopmentModuleDetail(evolved, entry ? moduleId : null, entry?.digest ?? null)
     const repositoryRequired = !moduleId ? false : !entry ? null : !detail.current ? null
@@ -304,8 +323,10 @@ function TokenPermissions({ statusWanted }: { statusWanted: boolean }) {
 
 function GithubStep({ catalog, modules, intent, repositoryRequired, onBind }: { catalog: RepositoryCatalog | undefined; modules: DevelopmentModulesResponse | undefined; intent: SetupIntent | null; repositoryRequired: boolean | null; onBind: (repositoryId: string) => void }) {
     const { project } = useEvolved()
-    const settings = intent?.draft?.settings ?? modules?.config.settings
-    const boundId = intendedSettings(intent).repositoryId ?? settings?.repositoryId ?? null
+    // The form as it would be saved: a pending draft (only when it differs from what is saved), otherwise the saved settings.
+    const saved = modules ? settingsInput(modules.config.settings) : undefined
+    const settings = (saved && intent ? applyIntent(saved, intent) : null) ?? saved
+    const boundId = settings?.repositoryId ?? null
     const odoo = settings?.activeModuleId === 'builtin:odoo' ? settings.odoo : null
     const admin = isProjectAdmin(project!.role)
     const unbound = catalog?.repositories.filter(item => item.id !== boundId && item.id !== odoo?.enterpriseRepositoryId) ?? []

@@ -199,3 +199,29 @@ describe('effective task effects', () => {
         expect(developmentTaskRequiresWritableProfile(developmentTaskEffects(review, odoo.recipes))).toBe(false)
     })
 })
+
+describe('Odoo.sh build task names no default stage', () => {
+    test('the task and its recipe require an explicitly named configured stage or ref and ask otherwise, for every hosting', () => {
+        for (const hosting of ['odoo_sh', 'local', 'self_hosted'] as const) {
+            const odoo = applicablePack({ ...defaultDevelopmentSettings('odoo'), odoo: { ...defaultOdooSettings(20), hosting } })!
+            const task = odoo.tasks.find(item => item.id === 'odoo-sh-build')!
+            // Still offered (reusable with an explicit ref), read-only, no new permission requirement.
+            expect(task).toBeDefined()
+            expect(developmentTaskRequiresWritableProfile(developmentTaskEffects(task, odoo.recipes))).toBe(false)
+            const recipe = odoo.recipes.find(item => item.id === 'odoo-sh-diagnose')!
+            for (const text of [task.defaultTask, task.description, ...recipe.steps.map(step => step.detail)]) {
+                // No preselected stage: neither a concrete environment parameter nor "staging/production" as the default.
+                expect(text).not.toMatch(/environment=(staging|production)/)
+                expect(text).not.toMatch(/(?:of|for) the (?:staging|production) environment/i)
+            }
+            const target = recipe.steps.find(step => step.title === 'Choose the target')!.detail
+            for (const text of [task.defaultTask, target]) {
+                expect(text).toMatch(/staging or production/)
+                expect(text).toMatch(/ref/)
+                expect(text).toMatch(/ask/)
+                expect(text).toMatch(/unavailable/)
+                expect(text).toMatch(/never (?:choose|assume)/)
+            }
+        }
+    })
+})

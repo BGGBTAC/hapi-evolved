@@ -6,7 +6,7 @@ import { defaultDevelopmentSettings, defaultOdooSettings, emptyOdooShEnvironment
 import { developmentSettingsToModuleSettings, type DevelopmentModuleSettings, type DevelopmentModuleSettingsInput, type ProjectDevelopmentModuleConfig } from '@hapi/protocol/developmentModules'
 import type { ProjectReadiness } from '@hapi/protocol/evolvedWorkspace'
 import { EvolvedApiError, type EvolvedProject } from './api'
-import { ProjectSetupPanel } from './ProjectSetup'
+import { deriveSetupSteps, ProjectSetupPanel, type SetupInput } from './ProjectSetup'
 import { ProjectDevelopmentPanel } from './ProjectDevelopment'
 import { readSetupIntent, writeSetupIntent } from './setupIntent'
 import { settingsInput as settingsInputOf } from './developmentApi'
@@ -532,6 +532,56 @@ describe('stored drafts are untrusted input', () => {
         expect(screen.getByText('erp-alt-7.dev.odoo.com')).toBeInTheDocument()
         expect(screen.getByRole('button', { name: 'Speichern' })).toBeDisabled()
         expect(readSetupIntent('https://hub.example', 'user-1', 'p1')?.draft?.settings.odoo?.odooSh.staging.sshResourceId).toBe('ssh-vorab')
+        expect(mutations()).toEqual([])
+    })
+})
+
+describe('GitHub step judges the repository an unsaved draft would bind', () => {
+    // Saved: Odoo with repository 101 (A), ready. Drafts may switch to 202 (B), unbind, or equal what is saved.
+    const saved = () => odooConfig(2)
+    const response = (config = saved()) => ({ contractVersion: 2 as const, config: { ...config, active: statusFor(config.settings, builtins.map(module => module.entry)) }, catalog: { modules: builtins.map(module => module.entry) }, canEdit: true })
+    const draftTo = (repositoryId: string | null, baseRevision = 2) => ({ moduleId: null, moduleDigest: null, values: null, repositoryId: null, createdAt: 1,
+        draft: { baseRevision, settings: { ...settingsInputOf(saved().settings), repositoryId } } })
+    const github = (overrides: Partial<SetupInput>) => deriveSetupSteps({
+        project: { role: 'admin', profile: 'workspace' }, readiness: { data: null, error: false }, repositories: { data: catalog([repo('101', 'ready'), repo('202', 'missing')]), error: false },
+        modules: response(), modulesError: false, intent: null, repositoryRequired: true, doctor: undefined, ...overrides,
+    }).find(step => step.id === 'github')!
+
+    it('keeps the saved, ready binding green without a pending change', () => {
+        expect(github({}).state).toBe('done')
+        // A stale note that equals what is saved is not a pending change.
+        expect(github({ intent: draftTo('101') }).state).toBe('done')
+        expect(github({ intent: { moduleId: null, moduleDigest: null, values: null, repositoryId: '101', createdAt: 1 } }).state).toBe('done')
+    })
+    it('never lets the ready saved repository make a not yet cloned draft target green', () => {
+        const step = github({ intent: draftTo('202') })
+        expect(step.state).toBe('todo')
+        expect(step.detail).toMatch(/Ungespeicherter Entwurf: acme\/repo202 ist als Standard vorgemerkt, aber noch nicht geklont/)
+    })
+    it('blocks a draft target that is not granted and reports unknown without a catalog', () => {
+        expect(github({ intent: draftTo('303') })).toMatchObject({ state: 'blocked', detail: expect.stringMatching(/vorgemerkte Repository 303 ist nicht freigegeben/) })
+        expect(github({ intent: draftTo('202'), repositories: { data: undefined, error: true } }).state).toBe('unknown')
+        expect(github({ intent: draftTo('202'), repositories: { data: catalog([repo('101', 'ready'), repo('202', 'blocked')]), error: false } }).state).toBe('blocked')
+    })
+    it('shows a ready draft target as an unsaved draft, also when the draft is based on an older revision', () => {
+        const ready = { data: catalog([repo('101', 'missing'), repo('202', 'ready')]), error: false }
+        expect(github({ intent: draftTo('202'), repositories: ready })).toMatchObject({ state: 'draft', detail: expect.stringMatching(/acme\/repo202 ist geklont und als Standard vorgemerkt, aber noch nicht gespeichert/) })
+        expect(github({ intent: draftTo('202', 1), repositories: ready }).state).toBe('draft')
+    })
+    it('treats a draft that removes the binding as open when the module needs a repository, otherwise as a draft', () => {
+        expect(github({ intent: draftTo(null) }).state).toBe('todo')
+        expect(github({ intent: draftTo(null), repositoryRequired: false }).state).toBe('draft')
+    })
+    it('returns to the saved binding once the draft is discarded', async () => {
+        server.repositories = catalog([repo('101', 'ready'), repo('202', 'missing')])
+        writeSetupIntent('https://hub.example', 'user-1', 'p1', draftTo('202'))
+        mount('github')
+        await waitFor(() => expect(stepButton(/GitHub und Repository/)).toHaveTextContent('Offen'))
+        expect(screen.getAllByText(/acme\/repo202 ist als Standard vorgemerkt, aber noch nicht geklont/).length).toBeGreaterThan(0)
+        fireEvent.click(stepButton(/Modul und Einstellungen/))
+        fireEvent.click(await screen.findByRole('button', { name: 'Verwerfen' }))
+        await waitFor(() => expect(stepButton(/GitHub und Repository/)).toHaveTextContent('Erledigt'))
+        expect(readSetupIntent('https://hub.example', 'user-1', 'p1')).toBeNull()
         expect(mutations()).toEqual([])
     })
 })
