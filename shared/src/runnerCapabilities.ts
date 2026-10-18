@@ -37,6 +37,10 @@ export const MACHINE_CAPABILITIES = {
     EvolvedRepositoryWorktree: 'evolvedRepositories.worktree.v1',
     // Optional: development doctor/inspect. Older runners report upgrade_required.
     EvolvedDevelopment: RPC_METHODS.EvolvedDevelopment,
+    // Optional development-module providers (`module_doctor` / `module_inspect` actions on EvolvedDevelopment).
+    // Literal values equal developmentProviderCapability(id, version) in developmentModules.
+    EvolvedDevelopmentToolchainProvider: 'evolvedDevelopment.provider.hapi.toolchain.v1',
+    EvolvedDevelopmentInventoryProvider: 'evolvedDevelopment.provider.hapi.repository-inventory.v1',
 } as const
 
 export type MachineCapability =

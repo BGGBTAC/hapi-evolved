@@ -4,10 +4,9 @@ import { useEvolved, enrollPasskey, RecoveryCodes } from './auth'
 import { isProjectAdmin, projectPath, type ExecutionProfile, type ProjectRole, type Team, type TeamMember } from './api'
 import { ActionStatus, ConfirmButton, Empty, ErrorNotice, Field, Loading, Panel, formatDate, submit, useAction } from './ui'
 import { CapacityPanel } from './Capacity'
-import { defaultDevelopmentSettings, DEVELOPMENT_MODES, ODOO_MAJORS, type DevelopmentMode, type OdooMajor } from '@hapi/protocol/evolvedDevelopment'
-import { SegmentedChoice } from './DevelopmentModePicker'
 import { DevelopmentOverviewCard } from './ProjectDevelopment'
-import { modeHints, modeLabels } from './developmentApi'
+import { DevelopmentCreationFields, useDevelopmentCreation } from './DevelopmentModuleCreation'
+import { settingsIssues } from './developmentApi'
 
 const profiles: { id: ExecutionProfile; label: string; description: string }[] = [
     { id: 'restricted', label: 'Eingeschränkt', description: 'Schreib- und Ausführungsrechte bleiben eng begrenzt.' },
@@ -71,7 +70,8 @@ export function ProjectsPanel({ onSelectProject }: { onSelectProject?: (id: stri
 }
 
 function ProjectsForUser({ onSelectProject }: { onSelectProject?: (id: string) => void }) {
-    const { api, me, project, selectProject, refresh } = useEvolved()
+    const evolved = useEvolved()
+    const { api, me, project, selectProject, refresh } = evolved
     const teams = useQuery({ queryKey: ['evolved', 'teams', api.baseUrl, me.user.id], queryFn: ({ signal }) => api.request<{ teams: Team[] }>('/teams', { signal }) })
     const [name, setName] = useState('')
     const [rootPath, setRootPath] = useState('')
@@ -79,8 +79,7 @@ function ProjectsForUser({ onSelectProject }: { onSelectProject?: (id: string) =
     const [showPicker, setShowPicker] = useState(false)
     const [teamId, setTeamId] = useState('')
     const [projectFilter, setProjectFilter] = useState('')
-    const [developmentMode, setDevelopmentMode] = useState<DevelopmentMode>('none')
-    const [odooMajor, setOdooMajor] = useState<OdooMajor>(20)
+    const development = useDevelopmentCreation(evolved)
     const creating = useRef(false)
     const creation = useRef<AbortController | null>(null)
     useEffect(() => () => creation.current?.abort(), [])
@@ -100,12 +99,18 @@ function ProjectsForUser({ onSelectProject }: { onSelectProject?: (id: string) =
         void action.run(async () => {
             if (!name.trim() || !selectedTeam || teams.error) throw new Error('Bitte Projektname und ein verwaltbares Team wählen.')
             if (useManualPath && !rootPath.trim()) throw new Error('Bitte einen Projektordner angeben oder die manuelle Auswahl ausschalten.')
-            // Creation mode is validated by the hub before the project exists; repositories are bound later.
-            const settings = defaultDevelopmentSettings(developmentMode)
-            if (settings.odoo) settings.odoo = { ...settings.odoo, major: odooMajor }
-            await api.request('/projects', { method: 'POST', body: { name: name.trim(), teamId: selectedTeam, ...(useManualPath ? { rootPath: rootPath.trim() } : {}), ...(developmentMode !== 'none' ? { development: { settings } } : {}) }, signal: controller.signal })
+            if (development.blocker) throw new Error(development.blocker)
+            // The module is validated by the hub against the revision shown before the project exists; repositories are bound later.
+            const module = development.development()
+            try {
+                await api.request('/projects', { method: 'POST', body: { name: name.trim(), teamId: selectedTeam, ...(useManualPath ? { rootPath: rootPath.trim() } : {}), ...(module ? { development: module } : {}) }, signal: controller.signal })
+            } catch (failure) {
+                const issues = settingsIssues(failure)
+                if (issues) development.showServerIssues(issues)
+                throw failure
+            }
             controller.signal.throwIfAborted()
-            setName(''); setRootPath(''); setManual(false); setShowPicker(false); setTeamId(''); setDevelopmentMode('none'); setOdooMajor(20)
+            setName(''); setRootPath(''); setManual(false); setShowPicker(false); setTeamId(''); development.reset()
             await refresh()
         }, 'Projekt angelegt.').finally(() => { creating.current = false; if (creation.current === controller) creation.current = null })
     }
@@ -124,11 +129,7 @@ function ProjectsForUser({ onSelectProject }: { onSelectProject?: (id: string) =
     {teams.isPending ? <Loading /> : !teams.error && adminTeams.length > 0 && <Panel title="Projekt anlegen"><form className="ev-form-grid" onSubmit={submit(createProject)}>
         <Field label="Projektname"><input value={name} onChange={event => setName(event.target.value)} maxLength={100} required disabled={action.busy} /></Field>
         <Field label="Team"><select value={selectedTeam} onChange={event => setTeamId(event.target.value)} disabled={action.busy}>{adminTeams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></Field>
-        <div className="ev-form-wide"><span className="ev-dev-field-label">Entwicklungsmodus</span>
-            <SegmentedChoice legend="Entwicklungsmodus" variant="modes" options={DEVELOPMENT_MODES.map(mode => ({ id: mode, label: modeLabels[mode] }))} value={developmentMode} disabled={action.busy} onChange={setDevelopmentMode} />
-            {developmentMode === 'odoo' && <div style={{ marginTop: 10 }}><span className="ev-dev-field-label">Odoo-Version</span><SegmentedChoice legend="Odoo-Version" options={ODOO_MAJORS.map(major => ({ id: String(major) as `${OdooMajor}`, label: `${major}.0` }))} value={String(odooMajor) as `${OdooMajor}`} disabled={action.busy} onChange={major => setOdooMajor(Number(major) as OdooMajor)} /></div>}
-            <p className="ev-dev-mode-hint">{modeHints[developmentMode]} Repository und Details legst du später unter „Entwicklung“ fest. Der Modus ändert keine Rechte und installiert nichts.</p>
-        </div>
+        <DevelopmentCreationFields creation={development} disabled={action.busy} />
         <p className="ev-muted ev-form-wide">Für jedes neue Projekt wird automatisch ein eigener Ordner angelegt.</p>
         {me.user.isAdmin && <div className="ev-form-wide">
             <label className="ev-check"><input type="checkbox" checked={manual} disabled={action.busy} onChange={event => { setManual(event.target.checked); setRootPath(''); setShowPicker(false); action.clear() }} />Ordner manuell festlegen oder wählen</label>
@@ -138,7 +139,7 @@ function ProjectsForUser({ onSelectProject }: { onSelectProject?: (id: string) =
                 {showPicker && <WorkspacePicker disabled={action.busy} onChoose={path => { setRootPath(path); setShowPicker(false) }} />}
             </div>}
         </div>}
-        <div className="ev-actions ev-form-wide"><button className="ev-primary" disabled={action.busy || !name.trim() || !selectedTeam || (useManualPath && !rootPath.trim())}>Projekt anlegen</button></div>
+        <div className="ev-actions ev-form-wide"><button className="ev-primary" disabled={action.busy || !name.trim() || !selectedTeam || (useManualPath && !rootPath.trim()) || !!development.blocker} aria-describedby={development.blocker ? 'ev-create-module-blocker' : undefined}>Projekt anlegen</button></div>
     </form></Panel>}
     <ActionStatus action={action} /></div>
 }

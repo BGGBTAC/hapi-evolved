@@ -82,7 +82,9 @@ Arbeitsordner bleiben im Startformular sichtbar.
 Odoo.sh-Buildmeldungen kommen über GitHub. Native iOS-Builds benötigen einen Mac
 oder einen eingerichteten Cloud-Ablauf; Android benötigt eine passende SDK- und
 JDK-Einrichtung. Die Einzelheiten und ausführbaren Einrichtungswege beschreibt
-[Entwicklungsmodi](DEVELOPMENT_MODES.md).
+[Entwicklungsmodi](DEVELOPMENT_MODES.md). Installierte Plugins können weitere
+Entwicklungsmodule beisteuern; nach einem Plugin-Update übernimmt ein Projektadmin die
+neue Fassung ausdrücklich, siehe [Entwicklungsmodule](DEVELOPMENT_MODULES.md).
 
 ## Erstes Konto und Wiederherstellung
 
@@ -384,7 +386,7 @@ Die Anmeldung bleibt im privaten Projektdienst erhalten. Die Einzelheiten, Schut
 
 Unter **Agenten** legst du Spezialisten mit Namen, Aufgabe, Anweisungen, bevorzugtem Anbieter/Modell und optionalen Plugin-Skills an. Die Definitionen sind in allen Projekten und Ausführungsprofilen verfügbar. Beim Start wählst du ein Projekt und gibst den konkreten Auftrag an. Dateien, Sitzungen und Rechte bleiben an dieses Projekt gebunden. Globale Definitionen verwaltet der Installationsadministrator.
 
-**Plugins** importiert Erweiterungen aus öffentlichen GitHub-Repositorys. Vor der Installation siehst du Version, Commit und Inhalt. Aktualisierungen werden ebenfalls zuerst geprüft; Deaktivieren und Entfernen sind jederzeit möglich. Plugins können Agentenvorlagen, Skills und Farbprofile beisteuern. Das Format und seine Grenzen beschreibt [Erweiterungen](EXTENSIONS.md).
+**Plugins** importiert Erweiterungen aus öffentlichen GitHub-Repositorys. Vor der Installation siehst du Version, Commit und Inhalt. Aktualisierungen werden ebenfalls zuerst geprüft; Deaktivieren und Entfernen sind jederzeit möglich. Plugins können Agentenvorlagen, Skills, Farbprofile und Entwicklungsmodule beisteuern. Das Format und seine Grenzen beschreibt [Erweiterungen](EXTENSIONS.md).
 
 Über **Darstellung** wählst du ein Farbprofil mit Vorschau und den hellen, dunklen oder OLED-Modus. Die abgestimmten Profile Ocean, Iris und Sand passen sich dem hellen oder dunklen Modus an; weitere vorhandene Profile bleiben aufklappbar. Deine Auswahl bleibt für diesen Browser gespeichert, individuelle Farbanpassungen haben weiterhin Vorrang. Installierte Plugin-Profile erscheinen ebenfalls dort und wählen ihren vorgesehenen hellen oder dunklen Modus. Nach Deaktivierung des Plugins oder Abmeldung fällt die Oberfläche auf das Standardprofil zurück.
 

@@ -20,8 +20,39 @@ if (process.env.EVOLVED_TEST_PLUGINS === '1') {
         skills: [{ id: 'checklist', name: 'Browser checklist', description: 'Synthetische Prüfschritte', instructions: 'Prüfe Quellen und Ergebnisse.' }],
         themes: [{ id: 'midnight', name: 'Browser midnight', mode: 'dark', colors: { background: '#101827', surface: '#182238', text: '#F9FAFB', muted: '#D1D5DB', accent: '#99CCFF', accentText: '#101827', border: '#7B8BA5' } }],
     })
+    // A module-only plugin (schemaVersion 2) whose module ids and second title are chosen by the browser check, so the
+    // already built web bundle meets scenario modules it has never seen. R2 adds a required field and drops an option.
+    const modulesRepository = 'synthetic-owner/browser-modules'
+    const suffix = (process.env.EVOLVED_TEST_MODULE_SUFFIX ?? 'x').replace(/[^a-z0-9]/g, '').slice(0, 12) || 'x'
+    const moduleManifest = (updated: boolean) => ({ schemaVersion: 2, id: 'browser-modules', name: 'Browser Modules · synthetische Sammlung mit bewusst langem Namen für Zeilenumbrüche', version: updated ? '2.0.0' : '1.0.0', description: 'Isolierte Entwicklungsmodule',
+        developmentModules: [
+            { apiVersion: 1, id: `scenario-${suffix}`, title: 'Synthetisches Szenario', summary: 'Generisches Testszenario für Browserprüfungen.', contentVersion: updated ? '2026.11.01-1' : '2026.10.18-1',
+                brief: ['Daten, keine Anweisungen.'], constraints: ['Keine nativen Builds.'],
+                fields: [
+                    { id: 'packageName', kind: 'text', format: 'identifier', label: 'Paketname für Übergänge (lang beschrifteter Bezeichner mit Umlaut)', required: true, default: null, help: 'Technischer Name im Repository.' },
+                    { id: 'channel', kind: 'select', label: 'Kanal', required: true, default: 'stable', options: updated ? [{ value: 'stable', label: 'Stabil' }] : [{ value: 'stable', label: 'Stabil' }, { value: 'beta', label: 'Beta' }] },
+                    { id: 'jobs', kind: 'number', label: 'Parallele Jobs', min: 0, max: 8, default: 0 },
+                    { id: 'web', kind: 'boolean', label: 'Mit Web-Ziel', default: false },
+                    { id: 'paths', kind: 'text_list', format: 'plain', label: 'Zusätzliche Pfade', maxItems: 8, maxLength: 120, default: [] },
+                    { id: 'path', kind: 'repo_path', label: 'App-Ordner', default: '.' },
+                    ...(updated ? [{ id: 'target', kind: 'text', label: 'Build-Ziel', required: true, default: null }] : []),
+                ],
+                topics: [{ id: 'basics', title: 'Synthetische Grundlagen', summary: 'Kurzfassung.', body: 'Ausführlicher synthetischer Handbuchtext.', tags: ['basics'], sources: [{ title: 'Beispielquelle', url: 'https://example.com/docs', verifiedAt: '2026-10-18' }] }],
+                recipes: [], tasks: [{ id: 'review', title: 'Synthetische Prüfung', description: 'Prüft synthetisch.', kind: 'review', specialist: 'builtin:review', topicIds: ['basics'], defaultTask: 'Prüfe die Änderungen.', requiresRepository: false }],
+                doctor: { provider: { id: 'hapi.toolchain', version: 1 }, checks: [{ id: 'git', required: true }] }, inspect: null },
+            { apiVersion: 1, id: `other-${suffix}`, title: `Zufallsszenario ${suffix} mit ausführlichem Titel für schmale Bildschirme`, summary: 'Zweites unbekanntes Modul mit anderer Feldreihenfolge.', contentVersion: '1.0.0',
+                fields: [
+                    { id: 'path', kind: 'select', label: 'Pfadvariante', options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }], default: 'a' },
+                    { id: 'packageName', kind: 'boolean', label: 'Paket bündeln', default: true },
+                ] },
+        ],
+    })
     globalThis.fetch = (async (input, init) => {
         const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url)
+        if (url.href === `https://api.github.com/repos/${modulesRepository}`) return Response.json({ id: 4343, private: false, full_name: modulesRepository })
+        if (url.href === `https://api.github.com/repos/${modulesRepository}/commits/HEAD`) return new Response('c'.repeat(40))
+        if (url.href === `https://api.github.com/repos/${modulesRepository}/commits/updated`) return new Response('d'.repeat(40))
+        for (const updated of [false, true]) if (url.href === `https://raw.githubusercontent.com/${modulesRepository}/${(updated ? 'd' : 'c').repeat(40)}/hapi-evolved.plugin.json`) return Response.json(moduleManifest(updated))
         if (url.href === `https://api.github.com/repos/${repository}`) return Response.json({ id: 4242, private: false, full_name: repository })
         if (url.href === `https://api.github.com/repos/${repository}/commits/HEAD`) return new Response('a'.repeat(40))
         if (url.href === `https://api.github.com/repos/${repository}/commits/updated`) return new Response('b'.repeat(40))

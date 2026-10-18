@@ -330,7 +330,7 @@ async function inspectOdoo(tree: SafeTree, settings: DevelopmentSettings, collec
     return modules
 }
 
-function pushBuildFile(buildFiles: BuildFile[], file: BuildFile) {
+export function pushBuildFile(buildFiles: BuildFile[], file: BuildFile) {
     if (buildFiles.length >= INSPECT_LIMITS.buildFiles) return
     if (file.facts) {
         const facts: Facts = {}
@@ -525,7 +525,7 @@ async function findFile(tree: SafeTree, base: string, name: string, depth: numbe
     return found
 }
 
-async function inspectWorkflows(tree: SafeTree, buildFiles: BuildFile[]) {
+export async function inspectWorkflows(tree: SafeTree, buildFiles: BuildFile[]) {
     const listing = await tree.list('.github/workflows', 100)
     if (typeof listing === 'string') return
     for (const entry of listing.entries) {

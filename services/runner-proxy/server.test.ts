@@ -570,3 +570,63 @@ test('development requests keep project isolation, broker credentials and empty 
     ] as const) expect((await fetch(new URL(path, proxy.server.url), options)).status).toBe(status)
     expect(forwarded).toHaveLength(3)
 })
+
+test('development module routes: exact v2 reads and bound actions only; configuration, details and catalogue stay browser-only', () => {
+    const base = '/api/evolved/projects/a/development'
+    for (const [path, method, query] of [
+        [`${base}/modules-context`, 'GET', ''],
+        [`${base}/modules-knowledge`, 'GET', ''], [`${base}/modules-knowledge`, 'GET', '?topic=django-testing'], [`${base}/modules-knowledge`, 'GET', '?q=migrations&limit=5'],
+        [`${base}/modules-doctor`, 'POST', ''], [`${base}/modules-inspect`, 'POST', ''],
+    ] as const) expect(allowedProxyPath(path, method, query)).toBe(true)
+    const module = 'plugin:6d5f2b1e-1f7c-4f63-9d7b-4f1f7d0f8e11:django'
+    for (const [path, method, query] of [
+        // Module configuration, adoption, details and the project-independent catalogue are human-only.
+        [`${base}/modules`, 'GET', ''], [`${base}/modules`, 'PUT', ''], [`${base}/modules/${encodeURIComponent(module)}`, 'GET', ''], [`${base}/modules/builtin:odoo`, 'GET', ''],
+        ['/api/evolved/development-modules', 'GET', ''], [`/api/evolved/development-modules/${module}`, 'GET', ''],
+        [`${base}/modules-context`, 'POST', ''], [`${base}/modules-context`, 'GET', '?moduleId=x'], [`${base}/modules-context/`, 'GET', ''],
+        [`${base}/modules-knowledge`, 'POST', ''], [`${base}/modules-knowledge`, 'GET', '?topic=a&q=b'], [`${base}/modules-knowledge`, 'GET', '?limit=21'],
+        [`${base}/modules-knowledge`, 'GET', '?moduleId=x'], [`${base}/modules-knowledge`, 'GET', '?topic=../x'],
+        [`${base}/modules-doctor`, 'GET', ''], [`${base}/modules-doctor`, 'POST', '?checks=all'], [`${base}/modules-inspect`, 'PUT', ''], [`${base}/modules-inspect`, 'POST', '?subdirectory=/etc'],
+        [`${base}/modules-setup`, 'POST', ''], [`${base}/modules-adopt`, 'POST', ''], [`${base}/modules-doctor/extra`, 'POST', ''],
+    ] as const) expect(allowedProxyPath(path, method, query)).toBe(false)
+})
+
+test('development module actions forward exactly the canonical {moduleId, moduleDigest} body with broker credentials', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'evolved-development-module-proxy-')), leaseFile = join(directory, 'lease')
+    cleanup.push(() => rmSync(directory, { recursive: true, force: true }))
+    writeFileSync(leaseFile, 'synthetic-lease', { mode: 0o600 })
+    const forwarded: Array<{ path: string; method: string; authorization: string | null; type: string | null; body: string }> = []
+    const hub = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(request) {
+        const url = new URL(request.url)
+        if (url.pathname === '/api/evolved/runner/token') return Response.json({ token: 'x'.repeat(43), projectId: 'a', expiresAt: Date.now() + 900_000 })
+        forwarded.push({ path: url.pathname + url.search, method: request.method, authorization: request.headers.get('authorization'), type: request.headers.get('content-type'), body: await request.text() })
+        return Response.json({ ok: true })
+    } })
+    cleanup.push(() => hub.stop(true))
+    const proxy = createRunnerProxy({ hubUrl: hub.url.toString(), leaseFile, projectId: 'a', port: 0 })
+    cleanup.push(proxy.close)
+    const base = '/api/evolved/projects/a/development'
+    const binding = { moduleId: 'plugin:6d5f2b1e-1f7c-4f63-9d7b-4f1f7d0f8e11:django', moduleDigest: `sha256:${'a'.repeat(64)}` }
+    const post = (path: string, body: string, type = 'application/json') => fetch(new URL(`${base}/${path}`, proxy.server.url), { method: 'POST', headers: { 'content-type': type, authorization: 'Bearer attacker' }, body })
+    expect((await fetch(new URL(`${base}/modules-context`, proxy.server.url))).status).toBe(200)
+    expect((await fetch(new URL(`${base}/modules-knowledge?topic=django-testing`, proxy.server.url))).status).toBe(200)
+    // Reordered keys and whitespace are normalised; the Hub receives the canonical body only.
+    expect((await post('modules-doctor', ` { "moduleDigest": "${binding.moduleDigest}", "moduleId": "${binding.moduleId}" } `, 'text/plain')).status).toBe(200)
+    expect((await post('modules-inspect', JSON.stringify({ moduleId: 'builtin:odoo', moduleDigest: binding.moduleDigest }))).status).toBe(200)
+    expect(forwarded).toEqual([
+        { path: `${base}/modules-context`, method: 'GET', authorization: `Bearer ${'x'.repeat(43)}`, type: null, body: '' },
+        { path: `${base}/modules-knowledge?topic=django-testing`, method: 'GET', authorization: `Bearer ${'x'.repeat(43)}`, type: null, body: '' },
+        { path: `${base}/modules-doctor`, method: 'POST', authorization: `Bearer ${'x'.repeat(43)}`, type: 'application/json', body: JSON.stringify(binding) },
+        { path: `${base}/modules-inspect`, method: 'POST', authorization: `Bearer ${'x'.repeat(43)}`, type: 'application/json', body: JSON.stringify({ moduleId: 'builtin:odoo', moduleDigest: binding.moduleDigest }) },
+    ])
+    for (const body of [
+        '', '{}', 'null', '[]', 'not json',
+        JSON.stringify({ ...binding, checks: ['git'] }), JSON.stringify({ ...binding, subdirectory: '/etc' }), JSON.stringify({ moduleId: binding.moduleId }),
+        JSON.stringify({ ...binding, moduleId: 'plugin:not-a-uuid:django' }), JSON.stringify({ ...binding, moduleDigest: 'sha256:abc' }), JSON.stringify({ ...binding, moduleId: 'builtin:other' }),
+        `${JSON.stringify(binding)}${' '.repeat(300)}`,
+    ]) expect((await post('modules-doctor', body)).status).toBe(400)
+    expect((await fetch(new URL('/api/evolved/projects/b/development/modules-context', proxy.server.url))).status).toBe(403)
+    expect((await fetch(new URL(`${base}/modules/${encodeURIComponent(binding.moduleId)}`, proxy.server.url))).status).toBe(403)
+    expect((await fetch(new URL(`${base}/modules`, proxy.server.url), { method: 'PUT', body: '{}' })).status).toBe(403)
+    expect(forwarded).toHaveLength(4)
+})

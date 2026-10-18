@@ -14,6 +14,7 @@ import { runtimePath } from '@/projectPath'
 import { getInvokedCwd } from '@/utils/invokedCwd'
 import { readWorktreeEnv } from '@/utils/worktreeEnv'
 import { CURRENT_MACHINE_CAPABILITIES } from '@hapi/protocol/runnerCapabilities'
+import { RUNNER_DEVELOPMENT_PROVIDER_CAPABILITIES } from '@/evolved/development/providers'
 import { exportHapiSessionEnv } from '@/agent/hapiSessionEnv'
 import packageJson from '../../package.json'
 
@@ -99,7 +100,8 @@ export function buildMachineMetadata(options?: {
     }
     return {
         ...base,
-        capabilities: [...CURRENT_MACHINE_CAPABILITIES],
+        // Development-module providers are advertised only because this runner implements module_doctor/module_inspect.
+        capabilities: [...new Set([...CURRENT_MACHINE_CAPABILITIES, ...RUNNER_DEVELOPMENT_PROVIDER_CAPABILITIES])],
         ...(typeof startedCliMtimeMs === 'number' ? { startedCliMtimeMs } : {}),
         ...(typeof installedCliMtimeMs === 'number' ? { installedCliMtimeMs } : {}),
         // Always boolean so hub merge can clear a prior true on unsupervised restart.

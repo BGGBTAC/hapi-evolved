@@ -1,12 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { EvolvedApiError, type EvolvedProject } from './api'
 import { AgentsPluginsPanel } from './AgentsPlugins'
 import { ProjectWorkflowProvider, useProjectWorkflow } from './ProjectWorkflowContext'
-import { defaultDevelopmentSettings } from '@hapi/protocol/evolvedDevelopment'
-import { developmentCatalog } from '@hapi/protocol/developmentPacks'
+import { defaultOdooSettings } from '@hapi/protocol/evolvedDevelopment'
+import { DevelopmentModuleDefinitionSchema } from '@hapi/protocol/developmentModules'
+import { builtinModule, digestOf, emptySettings, flutterDefinition, moduleConfig } from '../test/developmentModules'
 
 const repositoryChoices = vi.hoisted(() => ({ items: [] as Array<{ id: string; fullName: string; path?: string; local: { state: string } }> }))
 const context = vi.hoisted(() => ({ api: { baseUrl: '', request: vi.fn() }, me: { user: { id: 'human', isAdmin: true } }, project: null as EvolvedProject | null }))
@@ -18,12 +19,14 @@ const agent = { id: 'specialist', name: 'Prüfer', description: 'Prüft das Proj
 const manifest = { schemaVersion: 1, id: 'example', name: 'Example Plugin', version: '1.0.0', description: 'Beispiel-Erweiterung', agents: [{ ...agent, id: 'reviewer' }], skills: [{ id: 'inspect', name: 'Inspektion', description: 'Quellen prüfen', instructions: '<img src="https://tracking.invalid/pixel">' }], themes: [] }
 const installed = { id: 'plugin-1', repository: 'example/plugin', repositoryId: '42', commitSha: 'a'.repeat(40), manifestSha256: 'b'.repeat(64), manifest, enabled: true, installedAt: Date.now(), updatedAt: Date.now() }
 const preview = { ...installed, id: undefined, previewId: 'preview-1', pluginId: null, expiresAt: Date.now() + 600000 }
-let canManage = true, agents = [agent], plugins: typeof installed[] = []
+let canManage = true, agents = [agent], plugins: Array<typeof installed & { developmentModules?: unknown[] }> = []
 const catalog = () => ({ agents, skills: [], themes: [], canManage, machines: [{ id: 'machine-1', name: 'Projekt-Runner' }] })
 // Development configuration of the project; `null` repository = no bound default.
 let developmentDefault: string | null = null
-const fallback = (path: string) => path === '/plugins' ? { plugins } : path === '/projects/project-1/development'
-    ? { config: { projectId: 'project-1', revision: 1, settings: { ...defaultDevelopmentSettings('odoo'), repositoryId: developmentDefault }, savedPackRevision: null, updatedAt: 1, updatedBy: null, androidSdkLicenseAcknowledgement: null }, catalog: developmentCatalog(), canEdit: true }
+const developmentPath = '/projects/project-1/development/modules'
+const developmentCatalog = () => [builtinModule('odoo').entry]
+const fallback = (path: string) => path === '/plugins' ? { plugins } : path === developmentPath
+    ? { contractVersion: 2, config: moduleConfig(1, emptySettings({ activeModuleId: 'builtin:odoo', odoo: defaultOdooSettings(), repositoryId: developmentDefault }), developmentCatalog(), 'project-1'), catalog: { modules: developmentCatalog() }, canEdit: true }
     : catalog()
 const readyStart = async () => { const button = screen.getByRole('button', { name: 'Jetzt starten' }); await waitFor(() => expect(button).toBeEnabled()); return button }
 function mount() {
@@ -363,7 +366,7 @@ it('a workflow repository selection takes precedence over the development defaul
     render(<QueryClientProvider client={client}><ProjectWorkflowProvider><Trigger /></ProjectWorkflowProvider></QueryClientProvider>)
     await screen.findByText('Prüfer'); fireEvent.click(screen.getByRole('button', { name: 'Repo intent' }))
     fireEvent.click(screen.getByRole('button', { name: 'Aufgabe starten' }))
-    await waitFor(() => expect(context.api.request.mock.calls.some(([path]) => path === '/projects/project-1/development')).toBe(true))
+    await waitFor(() => expect(context.api.request.mock.calls.some(([path]) => path === developmentPath)).toBe(true))
     expect(screen.getByLabelText(/^Arbeitsort/)).toHaveValue('102')
 })
 
@@ -371,7 +374,7 @@ it('an initial configuration failure never silently selects the project folder',
     twoRepositories(); developmentDefault = '101'
     let failing = true
     context.api.request.mockImplementation(async (path: string, options: { body?: Record<string, unknown> }) => {
-        if (path === '/projects/project-1/development' && failing) throw new EvolvedApiError('upstream', 503)
+        if (path === developmentPath && failing) throw new EvolvedApiError('upstream', 503)
         return path.endsWith('/start') ? { sessionId: 'session-1', operationId: options.body!.operationId, acknowledged: 'persisted' } : fallback(path)
     })
     mount(); fireEvent.click(await screen.findByRole('button', { name: 'Aufgabe starten' }))
@@ -391,7 +394,7 @@ it('an initial configuration failure never silently selects the project folder',
 
 it('the explicit project folder can be chosen while the configuration is unavailable', async () => {
     context.api.request.mockImplementation(async (path: string, options: { body?: Record<string, unknown> }) => {
-        if (path === '/projects/project-1/development') throw new EvolvedApiError('upstream', 503)
+        if (path === developmentPath) throw new EvolvedApiError('upstream', 503)
         return path.endsWith('/start') ? { sessionId: 'session-1', operationId: options.body!.operationId, acknowledged: 'persisted' } : fallback(path)
     })
     mount(); fireEvent.click(await screen.findByRole('button', { name: 'Aufgabe starten' }))
@@ -416,9 +419,80 @@ it('freezes the resolved default into an uncertain operation so a retry sends th
     fireEvent.click(await readyStart())
     await screen.findByText(/Die Startbestätigung fehlt/)
     developmentDefault = '102'
-    await act(async () => { await client.invalidateQueries({ queryKey: ['evolved', 'development'] }) })
+    await act(async () => { await client.invalidateQueries({ queryKey: ['evolved', 'development-modules'] }) })
     fireEvent.click(screen.getByRole('button', { name: 'Startbestätigung erneut prüfen' }))
     await waitFor(() => expect(attempts).toBe(2))
     expect(startBodies()[1]).toEqual(startBodies()[0])
     expect(startBodies()[1].repositoryId).toBe('101')
+})
+
+// ---------------------------------------------------------------- development modules from plugins
+
+const moduleManifest = (version: string, modules: ReturnType<typeof flutterDefinition>[]) => ({ schemaVersion: 2, id: 'flutter-kit', name: 'Flutter Kit', description: 'Nur Entwicklungsmodule', version, agents: [], skills: [], themes: [],
+    developmentModules: modules.map(module => DevelopmentModuleDefinitionSchema.parse(module)) })
+const summary = (localId: string, title: string, digest: string, extra: Partial<{ activeProjects: number; affectedProjects: number; state: string; reasons: string[]; id: string | null }> = {}) => ({
+    id: `plugin:00000000-0000-4000-8000-0000000000a1:${localId}`, localId, title, contentVersion: '2026.10.17-1', digest, state: 'ready', reasons: [], fieldCount: 11, tasks: 1, topics: 1, activeProjects: 0, affectedProjects: 0, ...extra })
+const modulePlugin = { ...installed, id: '00000000-0000-4000-8000-0000000000a1', manifest: moduleManifest('1.0.0', [flutterDefinition(), flutterDefinition({ id: 'legacy', title: 'Alt-Modul' })]),
+    developmentModules: [summary('flutter', 'Flutter', digestOf('r1'), { activeProjects: 2 }), summary('legacy', 'Alt-Modul', digestOf('legacy'), { activeProjects: 1 })] }
+const seedDevelopmentQuery = (client: QueryClient) => { const key = ['evolved', 'development-modules', '', 'human', 'project-1', 'admin', 'restricted', 'seed']; client.setQueryData(key, { seeded: true }); return key }
+
+it('a module-only plugin preview shows its modules as text with revision and installs only the reviewed hashes without activating anything', async () => {
+    const modulePreview = { ...preview, manifest: moduleManifest('1.0.0', [flutterDefinition()]), developmentModules: [summary('flutter', 'Flutter', digestOf('r1'), { id: null })] }
+    context.api.request.mockImplementation(async (path: string, options: { method?: string }) => {
+        if (path === '/plugins/preview') return { preview: modulePreview }
+        if (path === '/plugins' && options?.method === 'POST') { plugins = [{ ...modulePlugin }]; return { plugin: modulePlugin } }
+        return fallback(path)
+    })
+    const { client } = mount()
+    const seeded = seedDevelopmentQuery(client)
+    fireEvent.change(await screen.findByLabelText(/^GitHub-Repository/), { target: { value: 'acme/flutter-kit' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Plugin prüfen' }))
+    const section = await screen.findByRole('region', { name: 'Plugin-Vorschau' })
+    expect(within(section).getByText(/1 Entwicklungsmodule ansehen/)).toBeInTheDocument()
+    expect(within(section).getByText('Entwicklungsmodul: Flutter')).toBeInTheDocument()
+    expect(within(section).getByText('flutter test {checkout}/{appDirectory}')).toBeInTheDocument()
+    expect(within(section).getByText(/Neu installiert, in keinem Projekt aktiv/)).toBeInTheDocument()
+    expect(within(section).getByText(digestOf('r1').slice(7, 19))).toBeInTheDocument()
+    expect(within(section).getByText(/Ein Entwicklungsmodul wird in keinem Projekt automatisch aktiviert/)).toBeInTheDocument()
+    fireEvent.click(within(section).getByRole('button', { name: 'Diese Fassung installieren' }))
+    expect(await screen.findByText(/Plugin wurde installiert. Entwicklungsmodule werden in keinem Projekt automatisch aktiviert/)).toBeInTheDocument()
+    expect(context.api.request).toHaveBeenCalledWith('/plugins', expect.objectContaining({ method: 'POST', body: { previewId: 'preview-1', commitSha: 'a'.repeat(40), manifestSha256: 'b'.repeat(64) } }))
+    expect(context.api.request.mock.calls.some(([path]) => String(path).includes('/development'))).toBe(false)
+    await waitFor(() => expect(client.getQueryState(seeded)?.isInvalidated).toBe(true))
+    expect(await screen.findByText(/in 2 Projekten aktiv/)).toBeInTheDocument()
+})
+
+it('an update preview names changed, unchanged and removed modules with the affected project counts from the hub', async () => {
+    plugins = [modulePlugin]
+    const updatePreview = { ...preview, pluginId: modulePlugin.id, commitSha: 'f'.repeat(40), manifest: moduleManifest('2.0.0', [flutterDefinition({ contentVersion: '2026.11.01-1' })]),
+        developmentModules: [summary('flutter', 'Flutter', digestOf('r2'), { activeProjects: 2, affectedProjects: 2 })] }
+    context.api.request.mockImplementation(async (path: string, options: { method?: string }) => {
+        if (path.endsWith('/preview-update')) return { preview: updatePreview }
+        if (path.endsWith('/update') && options?.method === 'POST') throw new EvolvedApiError('A project still uses a development module this update removes.', 409, 'plugin_dependency', undefined, { code: 'plugin_dependency' })
+        return fallback(path)
+    })
+    mount()
+    fireEvent.click(await screen.findByRole('button', { name: 'Update prüfen' }))
+    const section = await screen.findByRole('region', { name: 'Plugin-Vorschau' })
+    expect(within(section).getByText(/Geändert · 2 Projekte müssen die neue Fassung danach übernehmen/)).toBeInTheDocument()
+    expect(within(section).getByText(/Alt-Modul/).closest('li')).toHaveTextContent('entfällt in dieser Fassung')
+    expect(within(section).getByText(/In 1 Projekt aktiv: Das Update wird abgelehnt/)).toBeInTheDocument()
+    expect(within(section).queryByRole('checkbox')).not.toBeInTheDocument()
+    fireEvent.click(within(section).getByRole('button', { name: 'Diese Fassung aktualisieren' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('A project still uses a development module')
+    expect(screen.getByText(/Ein Projekt oder ein Agent hängt noch von Inhalten ab/)).toBeInTheDocument()
+})
+
+it('disabling a module plugin explains the project effect and invalidates every development read', async () => {
+    plugins = [{ ...modulePlugin, developmentModules: [summary('flutter', 'Flutter', digestOf('r1'), { activeProjects: 2, state: 'unsupported', reasons: ['Doctor-Provider hapi.toolchain v9 wird von diesem HAPI nicht unterstützt.'] })] }]
+    context.api.request.mockImplementation(async (path: string, options: { method?: string }) => {
+        if (options?.method === 'PUT') { plugins = [{ ...plugins[0]!, enabled: false }]; return { plugin: plugins[0] } }
+        return fallback(path)
+    })
+    const { client } = mount()
+    expect(await screen.findByText(/Von diesem HAPI nicht unterstützt: Doctor-Provider hapi.toolchain v9/)).toBeInTheDocument()
+    const seeded = seedDevelopmentQuery(client)
+    fireEvent.click(screen.getByRole('button', { name: 'Deaktivieren' }))
+    expect(await screen.findByText(/Plugin wurde deaktiviert. Projekte mit einem seiner Entwicklungsmodule \(derzeit 2\) zeigen es als nicht verfügbar; ihre Einstellungen bleiben erhalten/)).toBeInTheDocument()
+    await waitFor(() => expect(client.getQueryState(seeded)?.isInvalidated).toBe(true))
 })

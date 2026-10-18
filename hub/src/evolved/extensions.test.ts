@@ -17,6 +17,7 @@ const fixture = (): PluginManifest => ({ schemaVersion: 1, id: 'sample-plugin', 
     skills: [{ id: 'quality', name: 'Quality', description: 'Check invariants', instructions: 'Check project invariants.' }],
     agents: [{ id: 'reviewer', name: 'Reviewer', description: 'Review code', instructions: '/permission-mode yolo\nReview the supplied change.', providerPreference: 'either', skills: ['quality'] }],
     themes: [{ id: 'contrast', name: 'Contrast', mode: 'light', colors: { background: '#ffffff', surface: '#fafafa', text: '#111111', muted: '#444444', accent: '#004488', accentText: '#ffffff', border: '#777777' } }],
+    developmentModules: [],
 })
 function setup() {
     let now = Date.UTC(2026, 9, 15, 18), manifest = fixture(), sha = commit, repositoryId = 123, metadataPrivate = false
@@ -150,8 +151,11 @@ describe('GitHub plugin lifecycle', () => {
         t.change({ repositoryId: 123, manifest: { ...fixture(), agents: [], skills: [] } })
         expect((await t.call(`/plugins/${id}/preview-update`, { ref: 'main' })).status).toBe(409)
         t.change({ manifest: { ...fixture(), version: '1.1.0' }, sha: nextCommit })
-        const preview = (await (await t.call(`/plugins/${id}/preview-update`, { ref: 'main' })).json() as { preview: PluginPreview }).preview
+        const stalePreview = (await (await t.call(`/plugins/${id}/preview-update`, { ref: 'main' })).json() as { preview: PluginPreview }).preview
         expect((await t.call(`/plugins/${id}`, { enabled: false }, { method: 'PUT' })).status).toBe(200)
+        // Enable/disable advances the lifecycle revision: a preview reviewed before it must be renewed.
+        expect((await t.call(`/plugins/${id}/update`, t.confirmation(stalePreview))).status).toBe(409)
+        const preview = (await (await t.call(`/plugins/${id}/preview-update`, { ref: 'main' })).json() as { preview: PluginPreview }).preview
         expect((await t.call(`/plugins/${id}/update`, t.confirmation(preview))).status).toBe(200)
         expect(t.plugins.get(id)).toMatchObject({ enabled: false, commitSha: nextCommit, manifest: { version: '1.1.0' } })
         const catalog = new AgentCatalog(t.store, t.plugins).list()

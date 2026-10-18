@@ -1,12 +1,25 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { EvolvedProject } from './api'
+import { EvolvedApiError, type EvolvedProject } from './api'
+import { builtinModule, flutterDefinition, pluginModule, type FixtureModule } from '../test/developmentModules'
 import { ProjectsPanel } from './ProjectsTeam'
 const context = vi.hoisted(() => ({ api: { request: vi.fn(), baseUrl: 'https://hub.example' }, me: { user: { id: 'user-1', isAdmin: false }, accessibleProjects: [] as EvolvedProject[] }, project: null as EvolvedProject | null, selectProject: vi.fn(), refresh: vi.fn() }))
 vi.mock('./auth', () => ({ useEvolved: () => context }))
 vi.mock('./Capacity', () => ({ CapacityPanel: () => <p>Selected project capacity</p> }))
 vi.mock('./ProjectDevelopment', () => ({ DevelopmentOverviewCard: () => <p>Development overview</p> }))
+function creationServer(plugins: FixtureModule[] = [], onCreate?: () => unknown, catalogFails = false) {
+    const modules = [builtinModule('odoo'), builtinModule('ios'), builtinModule('android'), ...plugins]
+    context.api.request.mockImplementation(async (path: string, options?: { method?: string }) => {
+        if (path === '/teams') return { teams: [{ id: 'team-1', name: 'Team', role: 'admin' }] }
+        if (path === '/development-modules') { if (catalogFails) throw new EvolvedApiError('down', 503); return { contractVersion: 2, modules: modules.map(module => module.entry) } }
+        const detail = modules.find(module => path === `/development-modules/${encodeURIComponent(module.entry.id)}`)
+        if (detail) return { module: detail.detail }
+        if (path === '/projects' && options?.method === 'POST') return onCreate ? onCreate() : { project: { id: 'new' } }
+        throw new Error(`Unexpected ${path}`)
+    })
+}
+const postedProject = () => context.api.request.mock.calls.find(([path, options]) => path === '/projects' && options?.method === 'POST')?.[1].body
 const projects: EvolvedProject[] = ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'].map((name, index) => ({ id: `project-${index}`, teamId: 'team-1', name, role: 'viewer', profile: 'restricted', rootPath: `/work/${name}` }))
 function mount(onSelectProject?: (id: string) => void) {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -70,23 +83,82 @@ describe('project overview', () => {
         rerenderPanel()
         expect(screen.getByLabelText('Projekte durchsuchen')).toHaveValue('')
     })
-    it('creates a project with an explicit development mode and Odoo version but no repository', async () => {
+    it('creates a project with an explicit builtin module and Odoo version through the v2 creation body, without repository', async () => {
         context.me.user.isAdmin = false
-        context.api.request.mockImplementation(async (path: string) => path === '/teams' ? { teams: [{ id: 'team-1', name: 'Team', role: 'admin' }] } : { project: { id: 'new' } })
+        creationServer()
         mount()
         fireEvent.change(await screen.findByLabelText('Projektname'), { target: { value: 'ERP' } })
-        expect(screen.getByRole('radio', { name: 'Allgemein' })).toBeChecked()
-        fireEvent.click(screen.getByRole('radio', { name: 'Odoo' }))
+        expect(await screen.findByRole('radio', { name: /^Allgemein/ })).toBeChecked()
+        fireEvent.click(screen.getByRole('radio', { name: /^Odoo/ }))
         fireEvent.click(screen.getByRole('radio', { name: '19.0' }))
-        expect(screen.getByText(/Der Modus ändert keine Rechte und installiert nichts/)).toBeInTheDocument()
+        expect(screen.getByText(/Das Modul ändert keine Rechte und installiert nichts/)).toBeInTheDocument()
         fireEvent.click(screen.getByRole('button', { name: 'Projekt anlegen' }))
         await waitFor(() => expect(context.api.request).toHaveBeenCalledWith('/projects', expect.objectContaining({ method: 'POST' })))
-        const body = context.api.request.mock.calls.find(([path, options]) => path === '/projects' && options?.method === 'POST')![1].body
-        expect(body).toMatchObject({ name: 'ERP', teamId: 'team-1', development: { settings: { mode: 'odoo', repositoryId: null, odoo: { major: 19, enterpriseRepositoryId: null } } } })
+        const body = postedProject()
+        expect(body).toMatchObject({ name: 'ERP', teamId: 'team-1', development: { contractVersion: 2, settings: { activeModuleId: 'builtin:odoo', repositoryId: null, modules: {}, odoo: { major: 19, enterpriseRepositoryId: null } } } })
         expect(body.development.settings.ios).toBeNull()
+        // Builtins need no detail request; nothing project-scoped is read while creating.
+        expect(context.api.request.mock.calls.some(([path]) => String(path).startsWith('/development-modules/'))).toBe(false)
     })
+
+    it('creates a project with a plugin module using the shown revision, its defaults and typed values including false and 0', async () => {
+        const flutter = pluginModule(flutterDefinition({ fields: flutterDefinition().fields!.filter(field => field.kind !== 'repository') }))
+        creationServer([flutter])
+        mount()
+        fireEvent.change(await screen.findByLabelText('Projektname'), { target: { value: 'App' } })
+        fireEvent.click(await screen.findByRole('radio', { name: /^Flutter/ }))
+        expect(await screen.findByLabelText(/^App-Verzeichnis/)).toHaveValue('.')
+        expect(screen.getByLabelText(/^Android minSdk/)).toHaveValue(0)
+        expect(screen.getByLabelText('Web-Ziel')).not.toBeChecked()
+        fireEvent.change(screen.getByLabelText(/^Kanal/), { target: { value: 'beta' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Projekt anlegen' }))
+        await waitFor(() => expect(postedProject()).toBeDefined())
+        expect(postedProject().development).toEqual({ contractVersion: 2, settings: { activeModuleId: flutter.entry.id, repositoryId: null, odoo: null, ios: null, android: null,
+            modules: { [flutter.entry.id]: { moduleDigest: flutter.entry.digest, values: { appDirectory: '.', channel: 'beta', minSdk: 0, web: false, flavors: [], platforms: [], notes: null, docs: null, branch: null, signing: null } } } } })
+        expect(context.api.request.mock.calls.filter(([path]) => String(path).startsWith('/development-modules/'))).toHaveLength(1)
+    })
+
+    it('blocks an invalid plugin value at its field and shows authoritative server issues there', async () => {
+        const flutter = pluginModule(flutterDefinition({ fields: flutterDefinition().fields!.filter(field => field.kind !== 'repository') }))
+        creationServer([flutter], () => { throw new EvolvedApiError('invalid', 400, 'development_module_settings_invalid', false, { error: 'invalid', code: 'development_module_settings_invalid', issues: [{ path: ['modules', flutter.entry.id, 'values', 'notes'], message: 'Invalid format' }] }) })
+        mount()
+        fireEvent.change(await screen.findByLabelText('Projektname'), { target: { value: 'App' } })
+        fireEvent.click(await screen.findByRole('radio', { name: /^Flutter/ }))
+        const minSdk = await screen.findByLabelText(/^Android minSdk/)
+        fireEvent.change(minSdk, { target: { value: '120' } })
+        expect(minSdk).toHaveAttribute('aria-invalid', 'true')
+        expect(screen.getByText('Erlaubt sind Werte von 0 bis 99.')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Projekt anlegen' })).toBeDisabled()
+        fireEvent.change(minSdk, { target: { value: '21' } })
+        fireEvent.change(screen.getByLabelText(/^Hinweis für Übergaben/), { target: { value: 'Server sagt nein' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Projekt anlegen' }))
+        expect(await screen.findByText('Kein gültiges Format.')).toBeInTheDocument()
+        expect(screen.getByLabelText(/^Hinweis für Übergaben/)).toHaveAttribute('aria-invalid', 'true')
+    })
+
+    it('explains that a module with a required repository field is chosen after creation', async () => {
+        const flutter = pluginModule(flutterDefinition({ fields: [{ id: 'assets', kind: 'repository', label: 'Asset-Repository', required: true }], recipes: [], tasks: [], inspect: null }))
+        creationServer([flutter])
+        mount()
+        fireEvent.change(await screen.findByLabelText('Projektname'), { target: { value: 'App' } })
+        fireEvent.click(await screen.findByRole('radio', { name: /^Flutter/ }))
+        expect(await screen.findByText(/braucht ein Repository, das ein neues Projekt noch nicht hat/)).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Projekt anlegen' })).toBeDisabled()
+    })
+
+    it('keeps general creation possible and honest when the module catalog cannot be loaded', async () => {
+        creationServer([], undefined, true)
+        mount()
+        fireEvent.change(await screen.findByLabelText('Projektname'), { target: { value: 'Plain' } })
+        expect(await screen.findByText(/Modulkatalog nicht geladen/)).toBeInTheDocument()
+        expect(screen.queryByRole('radio', { name: /^Odoo/ })).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Projekt anlegen' }))
+        await waitFor(() => expect(postedProject()).toBeDefined())
+        expect(postedProject()).not.toHaveProperty('development')
+    })
+
     it('omits the development field for a general project', async () => {
-        context.api.request.mockImplementation(async (path: string) => path === '/teams' ? { teams: [{ id: 'team-1', name: 'Team', role: 'admin' }] } : { project: { id: 'new' } })
+        creationServer()
         mount()
         fireEvent.change(await screen.findByLabelText('Projektname'), { target: { value: 'Plain' } })
         fireEvent.click(screen.getByRole('button', { name: 'Projekt anlegen' }))

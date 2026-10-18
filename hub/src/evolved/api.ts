@@ -10,13 +10,14 @@ import { browseWorkspaces } from './workspaces'
 import { createCredentialGrantRoutes, revokeCredentialLeases, withCredentialProjectLock } from './credentialGrants'
 import type { AgentCredentialGrant } from './agentCredentialVault'
 import { developmentCreation } from './development'
+import type { DevelopmentModuleRegistry } from './developmentModules'
 
 const role = z.enum(['viewer', 'member', 'admin'])
 const profile = z.enum(['restricted', 'workspace', 'extended'])
 const name = z.string().trim().min(1).max(120)
 const identifier = z.string().min(1).max(128)
 const capabilityScope = z.enum(['memory:read', 'memory:write', 'codegraph:read', 'resource:execute', 'peers:read', 'peers:send', 'peers:manage', 'runner:connect', 'git:read', 'git:write'])
-export type EvolvedRoutesConfig = { store: EvolvedStore; vault: VaultClient; origin: string; rpName?: string; allowedWorkspaceRoots?: string[]; onProjectDelete?: (projectId: string) => void; repositoryDiscovery?: (request: Request, projectId: string) => Promise<unknown> }
+export type EvolvedRoutesConfig = { store: EvolvedStore; vault: VaultClient; origin: string; rpName?: string; allowedWorkspaceRoots?: string[]; onProjectDelete?: (projectId: string) => void; repositoryDiscovery?: (request: Request, projectId: string) => Promise<unknown>; developmentModules?: DevelopmentModuleRegistry }
 
 export function createEvolvedRoutes(config: EvolvedRoutesConfig): Hono<EvolvedEnv> {
     const { store, vault } = config, app = new Hono<EvolvedEnv>()
@@ -92,7 +93,7 @@ export function createEvolvedRoutes(config: EvolvedRoutesConfig): Hono<EvolvedEn
         const body = await parseBody(c, z.object({ teamId: identifier, name, rootPath: z.string().max(4096).optional(), root: z.string().max(4096).optional(), development: z.unknown().optional() }).strict())
         if (body.rootPath !== undefined && body.root !== undefined && body.rootPath !== body.root) throw new EvolvedError('invalid_workspace', 'Specify only one workspace path.')
         // Optional creation mode: validated completely before the project exists, persisted in the same transaction.
-        const development = developmentCreation(body.development)
+        const development = developmentCreation(body.development, config.developmentModules)
         if (body.rootPath || body.root) {
             if (!principal.user.isAdmin) throw new EvolvedError('workspace_admin_required', 'Only the installation administrator can attach a workspace.', 403)
             requireFreshPasskey(c, store, principal)

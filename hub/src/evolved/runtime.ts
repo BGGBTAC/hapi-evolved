@@ -23,6 +23,7 @@ import { createProviderRoutes, UnixProviderControl } from './providers'
 import { PluginService, createPluginRoutes } from './plugins'
 import { createAgentCatalogRoutes } from './agentCatalog'
 import { createDevelopmentService } from './development'
+import { DevelopmentModuleRegistry } from './developmentModules'
 import { createSidechannelRoutes, SidechannelService, sidechannelConfig } from './sidechannel'
 import { createScheduleRoutes, ScheduleService } from './schedules'
 import { PeerCompletionReporter } from './peerReports'
@@ -96,13 +97,14 @@ export function createEvolvedRuntime(dataDir: string, secret: Uint8Array, depend
     routes.route('/', createProviderRoutes(store, { key: controlKey, control: controlSocket && controlKey ? new UnixProviderControl(controlSocket, controlKey) : undefined }))
     const plugins = new PluginService(store)
     routes.route('/', createPluginRoutes(plugins, origin))
-    const development = createDevelopmentService({ store, vault, getEngine: () => getSyncEngine() })
+    const developmentModules = new DevelopmentModuleRegistry(plugins)
+    const development = createDevelopmentService({ store, vault, getEngine: () => getSyncEngine(), modules: developmentModules })
     routes.route('/', development.routes(origin))
     routes.route('/', createAgentCatalogRoutes({ store, plugins, origin, getSyncEngine: () => getSyncEngine(), repositoryStart: repositories.resolveStart, repositoryReview: repositories.reviewContext, development }))
     routes.route('/', createSidechannelRoutes(new SidechannelService(store, sidechannelConfig()), () => getSyncEngine(), origin))
     const schedules = new ScheduleService(store, () => getSyncEngine())
     routes.route('/', createScheduleRoutes(schedules, () => getSyncEngine()))
-    routes.route('/', createEvolvedRoutes({ store, vault, origin, allowedWorkspaceRoots: roots as string[], repositoryDiscovery: repositories.discovery,
+    routes.route('/', createEvolvedRoutes({ store, vault, origin, allowedWorkspaceRoots: roots as string[], repositoryDiscovery: repositories.discovery, developmentModules,
         onProjectDelete: projectId => { memory.forgetProject(projectId); development.forgetProject(projectId); enqueueCodegraphDeletion(store, projectId) } }))
     routes.route('/', createMemoryProviderRoutes({ store, service: memoryProvider, origin }))
     routes.route('/', createProjectMcpRoutes({ store, service: new ProjectMcpService(vault, dependencies.mcpRemote), origin }))

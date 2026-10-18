@@ -21,3 +21,8 @@
 .ev-plugin-preview dl { display: grid; grid-template-columns: minmax(6rem, auto) minmax(0, 1fr); gap: .45rem 1rem; margin: 1rem 0; }
 .ev-plugin-preview dd { margin: 0; }
 @media (max-width: 640px) { .ev-agent-actions > button { flex: 1 1 auto; } .ev-plugin-preview dl { grid-template-columns: 1fr; } .ev-plugin-preview dt { font-weight: 600; } }
+.ev-plugin-modules { list-style: none; padding: 0; margin: .5rem 0; display: grid; gap: .5rem; }
+.ev-plugin-modules li { display: flex; flex-direction: column; gap: .15rem; min-width: 0; overflow-wrap: anywhere; font-size: .875rem; }
+.ev-plugin-modules small { color: var(--app-hint); }
+.ev-plugin-modules-preview { margin: 1rem 0; }
+.ev-plugin-preview code, .ev-agent-card code { overflow-wrap: anywhere; }

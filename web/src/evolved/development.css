@@ -74,7 +74,39 @@
 .ev-dev-folder code { overflow-wrap: anywhere; padding: 6px 8px; border-radius: 6px; background: var(--app-subtle-bg, var(--ev-bg)); }
 .ev-dev-start { border: 2px solid var(--ev-accent); border-radius: 12px; padding: 16px; margin-top: 14px; display: grid; gap: 14px; min-width: 0; }
 
+/* Compact module picker: one short row per module, scrolls instead of growing into cards. */
+.ev-dev-picker { margin: 0; padding: 0; border: 0; min-width: 0; display: grid; gap: 8px; }
+.ev-dev-picker legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.ev-dev-picker-search { max-width: 420px; }
+/* max-content rows: a bounded grid container would otherwise shrink the auto tracks and let row text spill over the next row. */
+.ev-dev-picker-list { display: grid; grid-auto-rows: max-content; align-content: start; max-height: 19rem; overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--ev-line); border-radius: 12px; background: var(--ev-bg); }
+.ev-dev-picker-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 4px 10px; min-height: 44px; padding: 6px 12px; cursor: pointer; border-bottom: 1px solid var(--ev-line); }
+.ev-dev-picker-row:last-child { border-bottom: 0; }
+.ev-dev-picker-row:has(input:checked) { background: var(--ev-surface); box-shadow: inset 3px 0 0 var(--ev-accent); }
+.ev-dev-picker-row:has(input:focus-visible) { outline: 3px solid var(--ev-accent); outline-offset: -3px; }
+.ev-dev-picker-row[data-disabled] { cursor: not-allowed; opacity: .7; }
+.ev-dev-picker-row input { width: 18px; height: 18px; margin: 0; }
+.ev-dev-picker-text { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.ev-dev-picker-text small { color: var(--app-hint); font-size: .75rem; }
+
+/* Generic module fields: label, control, help and error stay together. */
+.ev-dev-module-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ev-dev-module-field > small { color: var(--app-hint); font-size: .75rem; overflow-wrap: anywhere; }
+.ev-dev-module-field .ev-field > span { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.ev-dev-optional { font-weight: 400; font-size: .8125rem; color: var(--app-hint); }
+.ev-dev-module-field [aria-invalid="true"] { border-color: #b42318; }
+.ev-dev-choices { border: 1px solid var(--ev-line); border-radius: 10px; padding: 8px 12px 12px; margin: 0; }
+.ev-dev-choices legend { font-weight: 550; padding: 0 4px; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.ev-dev-field-error { margin: 0; }
+.ev-dev-provenance { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; font-size: .8125rem; margin: 8px 0 0; }
+.ev-dev-provenance dt { color: var(--app-hint); }
+.ev-dev-provenance dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
 @media (max-width: 640px) {
+    .ev-dev-provenance { grid-template-columns: minmax(0, 1fr); }
+    .ev-dev-provenance dd { margin-bottom: 4px; }
+    .ev-dev-picker-row { grid-template-columns: auto minmax(0, 1fr); }
+    .ev-dev-picker-row > .ev-dev-pill { grid-column: 2; justify-self: start; }
     .ev-dev-modes { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: none; }
     .ev-dev-segment { display: grid; width: 100%; }
     .ev-dev-savebar { margin: 16px -18px -18px; padding: 12px 18px; }

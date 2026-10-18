@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Session } from '@/api/types'
+import { CURRENT_MACHINE_CAPABILITIES, MACHINE_CAPABILITIES } from '@hapi/protocol/runnerCapabilities'
 
 const {
     getSessionMock,
@@ -514,6 +515,15 @@ describe('buildMachineMetadata runner-only capabilities', () => {
         expect(metadata.startedCliMtimeMs).toBe(42)
         expect(metadata.installedCliMtimeMs).toBe(1_700_000_000_000)
         expect(metadata.supervisedRestart).toBe(true)
+    })
+
+    it('advertises exactly the implemented development-module providers next to the shared machine capabilities', () => {
+        const capabilities = buildMachineMetadata({ asRunner: true }).capabilities ?? []
+        expect(capabilities).toEqual(expect.arrayContaining([...CURRENT_MACHINE_CAPABILITIES,
+            MACHINE_CAPABILITIES.EvolvedDevelopmentToolchainProvider, MACHINE_CAPABILITIES.EvolvedDevelopmentInventoryProvider]))
+        expect(capabilities.filter(capability => capability.startsWith('evolvedDevelopment.provider.')).sort())
+            .toEqual(['evolvedDevelopment.provider.hapi.repository-inventory.v1', 'evolvedDevelopment.provider.hapi.toolchain.v1'])
+        expect(new Set(capabilities).size).toBe(capabilities.length)
     })
 
     it('always sends supervisedRestart boolean for asRunner so sticky true can clear', () => {

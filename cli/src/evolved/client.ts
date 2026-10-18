@@ -2,6 +2,7 @@ import { closeSync, constants, fstatSync, openSync, readFileSync } from 'node:fs
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod/v3'
 import { DevelopmentIdSchema, GitRefSchema } from '@hapi/protocol/evolvedDevelopment'
+import { DevelopmentModuleActionBodySchema, type DevelopmentModuleActionBody } from '@hapi/protocol/developmentModules'
 
 const repositoryIdSchema = z.string().regex(/^[1-9][0-9]{0,19}$/)
 const uuidSchema = z.string().uuid()
@@ -71,16 +72,19 @@ export class EvolvedClient {
         return this.request(this.projectPath('/development/context'), 'GET', undefined, {}, { timeoutMs: 20_000 })
     }
     developmentKnowledge(query: { topic?: string; q?: string; limit?: number } = {}): Promise<unknown> {
-        const topic = query.topic === undefined ? undefined : DevelopmentIdSchema.parse(query.topic)
-        const q = query.q === undefined ? undefined : z.string().trim().min(1).max(200).parse(query.q)
-        const limit = query.limit === undefined ? undefined : z.number().int().min(1).max(20).parse(query.limit)
-        if (topic && q) throw new Error('Use either a topic id or a search query')
-        const params = new URLSearchParams()
-        if (topic) params.set('topic', topic)
-        if (q) params.set('q', q)
-        if (limit !== undefined) params.set('limit', String(limit))
-        const search = params.size ? `?${params}` : ''
-        return this.request(this.projectPath(`/development/knowledge${search}`), 'GET', undefined, {}, { timeoutMs: 20_000 })
+        return this.request(this.projectPath(`/development/knowledge${knowledgeSearch(query)}`), 'GET', undefined, {}, { timeoutMs: 20_000 })
+    }
+    /** Contract v2: active development module (builtin or plugin) with state, digest and applicable content. */
+    developmentModulesContext(): Promise<unknown> {
+        return this.request(this.projectPath('/development/modules-context'), 'GET', undefined, {}, { timeoutMs: 20_000 })
+    }
+    developmentModulesKnowledge(query: { topic?: string; q?: string; limit?: number } = {}): Promise<unknown> {
+        return this.request(this.projectPath(`/development/modules-knowledge${knowledgeSearch(query)}`), 'GET', undefined, {}, { timeoutMs: 20_000 })
+    }
+    /** Contract v2 doctor/inspect bound to the module id and digest the caller read from modules-context. */
+    developmentModuleAction(action: 'doctor' | 'inspect', binding: DevelopmentModuleActionBody): Promise<unknown> {
+        const body = DevelopmentModuleActionBodySchema.parse(binding)
+        return this.request(this.projectPath(`/development/modules-${action}`), 'POST', { moduleId: body.moduleId, moduleDigest: body.moduleDigest }, {}, { timeoutMs: action === 'doctor' ? 40_000 : 55_000 })
     }
     developmentBuildStatus(ref?: string): Promise<unknown> {
         if (ref !== undefined && !GitRefSchema.safeParse(ref).success) throw new Error('ref must be a full commit SHA or a branch name')
@@ -94,6 +98,17 @@ export class EvolvedClient {
         if (!uuidSchema.safeParse(jobId).success) throw new Error('Repository jobId must be a UUID')
         return this.request(this.projectPath(`/repository-jobs/${jobId}`), 'GET', undefined, {}, { timeoutMs: REPOSITORY_REQUEST_TIMEOUT_MS })
     }
+}
+function knowledgeSearch(query: { topic?: string; q?: string; limit?: number }): string {
+    const topic = query.topic === undefined ? undefined : DevelopmentIdSchema.parse(query.topic)
+    const q = query.q === undefined ? undefined : z.string().trim().min(1).max(200).parse(query.q)
+    const limit = query.limit === undefined ? undefined : z.number().int().min(1).max(20).parse(query.limit)
+    if (topic && q) throw new Error('Use either a topic id or a search query')
+    const params = new URLSearchParams()
+    if (topic) params.set('topic', topic)
+    if (q) params.set('q', q)
+    if (limit !== undefined) params.set('limit', String(limit))
+    return params.size ? `?${params}` : ''
 }
 export function evolvedClientFromEnvironment(): EvolvedClient {
     return new EvolvedClient(process.env.EVOLVED_PROJECT_ID ?? '', process.env.HAPI_EVOLVED_URL ?? process.env.HAPI_API_URL ?? 'http://127.0.0.1:3006', process.env.HAPI_EVOLVED_CAPABILITY_FILE ?? '')

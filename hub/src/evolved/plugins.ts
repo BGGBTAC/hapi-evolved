@@ -6,6 +6,7 @@ import { EvolvedError, type EvolvedStore } from './store'
 import { createEvolvedRequestGuard, parseBody } from './security'
 import { extensionAdministrationNow, extensionHuman, extensionSessionHash } from './extensionAccess'
 import { agentDefinitionSchema, agentInstructionsFit, parsePluginManifest, PLUGIN_MANIFEST_FILE, PLUGIN_MAX_BYTES, type PluginManifest } from './pluginManifest'
+import { developmentModuleUsage, pluginModuleSummaries, type DevelopmentModuleUsage } from './developmentModules'
 
 const repositorySchema = z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/)
     .refine(value => !['.', '..'].includes(value.split('/')[1]!)).transform(value => value.toLowerCase())
@@ -21,8 +22,9 @@ const digest = (value: string) => createHash('sha256').update(value).digest('hex
 const installed = (row: PluginRow): InstalledPlugin => {
     const metadata = { id: row.id, repository: row.repository, repositoryId: row.repository_id, commitSha: row.commit_sha, manifestSha256: row.manifest_sha256, installedAt: row.installed_at, updatedAt: row.updated_at, revision: row.revision }
     try { return { ...metadata, manifest: parsePluginManifest(row.manifest), enabled: !!row.enabled } }
-    catch { return { ...metadata, invalid: true, enabled: false, manifest: { schemaVersion: 1, id: 'invalid-plugin', name: 'Ungültiges Plugin', description: 'Gespeicherte Definition ist ungültig. Deinstalliere das Plugin und prüfe die Quelle erneut.', version: '0.0.0', agents: [], skills: [], themes: [] } } }
+    catch { return { ...metadata, invalid: true, enabled: false, manifest: { schemaVersion: 1, id: 'invalid-plugin', name: 'Ungültiges Plugin', description: 'Gespeicherte Definition ist ungültig. Deinstalliere das Plugin und prüfe die Quelle erneut.', version: '0.0.0', agents: [], skills: [], themes: [], developmentModules: [] } } }
 }
+// `revision` advances on every update and every enable/disable (lifecycle generation); a pending update preview is then stale.
 const revisionHash = (plugin: InstalledPlugin) => digest(`${plugin.commitSha}:${plugin.manifestSha256}:${plugin.revision}`)
 
 export class PluginService {
@@ -39,6 +41,24 @@ export class PluginService {
         );`)
     }
     list(): InstalledPlugin[] { return (this.store.db.query('SELECT * FROM evolved_plugins ORDER BY installed_at,id').all() as PluginRow[]).map(installed) }
+    /** Cheap change detection for registries that cache parsed manifests. */
+    versions(): Array<{ id: string; revision: number; manifestSha256: string; enabled: boolean }> {
+        return (this.store.db.query('SELECT id,revision,manifest_sha256,enabled FROM evolved_plugins ORDER BY installed_at,id').all() as Array<{ id: string; revision: number; manifest_sha256: string; enabled: number }>)
+            .map(row => ({ id: row.id, revision: row.revision, manifestSha256: row.manifest_sha256, enabled: !!row.enabled }))
+    }
+    /**
+     * Lifecycle change. Every effective enable/disable advances the monotonic `revision`, so in-flight development-module
+     * snapshots detect a disable/re-enable (ABA) even when the module digest is unchanged. Call inside a write transaction.
+     */
+    setEnabled(id: string, enabled: boolean): void {
+        const row = this.store.db.query('SELECT enabled FROM evolved_plugins WHERE id=?').get(id) as { enabled: number } | null
+        if (!row) throw new EvolvedError('plugin_not_found', 'Plugin not found.', 404)
+        if (!!row.enabled !== enabled) this.store.db.prepare('UPDATE evolved_plugins SET enabled=?,updated_at=?,revision=revision+1 WHERE id=?').run(enabled ? 1 : 0, this.store.now(), id)
+    }
+    find(id: string): InstalledPlugin | null {
+        const row = this.store.db.query('SELECT * FROM evolved_plugins WHERE id=?').get(id) as PluginRow | null
+        return row ? installed(row) : null
+    }
     get(id: string): InstalledPlugin {
         const row = this.store.db.query('SELECT * FROM evolved_plugins WHERE id=?').get(id) as PluginRow | null
         if (!row) throw new EvolvedError('plugin_not_found', 'Plugin not found.', 404)
@@ -103,7 +123,18 @@ export class PluginService {
         return { previewId, pluginId: fetched.previous?.id ?? null, repository: fetched.repository, repositoryId: fetched.repositoryId, commitSha: fetched.commitSha,
             manifestSha256: fetched.manifestSha256, expiresAt, manifest: fetched.manifest }
     }
+    /** An update must not remove a development module that a project has active (its settings and tasks would silently lose their definition). */
+    private assertModuleDependencies(pluginId: string, next: PluginManifest) {
+        const prefix = `plugin:${pluginId}:`, kept = new Set(next.developmentModules.map(module => module.id))
+        for (const row of this.store.db.query('SELECT settings FROM evolved_project_development').all() as Array<{ settings: string }>) {
+            let value: unknown; try { value = JSON.parse(row.settings) } catch { continue }
+            const active = value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 2 && 'settings' in value && value.settings && typeof value.settings === 'object'
+                && 'activeModuleId' in value.settings ? value.settings.activeModuleId : null
+            if (typeof active === 'string' && active.startsWith(prefix) && !kept.has(active.slice(prefix.length))) throw new EvolvedError('plugin_dependency', 'A project still uses a development module this update removes. Select another module in that project before updating.', 409)
+        }
+    }
     private assertDependencies(pluginId: string, next: PluginManifest) {
+        this.assertModuleDependencies(pluginId, next)
         if (!this.store.db.query("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='evolved_agent_catalog'").get()) return
         const available = new Set(next.skills.map(skill => `plugin:${pluginId}:${skill.id}`))
         // Include disabled definitions too: a later re-enable must not turn a
@@ -148,42 +179,51 @@ export class PluginService {
     }
 }
 
+/** Plugin responses list contributed development modules with digest and availability (bounded summaries). */
+const withModules = (plugin: InstalledPlugin, usage?: DevelopmentModuleUsage) => ({ ...plugin, developmentModules: pluginModuleSummaries(plugin, usage) })
 export function createPluginRoutes(service: PluginService, origin: string): Hono {
     const app = new Hono(), store = service.store
+    // Update previews show, per module, how many projects have it active and would need adoption; the existing confirmation suffices.
+    const previewWithModules = (preview: PluginPreview) => ({ ...preview, developmentModules: pluginModuleSummaries({ ...preview, id: preview.pluginId, enabled: preview.pluginId ? service.find(preview.pluginId)?.enabled ?? true : true },
+        preview.pluginId ? developmentModuleUsage(store) : undefined) })
     for (const path of ['/plugins', '/plugins/*']) {
         app.use(path, createEvolvedRequestGuard(origin))
         app.use(path, bodyLimit({ maxSize: 16_384, onError: c => c.json({ code: 'body_too_large', error: 'Plugin request is too large.' }, 413) }))
     }
-    app.get('/plugins', async c => { await extensionHuman(c, store); return c.json({ plugins: service.list() }) })
+    app.get('/plugins', async c => {
+        // Installation-wide project counts only for the installation administrator.
+        const principal = await extensionHuman(c, store), usage = principal.user.isAdmin ? developmentModuleUsage(store) : undefined
+        return c.json({ plugins: service.list().map(plugin => withModules(plugin, usage)) })
+    })
     app.post('/plugins/preview', async c => {
         const principal = await extensionHuman(c, store, true), source = await parseBody(c, sourceSchema)
         const fetched = await service.fetchPreview(principal.user.id, source)
         await extensionHuman(c, store, true)
         const preview = store.db.transaction(() => { extensionAdministrationNow(c, store); return service.savePreview(principal.user.id, extensionSessionHash(c), fetched) }).immediate()
-        return c.json({ preview })
+        return c.json({ preview: previewWithModules(preview) })
     })
     app.post('/plugins/:id/preview-update', async c => {
         const principal = await extensionHuman(c, store, true), body = await parseBody(c, z.object({ ref: refSchema.default('HEAD') }).strict()), current = service.get(c.req.param('id'))
         const fetched = await service.fetchPreview(principal.user.id, { repository: current.repository, ref: body.ref }, current.id)
         await extensionHuman(c, store, true)
         const preview = store.db.transaction(() => { extensionAdministrationNow(c, store); return service.savePreview(principal.user.id, extensionSessionHash(c), fetched) }).immediate()
-        return c.json({ preview })
+        return c.json({ preview: previewWithModules(preview) })
     })
     for (const path of ['/plugins', '/plugins/:id/update']) app.post(path, async c => {
         await extensionHuman(c, store, true); const body = await parseBody(c, confirmationSchema)
         const plugin = store.db.transaction(() => { const principal = extensionAdministrationNow(c, store); return service.install(principal.user.id, extensionSessionHash(c), body, c.req.param('id')) }).immediate()
-        return c.json({ plugin }, path === '/plugins' ? 201 : 200)
+        return c.json({ plugin: withModules(plugin, developmentModuleUsage(store)) }, path === '/plugins' ? 201 : 200)
     })
     app.put('/plugins/:id', async c => {
         await extensionHuman(c, store, true); const body = await parseBody(c, z.object({ enabled: z.boolean() }).strict())
         const plugin = store.db.transaction(() => {
             const principal = extensionAdministrationNow(c, store), current = service.get(c.req.param('id'))
             if (current.invalid && body.enabled) throw new EvolvedError('plugin_invalid', 'Invalid plugins cannot be enabled. Remove the plugin and review its source again.', 409)
-            store.db.prepare('UPDATE evolved_plugins SET enabled=?,updated_at=? WHERE id=?').run(body.enabled ? 1 : 0, store.now(), current.id)
+            service.setEnabled(current.id, body.enabled)
             store.audit(principal.user.id, null, body.enabled ? 'plugin.enabled' : 'plugin.disabled', current.id)
             return service.get(current.id)
         }).immediate()
-        return c.json({ plugin })
+        return c.json({ plugin: withModules(plugin, developmentModuleUsage(store)) })
     })
     app.delete('/plugins/:id', async c => {
         await extensionHuman(c, store, true)

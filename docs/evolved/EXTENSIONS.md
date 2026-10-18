@@ -40,7 +40,7 @@ Agenten werden von diesem Installer nicht importiert.
 
 1. Gib `owner/repository` und einen Branch, Tag oder vollständigen Commit-SHA ein.
 2. Öffne die Vorschau und prüfe Quelle, Commit, Manifest-Prüfsumme und enthaltene
-   Agenten, Skills und Farbprofile.
+   Agenten, Skills, Farbprofile und Entwicklungsmodule (mit Digest).
 3. Bestätige die Installation. Sie übernimmt genau die gezeigten Inhalte und den
    aufgelösten Commit; zwischenzeitliche Änderungen am Branch werden nicht nachgeladen.
 
@@ -56,6 +56,10 @@ die neue Quelle ausdrücklich geprüft werden.
 Aktivieren, Deaktivieren und Deinstallieren ändern ausschließlich den globalen
 Erweiterungskatalog. Vorhandene Projektsitzungen und Projektdateien werden nicht gelöscht.
 Ein deaktiviertes Farbprofil fällt in der Oberfläche auf ein verfügbares Profil zurück.
+Projekte mit einem Entwicklungsmodul des Plugins zeigen danach `disabled` bzw. `missing`;
+ihre Einstellungen bleiben erhalten. Ein Update, das ein in einem Projekt aktives Modul
+entfernt, wird abgelehnt; ein Update mit geänderter Moduldefinition muss in jedem
+betroffenen Projekt übernommen werden.
 
 ## Manifestformat
 
@@ -105,10 +109,37 @@ Hintergrund und Oberfläche mindestens 4,5:1 Kontrast erreichen; ebenso Buttonte
 gegen Akzentfarbe. Die Auswahl bleibt eine persönliche Oberflächeneinstellung.
 Die Berechnung folgt der [WCAG-Kontrastdefinition](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html).
 
-Ein Manifest ist höchstens 512 KiB groß und enthält höchstens 32 Agenten, 64 Skills
-und 16 Farbprofile. Anweisungen sind auf 16.384 Zeichen je Eintrag begrenzt; ein
+Ein Manifest ist höchstens 512 KiB groß und enthält höchstens 32 Agenten, 64 Skills,
+16 Farbprofile und 4 Entwicklungsmodule. Anweisungen sind auf 16.384 Zeichen je Eintrag begrenzt; ein
 zusammengesetzter Startauftrag auf 64 KiB. Beim Speichern einer Vorlage bleiben
 mindestens 8 KiB für den konkreten Auftrag frei. Unbekannte Felder, offene Skill-Verweise,
 doppelte IDs und unzureichender Textkontrast werden abgelehnt. Es werden keine
 Installationsskripte, Hooks, ausführbarer Hubcode, freie CSS-Regeln oder MCP-Server
 aus Plugins ausgeführt.
+
+## Entwicklungsmodule (`schemaVersion: 2`)
+
+Mit `"schemaVersion": 2` darf ein Manifest zusätzlich `developmentModules` enthalten:
+deklarative Entwicklungsszenarien mit Einstellungsfeldern, Handbuch, Rezepten,
+Aufgaben für Spezialisten und Verweisen auf feste Prüfungen des Hosts. Ein Plugin darf
+auch ausschließlich Module enthalten. Manifeste mit `schemaVersion` 1 bleiben gültig,
+dürfen aber keine Module enthalten. Aufgaben können eingebaute Spezialisten oder Agenten
+desselben Manifests verwenden. Module führen keinen Code aus, liefern keine Befehle für
+Prüfungen und vergeben keine Rechte.
+
+Format, Feldarten, Provider, Übernahme von Updates und Grenzen beschreibt
+[Entwicklungsmodule als Plugin bereitstellen](DEVELOPMENT_MODULES.md); ein vollständiges
+Beispiel ist das [Django-Plugin](../../examples/plugins/django/hapi-evolved.plugin.json).
+
+## Manifest lokal prüfen
+
+```sh
+hapi evolved plugin validate ./mein-plugin        # Ordner mit hapi-evolved.plugin.json oder die Datei
+```
+
+Der Befehl verwendet dieselbe Schemaprüfung wie der Installer, meldet Fehler mit Pfad
+(z. B. `developmentModules.0.recipes.1.steps.0.argv.2: Unknown placeholder {home}`),
+gibt für jedes Modul den Digest aus, den die Installationsvorschau zeigen wird, und
+weist auf nicht unterstützte Provider und Prüfdaten in der Zukunft hin. Er arbeitet
+offline, lädt und installiert nichts und endet bei einem ungültigen Manifest mit
+Exit-Code 1.

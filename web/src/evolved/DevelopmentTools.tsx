@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
+import { DevelopmentBuildStatusResponseSchema, GitRefSchema, type DevelopmentBuildStatusResponse } from '@hapi/protocol/evolvedDevelopment'
 import {
-    DevelopmentBuildStatusResponseSchema, DevelopmentDoctorResponseSchema, DevelopmentInspectResponseSchema, GitRefSchema,
-    type DevelopmentBuildStatusResponse, type DevelopmentContext, type DevelopmentDoctorResponse, type DevelopmentInspectResponse, type ProjectDevelopmentConfig,
-} from '@hapi/protocol/evolvedDevelopment'
+    DevelopmentModuleDoctorResponseSchema, DevelopmentModuleInspectResponseSchema,
+    type DevelopmentModuleContext, type DevelopmentModuleDoctorResponse, type DevelopmentModuleInspectResponse, type ProjectDevelopmentModuleConfig,
+} from '@hapi/protocol/developmentModules'
 import { useEvolved } from './auth'
+import { EvolvedApiError } from './api'
 import { WorkspaceLink } from './workspaceNavigation'
 import {
     commitStateLabels, describeDevelopmentError, developmentPath, doctorStateLabels, formatTimestamp, runnerStatusLabels, safeHttpsUrl,
 } from './developmentApi'
 
-type Scoped<T> = { revision: number; value: T }
+type Scoped<T> = { scope: string; value: T }
+type ModuleView = NonNullable<DevelopmentModuleContext['module']>
 const repositoryStateText = {
     unbound: 'Kein Standard-Repository gebunden.',
     granted: 'Freigegeben.',
@@ -21,44 +24,56 @@ const repositoryStateText = {
 const integrationStateText = { not_configured: 'Nicht eingerichtet', configured: 'Eingetragen', manual: 'Manuell', unavailable: 'Nicht verfügbar' } as const
 
 /**
- * One explicit request at a time per action. Results are bound to the config
- * revision they were produced for and disappear when it changes or the panel unmounts.
+ * One explicit request at a time per action. Results are bound to the config revision and
+ * module revision they were produced for and disappear when either changes or the panel unmounts.
  */
-function useExplicitRequest<T>(revision: number) {
+function useExplicitRequest<T>(scope: string, onModuleChanged?: () => void) {
     const [result, setResult] = useState<Scoped<T> | null>(null)
     const [error, setError] = useState<string | null>(null)
     const [busy, setBusy] = useState(false)
     const active = useRef<AbortController | null>(null)
     useEffect(() => () => active.current?.abort(), [])
-    useEffect(() => { active.current?.abort(); active.current = null; setResult(null); setError(null); setBusy(false) }, [revision])
+    useEffect(() => { active.current?.abort(); active.current = null; setResult(null); setError(null); setBusy(false) }, [scope])
     const run = (work: (signal: AbortSignal) => Promise<T>) => {
         if (active.current) return
         const controller = new AbortController(); active.current = controller
         setBusy(true); setError(null); setResult(null)
         void work(controller.signal).then(
-            value => { if (!controller.signal.aborted) setResult({ revision, value }) },
-            failure => { if (!controller.signal.aborted) setError(describeDevelopmentError(failure)) },
+            value => { if (!controller.signal.aborted) setResult({ scope, value }) },
+            failure => {
+                if (controller.signal.aborted) return
+                setError(describeDevelopmentError(failure))
+                if (failure instanceof EvolvedApiError && ['development_module_changed', 'development_module_unavailable', 'development_changed'].includes(failure.code ?? '')) onModuleChanged?.()
+            },
         ).finally(() => { if (active.current === controller) { active.current = null; setBusy(false) } })
     }
-    return { result: result?.revision === revision ? result.value : null, error, busy, run }
+    return { result: result?.scope === scope ? result.value : null, error, busy, run }
 }
 
-export function DevelopmentTools({ config, context, unsaved, canRun, onContextRefresh }: {
-    config: ProjectDevelopmentConfig; context: DevelopmentContext; unsaved: boolean; canRun: boolean; onContextRefresh: () => void
+export function DevelopmentTools({ config, context, module, unsaved, canRun, onContextRefresh, onModuleChanged }: {
+    config: ProjectDevelopmentModuleConfig; context: DevelopmentModuleContext; module: ModuleView; unsaved: boolean; canRun: boolean; onContextRefresh: () => void; onModuleChanged: () => void
 }) {
     const { api, project } = useEvolved()
     const projectId = project!.id
-    const doctor = useExplicitRequest<DevelopmentDoctorResponse>(config.revision)
-    const inspect = useExplicitRequest<DevelopmentInspectResponse>(config.revision)
-    const status = useExplicitRequest<DevelopmentBuildStatusResponse>(config.revision)
+    const scope = `${config.revision}:${module.id}:${module.digest}`
+    const doctor = useExplicitRequest<DevelopmentModuleDoctorResponse>(scope, onModuleChanged)
+    const inspect = useExplicitRequest<DevelopmentModuleInspectResponse>(scope, onModuleChanged)
+    const status = useExplicitRequest<DevelopmentBuildStatusResponse>(scope)
     const [ref, setRef] = useState('')
     const refValid = !ref.trim() || GitRefSchema.safeParse(ref.trim()).success
-    const mode = config.settings.mode
+    const odoo = config.settings.activeModuleId === 'builtin:odoo'
     const blocker = !canRun ? 'Prüfungen brauchen die Rolle Mitglied oder Administrator.' : unsaved ? 'Speichere oder verwirf zuerst deine Änderungen. Prüfungen nutzen nur die gespeicherte Konfiguration.' : null
     const repository = context.repository
-    const inspectBlocker = blocker ?? (repository.state !== 'granted' ? 'Für die Projektprüfung braucht es ein freigegebenes Standard-Repository.' : null)
-    const runDoctor = () => doctor.run(async signal => DevelopmentDoctorResponseSchema.parse(await api.request(developmentPath(projectId, '/doctor'), { method: 'POST', body: {}, signal })))
-    const runInspect = () => inspect.run(async signal => DevelopmentInspectResponseSchema.parse(await api.request(developmentPath(projectId, '/inspect'), { method: 'POST', body: {}, signal })))
+    const doctorBlocker = blocker ?? (!module.doctor ? 'Dieses Modul bietet keine Werkzeugprüfung.' : null)
+    const inspectBlocker = blocker ?? (!module.inspect ? 'Dieses Modul bietet keine Projektprüfung.' : repository.state !== 'granted' ? 'Für die Projektprüfung braucht es ein freigegebenes Standard-Repository.' : null)
+    // Both checks bind the module and revision shown here; the hub refuses them for any other module revision.
+    const binding = { moduleId: module.id, moduleDigest: module.digest }
+    const bound = <T extends { moduleId: string; moduleDigest: string }>(value: T): T => {
+        if (value.moduleId !== binding.moduleId || value.moduleDigest !== binding.moduleDigest) throw new Error('Die Antwort gehört zu einer anderen Modulfassung und wird nicht angezeigt.')
+        return value
+    }
+    const runDoctor = () => doctor.run(async signal => bound(DevelopmentModuleDoctorResponseSchema.parse(await api.request(developmentPath(projectId, '/modules-doctor'), { method: 'POST', body: binding, signal }))))
+    const runInspect = () => inspect.run(async signal => bound(DevelopmentModuleInspectResponseSchema.parse(await api.request(developmentPath(projectId, '/modules-inspect'), { method: 'POST', body: binding, signal }))))
     const runStatus = () => {
         if (!refValid) return
         const query = ref.trim() ? `?${new URLSearchParams({ ref: ref.trim() })}` : ''
@@ -66,25 +81,25 @@ export function DevelopmentTools({ config, context, unsaved, canRun, onContextRe
     }
     const doctorResult = doctor.result
     const fresh = doctorResult?.result && doctorResult.revision === config.revision ? doctorResult.result : null
-    const last = context.lastDoctor
+    const last = context.lastDoctor?.moduleDigest === module.digest ? context.lastDoctor : null
 
     return <>
         <section className="ev-panel" aria-labelledby="ev-dev-tools">
             <h2 id="ev-dev-tools">Werkzeuge und Projekt prüfen</h2>
-            <p className="ev-muted">Nur lesend auf dem Projektrunner. „Gefunden“ heißt: auf diesem Runner vorhanden.</p>
+            <p className="ev-muted">Nur lesend auf dem Projektrunner. „Gefunden“ heißt: auf diesem Runner vorhanden.{module.doctor ? ` ${module.doctor.checks.length} Prüfungen für die gespeicherten Einstellungen.` : ''}</p>
             <dl className="ev-dev-meta"><div><dt>Standard-Repository</dt><dd>{repository.fullName ?? repository.repositoryId ?? '—'} · {repository.message ?? repositoryStateText[repository.state]}</dd></div></dl>
             {repository.state !== 'granted' && repository.state !== 'unbound' && <p className="ev-muted"><WorkspaceLink tab="github" projectId={projectId}>Repository-Freigaben prüfen</WorkspaceLink></p>}
-            {blocker && <p className="ev-muted" role="status">{blocker}</p>}
+            {(blocker ?? doctorBlocker) && <p className="ev-muted" role="status">{blocker ?? doctorBlocker}</p>}
             <div className="ev-actions">
-                <button type="button" className="ev-primary" disabled={!!blocker || doctor.busy} onClick={runDoctor}>{doctor.busy ? 'Werkzeuge werden geprüft …' : 'Werkzeuge prüfen'}</button>
-                <button type="button" disabled={!!inspectBlocker || inspect.busy} onClick={runInspect} title={inspectBlocker ?? undefined}>{inspect.busy ? 'Projekt wird gelesen …' : mode === 'odoo' ? 'Odoo-Module prüfen' : 'Projektdateien prüfen'}</button>
+                <button type="button" className="ev-primary" disabled={!!doctorBlocker || doctor.busy} onClick={runDoctor}>{doctor.busy ? 'Werkzeuge werden geprüft …' : 'Werkzeuge prüfen'}</button>
+                <button type="button" disabled={!!inspectBlocker || inspect.busy} onClick={runInspect} title={inspectBlocker ?? undefined}>{inspect.busy ? 'Projekt wird gelesen …' : odoo ? 'Odoo-Module prüfen' : 'Projektdateien prüfen'}</button>
                 <button type="button" disabled={doctor.busy || inspect.busy} onClick={onContextRefresh}>Kontext aktualisieren</button>
             </div>
             {!blocker && inspectBlocker && <p className="ev-muted">{inspectBlocker}</p>}
             {doctor.error && <p className="ev-error" role="alert">{doctor.error}</p>}
             {!doctorResult && !doctor.busy && last && <p className="ev-muted" role="status">Letzte Prüfung für Revision {last.revision}: {formatTimestamp(last.observedAt)} · {last.ready} gefunden, {last.missing} fehlen, {last.unsupported} nicht unterstützt, {last.unknown} unbekannt, {last.warning} zu prüfen. Führe die Prüfung aus, um Details zu sehen.</p>}
-            {!doctorResult && !doctor.busy && !last && !doctor.error && <p className="ev-muted" role="status">Noch keine Werkzeugprüfung für diese Revision.</p>}
-            {doctorResult && !doctorResult.result && <p className="ev-callout" role="status">{runnerStatusLabels[doctorResult.runner.status]}{doctorResult.message ? ` ${doctorResult.message}` : ''}</p>}
+            {!doctorResult && !doctor.busy && !last && !doctor.error && module.doctor && <p className="ev-muted" role="status">Noch keine Werkzeugprüfung für diese Revision.</p>}
+            {doctorResult && !doctorResult.result && <p className="ev-callout" role="status">{runnerStatusLabels[doctorResult.runner.status]}{doctorResult.runner.missingCapabilities.length ? ' Dem Runner fehlt die passende Prüffähigkeit.' : ''}{doctorResult.message ? ` ${doctorResult.message}` : ''}</p>}
             {fresh && <div aria-label="Ergebnis der Werkzeugprüfung">
                 <p className="ev-dev-meta"><span>Geprüft {formatTimestamp(fresh.observedAt)}</span><span>Dauer {Math.round(fresh.durationMs / 100) / 10} s</span><span>{fresh.host.os}/{fresh.host.arch}</span><span>Image: {fresh.host.image ?? 'unbekannt'}</span><span>Revision {doctorResult!.revision}</span></p>
                 <ul className="ev-dev-checks ev-dev-scroll">{fresh.checks.map(check => <li key={check.id}><div>
@@ -99,10 +114,10 @@ export function DevelopmentTools({ config, context, unsaved, canRun, onContextRe
 
         <section className="ev-panel" aria-labelledby="ev-dev-status">
             <h2 id="ev-dev-status">GitHub-Commit-Status</h2>
-            <p className="ev-muted">Kombinierter Commit-Status des Standard-Repositorys aus GitHub; keine Check-Runs.{mode === 'odoo' ? ' Odoo.sh meldet hier nur, wenn GitHub-Statusmeldungen in Odoo.sh aktiviert sind.' : ''}</p>
+            <p className="ev-muted">Kombinierter Commit-Status des Standard-Repositorys aus GitHub; keine Check-Runs.{odoo ? ' Odoo.sh meldet hier nur, wenn GitHub-Statusmeldungen in Odoo.sh aktiviert sind.' : ''}</p>
             <form className="ev-dev-toolbar" onSubmit={event => { event.preventDefault(); runStatus() }}>
                 <label className="ev-field"><span>Branch oder Commit (optional)</span><input value={ref} onChange={event => setRef(event.target.value)} maxLength={200} spellCheck={false} autoCapitalize="off" aria-invalid={!refValid || undefined}
-                    placeholder={config.settings.odoo?.developmentBranch ?? 'Standard-Branch des Repositorys'} /></label>
+                    placeholder={(odoo ? config.settings.odoo?.developmentBranch : null) ?? 'Standard-Branch des Repositorys'} /></label>
                 <button type="submit" disabled={status.busy || !refValid || repository.state === 'unbound'}>{status.busy ? 'Wird abgefragt …' : 'Status abrufen'}</button>
             </form>
             {!refValid && <p className="ev-dev-invalid" role="status">Gib einen Branch-Namen oder eine vollständige Commit-SHA ein.</p>}
@@ -124,7 +139,7 @@ export function DevelopmentTools({ config, context, unsaved, canRun, onContextRe
     </>
 }
 
-function InspectResult({ response }: { response: DevelopmentInspectResponse }) {
+function InspectResult({ response }: { response: DevelopmentModuleInspectResponse }) {
     const result = response.result
     if (!result) return <p className="ev-callout" role="status">{runnerStatusLabels[response.runner.status]}{response.message ? ` ${response.message}` : ''}</p>
     return <div aria-label="Ergebnis der Projektprüfung">
@@ -132,7 +147,7 @@ function InspectResult({ response }: { response: DevelopmentInspectResponse }) {
         <p className="ev-dev-meta"><span>Gelesen {formatTimestamp(result.observedAt)}</span><span>Branch {result.branch ?? 'unbekannt'}</span><span>Commit {result.head ? <code>{result.head.slice(0, 12)}</code> : 'unbekannt'}</span><span>{result.scanned.files} Dateien, {result.scanned.directories} Ordner{result.scanned.limitReached ? ' (Grenze erreicht, unvollständig)' : ''}</span></p>
         {result.state !== 'ready' && <p className="ev-callout" role="status">{result.state === 'missing' ? 'Das Repository ist im Projekt noch nicht geklont.' : 'Das Repository konnte nicht sicher gelesen werden.'}{result.message ? ` ${result.message}` : ''}</p>}
         {result.warnings.length > 0 && <ul className="ev-dev-links">{result.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>}
-        {result.mode === 'odoo' && (result.odooModules.length ? <ul className="ev-dev-checks ev-dev-scroll">{result.odooModules.map(module => <li key={module.path}><div>
+        {(result.provider.id === 'builtin.odoo' || result.odooModules.length > 0) && (result.odooModules.length ? <ul className="ev-dev-checks ev-dev-scroll">{result.odooModules.map(module => <li key={module.path}><div>
             <strong>{module.technicalName}</strong><small>{module.path} · {module.name ?? 'ohne Namen'} · Version {module.version ?? 'fehlt'}{module.versionMatchesMajor === false ? ' (passt nicht zur Odoo-Version)' : ''}</small>
             <small>Abhängigkeiten: {module.depends.join(', ') || 'keine'} · Zugriffsrechte: {module.security.accessCsv ? `${module.security.accessRules ?? '?'} Regeln` : 'keine ir.model.access.csv'} · Tests: {module.counts.tests}{module.hasMigrations ? ' · Migrationen vorhanden' : ''}</small>
             {module.missingDataFiles.length > 0 && <small>Fehlende Datendateien: {module.missingDataFiles.join(', ')}</small>}

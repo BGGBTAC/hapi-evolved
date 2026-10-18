@@ -6,7 +6,7 @@ export const workspacePages = [
     { id: 'projects', label: 'Projekte', group: 'Arbeitsplatz', description: 'Deine Projekte, Ordner und Ausführungsprofile.' },
     { id: 'agents', label: 'Agenten & Plugins', group: 'Arbeitsplatz', description: 'Agenten für alle Projekte und geprüfte Erweiterungen.' },
     { id: 'capacity', label: 'Kapazität', group: 'Arbeitsplatz', description: 'Gemeldete Nutzungslimits deiner Agentenanbieter.' },
-    { id: 'development', label: 'Entwicklung', group: 'Projektwerkzeuge', description: 'Odoo, iOS oder Android: Modus, Handbuch, Prüfungen und passende Aufgaben.' },
+    { id: 'development', label: 'Entwicklung', group: 'Projektwerkzeuge', description: 'Entwicklungsmodul des Projekts: Handbuch, Prüfungen und passende Aufgaben.' },
     { id: 'github', label: 'GitHub', group: 'Projektwerkzeuge', description: 'Repositories verbinden und gezielt freigeben.' },
     { id: 'mcp', label: 'MCP-Shop', group: 'Projektwerkzeuge', description: 'Externe Werkzeuge zentral für deine Projektagenten verbinden.' },
     { id: 'memory', label: 'Gedächtnis', group: 'Projektwerkzeuge', description: 'Wissen mit nachvollziehbaren Quellen bewahren.' },
