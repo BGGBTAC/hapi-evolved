@@ -6,7 +6,6 @@ import { ActionStatus, ConfirmButton, Empty, ErrorNotice, Field, Loading, Panel,
 import { CapacityPanel } from './Capacity'
 import { DevelopmentOverviewCard } from './ProjectDevelopment'
 import { DevelopmentCreationFields, useDevelopmentCreation } from './DevelopmentModuleCreation'
-import { settingsIssues } from './developmentApi'
 
 const profiles: { id: ExecutionProfile; label: string; description: string }[] = [
     { id: 'restricted', label: 'Eingeschränkt', description: 'Schreib- und Ausführungsrechte bleiben eng begrenzt.' },
@@ -105,8 +104,7 @@ function ProjectsForUser({ onSelectProject }: { onSelectProject?: (id: string) =
             try {
                 await api.request('/projects', { method: 'POST', body: { name: name.trim(), teamId: selectedTeam, ...(useManualPath ? { rootPath: rootPath.trim() } : {}), ...(module ? { development: module } : {}) }, signal: controller.signal })
             } catch (failure) {
-                const issues = settingsIssues(failure)
-                if (issues) development.showServerIssues(issues)
+                development.handleFailure(failure)
                 throw failure
             }
             controller.signal.throwIfAborted()

@@ -9,7 +9,7 @@ import { createSavedPromptRoutes } from './savedPrompts'
 import { browseWorkspaces } from './workspaces'
 import { createCredentialGrantRoutes, revokeCredentialLeases, withCredentialProjectLock } from './credentialGrants'
 import type { AgentCredentialGrant } from './agentCredentialVault'
-import { developmentCreation } from './development'
+import { DevelopmentDetailedError, developmentCreation } from './development'
 import type { DevelopmentModuleRegistry } from './developmentModules'
 
 const role = z.enum(['viewer', 'member', 'admin'])
@@ -30,6 +30,8 @@ export function createEvolvedRoutes(config: EvolvedRoutesConfig): Hono<EvolvedEn
         await next()
     })
     app.onError((error, c) => {
+        // Development errors carry typed, bounded details (field issues, module id/digest/state, revision), same body as the module PUT.
+        if (error instanceof DevelopmentDetailedError) return c.json(error.body(), error.status as 400)
         if (error instanceof EvolvedError) return c.json({ error: error.message, code: error.code }, error.status as 400)
         if ((error as { code?: string }).code === 'SQLITE_CONSTRAINT_UNIQUE') return c.json({ error: 'This name or identifier is already in use.', code: 'conflict' }, 409)
         return c.json({ error: 'Request could not be completed.', code: 'internal_error' }, 500)

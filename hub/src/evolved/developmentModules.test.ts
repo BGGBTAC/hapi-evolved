@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
+import { readdirSync } from 'node:fs'
 import { Hono } from 'hono'
 import { MACHINE_CAPABILITIES } from '@hapi/protocol'
 import { EVOLVED_DEVELOPMENT_CAPABILITY, defaultAndroidSettings, defaultDevelopmentSettings, defaultOdooSettings, type DevelopmentSettings } from '@hapi/protocol/evolvedDevelopment'
@@ -452,6 +453,38 @@ describe('unsupported modules and repository resolution', () => {
         expect(created.status).toBe(201)
         const config = DevelopmentModulesResponseSchema.parse(await (await t.request(`/projects/${created.project.id}/development/modules`)).json()).config
         expect(config).toMatchObject({ revision: 1, active: { moduleId, state: 'ready' }, settings: { modules: { [moduleId]: { values: { channel: 'beta' } } } } })
+    })
+})
+
+describe('project creation errors keep their typed details', () => {
+    test('POST /projects returns field issues, module digests and states and persists nothing; other errors stay bounded', async () => {
+        const t = setup(), pluginId = await t.install(), moduleId = t.moduleId(pluginId, t.localA)
+        const digest = (await t.modules()).catalog.modules.find(module => module.id === moduleId)!.digest
+        const base = { activeModuleId: moduleId, repositoryId: null, odoo: null, ios: null, android: null }
+        const persisted = () => ({
+            projects: (t.store.db.query('SELECT COUNT(*) AS n FROM evolved_projects').get() as { n: number }).n,
+            configs: (t.store.db.query('SELECT COUNT(*) AS n FROM evolved_project_development').get() as { n: number }).n,
+            directories: readdirSync(t.store.managedWorkspaceRoot).length,
+        })
+        const before = persisted()
+        const create = async (development: unknown, extra: Record<string, unknown> = {}) => t.json(await t.request('/projects', { body: { teamId: t.team.id, name: `P${randomUUID().slice(0, 6)}`, development, ...extra } }))
+        const invalid = await create({ contractVersion: 2, settings: { ...base, modules: { [moduleId]: { moduleDigest: digest, values: { retries: 9, channel: 'nightly' } } } } })
+        expect(invalid).toMatchObject({ status: 400, code: 'development_module_settings_invalid' })
+        expect(invalid.issues.map((issue: { path: string[] }) => issue.path).sort()).toEqual([['modules', moduleId, 'values', 'channel'], ['modules', moduleId, 'values', 'retries']])
+        expect(Object.keys(invalid).sort()).toEqual(['code', 'error', 'issues', 'status'])
+        const stale = await create({ contractVersion: 2, settings: { ...base, modules: { [moduleId]: { moduleDigest: `sha256:${'2'.repeat(64)}`, values: {} } } } })
+        expect(stale).toMatchObject({ status: 409, code: 'development_module_changed', moduleId, installedDigest: digest })
+        t.store.db.transaction(() => t.plugins.setEnabled(pluginId, false)).immediate()
+        expect(await create({ contractVersion: 2, settings: { ...base, modules: { [moduleId]: { moduleDigest: digest, values: {} } } } }))
+            .toMatchObject({ status: 409, code: 'development_module_unavailable', moduleId, state: 'disabled' })
+        expect(persisted()).toEqual(before)
+        // Unrelated errors keep the plain bounded body.
+        const unrelated = await create(undefined, { teamId: 'missing-team' })
+        expect(unrelated.status).toBeGreaterThanOrEqual(400)
+        expect(Object.keys(unrelated).sort()).toEqual(['code', 'error', 'status'])
+        const notAdmin = await t.json(await t.request('/projects', { user: 'member', body: { teamId: t.team.id, name: 'P', rootPath: '/tmp' } }))
+        expect(Object.keys(notAdmin).sort()).toEqual(['code', 'error', 'status'])
+        expect(persisted()).toEqual(before)
     })
 })
 

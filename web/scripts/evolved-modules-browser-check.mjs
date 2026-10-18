@@ -193,6 +193,19 @@ try {
     }
     await page.setViewportSize({ width: 1440, height: 1000 });
 
+    // CREATE-RACE: a second tab reviews a project creation with R1 while this tab installs R2. The Hub must refuse the
+    // stale digest; the tab offers an explicit reload, keeps the draft and then creates with the new revision.
+    const creator = await context.newPage();
+    creator.on('pageerror', error => errors.push(String(error)));
+    const creations = [];
+    creator.on('response', response => { if (new URL(response.url()).pathname === '/api/evolved/projects' && response.request().method() === 'POST') creations.push({ status: response.status(), body: response.request().postDataJSON() }); });
+    await creator.goto(page.url());
+    await workspaceArea(creator, 'Projekte');
+    await creator.getByLabel('Projektname', { exact: true }).fill('Module Race');
+    await creator.getByRole('radio', { name: 'Synthetisches Szenario', exact: true }).check();
+    await creator.getByLabel(/^Paketname für Übergänge/).fill('race_pkg');
+    await creator.getByLabel(/^Parallele Jobs/).fill('3');
+
     // LIFE-02: plugin update R2 (new required field, removed option) requires explicit project adoption.
     await workspaceArea(page, 'Agenten & Plugins');
     await page.getByLabel(/^Branch, Tag oder Commit/).fill('updated');
@@ -203,6 +216,26 @@ try {
     if (await previewRegion.getByRole('checkbox').count()) fail('Update preview asks for an extra confirmation checkbox');
     await previewRegion.getByRole('button', { name: 'Diese Fassung aktualisieren', exact: true }).click();
     await page.getByText(/Ein Projekt muss die neue Modulfassung unter „Entwicklung“ übernehmen/).waitFor();
+
+    const createRace = creator.getByRole('button', { name: 'Projekt anlegen', exact: true });
+    await createRace.click();
+    await creator.getByText('Modul nicht mehr aktuell.', { exact: true }).waitFor();
+    if (creations.length !== 1 || creations[0].status !== 409) fail(`Stale creation was not refused by the Hub: ${JSON.stringify(creations.map(item => item.status))}`);
+    if (!await createRace.isDisabled()) fail('A stale creation can be repeated without reloading');
+    if (await creator.getByLabel('Projektname', { exact: true }).inputValue() !== 'Module Race') fail('Project draft lost after a stale refusal');
+    await creator.getByRole('button', { name: 'Modulliste neu laden und prüfen', exact: true }).click();
+    const raceTarget = creator.getByLabel(/^Build-Ziel/);
+    await raceTarget.waitFor();
+    if (await raceTarget.getAttribute('aria-invalid') !== 'true' || !await createRace.isDisabled()) fail('New required field is not enforced after reload');
+    if (await creator.getByLabel(/^Paketname für Übergänge/).inputValue() !== 'race_pkg' || await creator.getByLabel(/^Parallele Jobs/).inputValue() !== '3') fail('Compatible module values lost after reload');
+    await raceTarget.fill('aab');
+    await createRace.click();
+    await creator.getByText('Projekt angelegt.', { exact: true }).waitFor();
+    const raceBody = creations.at(-1);
+    const raceEntry = raceBody?.body.development?.settings.modules?.[moduleId];
+    if (creations.length !== 2 || raceBody.status !== 201 || !raceEntry || raceEntry.moduleDigest === r1Digest || raceEntry.values.packageName !== 'race_pkg' || raceEntry.values.jobs !== 3 || raceEntry.values.target !== 'aab' || raceBody.body.name !== 'Module Race')
+        fail(`Unexpected creation retry: ${JSON.stringify(creations)}`);
+    await creator.close();
     await workspaceArea(page, 'Entwicklung');
     await page.getByText('Neue Modulfassung installiert.', { exact: false }).waitFor();
     await page.getByRole('heading', { name: 'Aufgaben, Prüfungen und Handbuch gesperrt' }).waitFor();
@@ -238,7 +271,7 @@ try {
     if (legacy.length) fail(`Web app used v1 development routes: ${legacy.join(', ')}`);
     if (actions.length) fail(`Module changes triggered actions: ${actions.join(', ')}`);
     if (errors.length) fail('Browser errors: ' + errors.join('; '));
-    console.log(`PASS real isolated Hub: module-only plugin install activates nothing; unknown modules scenario-${suffix}/other-${suffix} rendered by the unchanged bundle (sha256 ${before.slice(0, 16)}); typed values incl. false/0 persisted via v2 CAS; reload; inactive values kept; 1440/390/320 without overflow; required error + Enter focus without request; R2 adoption with new required field and removed option; disable keeps read-only values without fallback. Evidence: ${evidence}`);
+    console.log(`PASS real isolated Hub: module-only plugin install activates nothing; creation racing a plugin update is refused (409), reloaded explicitly and retried with the new digest keeping the draft; unknown modules scenario-${suffix}/other-${suffix} rendered by the unchanged bundle (sha256 ${before.slice(0, 16)}); typed values incl. false/0 persisted via v2 CAS; reload; inactive values kept; 1440/390/320 without overflow; required error + Enter focus without request; R2 adoption with new required field and removed option; disable keeps read-only values without fallback. Evidence: ${evidence}`);
     await context.close();
 } finally {
     if (browser) await browser.close();

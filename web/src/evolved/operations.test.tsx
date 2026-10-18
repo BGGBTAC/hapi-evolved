@@ -10,7 +10,7 @@ import type { ExecutionProfile, ProjectRole } from './api'
 const context = vi.hoisted(() => ({ api: { request: vi.fn(), baseUrl: '' }, project: { id: 'project-1', role: 'admin' as ProjectRole, profile: 'restricted' as ExecutionProfile, rootPath: '/work/project' }, me: { user: { id: 'user-1', isAdmin: false }, accessibleProjects: [] }, refresh: vi.fn(), selectProject: vi.fn() }))
 vi.mock('./auth', () => ({ useEvolved: () => context }))
 // Module choice during creation has its own tests (ProjectsTeam.test.tsx); here it stays a general project.
-vi.mock('./DevelopmentModuleCreation', () => ({ useDevelopmentCreation: () => ({ blocker: null, development: () => undefined, reset: () => {}, showServerIssues: () => {} }), DevelopmentCreationFields: () => null }))
+vi.mock('./DevelopmentModuleCreation', () => ({ useDevelopmentCreation: () => ({ blocker: null, development: () => undefined, reset: () => {}, showServerIssues: () => {}, handleFailure: () => {} }), DevelopmentCreationFields: () => null }))
 beforeEach(() => { context.project.role = 'admin'; context.project.profile = 'restricted'; context.me.user.id = 'user-1'; context.me.user.isAdmin = false; context.api.request.mockReset(); context.refresh.mockReset() })
 function mount(component: React.ReactNode) {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
