@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { appendFile, mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, appendFile, rename, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -15,8 +15,8 @@ describe('codexSessionScanner', () => {
     let events: CodexSessionEvent[] = [];
 
     beforeEach(async () => {
-        testDir = join(tmpdir(), `codex-scanner-${Date.now()}`);
-        await mkdir(testDir, { recursive: true });
+        testDir = await mkdtemp(join(tmpdir(), 'codex-scanner-'));
+
         transcriptPath = join(testDir, 'codex-session.jsonl');
         events = [];
     });

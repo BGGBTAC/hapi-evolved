@@ -10,6 +10,7 @@ import { inspectRepository } from './inspect'
 import { inventoryRepository } from './inventory'
 import { odooToolchain } from './layout'
 import { runnerDevelopmentProvider } from './providers'
+import { runAdsDoctor } from '../ads/doctor'
 
 const ROOT = /^\/workspaces\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 
@@ -78,7 +79,9 @@ async function developmentModuleRpc(raw: unknown, env: NodeJS.ProcessEnv) {
     const provenance = { contractVersion: DEVELOPMENT_MODULE_CONTRACT_VERSION, moduleId: params.moduleId, moduleDigest: params.moduleDigest, provider: params.provider }
     try {
         if (params.action === 'module_doctor') {
-            const report = await runToolchainDoctor({ projectRoot: root, checkout, checks: params.checks })
+            const report = params.provider.id === 'hapi.claude-ads'
+                ? await runAdsDoctor({ projectRoot: root, checkout, checks: params.checks, env })
+                : await runToolchainDoctor({ projectRoot: root, checkout, checks: params.checks })
             return { ...provenance, ...report } satisfies DevelopmentModuleDoctorResult
         }
         const report = await inventoryRepository({ checkout: checkout!, repositoryId: params.repository.id, subdirectory: params.subdirectory })

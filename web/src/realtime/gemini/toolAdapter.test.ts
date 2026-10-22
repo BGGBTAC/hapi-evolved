@@ -15,6 +15,13 @@ describe('toolAdapter', () => {
         expect(resp.response.result).toContain('unknown tool')
     })
 
+    test('does not dispatch inherited object properties as tools', async () => {
+        for (const name of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+            const resp = await handleGeminiFunctionCall({ name, args: { message: 'x' }, id: name })
+            expect(resp.response.result).toBe(`error (unknown tool: ${name})`)
+        }
+    })
+
     test('handles multiple calls in parallel', async () => {
         const calls: GeminiFunctionCall[] = [
             { name: 'unknownA', args: {}, id: 'a' },

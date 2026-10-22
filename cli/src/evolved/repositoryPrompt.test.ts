@@ -11,7 +11,7 @@ it('does not advertise unavailable repository tools in a legacy session', () => 
 it.each([{ HAPI_EVOLVED_PROXY: '1' }, { HAPI_EVOLVED_CAPABILITY_FILE: '/private/capability' }])('shows project discovery for scoped Evolved sessions: %j', env => {
     const prompt = withRepositoryInstruction('existing instructions', env)
     expect(prompt).toContain('evolved_repositories')
-    expect(prompt).toContain('never guess an owner')
+    expect(prompt).toContain('never guess')
     expect(prompt).toContain('same requestId')
     expect(prompt).toContain('git:write')
     expect(prompt).not.toContain('/private/capability')

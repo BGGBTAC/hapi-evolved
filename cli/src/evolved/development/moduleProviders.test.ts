@@ -46,7 +46,7 @@ const repository = (root: string) => ({ id: '42', owner: 'acme', name: 'web', fu
 
 describe('provider registry', () => {
     it('advertises exactly the implemented providers with the shared capability names', () => {
-        expect([...RUNNER_DEVELOPMENT_PROVIDER_CAPABILITIES].sort()).toEqual([MACHINE_CAPABILITIES.EvolvedDevelopmentInventoryProvider, MACHINE_CAPABILITIES.EvolvedDevelopmentToolchainProvider].sort())
+        expect([...RUNNER_DEVELOPMENT_PROVIDER_CAPABILITIES].sort()).toEqual([MACHINE_CAPABILITIES.EvolvedDevelopmentInventoryProvider, MACHINE_CAPABILITIES.EvolvedDevelopmentToolchainProvider, MACHINE_CAPABILITIES.EvolvedDevelopmentClaudeAdsProvider].sort())
         for (const [id, provider] of Object.entries(RUNNER_DEVELOPMENT_PROVIDERS)) {
             const shared = DEVELOPMENT_MODULE_PROVIDERS[id]!
             expect(shared.pluginUsable).toBe(true)

@@ -76,10 +76,32 @@ describe('runHappyMcpStdioBridge tool forwarding', () => {
         vi.stubEnv('HAPI_PEER_SCOPES', '')
         vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
         await runHappyMcpStdioBridge(['--url', 'http://127.0.0.1:43006'])
-        expect(harness.instructions).toBe(getEvolvedOperatingContext())
+        expect(harness.instructions).toContain(getEvolvedOperatingContext())
+        expect(harness.instructions).toContain('live project access unavailable')
         expect(harness.tools.has('evolved_context')).toBe(true)
         for (const name of ['evolved_mcp_servers', 'evolved_mcp_tools', 'evolved_mcp_query', 'evolved_mcp_call']) expect(harness.tools.has(name)).toBe(true)
         expect(harness.configs.get('evolved_mcp_call')?.annotations).toMatchObject({ readOnlyHint: false, idempotentHint: false })
+        for (const name of ['list_peers', 'search_peers', 'inspect_peer', 'ping_peer', 'spawn_peer', 'archive_peer']) expect(harness.tools.has(name)).toBe(true)
+    })
+
+    it('adds current project scopes to the MCP connection instructions', async () => {
+        vi.stubEnv('HAPI_EVOLVED_PROXY', '1')
+        vi.stubEnv('EVOLVED_PROJECT_ID', 'context-test')
+        vi.stubEnv('HAPI_EVOLVED_URL', 'http://127.0.0.1:1')
+        vi.stubEnv('HAPI_PEER_TOOLS', '')
+        vi.stubEnv('HAPI_PEER_SCOPES', '')
+        vi.spyOn(globalThis, 'fetch').mockImplementation(async () => Response.json({ projectId: 'context-test', profile: 'workspace', scopes: ['runner:connect', 'git:read'] }))
+        await runHappyMcpStdioBridge(['--url', 'http://127.0.0.1:43006'])
+        expect(harness.instructions).toContain('profile: workspace; runner scopes: runner:connect, git:read')
+        expect(harness.instructions).not.toContain('evolved-local')
+    })
+
+    it('preserves the Legacy peer exposure switch', async () => {
+        vi.stubEnv('HAPI_EVOLVED_PROXY', '')
+        vi.stubEnv('HAPI_EVOLVED_CAPABILITY_FILE', '')
+        vi.stubEnv('HAPI_PEER_TOOLS', '0')
+        await runHappyMcpStdioBridge(['--url', 'http://127.0.0.1:43006'])
+        for (const name of ['list_peers', 'search_peers', 'inspect_peer', 'ping_peer', 'spawn_peer', 'archive_peer']) expect(harness.tools.has(name)).toBe(false)
     })
 
     it.each([['--tools', ''], ['--tools='], ['--tools', 'display_image,evolved_context,evolved_mcp_query'], ['--tools=display_image,evolved_context,evolved_mcp_query']])('honors explicit tool selection for native and Evolved tools: %j', async (...selection) => {

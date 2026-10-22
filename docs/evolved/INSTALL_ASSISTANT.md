@@ -8,7 +8,7 @@ Managed provider login and native project runners require the separate
 
 Use a reviewed source checkout or extracted archive containing
 `deploy/evolved/install.ts`. The first `v0.1.0-preview.1` release predates this
-assistant. This guide targets `v0.1.0-preview.2`; check the release record before
+assistant. This guide targets `v0.1.0-preview.3`; check the release record before
 selecting that tag. Source archives do not need
 Git metadata or installed workspace packages to run its checks and initializer.
 

@@ -138,15 +138,16 @@ describe('AcpSdkBackend', () => {
         }
     });
 
-    it('hides the ACP stdio shell on Windows', () => {
+    it('hides the ACP stdio window on Windows without a cmd.exe shell', () => {
         setPlatform('win32');
 
-        expect(buildAcpStdioSpawnOptions({ TEST_ENV: '1' })).toMatchObject({
+        const options = buildAcpStdioSpawnOptions({ TEST_ENV: '1' });
+        expect(options).toMatchObject({
             env: { TEST_ENV: '1' },
             stdio: ['pipe', 'pipe', 'pipe'],
-            shell: true,
             windowsHide: true
         });
+        expect(options.shell).toBeUndefined();
     });
 
     it('allows the permission handler to resolve requests immediately', async () => {

@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import { run } from './index';
-import { writeFileSync, mkdirSync, rmSync } from 'fs';
+import { mkdtempSync, writeFileSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
@@ -15,8 +15,8 @@ describe('difftastic', () => {
 
     beforeAll(() => {
         // Create test directory and files
-        testDir = join(tmpdir(), `difftastic-test-${Date.now()}`);
-        mkdirSync(testDir, { recursive: true });
+        testDir = mkdtempSync(join(tmpdir(), 'difftastic-test-'));
+
         
         file1Path = join(testDir, 'file1.txt');
         file2Path = join(testDir, 'file2.txt');

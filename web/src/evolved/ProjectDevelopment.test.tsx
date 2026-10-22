@@ -10,6 +10,10 @@ import {
     type DevelopmentModuleSettings, type DevelopmentModuleSettingsInput, type ProjectDevelopmentModuleConfig,
 } from '@hapi/protocol/developmentModules'
 import { applicablePack } from '@hapi/protocol/developmentPacks'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { CLAUDE_ADS_BUNDLED_PLUGIN_ID } from '@hapi/protocol/bundledPlugins'
+import type { PluginManifest } from '@hapi/protocol/pluginManifest'
 import { EvolvedApiError, type EvolvedProject } from './api'
 import { DevelopmentOverviewCard, ProjectDevelopmentPanel } from './ProjectDevelopment'
 import { effectLabels } from './developmentApi'
@@ -610,6 +614,55 @@ describe('generic plugin modules', () => {
         render(<QueryClientProvider client={client}><DevelopmentOverviewCard /></QueryClientProvider>)
         expect(await screen.findByText(/Flutter · Neue Fassung muss übernommen werden · mit Standard-Repository/)).toBeInTheDocument()
         expect(screen.getByText('Status ansehen')).toBeInTheDocument()
+    })
+})
+
+describe('bundled Claude Ads module (real generated manifest)', () => {
+    const manifest = JSON.parse(readFileSync(resolve(process.cwd(), '../vendor/claude-ads/hapi-evolved.plugin.json'), 'utf8')) as PluginManifest
+    const ads = () => pluginModule(manifest.developmentModules[0]!, { pluginId: CLAUDE_ADS_BUNDLED_PLUGIN_ID, pluginName: manifest.name, pluginVersion: manifest.version })
+    it('is labelled bundled, renders the generic form without secret fields and saves only the entered values', async () => {
+        const module = ads()
+        server.modules = [...builtins, module]
+        mount()
+        const option = await screen.findByRole('radio', { name: 'Claude Ads (Paid Media)' })
+        expect(option).toHaveAccessibleDescription(/Mitgeliefertes Plugin Claude Ads \(mitgeliefert\) 2\.1\.0\+hapi\.1/)
+        fireEvent.click(option)
+        expect(await screen.findByLabelText(/^Kunde \/ Marke/)).toHaveValue('')
+        expect(within(screen.getByLabelText(/^Primäre Plattform/)).getAllByRole('option').map(item => item.textContent)).toContain('Snapchat Ads')
+        expect(screen.queryByLabelText(/token|passwort|api.?key|secret/i)).not.toBeInTheDocument()
+        expect(screen.getByText(/Herkunft: Mitgeliefertes Plugin .* unveränderlich/)).toBeInTheDocument()
+        fireEvent.change(screen.getByLabelText(/^Kunde \/ Marke/), { target: { value: 'Synthetic Shop' } })
+        fireEvent.change(screen.getByLabelText(/^Primäre Plattform/), { target: { value: 'google' } })
+        fireEvent.change(screen.getByLabelText(/^Exportdateien/), { target: { value: 'exports/google.csv\n' } })
+        fireEvent.change(screen.getByLabelText(/^Tresor-Referenz/), { target: { value: 'vault:ads-readonly' } })
+        await waitFor(() => expect(saveButton()).toBeEnabled())
+        fireEvent.click(saveButton())
+        expect(await screen.findByText(/Gespeichert als Revision 1/)).toBeInTheDocument()
+        expect(putBodies()[0]!.settings.modules[module.entry.id]).toMatchObject({ moduleDigest: module.entry.digest,
+            values: { client: 'Synthetic Shop', primaryPlatform: 'google', evidencePaths: ['exports/google.csv'], vaultResource: 'vault:ads-readonly', reportFolder: 'runs', reportFormats: ['markdown', 'html'], exportFormat: 'generic' } })
+        expect(calls('/modules-doctor')).toHaveLength(0)
+        expect(calls('/start')).toHaveLength(0)
+    })
+    it('starts an upstream platform specialist with the bound module digest and revision', async () => {
+        const module = ads()
+        server.modules = [...builtins, module]
+        pluginProject(module, { client: 'Synthetic Shop', primaryPlatform: 'google', evidencePaths: ['exports/google.csv'] }, { settings: { repositoryId: null } })
+        const agentId = `plugin:${CLAUDE_ADS_BUNDLED_PLUGIN_ID}:audit-google`
+        server.other = path => {
+            if (path.endsWith('/agent-catalog')) return agentCatalog(agentId)
+            if (path.includes(`/agent-catalog/${encodeURIComponent(agentId)}/start`)) return { sessionId: 'session-ads', operationId: (state.request.mock.calls.at(-1)![1] as Options & { body: { operationId: string } }).body.operationId, acknowledged: 'persisted' }
+            return undefined
+        }
+        mount()
+        const card = (await screen.findByText('Google Ads prüfen')).closest('article')!
+        expect(within(card).getByText('Installiert im Projektordner')).toBeInTheDocument()
+        fireEvent.click(within(card).getByRole('button', { name: 'Sitzung vorbereiten' }))
+        const form = await screen.findByRole('form', { name: 'Sitzung starten: Google Ads prüfen' })
+        const submit = within(form).getByRole('button', { name: 'Sitzung starten' })
+        await waitFor(() => expect(submit).toBeEnabled())
+        fireEvent.click(submit)
+        await waitFor(() => expect(state.navigate).toHaveBeenCalledWith({ to: '/sessions/$sessionId', params: { sessionId: 'session-ads' } }))
+        expect((calls('/start', 'POST')[0]![1] as Options).body).toMatchObject({ development: { contractVersion: 2, moduleId: module.entry.id, moduleDigest: module.entry.digest, taskId: 'audit-google', revision: 3 } })
     })
 })
 

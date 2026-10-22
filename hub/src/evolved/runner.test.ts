@@ -1,3 +1,4 @@
+import { BrowserConfigStore } from './browser'
 import { afterEach, describe, expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { createEvolvedRoutes } from './api'
@@ -40,6 +41,28 @@ function setup() {
 }
 
 describe('permanent runner access', () => {
+    test('manual defaults include project systems, while an existing managed lease gains missing scopes on exchange', async () => {
+        const t = setup()
+        const manual = await t.issue()
+        const defaults = t.store.capability((await t.exchange(manual.token)).token)?.capability?.scopes ?? []
+        for (const scope of ['runner:connect', 'git:read', 'git:write', 'memory:read', 'memory:write', 'codegraph:read', 'peers:read', 'peers:send', 'peers:manage']) {
+            expect(defaults).toContain(scope)
+        }
+        expect(defaults).not.toContain('resource:execute')
+
+        t.store.db.query('UPDATE evolved_runner_leases SET scopes=? WHERE id=?').run('["runner:connect","git:read"]', manual.id)
+        const narrowManual = t.store.capability((await t.exchange(manual.token)).token)?.capability?.scopes
+        expect(narrowManual).toEqual(['runner:connect', 'git:read'])
+
+        t.store.db.exec('CREATE TABLE IF NOT EXISTS evolved_managed_runners(project_id TEXT PRIMARY KEY,lease_id TEXT NOT NULL,ready INTEGER NOT NULL)')
+        t.store.db.query('INSERT INTO evolved_managed_runners VALUES(?,?,1)').run(t.project.id, manual.id)
+        const upgraded = t.store.capability((await t.exchange(manual.token)).token)?.capability?.scopes ?? []
+        for (const scope of defaults) expect(upgraded).toContain(scope)
+        expect(upgraded).not.toContain('resource:execute')
+        const saved = t.store.db.query('SELECT scopes FROM evolved_runner_leases WHERE id=?').get(manual.id) as { scopes: string }
+        expect(JSON.parse(saved.scopes)).toEqual(upgraded)
+    })
+
     test('direct capabilities support Git scopes with the same restricted-profile boundary as leases', async () => {
         const t = setup(), path = `/projects/${t.project.id}/capabilities`
         const granted = await t.call(path, { scopes: ['git:read', 'git:write'], expiresInSeconds: 300 })
@@ -63,6 +86,10 @@ describe('permanent runner access', () => {
         const authority = await t.call('/runner/authority', undefined, { bearer: lease.token })
         expect(authority.status).toBe(200)
         expect(await authority.json()).toMatchObject({ projectId: t.project.id, profile: 'workspace', expiresAt: null })
+        // Trusted browser configuration for operator convergence: absent table/row means disabled.
+        expect(await (await t.call('/runner/authority', undefined, { bearer: lease.token })).json()).toMatchObject({ browserEnabled: false })
+        new BrowserConfigStore(t.store).update('admin-test', t.project.id, { version: 0, enabled: true, enabledTools: ['camofox_list_tabs'], readOnlyTools: [] })
+        expect(await (await t.call('/runner/authority', undefined, { bearer: lease.token })).json()).toMatchObject({ browserEnabled: true })
         const cap = await t.exchange(lease.token)
         expect(cap.leaseExpiresAt).toBeNull()
         expect(cap.expiresAt).toBe(t.now() + 900_000)

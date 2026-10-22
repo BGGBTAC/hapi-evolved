@@ -188,7 +188,10 @@ export function extractAssistantPlainText(content: unknown): string | null {
 // prose. The web renderer strips this block and renders the corresponding task
 // result separately, so keep it out of the searchable assistant text as well.
 export function stripAgyEchoedTaskResult(text: string): string {
-    return text.replace(/\n*\[Message\]\s+timestamp=[\s\S]*$/, '').trim()
+    // Cut at the marker and let trim() drop the preceding newlines; a leading
+    // `\n*` in the regex backtracks quadratically on newline-heavy text.
+    const marker = /\[Message\]\s+timestamp=/.exec(text)
+    return (marker ? text.slice(0, marker.index) : text).trim()
 }
 
 // AGY's transitional task-log narration is rendered as a compact tool chip,

@@ -9,7 +9,7 @@ import { RepositoryPicker } from './RepositoryPicker'
 import { ModelCatalogInput } from './ModelCatalogInput'
 import { ConfirmButton } from './ui'
 import { WorkspaceLink } from './workspaceNavigation'
-import { consequentialEffects, describeDevelopmentError, effectLabels, kindLabels } from './developmentApi'
+import { consequentialEffects, describeDevelopmentError, effectLabels, kindLabels, moduleOriginLabel } from './developmentApi'
 
 type CatalogAgent = { id: string; available: boolean }
 type AgentCatalog = { agents: CatalogAgent[]; machines?: { id: string; name: string }[] }
@@ -138,7 +138,7 @@ export function DevelopmentTasks({ config, module, unsaved, onModuleChanged, req
 
         {start && task && <form ref={form} className="ev-dev-start" aria-label={`Sitzung starten: ${task.title}`} onSubmit={event => { event.preventDefault(); launch() }}>
             <h3 tabIndex={-1}>{task.title}</h3>
-            <p className="ev-muted">Modul: {module.title} · Fassung {module.contentVersion}{module.source.kind === 'plugin' ? ` · Plugin ${module.source.pluginName} ${module.source.pluginVersion}` : ''}</p>
+            <p className="ev-muted">Modul: {module.title} · Fassung {module.contentVersion}{module.source.kind === 'plugin' ? ` · ${moduleOriginLabel(module.source)}` : ''}</p>
             {effectsOf(task).length > 0 && <p className="ev-muted">Auswirkungen: {effectsOf(task).map(effect => effectLabels[effect]).join(' · ')}</p>}
             <RepositoryPicker choices={repositories} value={start.repositoryId} onChange={repositoryId => setStart({ ...start, repositoryId })} projectId={project!.id} disabled={locked}
                 allowProjectRoot={!boundRepository} defaultRepositoryId={boundRepository}

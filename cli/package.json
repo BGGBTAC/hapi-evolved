@@ -54,7 +54,7 @@
   },
   "dependencies": {
     "@hapi/protocol": "workspace:*",
-    "@modelcontextprotocol/sdk": "1.31.0",
+    "@modelcontextprotocol/sdk": "1.32.0",
     "@types/cross-spawn": "^6.0.6",
     "@types/ps-list": "^6.2.1",
     "@types/react": "^19.2.7",
@@ -71,7 +71,7 @@
     "tar": "7.5.21",
     "vscode-jsonrpc": "8.2.0",
     "ws": "8.21.0",
-    "yaml": "^2.8.2",
+    "yaml": "~2.8.3",
     "zod": "^4.2.1"
   },
   "devDependencies": {
@@ -80,7 +80,7 @@
     "bun-types": "1.4.0",
     "dotenv": "^17.2.3",
     "typescript": "^5",
-    "vitest": "4.1.11"
+    "vitest": "4.1.12"
   },
   "resolutions": {
     "whatwg-url": "14.2.0",

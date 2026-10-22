@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdir, rm } from 'fs/promises';
+import { mkdtemp, rm } from 'fs/promises';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -17,8 +17,8 @@ import {
 import { registerCursorModelHandlers } from './cursorModels';
 
 async function createTempHapiHome(): Promise<string> {
-    const path = join(tmpdir(), `hapi-cursor-rpc-${Date.now()}-${Math.random().toString(16).slice(2)}`);
-    await mkdir(path, { recursive: true });
+    const path = await mkdtemp(join(tmpdir(), 'hapi-cursor-rpc-'));
+
     return path;
 }
 

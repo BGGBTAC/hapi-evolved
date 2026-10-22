@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { en, zhCN } from '@/lib/locales'
 import type { ToolCallBlock } from '@/chat/types'
 import type { ToolGroupBlock } from '@/chat/toolGroups'
-import { formatGroupedHeaderSubtitle, formatGroupedHeaderTitle, formatGroupedRowLabel, inferGroupedSummaryIntent } from '@/components/ToolCard/groupedPresentation'
+import { SAFE_PROJECT_COMMAND_RE, formatGroupedHeaderSubtitle, formatGroupedHeaderTitle, formatGroupedRowLabel, inferGroupedSummaryIntent } from '@/components/ToolCard/groupedPresentation'
 
 type Dict = Record<string, string>
 
@@ -190,6 +190,15 @@ describe('formatGroupedHeaderTitle', () => {
         expect(formatGroupedHeaderTitle(sensitive, tEn)).not.toContain('Bearer')
     })
 
+    it('names safe git commands with flags', () => {
+        const group = makeGroup([
+            makeTool('git-1', 'Bash', { command: 'git log --oneline -n5' }),
+            makeTool('git-2', 'Bash', { command: 'git status -s' }),
+        ])
+
+        expect(formatGroupedHeaderTitle(group, tEn)).toBe('Run git log --oneline -n5')
+    })
+
     it('prefers a Claude call description and truncates long labels', () => {
         const first = makeTool('cmd-description-1', 'Bash', { command: 'node script.js' })
         first.tool.description = 'Check the authentication migration behavior before applying changes'
@@ -239,5 +248,23 @@ describe('formatGroupedHeaderSubtitle', () => {
         ])
 
         expect(formatGroupedHeaderSubtitle(group, tEn)).toBeNull()
+    })
+})
+
+describe('SAFE_PROJECT_COMMAND_RE', () => {
+    it('keeps git flag matching unchanged', () => {
+        for (const command of ['git log', 'git log --oneline', 'git diff --stat -p', 'git log --', 'git log ---x']) {
+            expect(SAFE_PROJECT_COMMAND_RE.test(command)).toBe(true)
+        }
+        for (const command of ['git log -', 'git log x', 'git log --oneline; rm -rf /']) {
+            expect(SAFE_PROJECT_COMMAND_RE.test(command)).toBe(false)
+        }
+    })
+
+    it('rejects ambiguous git flag runs without exponential backtracking', () => {
+        const command = `git log${' ---'.repeat(40)} !`
+        const started = performance.now()
+        expect(SAFE_PROJECT_COMMAND_RE.test(command)).toBe(false)
+        expect(performance.now() - started).toBeLessThan(100)
     })
 })

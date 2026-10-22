@@ -6,7 +6,7 @@
 
 import { FileHandle } from 'node:fs/promises'
 import { readFile, writeFile, mkdir, open, unlink, rename, chmod } from 'node:fs/promises'
-import { existsSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs'
+import { closeSync, constants, existsSync, fchmodSync, fstatSync, ftruncateSync, openSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs'
 import { withSettingsFileLock } from '@hapi/protocol/settingsFileLock'
 import { configuration } from '@/configuration'
 import { isProcessAlive } from '@/utils/process';
@@ -36,6 +36,8 @@ export interface RunnerLocallyPersistedState {
   sharedCodexRuntime?: boolean;
   pid: number;
   httpPort: number;
+  /** Bearer secret for the loopback control server; the state file is written 0600. */
+  controlToken?: string;
   startTime: string;
   startedWithCliVersion: string;
   startedWithCliMtimeMs?: number;
@@ -177,11 +179,31 @@ export async function readRunnerState(): Promise<RunnerLocallyPersistedState | n
   }
 }
 
+/** Runner state safe to print (doctor output gets pasted into bug reports). */
+export function runnerStateForDisplay(state: RunnerLocallyPersistedState): RunnerLocallyPersistedState {
+  return state.controlToken ? { ...state, controlToken: '[redacted]' } : state;
+}
+
 /**
- * Write runner state to local file (synchronously for atomic operation)
+ * Write runner state synchronously through a checked file descriptor.
  */
 export function writeRunnerState(state: RunnerLocallyPersistedState): void {
-  writeFileSync(configuration.runnerStateFile, JSON.stringify(state, null, 2), 'utf-8');
+  // Open without following a link and check the opened inode before touching
+  // an older file. The token must never be written through a swapped link or
+  // a hard link to another file; legacy 0644 state is tightened first.
+  const fd = openSync(configuration.runnerStateFile,
+    constants.O_WRONLY | constants.O_CREAT | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o600);
+  try {
+    const info = fstatSync(fd);
+    if (!info.isFile() || info.nlink !== 1 || (process.getuid && info.uid !== process.getuid())) {
+      throw new Error('Runner state must be an owned regular file');
+    }
+    fchmodSync(fd, 0o600);
+    ftruncateSync(fd, 0);
+    writeFileSync(fd, JSON.stringify(state, null, 2), { encoding: 'utf-8' });
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /**

@@ -5,6 +5,7 @@ import { EvolvedError, EvolvedStore, hashToken, randomToken, type EvolvedProject
 import { authenticateEvolvedRequest, cookieToken, parseBody, requireFreshPasskey, requireHuman, type EvolvedEnv } from './security'
 import { signControl, verifyControl, type ControlRequest } from './runnerControlProtocol'
 import { providerModelCatalogSchema, unavailableModelCatalog, type ProviderModelCatalog } from './providerModels'
+import { standardRunnerScopes } from './runnerScopes'
 
 const provider = z.enum(['codex', 'claude'])
 function parseProvider(value:string):'codex'|'claude' {
@@ -22,7 +23,7 @@ export class UnixProviderControl implements ProviderControl {
     constructor(private socket:string, private key:Uint8Array) {}
     async request(request:ControlRequest):Promise<unknown> {
         let response:Response
-        try { response = await fetch('http://runner-control/control', { unix:this.socket, method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(signControl(this.key,request,'operator')), signal:AbortSignal.timeout(request.action==='prepare'?90_000:20_000) }) }
+        try { response = await fetch('http://runner-control/control', { unix:this.socket, method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(signControl(this.key,request,'operator')), signal:AbortSignal.timeout(['prepare','browser'].includes(request.action)?90_000:20_000) }) }
         catch { throw new EvolvedError('runner_unavailable','Der Projektdienst ist vorübergehend nicht erreichbar. Bitte erneut versuchen.',503) }
         if (!response.ok) {
             const body = await response.json().catch(()=>null) as {code?:string}|null
@@ -30,6 +31,8 @@ export class UnixProviderControl implements ProviderControl {
             if (body?.code==='operation_not_found') throw new EvolvedError('operation_not_found','Diese Anmeldung ist nicht mehr verfügbar. Bitte erneut verbinden.',404)
             if (body?.code==='runner_config_missing') throw new EvolvedError('runner_config_missing','Die gespeicherte Projektdienst-Konfiguration fehlt. Bitte erneut verbinden; HAPI richtet sie neu ein.',409)
             if (body?.code==='workspace_identity_changed') throw new EvolvedError('workspace_identity_changed','Der Projektordner wurde außerhalb von HAPI ersetzt oder verschoben. Der Projektdienst bleibt gesperrt; bitte den Installationsadministrator den Ordner und Workspace-Anker prüfen lassen.',409)
+            if (body?.code==='browser_image_missing') throw new EvolvedError('browser_image_missing','Das Browser-Image hapi-evolved-browser:0.1.0 fehlt auf diesem Server.',409)
+            if (body?.code==='authority_lost') throw new EvolvedError('authority_lost','Die Berechtigung für diesen Projektdienst wurde während der Aktion geändert.',403)
             if (body?.code==='logout_failed') throw new EvolvedError('logout_failed','Die native Abmeldung konnte nicht bestätigt werden. Bitte den Status aktualisieren und erneut versuchen.',409)
             if (body?.code && ['invalid_code','code_state_mismatch','invalid_state'].includes(body.code)) throw new EvolvedError('invalid_code','Dieser Bestätigungscode passt nicht zur laufenden Anmeldung. Bitte den vollständigen Code aus dem gerade geöffneten Anbieterfenster einfügen.',400)
             throw new EvolvedError('runner_unavailable','Der Projektdienst konnte die Aktion nicht abschließen. Bitte erneut versuchen.',503)
@@ -147,7 +150,7 @@ export function createProviderRoutes(store:EvolvedStore, options:{control?:Provi
                 token=randomToken(); const id=randomUUID()
                 store.db.transaction(()=>{
                     if(managed) store.db.prepare('UPDATE evolved_runner_leases SET revoked_at=COALESCE(revoked_at,?) WHERE id=?').run(store.now(),managed.lease_id)
-                    const scopes=['runner:connect','git:read','memory:read','memory:write','codegraph:read','peers:read','peers:send','peers:manage',...(project.profile==='restricted'?[]:['git:write'])]
+                    const scopes=standardRunnerScopes(project.profile)
                     store.db.prepare('INSERT INTO evolved_runner_leases VALUES(?,?,?,?,?,?,?,?,?,?,NULL)').run(id,'Verwalteter Projektdienst',hashToken(token!),principal.user.id,project.id,JSON.stringify(scopes),'[]',project.profile,store.now(),null)
                     store.db.prepare('INSERT INTO evolved_managed_runners VALUES(?,?,0) ON CONFLICT(project_id) DO UPDATE SET lease_id=excluded.lease_id,ready=0').run(project.id,id)
                     store.audit(principal.user.id,project.id,'runner.managed_created',id)

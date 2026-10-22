@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { chmodSync, chownSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { signControl, type ControlRequest } from '../../hub/src/evolved/runnerControlProtocol'
 import { checkRunnerConfig, parseRunnerEnv } from '../../deploy/evolved/check-runner'
 import { assertRootOwnedPath, ensureWorkspaceAnchor, validWorkspaceIdentity, WorkspaceAnchorError, type WorkspaceIdentity } from './workspaceAnchor'
@@ -11,7 +11,10 @@ export class ControlError extends Error {
     constructor(readonly code:string, readonly status=503) { super(code) }
 }
 export type OperatorConfig = { state:string; source:string; uid:number; gid:number; key:Uint8Array; hubUrl:string; backendNetwork?:string }
-type Metadata = Pick<ControlRequest,'leaseId'|'rootPath'|'profile'> & {workspaceIdentity?:WorkspaceIdentity}
+type Metadata = Pick<ControlRequest,'leaseId'|'rootPath'|'profile'> & {workspaceIdentity?:WorkspaceIdentity;browser?:boolean}
+/** Optional per-project browser sidecar; exactly these Compose services of the project's own stack. */
+export const BROWSER_SERVICES=['browser-gateway','browser','browser-egress'] as const
+export const BROWSER_IMAGE='hapi-evolved-browser:0.1.0'
 const sameRunner = (a:Metadata,b:Metadata) => a.leaseId===b.leaseId && a.rootPath===b.rootPath && a.profile===b.profile
 const sameOwner = (a:ControlRequest,b:ControlRequest) => a.userId===b.userId && a.sessionHash===b.sessionHash && sameRunner(a,b)
 const terminal = (state:unknown) => ['connected','failed','cancelled','expired'].includes(String(state))
@@ -193,7 +196,8 @@ export class RunnerOperator {
     private paths(r:ControlRequest){
         const directory=join(this.config.state,'runners',r.projectId)
         const workspace=join(directory,'workspace')
-        return {directory,workspace,home:join(directory,'home'),lease:join(directory,'lease'),env:join(directory,'runner.env'),metadata:join(directory,'operator.json'),container:`hapi-evolved-runner-${r.projectId}-runner-1`}
+        return {directory,workspace,home:join(directory,'home'),lease:join(directory,'lease'),env:join(directory,'runner.env'),metadata:join(directory,'operator.json'),container:`hapi-evolved-runner-${r.projectId}-runner-1`,
+            browserKey:join(directory,'browser.key'),browserEnv:join(directory,'browser.env')}
     }
     private metadata(r:ControlRequest):Metadata|null {
         const paths=this.paths(r)
@@ -236,10 +240,15 @@ export class RunnerOperator {
                     const token=readFileSync(p.lease,'utf8').trim()
                     if(!/^[A-Za-z0-9_-]{43}$/.test(token))return
                     const response=await fetch(`${this.config.hubUrl}/api/evolved/runner/authority`,{headers:{Authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(2000)})
-                    if(!response.ok||this.closed)return
-                    const authority=await response.json() as {projectId?:string;profile?:string;rootPath?:string;expiresAt?:number|null}
+                    if(!response.ok||this.closed){
+                        // Revoked/expired lease: the project browser must not outlive its authority.
+                        if(metadata.browser&&!this.closed&&[401,403].includes(response.status))await this.stopBrowser(p).catch(()=>undefined)
+                        return
+                    }
+                    const authority=await response.json() as {projectId?:string;profile?:string;rootPath?:string;expiresAt?:number|null;browserEnabled?:boolean}
                     if(authority.projectId!==projectId||authority.profile!==metadata.profile||authority.rootPath!==metadata.rootPath
                         ||!(authority.expiresAt===null||typeof authority.expiresAt==='number'&&authority.expiresAt>Date.now()))return
+                    const browser=await this.convergeBrowser(p,metadata,authority.browserEnabled)
                     const anchor=await this.anchor(r,metadata.workspaceIdentity)
                     if(this.closed)return
                     const running=await this.docker(['inspect','--format','{{.State.Running}}',p.container],3000).catch(()=>'false')
@@ -247,9 +256,66 @@ export class RunnerOperator {
                     const args=['compose','--env-file',p.env,'-f',join(this.config.source,'deploy/evolved/runner.compose.yml'),'up','-d','--no-build','--pull','never']
                     if(anchor.restored)args.push('--force-recreate')
                     await this.docker(args,60_000)
+                    if(browser&&!this.closed)await this.startBrowser(r,p).catch(()=>undefined)
                 })}catch{/* Missing/revoked configuration stays stopped; explicit connect can repair it. */}
             }
         }finally{this.restoring=false}
+    }
+    /** A disable that could not reach the operator converges here: the Hub's lease-authenticated authority
+     * reply is the trusted configuration. Older Hubs omit the field and change nothing. Never starts a browser. */
+    protected async convergeBrowser(p:ReturnType<RunnerOperator['paths']>,metadata:Metadata,enabled:unknown):Promise<boolean>{
+        if(!metadata.browser)return false
+        if(enabled!==false)return true
+        await this.stopBrowser(p)
+        this.writeMetadata(p,{...metadata,browser:false})
+        return false
+    }
+    private composeArgs(p:ReturnType<RunnerOperator['paths']>,browser:boolean){
+        return ['compose','--env-file',p.env,...(browser?['--env-file',p.browserEnv]:[]),'-f',join(this.config.source,'deploy/evolved/runner.compose.yml'),...(browser?['--profile','browser']:[])]
+    }
+    protected async browserImage():Promise<boolean>{
+        return /^sha256:[0-9a-f]{64}$/.test(await this.docker(['image','inspect','--format','{{.Id}}',BROWSER_IMAGE],10_000).catch(()=>''))
+    }
+    /** A fresh random access key per browser start, readable only by the runner UID inside the two mounted containers. */
+    protected writeBrowserFiles(p:ReturnType<RunnerOperator['paths']>){
+        const temp=join(p.directory,`browser-key-${randomUUID()}.tmp`)
+        try{writeFileSync(temp,randomBytes(32).toString('base64url'),{flag:'wx',mode:0o600});chownSync(temp,this.config.uid,this.config.gid);renameSync(temp,p.browserKey)}
+        finally{rmSync(temp,{force:true})}
+        writePrivateAtomic(p.browserEnv,`EVOLVED_BROWSER_KEY_FILE=${p.browserKey}\n`)
+    }
+    protected removeBrowserFiles(p:ReturnType<RunnerOperator['paths']>){rmSync(p.browserKey,{force:true});rmSync(p.browserEnv,{force:true})}
+    protected writeMetadata(p:ReturnType<RunnerOperator['paths']>,metadata:Metadata){writePrivateAtomic(p.metadata,JSON.stringify(metadata))}
+    private async startBrowser(r:ControlRequest,p:ReturnType<RunnerOperator['paths']>,timeout=60_000){
+        if(!await this.browserImage())throw new ControlError('browser_image_missing',409)
+        this.writeBrowserFiles(p)
+        await this.docker([...this.composeArgs(p,true),'up','-d','--no-build','--pull','never','--force-recreate',...BROWSER_SERVICES],timeout)
+    }
+    /** `up` without the profile never stops profile services, so disabling removes them explicitly. Only this stack's three browser services. */
+    private async stopBrowser(p:ReturnType<RunnerOperator['paths']>){
+        const browser=existsSync(p.browserEnv)
+        try{await this.docker([...this.composeArgs(p,browser),...(browser?[]:['--profile','browser']),'rm','--stop','--force',...BROWSER_SERVICES],60_000)}
+        finally{this.removeBrowserFiles(p)}
+    }
+    protected async browserStatus(r:ControlRequest){
+        const containers:Record<string,string>={}
+        for(const service of BROWSER_SERVICES){
+            const state=await this.docker(['inspect','--format','{{.State.Status}}',`hapi-evolved-runner-${r.projectId}-${service}-1`],3000).catch(()=>'missing')
+            containers[service]=/^[a-z]{1,16}$/.test(state)?state:'unknown'
+        }
+        return {image:await this.browserImage(),containers}
+    }
+    private async browserAction(r:ControlRequest,metadata:Metadata){
+        if(r.action==='browser-status')return this.browserStatus(r)
+        const p=this.paths(r)
+        if(r.browser){
+            await this.startBrowser(r,p)
+            this.writeMetadata(p,{...metadata,browser:true})
+        }else{
+            this.writeMetadata(p,{...metadata,browser:false})
+            await this.stopBrowser(p)
+        }
+        if(!await this.authority(r)){await this.stopBrowser(p).catch(()=>undefined);throw new ControlError('authority_lost',403)}
+        return {ok:true}
     }
     private async prepare(r:ControlRequest){
         if(this.preparing.has(r.projectId))throw new ControlError('login_busy',409)
@@ -279,7 +345,7 @@ export class RunnerOperator {
                 const content=Object.entries(values).map(([key,value])=>`${key}=${value}`).join('\n')+'\n'
                 checkRunnerConfig(parseRunnerEnv(content))
                 writePrivateAtomic(p.env,content)
-                writePrivateAtomic(p.metadata,JSON.stringify({leaseId:r.leaseId,rootPath:r.rootPath,profile:r.profile,workspaceIdentity:anchor.identity}))
+                this.writeMetadata(p,{leaseId:r.leaseId,rootPath:r.rootPath,profile:r.profile,workspaceIdentity:anchor.identity,...(previous?.browser?{browser:true}:{})})
             }else{
                 if(!existsSync(p.env)||!validWorkspaceIdentity(previous?.workspaceIdentity))throw new ControlError('runner_config_missing')
                 restored=(await this.anchor(r,previous.workspaceIdentity)).restored
@@ -288,6 +354,8 @@ export class RunnerOperator {
             const args=['compose','--env-file',p.env,'-f',join(this.config.source,'deploy/evolved/runner.compose.yml'),'up','-d','--no-build','--pull','never']
             if(r.leaseToken||restored)args.push('--force-recreate')
             await this.docker(args,Math.min(60_000,remaining()))
+            // The browser is optional: a missing image or failed sidecar never blocks the core runner.
+            if(previous?.browser)await this.startBrowser(r,p,Math.min(60_000,remaining())).catch(()=>undefined)
             let stable=0,previousBoot=''
             for(let i=0;i<20;i++){
                 if(!await this.authority(r,remaining()))throw new ControlError('authority_lost',403)
@@ -311,6 +379,7 @@ export class RunnerOperator {
         if(r.action==='prepare')return this.prepare(r)
         const metadata=this.metadata(r)
         if(!metadata||!sameRunner(metadata,r))throw new ControlError('runner_config_missing')
+        if(r.action==='browser'||r.action==='browser-status')return this.browserAction(r,metadata)
         let worker=this.workers.get(r.projectId)
         if(worker?.closed){this.workers.delete(r.projectId);worker=undefined}
         if(['get','code','cancel'].includes(r.action)){

@@ -577,8 +577,9 @@ Läufe werden nicht nachgeholt. „Dauerhaft eingereiht“ bestätigt nur die An
 der Nachricht, keinen erfolgreichen Agentenlauf; der Verlauf weist Fehler,
 übersprungene und unklare Läufe gesondert aus.
 
-Die Zusammenarbeit zwischen Projekt-Agenten ist zunächst ausgeschaltet. Nach
-Freigabe benötigen Runner zusätzlich die passenden Rechte `peers:read`,
-`peers:send` beziehungsweise `peers:manage`. Das Badge „Projekt-Agent“ bestätigt
+Die Zusammenarbeit zwischen Projekt-Agenten ist zunächst aktiviert und kann von
+Administratoren ausdrücklich ausgeschaltet werden. Runner benötigen die passenden
+Rechte `peers:read`, `peers:send` beziehungsweise `peers:manage`.
+Das Badge „Projekt-Agent“ bestätigt
 die vom Hub geprüfte Projektherkunft. Die verlinkte Absendersession ist eine
 behauptete Antwortadresse und keine sicher attestierte Einzelidentität.

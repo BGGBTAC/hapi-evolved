@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { appendFile, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, appendFile, mkdir, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -193,8 +193,8 @@ describe('codexLocalLauncher', () => {
     };
 
     beforeEach(async () => {
-        tempDir = join(tmpdir(), `codex-local-launcher-${Date.now()}`);
-        await mkdir(tempDir, { recursive: true });
+        tempDir = await mkdtemp(join(tmpdir(), 'codex-local-launcher-'));
+
     });
 
     afterEach(() => {

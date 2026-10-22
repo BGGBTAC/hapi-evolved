@@ -16,6 +16,18 @@ test('workspace identity mismatch retains a targeted actionable HTTP 409',async(
         await expect(control.request({action:'prepare',projectId:randomUUID(),userId:randomUUID(),sessionHash:'a'.repeat(64),profile:'restricted',rootPath:'/workspaces/example',leaseId:randomUUID()})).rejects.toMatchObject({code:'workspace_identity_changed',status:409})
     }finally{globalThis.fetch=original}
 })
+test('browser lifecycle codes from the operator survive the real Unix socket boundary',async()=>{
+    const socket=`/tmp/hapi-provider-control-${randomUUID()}.sock`
+    const server=Bun.serve({unix:socket,fetch:async request=>{
+        const action=JSON.parse(Buffer.from(((await request.json()) as {payload:string}).payload,'base64url').toString('utf8')).request.action
+        return action==='browser'?Response.json({code:'browser_image_missing'},{status:409}):Response.json({code:'authority_lost'},{status:403})
+    }})
+    try{
+        const control=new UnixProviderControl(socket,new Uint8Array(32)),base={projectId:randomUUID(),userId:randomUUID(),sessionHash:'a'.repeat(64),profile:'restricted' as const,rootPath:'/workspaces/example',leaseId:randomUUID()}
+        await expect(control.request({...base,action:'browser',browser:true})).rejects.toMatchObject({code:'browser_image_missing',status:409})
+        await expect(control.request({...base,action:'browser-status'})).rejects.toMatchObject({code:'authority_lost',status:403})
+    }finally{server.stop(true)}
+})
 function setup(){
     let now=Date.now()
     const store=new EvolvedStore(':memory:',{now:()=>now});stores.push(store)

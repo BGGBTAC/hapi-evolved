@@ -9,7 +9,7 @@ den bestehenden [GitHub-Plugin-Installer](EXTENSIONS.md) in die Installation.
 
 Diese Seite richtet sich an Plugin-Autoren und an alle, die ein neues Szenario
 ergänzen wollen. Ein vollständiges Beispiel ist das
-[Django-Plugin](../../examples/plugins/django/hapi-evolved.plugin.json).
+[Django-Plugin](https://github.com/BGGBTAC/hapi-evolved/blob/main/examples/plugins/django/hapi-evolved.plugin.json).
 
 ## Was ein Modul ist – und was nicht
 
@@ -261,6 +261,7 @@ Provider sind feste Implementierungen des Hosts. Ein Modul verweist mit
 |---|---|---|---|---|
 | `hapi.toolchain` | 1 | Doctor | ja | `evolvedDevelopment.provider.hapi.toolchain.v1` |
 | `hapi.repository-inventory` | 1 | Inspect | ja | `evolvedDevelopment.provider.hapi.repository-inventory.v1` |
+| `hapi.claude-ads` | 1 | Doctor (Claude Ads: Python 3.11/3.12, Assets, native Skills, Ablage) | ja | `evolvedDevelopment.provider.hapi.claude-ads.v1` |
 | `github.commit-status` | 1 | Integration (Hub, über die Projektfreigabe) | ja | – |
 | `builtin.odoo`, `builtin.ios`, `builtin.android` | 1 | Doctor und Inspect | nein | `evolved-development` |
 
@@ -443,11 +444,11 @@ Inspect und je Aufgabe ein Start. Ein Plugin-Update testen: Projekt zeigt
 
 ## Beispiel: Django
 
-[`examples/plugins/django/hapi-evolved.plugin.json`](../../examples/plugins/django/hapi-evolved.plugin.json)
+[`examples/plugins/django/hapi-evolved.plugin.json`](https://github.com/BGGBTAC/hapi-evolved/blob/main/examples/plugins/django/hapi-evolved.plugin.json)
 enthält ein Modul mit fünf Feldern (Projektordner, Django-Reihe, Einstellungsmodul,
 Test-Labels, `--keepdb`), sechs Handbuchthemen mit Primärquellen (geprüft am
 2026-10-18), vier Rezepten (venv, Tests, Migrationsprüfung, Systemprüfung), vier
 Aufgaben (davon eine mit dem plugin-eigenen Spezialisten `django-reviewer`), Doctor über
 `hapi.toolchain` v1, Inspect über `hapi.repository-inventory` v1 und zwei Integrationen.
 Zum Ausprobieren die Datei in den Stamm eines eigenen öffentlichen Repositorys kopieren
-und dieses installieren; siehe [Beispiel-README](../../examples/plugins/django/README.md).
+und dieses installieren; siehe [Beispiel-README](https://github.com/BGGBTAC/hapi-evolved/blob/main/examples/plugins/django/README.md).

@@ -41,4 +41,13 @@ describe('isFullyHookCoveredExecSource', () => {
         expect(isFullyHookCoveredExecSource('await tools[selectedTool](input);')).toBe(false);
         expect(isFullyHookCoveredExecSource('const registry = tools;')).toBe(false);
     });
+
+    it('matches bracketed tool names in linear time', () => {
+        expect(countHookCoveredExecCalls('await tools["mcp__hapi__change_title"]({});')).toBe(1);
+
+        const hostile = `tools['a${'__a'.repeat(40)}!`;
+        const startedAt = Date.now();
+        expect(countHookCoveredExecCalls(hostile)).toBeNull();
+        expect(Date.now() - startedAt).toBeLessThan(500);
+    });
 });

@@ -61,9 +61,18 @@ ihre Einstellungen bleiben erhalten. Ein Update, das ein in einem Projekt aktive
 entfernt, wird abgelehnt; ein Update mit geänderter Moduldefinition muss in jedem
 betroffenen Projekt übernommen werden.
 
+### Mitgelieferte Plugins
+
+Einige Plugins kommen mit HAPI selbst (derzeit „Claude Ads (mitgeliefert)“, siehe
+[CLAUDE_ADS.md](CLAUDE_ADS.md)). Sie verwenden dasselbe Manifestformat, erscheinen immer
+im Katalog und sind als „Mitgeliefert · unveränderlich“ gekennzeichnet: Update,
+Deaktivieren, Deinstallieren und Ersetzen durch ein GitHub-Plugin mit gleicher Quelle oder
+ID werden abgelehnt (`plugin_bundled`). Ihre Entwicklungsmodule werden – wie alle – nur
+ausdrücklich je Projekt aktiviert.
+
 ## Manifestformat
 
-Das [vollständige Beispiel](../../examples/plugins/quality/hapi-evolved.plugin.json)
+Das [vollständige Beispiel](https://github.com/BGGBTAC/hapi-evolved/blob/main/examples/plugins/quality/hapi-evolved.plugin.json)
 enthält eine Agentenvorlage, einen Skill und ein Farbprofil. Das Format lautet:
 
 ```json
@@ -129,7 +138,7 @@ Prüfungen und vergeben keine Rechte.
 
 Format, Feldarten, Provider, Übernahme von Updates und Grenzen beschreibt
 [Entwicklungsmodule als Plugin bereitstellen](DEVELOPMENT_MODULES.md); ein vollständiges
-Beispiel ist das [Django-Plugin](../../examples/plugins/django/hapi-evolved.plugin.json).
+Beispiel ist das [Django-Plugin](https://github.com/BGGBTAC/hapi-evolved/blob/main/examples/plugins/django/hapi-evolved.plugin.json).
 
 ## Manifest lokal prüfen
 

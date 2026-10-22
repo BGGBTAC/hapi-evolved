@@ -15,8 +15,8 @@ import { githubPrEnabled, registerGithubPrTool } from '@/modules/githubPr';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { EVOLVED_TOOL_NAMES, registerEvolvedTools } from '@/evolved/mcp';
 import { evolvedClientFromEnvironment } from '@/evolved/client';
-import { getEvolvedOperatingContext } from '@/evolved/operatingContext';
-import { initializePeerToolsPolicy, isEvolvedPeerMode, peerScopeAllowed } from '@/modules/pingPeer/evolvedPeer';
+import { getEvolvedLiveAccessContext, getEvolvedOperatingContext } from '@/evolved/operatingContext';
+import { isEvolvedPeerMode, peerToolsExposed } from '@/modules/pingPeer/evolvedPeer';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -58,10 +58,7 @@ export async function runHappyMcpStdioBridge(argv: string[]): Promise<void> {
   try {
     // Resolve target HTTP MCP URL
     const { url: urlFromArgs, toolNames } = parseArgs(argv);
-    const peersEnabled = await initializePeerToolsPolicy();
-    if (!peerScopeAllowed('peers:send')) toolNames.delete('ping_peer');
-    if (!peerScopeAllowed('peers:manage')) { toolNames.delete('spawn_peer'); toolNames.delete('archive_peer'); }
-    if (!peersEnabled) for (const name of ['ping_peer', 'inspect_peer', 'list_peers', 'search_peers', 'spawn_peer', 'archive_peer']) toolNames.delete(name);
+    if (!peerToolsExposed()) for (const name of ['ping_peer', 'inspect_peer', 'list_peers', 'search_peers', 'spawn_peer', 'archive_peer']) toolNames.delete(name);
     const baseUrl = urlFromArgs || process.env.HAPI_HTTP_MCP_URL || '';
 
     if (!baseUrl) {
@@ -87,12 +84,18 @@ export async function runHappyMcpStdioBridge(argv: string[]): Promise<void> {
       return client;
     }
 
+    // Include a bounded, current project-rights snapshot when the project tool
+    // is actually advertised. A failed lookup leaves the static rules intact.
+    const operatingContext = getEvolvedOperatingContext();
+    const evolvedClient = operatingContext && toolNames.has('evolved_access') ? evolvedClientFromEnvironment() : undefined;
+    const liveAccess = evolvedClient ? await getEvolvedLiveAccessContext(evolvedClient) : '';
+
     // Create STDIO MCP server
     const server = new McpServer({
       name: 'HAPI MCP Bridge',
       version: '1.0.0',
-    }, { instructions: getEvolvedOperatingContext() || undefined });
-    if (process.env.HAPI_EVOLVED_CAPABILITY_FILE || process.env.HAPI_EVOLVED_PROXY === '1') registerEvolvedTools(server, evolvedClientFromEnvironment(), toolNames);
+    }, { instructions: operatingContext ? operatingContext + liveAccess : undefined });
+    if (process.env.HAPI_EVOLVED_CAPABILITY_FILE || process.env.HAPI_EVOLVED_PROXY === '1') registerEvolvedTools(server, evolvedClient ?? evolvedClientFromEnvironment(), toolNames);
 
     // Register tools and forward to HTTP MCP
     const changeTitleInputSchema: z.ZodTypeAny = z.object({

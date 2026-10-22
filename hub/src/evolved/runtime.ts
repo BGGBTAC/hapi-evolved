@@ -20,6 +20,7 @@ import { createGithubGitTransport, createGithubRoutes } from './github'
 import { createRepositoryRoutes } from './repositories'
 import { createCapacityRoutes } from './capacity'
 import { createProviderRoutes, UnixProviderControl } from './providers'
+import { createBrowserRoutes } from './browser'
 import { PluginService, createPluginRoutes } from './plugins'
 import { createAgentCatalogRoutes } from './agentCatalog'
 import { createDevelopmentService } from './development'
@@ -96,7 +97,9 @@ export function createEvolvedRuntime(dataDir: string, secret: Uint8Array, depend
     const controlKeyFile = process.env.EVOLVED_RUNNER_CONTROL_KEY_FILE
     const controlKey = controlKeyFile ? privateFile(controlKeyFile) : undefined
     if (controlKey && controlKey.length !== 32) throw new Error('Runner control key must contain exactly 32 bytes')
-    routes.route('/', createProviderRoutes(store, { key: controlKey, control: controlSocket && controlKey ? new UnixProviderControl(controlSocket, controlKey) : undefined }))
+    const runnerControl = controlSocket && controlKey ? new UnixProviderControl(controlSocket, controlKey) : undefined
+    routes.route('/', createProviderRoutes(store, { key: controlKey, control: runnerControl }))
+    routes.route('/', createBrowserRoutes({ store, origin, control: runnerControl }))
     const plugins = new PluginService(store)
     routes.route('/', createPluginRoutes(plugins, origin))
     const developmentModules = new DevelopmentModuleRegistry(plugins)

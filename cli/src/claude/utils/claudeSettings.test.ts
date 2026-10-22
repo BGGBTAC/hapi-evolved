@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { existsSync, writeFileSync, unlinkSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, existsSync, writeFileSync, unlinkSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { readClaudeSettings, shouldIncludeCoAuthoredBy } from './claudeSettings';
@@ -16,8 +16,8 @@ describe('Claude Settings', () => {
 
   beforeEach(() => {
     // Create a temporary directory for testing
-    testClaudeDir = join(tmpdir(), `test-claude-${Date.now()}`);
-    mkdirSync(testClaudeDir, { recursive: true });
+    testClaudeDir = mkdtempSync(join(tmpdir(), 'test-claude-'));
+
     
     // Set environment variable to point to test directory
     originalClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR;

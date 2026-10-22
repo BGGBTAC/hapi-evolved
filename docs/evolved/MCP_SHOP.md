@@ -5,6 +5,10 @@ zentral. Die freigegebenen Werkzeuge stehen den unterstützten Claude- und
 Codex-Sitzungen dieses Projekts über den vorhandenen HAPI-Zugang zur Verfügung.
 Es sind keine API-Schlüssel oder zusätzlichen MCP-Konfigurationen im Runner nötig.
 
+Der optionale [Projektbrowser (Camofox)](BROWSER.md) erscheint als eigene Karte im MCP-Shop. Er ist
+kein Remote-MCP: eigene Konfiguration, eigene Werkzeuge `evolved_browser_*`, eigener Sidecar je Projekt.
+Die Regeln für Remote-MCPs (nur öffentliches HTTPS) gelten unverändert.
+
 ## Context7 einrichten
 
 1. Öffne im gewünschten Projekt den **MCP-Shop** und wähle **Context7**.

@@ -68,11 +68,11 @@ real-world feedback are welcome. The [roadmap](ROADMAP.md) explains what comes n
 The supported preview is a **fresh Linux installation using Docker Compose**,
 built from this repository. Use **Bun 1.3.14** and plan for approximately
 **12 GiB RAM** for the stack and one runner. These instructions target
-`v0.1.0-preview.2`; verify that it has a published source release and checksums
+`v0.1.0-preview.3`; verify that it has a published source release and checksums
 before using the tag below. Development `main` is not itself a published release.
 
 ```sh
-git clone --branch v0.1.0-preview.2 --depth 1 https://github.com/BGGBTAC/hapi-evolved.git
+git clone --branch v0.1.0-preview.3 --depth 1 https://github.com/BGGBTAC/hapi-evolved.git
 cd hapi-evolved
 bun install --frozen-lockfile
 ```
@@ -141,7 +141,7 @@ experimentation. See [data handling](docs/evolved/DATA_HANDLING.md) and
 | [Development modules](docs/evolved/DEVELOPMENT_MODULES.md) | Author guide for plugin development modules, providers and validation |
 | [Project MCP shop](docs/evolved/MCP_SHOP.md) | Context7, shared remote tools and project permissions |
 | [Agents and plugins](docs/evolved/EXTENSIONS.md) | Reusable specialists and extension manifests |
-| [Subscription capacity](docs/evolved/CAPACITY.md) | Usage sources, reset times and freshness |
+| [Subscription capacity](docs/evolved/CAPACITY.en.md) | Usage sources, reset times and freshness — English ([German](docs/evolved/CAPACITY.md)) |
 | [Operator guide](docs/evolved/DEPLOYMENT.md) | Services, isolation, backups and upgrades — German |
 | [Architecture](docs/evolved/PROJECT.md) | Components and trust boundaries — German |
 | [Interface](docs/evolved/DESIGN.md) | Desktop/PWA layout and accessibility |

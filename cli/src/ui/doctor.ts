@@ -10,7 +10,7 @@ import { configuration } from '@/configuration'
 import { readSettings } from '@/persistence'
 import { checkIfRunnerRunningAndCleanupStaleState } from '@/runner/controlClient'
 import { findRunawayHappyProcesses, findAllHappyProcesses } from '@/runner/doctor'
-import { readRunnerState } from '@/persistence'
+import { readRunnerState, runnerStateForDisplay } from '@/persistence'
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -181,7 +181,7 @@ export async function runDoctorCommand(filter?: 'all' | 'runner'): Promise<void>
         if (state) {
             console.log(chalk.bold('\n📄 Runner State:'));
             console.log(chalk.blue(`Location: ${configuration.runnerStateFile}`));
-            console.log(chalk.gray(JSON.stringify(state, null, 2)));
+            console.log(chalk.gray(JSON.stringify(runnerStateForDisplay(state), null, 2)));
         }
 
         // All hapi processes

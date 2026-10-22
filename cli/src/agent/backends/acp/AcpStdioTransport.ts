@@ -1,4 +1,5 @@
-import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptions } from 'node:child_process';
+import type { ChildProcessWithoutNullStreams, SpawnOptions } from 'node:child_process';
+import spawn from 'cross-spawn';
 import {
     acquireAgentCliSpawnLease,
     releaseAgentCliSpawnLeaseFromAcpRegisterSync
@@ -64,12 +65,15 @@ export type AcpStderrError = {
     raw: string;
 };
 
-/** @internal Exported for regression tests. */
+/**
+ * @internal Exported for regression tests.
+ * No shell: ACP args carry model, worktree and --add-dir values. cross-spawn
+ * resolves Windows .cmd shims and escapes those args for cmd.exe itself.
+ */
 export function buildAcpStdioSpawnOptions(env?: Record<string, string>): SpawnOptions {
     return {
         env,
         stdio: ['pipe', 'pipe', 'pipe'],
-        shell: process.platform === 'win32',
         windowsHide: process.platform === 'win32'
     };
 }
@@ -127,7 +131,7 @@ export class AcpStdioTransport {
                         options.command,
                         options.args ?? [],
                         buildAcpStdioSpawnOptions(options.env)
-                    ) as ChildProcessWithoutNullStreams;
+                    ) as unknown as ChildProcessWithoutNullStreams;
                     return new AcpStdioTransport(process, true, options.command);
                 } catch (error) {
                     unregisterActiveAcpTransport();
@@ -142,7 +146,7 @@ export class AcpStdioTransport {
             options.command,
             options.args ?? [],
             buildAcpStdioSpawnOptions(options.env)
-        ) as ChildProcessWithoutNullStreams;
+        ) as unknown as ChildProcessWithoutNullStreams;
         return new AcpStdioTransport(process, false, options.command);
     }
 

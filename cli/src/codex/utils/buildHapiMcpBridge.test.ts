@@ -16,7 +16,7 @@ vi.mock('@/claude/utils/startHappyServer', () => ({
             url: 'http://127.0.0.1:43006/',
             toolNames: [...(options.skillLookup
                 ? ['change_title', 'display_image', 'display_video', 'display_media', 'list_peers', 'search_peers', 'ping_peer', 'inspect_peer', 'skill_lookup']
-                : ['change_title', 'display_image', 'display_video', 'display_media', 'list_peers', 'search_peers', 'ping_peer', 'inspect_peer']), ...(harness.mcpShop ? ['evolved_mcp_servers', 'evolved_mcp_tools', 'evolved_mcp_query', 'evolved_mcp_call'] : [])],
+                : ['change_title', 'display_image', 'display_video', 'display_media', 'list_peers', 'search_peers', 'ping_peer', 'inspect_peer']), ...(harness.mcpShop ? ['evolved_access', 'evolved_mcp_servers', 'evolved_mcp_tools', 'evolved_mcp_query', 'evolved_mcp_call', 'evolved_browser_status', 'evolved_browser_tools', 'evolved_browser_query', 'evolved_browser_call'] : [])],
             stop: vi.fn()
         }
     })
@@ -115,6 +115,9 @@ describe('buildHapiMcpBridge skill lookup config', () => {
         const bridge = await buildHapiMcpBridge(createClient())
         expect(bridge.mcpServers.hapi.tools?.evolved_mcp_call).toEqual({ approval_mode: 'prompt' })
         expect(bridge.mcpServers.hapi.tools?.evolved_mcp_query).toEqual({ approval_mode: 'approve' })
+        expect(bridge.mcpServers.hapi.tools?.evolved_access).toEqual({ approval_mode: 'approve' })
+        expect(bridge.mcpServers.hapi.tools?.evolved_browser_call).toEqual({ approval_mode: 'prompt' })
+        expect(bridge.mcpServers.hapi.tools?.evolved_browser_query).toEqual({ approval_mode: 'approve' })
         expect(harness.cliArgs[4]).toContain('evolved_mcp_servers,evolved_mcp_tools,evolved_mcp_query,evolved_mcp_call')
     })
 

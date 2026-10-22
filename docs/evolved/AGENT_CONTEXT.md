@@ -6,9 +6,9 @@ Nachricht kopieren noch pro Projekt einen Spezialisten konfigurieren. Normale
 Sitzungen und Spezialisten verwenden dieselbe Grundlage.
 
 Der versionierte Text in
-[`operatingContext.ts`](../../cli/src/evolved/operatingContext.ts) erklärt die
+[`operatingContext.ts`](https://github.com/BGGBTAC/hapi-evolved/blob/main/cli/src/evolved/operatingContext.ts) erklärt die
 Grundregeln. Ab Version 2 enthält er zusätzlich den Funktionskatalog aus
-[`capabilities.ts`](../../cli/src/evolved/capabilities.ts). Dieser Überblick wird
+[`capabilities.ts`](https://github.com/BGGBTAC/hapi-evolved/blob/main/cli/src/evolved/capabilities.ts). Dieser Überblick wird
 automatisch übergeben; der Agent muss ihn nicht erst selbst entdecken.
 
 - den zugewiesenen Projektordner und die maßgebliche Repository-Dokumentation;
@@ -174,8 +174,12 @@ erklärt Finden, Lesen, Beauftragen, Antworten und Abschließen:
   Isolierte Aufträge müssen die Betriebsgrundlagen, überprüften Projektkontext
   und die erwarteten Ergebnisbelege mitbekommen.
 
-Peer-Policy, `peers:read`, `peers:send` und `peers:manage` begrenzen die tatsächlich
-angebotenen Aktionen. Automatische Berichte benötigen zusätzliche Bedingungen,
+Die Peer-Policy ist zunächst aktiv und kann pro Projekt ausdrücklich abgeschaltet
+werden. Evolved-Sitzungen zeigen Peer-Werkzeuge dauerhaft; erst der Hub prüft bei
+jedem Aufruf aktuelle Policy und Scopes. `peers:read` gilt für Lesen und die
+Empfängersuche von `ping_peer`, `peers:send` für Zustellung, `peers:manage` für
+Spawn und Archivierung. Ein Runner nur mit `peers:manage` darf Worker verwalten.
+Automatische Berichte benötigen zusätzliche Bedingungen,
 die in `peers` beschrieben sind. Peer-Nachrichten bestätigen die Projektherkunft,
 aber keine neue menschliche Freigabe oder sicher attestierte Modellidentität.
 Der Browser-Nebenkanal `/btw` ist eine getrennte Textfrage und kein Peerchat.
@@ -252,6 +256,24 @@ stdio-MCP-Server ausgeliefert. Das rein lokale, lesende Werkzeug
 `evolved_context` stellt ihn jederzeit erneut bereit, auch bei unerreichbarem
 Hub. Es ist keine Prüfung der aktuellen Dienstverfügbarkeit.
 
+`evolved_access` (CLI: `hapi evolved access`) liest zusätzlich die aktuellen
+Projekt- und Runner-Rechte aus dem Hub. Bei neuen Codex-MCP-Verbindungen sowie
+bei Claude-SessionStart/SubagentStart wird ein begrenzter Snapshot automatisch
+mitgegeben. Ist der Hub kurzzeitig nicht erreichbar, bleibt der statische
+Kontext erhalten und der Snapshot wird ausdrücklich als unbekannt markiert.
+Nach Änderungen an Rechten oder einem warmen Resume muss der Agent
+`evolved_access` und die jeweiligen Live-Kataloge erneut abfragen. Der Scope
+allein belegt keinen Repository-, Tresor-, MCP- oder Browser-Grant; diese
+werden von ihren eigenen Tools und vom Hub bei jedem Aufruf geprüft.
+
+Neue manuelle und verwaltete Runner erhalten standardmäßig die Scopes für
+Projektverbindung, Git-Lesen, Gedächtnis, Codegraph und Agentenkommunikation;
+Git-Push bleibt auf die dafür geeigneten Projektprofile begrenzt. Ältere
+verwaltete Leases bekommen fehlende Standards beim nächsten Tokenaustausch,
+ohne Token oder Anbieteranmeldung auszutauschen. Bewusst enger vergebene
+manuelle Leases bleiben eng. Externe Ressourcenaktionen benötigen weiterhin
+`resource:execute` und die ausdrückliche Freigabe ihrer einzelnen Action-IDs.
+
 Claude bekommt die Grundlage zusätzlich über seine Lebenszyklushooks beim
 Start, Fortsetzen und nach der Kontextkomprimierung sowie beim Start nativer
 Unteragenten. Codex erhält die Grundlage auch dann, wenn der Aufrufer eigene
@@ -298,6 +320,6 @@ und Broker durchgesetzt.
 
 Architektur und Umsetzung wurden mit Claude Opus 5.5 sowie einem unabhängigen
 Code-Review geprüft. Befunde und Korrekturen stehen im
-[Reviewprotokoll](reviews/agent-operating-context-2026-10-16.json). Die Erweiterung
+[Reviewprotokoll](https://github.com/BGGBTAC/hapi-evolved/blob/main/docs/evolved/reviews/agent-operating-context-2026-10-16.json). Die Erweiterung
 zum vollständigen Funktionskatalog hat ein eigenes
-[Reviewprotokoll](reviews/agent-capabilities-2026-10-16.json).
+[Reviewprotokoll](https://github.com/BGGBTAC/hapi-evolved/blob/main/docs/evolved/reviews/agent-capabilities-2026-10-16.json).

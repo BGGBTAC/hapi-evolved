@@ -39,6 +39,6 @@ export function ConfirmButton({ label, detail, onConfirm, disabled = false }: {
     label: string; detail: string; onConfirm: () => void; disabled?: boolean
 }) {
     const [confirming, setConfirming] = useState(false)
-    return confirming ? <span className="ev-confirm"><span>{detail}</span><button className="ev-danger" disabled={disabled} onClick={() => { setConfirming(false); onConfirm() }}>Bestätigen</button><button onClick={() => setConfirming(false)}>Abbrechen</button></span>
-        : <button className="ev-danger-subtle" disabled={disabled} onClick={() => setConfirming(true)}>{label}</button>
+    return confirming ? <span className="ev-confirm"><span>{detail}</span><button type="button" className="ev-danger" disabled={disabled} onClick={() => { setConfirming(false); onConfirm() }}>Bestätigen</button><button type="button" onClick={() => setConfirming(false)}>Abbrechen</button></span>
+        : <button type="button" className="ev-danger-subtle" disabled={disabled} onClick={() => setConfirming(true)}>{label}</button>
 }

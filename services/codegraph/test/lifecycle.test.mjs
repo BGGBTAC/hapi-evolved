@@ -81,17 +81,19 @@ test('real worker stdout and stderr are drained without leaking synthetic source
 
 for (const [workerCode, expected] of [['ERR_WORKER_OUT_OF_MEMORY', 'codegraph_worker_out_of_memory'], ['SECRET_SOURCE_VALUE', 'codegraph_worker_failed']]) {
     test(`HTTP retains sanitized ${expected}, backs off, and ignores old-generation events`, async t => {
-        const f = await fixture(t); await f.query(); const old = f.workers[0];
+        // Check the backoff before loading the server with concurrent probes;
+        // CI can take longer than the old 80 ms window to serve those requests.
+        const f = await fixture(t, { lifecycle: { backoffMs: 1000 } }); await f.query(); const old = f.workers[0];
         const error = new Error('SECRET_SOURCE_VALUE source/file.ts api-key'); error.code = workerCode; old.emit('error', error); old.emit('exit', 9);
         const failed = await f.query(); assert.equal(failed.status, 200); assert.equal(failed.body.state, 'error');
         assert.equal(failed.body.code, expected); assert.equal(failed.body.available, false); assert.equal(failed.body.watching, false);
         assert.ok(failed.body.retryAfterMs > 0); assert.equal(f.logs.length, 1);
-        await Promise.all(Array.from({ length: 12 }, () => f.query()));
-        assert.equal((await f.query('search', { params: { q: 'anything' } })).status, 503);
         const retry = await f.query('reindex'); assert.equal(retry.status, 503); assert.equal(retry.body.code, expected);
         assert.ok(retry.body.retryAfterMs > 0); assert.match(retry.body.error, /retry indexing in 1 seconds/); assert.equal(f.workers.length, 1);
+        await Promise.all(Array.from({ length: 12 }, () => f.query()));
+        assert.equal((await f.query('search', { params: { q: 'anything' } })).status, 503);
         assert.ok(!JSON.stringify({ failed, logs: f.logs }).includes('SECRET_SOURCE_VALUE'));
-        await sleep(90); assert.equal((await f.query('reindex')).body.accepted, true); assert.equal(f.workers.length, 2);
+        await sleep(retry.body.retryAfterMs + 25); assert.equal((await f.query('reindex')).body.accepted, true); assert.equal(f.workers.length, 2);
         f.workers[1].snapshot(); old.snapshot(status('error')); old.emit('error', error); old.emit('exit', 9);
         assert.equal((await f.query()).body.state, 'ready'); assert.equal(f.logs.length, 1);
     });

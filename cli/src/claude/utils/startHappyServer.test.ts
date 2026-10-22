@@ -338,6 +338,8 @@ describe('toClaudeAllowedHapiMcpTools', () => {
             'mcp__hapi__evolved_mcp_tools',
             'mcp__hapi__evolved_mcp_query'
         ])
+        expect(toClaudeAllowedHapiMcpTools(['evolved_browser_status', 'evolved_browser_tools', 'evolved_browser_query', 'evolved_browser_call']))
+            .toEqual(['mcp__hapi__evolved_browser_status', 'mcp__hapi__evolved_browser_tools', 'mcp__hapi__evolved_browser_query'])
         expect(toClaudeAllowedHapiMcpTools(['display_video'])).not.toContain('mcp__hapi__display_video')
         expect(toClaudeAllowedHapiMcpTools(['display_media'])).not.toContain('mcp__hapi__display_media')
     })
@@ -380,12 +382,56 @@ it('publishes the same operating context on every scoped MCP connection', async 
                 await client.connect(new StreamableHTTPClientTransport(new URL(server.url)))
                 expect(client.getInstructions()).toBe(getEvolvedOperatingContext())
                 expect(client.getInstructions()).toContain('evolved_memory_propose')
-                expect((await client.listTools()).tools.map(tool => tool.name)).toEqual(expect.arrayContaining(['evolved_mcp_servers', 'evolved_mcp_tools', 'evolved_mcp_query', 'evolved_mcp_call']))
+                expect((await client.listTools()).tools.map(tool => tool.name)).toEqual(expect.arrayContaining(['evolved_mcp_servers', 'evolved_mcp_tools', 'evolved_mcp_query', 'evolved_mcp_call', 'evolved_browser_status', 'evolved_browser_tools', 'evolved_browser_query', 'evolved_browser_call']))
             } finally { await client.close() }
         }
     } finally {
         server?.stop()
         policy.mockRestore()
+        vi.unstubAllEnvs()
+    }
+})
+
+it('keeps Evolved peer tools in a warm MCP session while the Hub policy changes', async () => {
+    vi.stubEnv('HAPI_EVOLVED_PROXY', '1')
+    vi.stubEnv('EVOLVED_PROJECT_ID', 'peer-test')
+    vi.stubEnv('HAPI_EVOLVED_URL', 'http://127.0.0.1:1')
+    vi.stubEnv('HAPI_PEER_TOOLS', '0')
+    vi.stubEnv('HAPI_PEER_SCOPES', '')
+    let enabled = false
+    const requests: string[] = []
+    const realFetch = globalThis.fetch
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : String(input))
+        if (url.port !== '1') return realFetch(input, init)
+        const path = url.pathname
+        requests.push(path)
+        if (path !== '/api/evolved/peers') return Response.json({ error: 'Unexpected request' }, { status: 404 })
+        return enabled
+            ? Response.json({ sessions: [] })
+            : Response.json({ error: 'Peer operations are disabled' }, { status: 403 })
+    })
+    const session = { sessionId: 'caller', updateMetadata: vi.fn() } as unknown as ApiSessionClient
+    let server: Awaited<ReturnType<typeof startHappyServer>> | undefined
+    const client = new Client({ name: 'warm-peer-test', version: '1' }, { capabilities: {} })
+    try {
+        server = await startHappyServer(session)
+        await client.connect(new StreamableHTTPClientTransport(new URL(server.url)))
+        const names = (await client.listTools()).tools.map(tool => tool.name)
+        for (const name of ['list_peers', 'search_peers', 'inspect_peer', 'ping_peer', 'spawn_peer', 'archive_peer']) {
+            expect(names).toContain(name)
+            expect(server.toolNames).toContain(name)
+        }
+        expect((await client.callTool({ name: 'list_peers', arguments: {} }) as ToolResult).isError).toBe(true)
+        enabled = true
+        expect((await client.callTool({ name: 'list_peers', arguments: {} }) as ToolResult).isError).toBe(false)
+        enabled = false
+        expect((await client.callTool({ name: 'list_peers', arguments: {} }) as ToolResult).isError).toBe(true)
+        expect(requests.filter(path => path.startsWith('/api/evolved/peers'))).toEqual(Array(3).fill('/api/evolved/peers'))
+    } finally {
+        await client.close()
+        server?.stop()
+        fetcher.mockRestore()
         vi.unstubAllEnvs()
     }
 })

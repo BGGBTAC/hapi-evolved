@@ -16,7 +16,7 @@ export type GroupedSummaryIntent =
 
 const FILE_INSPECTION_COMMAND_RE = /\b(get-childitem|ls|dir|get-content|cat|type|tree)\b|\bsed\s+-n\b/i
 const CONTENT_SEARCH_COMMAND_RE = /\b(rg|grep|select-string|findstr)\b/i
-const SAFE_PROJECT_COMMAND_RE = /^(?:(?:bun|npm|pnpm|yarn) (?:run )?(?:test|lint|build|typecheck)(?:[:\w.-]*)|git (?:status|diff|log)(?:\s+--?[\w.-]+)*|cargo (?:test|check)|go test(?:\s+\.\/\.\.\.)?|pytest(?:\s+-[\w-]+)*)$/i
+export const SAFE_PROJECT_COMMAND_RE = /^(?:(?:bun|npm|pnpm|yarn) (?:run )?(?:test|lint|build|typecheck)(?:[:\w.-]*)|git (?:status|diff|log)(?:\s+-[\w.-]+)*|cargo (?:test|check)|go test(?:\s+\.\/\.\.\.)?|pytest(?:\s+-[\w-]+)*)$/i
 const SENSITIVE_TEXT_RE = /(?:bearer\s+\S+|(?:api[_-]?key|token|password|secret)(?:\s*[:=]\s*\S+|\s+\S{12,})|(?:gh[pousr]_|github_pat_|sk-[a-z0-9_-]*|xox[baprs]-)[a-z0-9_-]{12,}|[a-f0-9]{32,}|[a-z0-9_+/=-]{40,})/i
 const SEARCH_OPTIONS_WITH_VALUE = new Set([
     '-g', '--glob', '-t', '--type', '-A', '-B', '-C', '--context',

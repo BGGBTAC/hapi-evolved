@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { appendFile, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, appendFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -110,8 +110,8 @@ describe('kimiWireScanner', () => {
     let events: { type: string }[] = [];
 
     beforeEach(async () => {
-        testDir = join(tmpdir(), `kimi-wire-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-        await mkdir(testDir, { recursive: true });
+        testDir = await mkdtemp(join(tmpdir(), 'kimi-wire-'));
+
         wirePath = join(testDir, 'wire.jsonl');
         events = [];
     });

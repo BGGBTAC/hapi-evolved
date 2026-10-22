@@ -10,9 +10,9 @@
 import { describe, expect, it, beforeEach, afterEach } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 
-import { AcpVerifyProbe, tryAcquireAcpActiveLock } from './acpVerifyProbe'
+import { AcpVerifyProbe, resolveAcpLockHapiHome, tryAcquireAcpActiveLock } from './acpVerifyProbe'
 
 describe('AcpVerifyProbe — agent-acp-active lock acquisition (Codex #34 P2 v2)', () => {
     let hapiHome: string
@@ -354,5 +354,18 @@ describe('tryAcquireAcpActiveLock (Codex #34 P2 v7)', () => {
         h.release()
         // Lock dir gone — we own it, we remove it even when pidless.
         expect(existsSync(lockDir(hapiHome))).toBe(false)
+    })
+})
+
+describe('resolveAcpLockHapiHome', () => {
+    it('matches the CLI guard default instead of a shared tmpdir', () => {
+        expect(resolveAcpLockHapiHome({})).toBe(join(homedir(), '.hapi'))
+        expect(resolveAcpLockHapiHome({ HAPI_HOME: '   ' })).toBe(join(homedir(), '.hapi'))
+        expect(resolveAcpLockHapiHome({})).not.toContain(join(tmpdir(), 'hapi'))
+    })
+
+    it('honours HAPI_HOME with home expansion like the CLI', () => {
+        expect(resolveAcpLockHapiHome({ HAPI_HOME: '/srv/hapi ' })).toBe('/srv/hapi')
+        expect(resolveAcpLockHapiHome({ HAPI_HOME: '~/custom-hapi' })).toBe(`${homedir()}/custom-hapi`)
     })
 })

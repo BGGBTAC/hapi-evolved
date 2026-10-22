@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, mkdirSync, readFileSync, readdirSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterAll, afterEach, describe, expect, test } from 'vitest';
 import {
     _resetAgentCliGuardForTests,
     _setActiveAcpTransportCountForTests,
@@ -19,7 +19,7 @@ import {
     tryAcquireAgentCliSpawnLeaseSync
 } from '@hapi/protocol/agentCliSpawnLease';
 
-const testHome = join(tmpdir(), `hapi-agent-cli-guard-${process.pid}`);
+const testHome = mkdtempSync(join(tmpdir(), 'hapi-agent-cli-guard-'));
 
 function lockDir(): string {
     return join(testHome, 'locks', 'agent-acp-active');
@@ -42,6 +42,7 @@ function writeLegacyAcpLock(pid: number): void {
 
 describe('agentCliGuard', () => {
     const previousHome = process.env.HAPI_HOME;
+    afterAll(() => rmSync(testHome, { recursive: true, force: true }));
 
     afterEach(() => {
         // Always tear down under the isolated test home — never while HAPI_HOME

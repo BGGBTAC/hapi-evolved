@@ -7,7 +7,7 @@ This starts a Linux preview on a **fresh, dedicated host**. The manual commands
 below use shared `hapi-evolved` Compose/image names: do not run them on a host
 that already has an Evolved stack or matching image tags. They do not migrate accounts,
 sessions or credentials from HAPI. Use source and Compose files from the same
-reviewed Evolved revision. These commands target `v0.1.0-preview.2`. Verify that
+reviewed Evolved revision. These commands target `v0.1.0-preview.3`. Verify that
 this tag appears as a published [source release](https://github.com/BGGBTAC/hapi-evolved/releases)
 with an archive, `manifest.json`, `SHA256SUMS` and validation notes before using it.
 The archive's exact filename and source SHA are recorded in its manifest.
@@ -45,7 +45,7 @@ you want browser-managed agents.
 ## Initialize private state
 
 ```sh
-git clone --branch v0.1.0-preview.2 --depth 1 https://github.com/BGGBTAC/hapi-evolved.git
+git clone --branch v0.1.0-preview.3 --depth 1 https://github.com/BGGBTAC/hapi-evolved.git
 cd hapi-evolved
 bun install --frozen-lockfile
 bun deploy/evolved/init.ts "$HOME/.local/share/hapi-evolved"

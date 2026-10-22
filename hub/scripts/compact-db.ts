@@ -115,6 +115,10 @@ if (!existsSync(args.db)) {
     process.exit(1)
 }
 
+// SQLite creates VACUUM copies using the process umask. Protect the work
+// snapshot and final output from their first byte, including failure paths.
+process.umask(0o077)
+
 const workPath = `${args.out}.work`
 // The source must never be written. Refuse output paths that alias the source
 // database or its WAL/SHM (e.g. --out="$DB" --force would otherwise delete the

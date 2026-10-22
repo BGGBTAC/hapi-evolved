@@ -33,8 +33,8 @@ Umsetzungen nach positiver Kosten-Nutzen-Abwägung unterhalb der Pflichtschwelle
 | Nicht anwendbar | 1 | Betrifft einen nicht integrierten Anbieter |
 | Bestehender Teilumfang | 1 | Private statische Vorschau erfüllt nicht das vollständige Devserver-Proxy-Issue |
 
-Die [vollständige Matrix als CSV](backlog-decisions-2026-10-15.csv) eignet sich zum Filtern;
-die [JSON-Fassung](backlog-decisions-2026-10-15.json) enthält pro Issue Kriterien, Begründung,
+Die [vollständige Matrix als CSV](https://github.com/BGGBTAC/hapi-evolved/blob/main/docs/evolved/backlog-decisions-2026-10-15.csv) eignet sich zum Filtern;
+die [JSON-Fassung](https://github.com/BGGBTAC/hapi-evolved/blob/main/docs/evolved/backlog-decisions-2026-10-15.json) enthält pro Issue Kriterien, Begründung,
 Kosten/Nutzen, tatsächlichen Stand, Quellenfingerabdruck, Codebelege und Prüfgrenzen.
 Die neue Bedienung und Betreiberkonfiguration stehen in [BACKLOG_FEATURES.md](BACKLOG_FEATURES.md).
 
@@ -56,7 +56,7 @@ und Codegraph bleiben erhalten; Infisical und HAPIimprovr sind keine Produktabh�
 
 Für Kriterien, komplexe Teilentwürfe, Umsetzung und die abschließende Gesamtprüfung
 wurde tatsächlich **`claude-opus-5-5`** verwendet. Die Antworten enthalten diesen Namen
-auch in den Modellmetadaten. Das [Review-Artefakt](reviews/opus-2026-10-15.json) bewahrt
+auch in den Modellmetadaten. Das [Review-Artefakt](https://github.com/BGGBTAC/hapi-evolved/blob/main/docs/evolved/reviews/opus-2026-10-15.json) bewahrt
 die historischen Befunde, Modellnachweise und Quellenprüfsummen. Historische Befunde
 beschreiben jeweils ihren damaligen Code; sie sind nicht mit dem Endzustand gleichzusetzen.
 

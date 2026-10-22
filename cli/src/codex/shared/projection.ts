@@ -3,6 +3,7 @@ import type { ApiSessionClient } from '@/api/apiSession';
 import { normalizeSessionDisplayTitle } from '@/agent/sessionDisplayRename';
 import { registerGeneratedImageFromPath } from '@/modules/common/generatedImages';
 import { AppServerEventConverter } from '../utils/appServerEventConverter';
+import { codexAssistantText } from '../utils/assistantText';
 import { record, string } from './gateway';
 import { codexPlanProposalId } from './plan';
 
@@ -37,7 +38,7 @@ export class SharedCodexProjection {
     private converter = new AppServerEventConverter();
     private readonly emitted = new Set<string>();
     private readonly turns = new Map<string, string>();
-    private readonly finalTurnText = new Map<string, string>();
+    private readonly finalTurnText = new Map<string, { text: string; final: boolean }>();
     private readonly turnModels = new Map<string, string>();
     // Unlike transcript emission, title side effects survive reset/replay.
     private readonly pendingTitles = new Map<string, string>();
@@ -135,13 +136,21 @@ export class SharedCodexProjection {
         }
         const itemId = string(item.id) ?? string(p.itemId);
         if (!this.parentThreadId && turnId && method === 'item/completed' && item.type === 'agentMessage' && typeof item.text === 'string') {
-            this.finalTurnText.set(turnId, item.text);
+            // Same phase rule as transcript output: intermediate messages never
+            // carry the status footer into a peer report, and footer-only
+            // commentary does not displace the previous answer. Once a final
+            // answer arrives, delayed intermediate items cannot replace it.
+            const finalText = codexAssistantText(item.text, item.phase);
+            const isFinal = item.phase !== 'commentary' && item.phase !== 'partial_answer';
+            if (finalText && (isFinal || !this.finalTurnText.get(turnId)?.final)) {
+                this.finalTurnText.set(turnId, { text: finalText, final: isFinal });
+            }
             if (this.finalTurnText.size > 128) this.finalTurnText.delete(this.finalTurnText.keys().next().value!);
         }
         if (!this.parentThreadId && turnId && method === 'turn/completed' && !fromHistory) {
             const status = string(record(p.turn).status);
             this.send({ type: 'hapi-turn-completed', turnId, status: status === 'completed' ? 'completed' : status === 'interrupted' ? 'interrupted' : 'failed',
-                ...(status === 'completed' && this.finalTurnText.has(turnId) ? { finalText: this.finalTurnText.get(turnId) } : {})
+                ...(status === 'completed' && this.finalTurnText.has(turnId) ? { finalText: this.finalTurnText.get(turnId)!.text } : {})
             }, `${turnId}:hapi-turn-completed`);
         }
 

@@ -17,8 +17,8 @@
  *   HOMEBREW_TAP_REPO - Git URL of the tap repository (default: https://github.com/tiann/homebrew-tap.git)
  */
 
-import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -62,7 +62,33 @@ function parseChecksums(checksumsPath: string): PlatformSha {
     return shas as PlatformSha;
 }
 
-function generateFormula(version: string, shas: PlatformSha): string {
+// The version is interpolated into a Ruby string and a commit message.
+const VERSION_PATTERN = /^[0-9A-Za-z][0-9A-Za-z.+-]*$/;
+
+export function assertFormulaVersion(version: string): void {
+    if (!VERSION_PATTERN.test(version)) {
+        throw new Error(`Invalid version: ${JSON.stringify(version)}`);
+    }
+}
+
+/** Add CI credentials only for an https://github.com/ tap URL. */
+export function authenticatedTapUrl(tapRepo: string, githubToken: string | undefined): string {
+    if (!githubToken) return tapRepo;
+    let url: URL;
+    try {
+        url = new URL(tapRepo);
+    } catch {
+        return tapRepo;
+    }
+    if (url.protocol !== 'https:' || url.hostname !== 'github.com' || url.port || url.username || url.password) {
+        return tapRepo;
+    }
+    url.username = 'x-access-token';
+    url.password = githubToken;
+    return url.toString();
+}
+
+export function generateFormula(version: string, shas: PlatformSha): string {
     return `# typed: false
 # frozen_string_literal: true
 
@@ -137,6 +163,7 @@ async function main(): Promise<void> {
     }
 
     const version = args[versionIdx + 1];
+    assertFormulaVersion(version);
     const shouldPush = args.includes('--push');
     const tapRepo = process.env.HOMEBREW_TAP_REPO || 'https://github.com/tiann/homebrew-tap.git';
     const checksumsPath = join(projectRoot, 'release-artifacts', 'checksums.txt');
@@ -176,20 +203,16 @@ async function main(): Promise<void> {
 
     // Clone and push to tap repository
     const githubToken = process.env.GITHUB_TOKEN;
-    let cloneUrl = tapRepo;
-
     // Use token-authenticated URL in CI
-    if (githubToken && tapRepo.includes('github.com')) {
-        cloneUrl = tapRepo.replace('https://github.com/', `https://x-access-token:${githubToken}@github.com/`);
-    }
+    const cloneUrl = authenticatedTapUrl(tapRepo, githubToken);
 
     console.log(`Cloning ${tapRepo}...`);
 
-    const tempDir = join(tmpdir(), `homebrew-tap-${Date.now()}`);
-    mkdirSync(tempDir, { recursive: true });
+    const tempDir = mkdtempSync(join(tmpdir(), 'homebrew-tap-'));
+    const git = (args: string[]) => execFileSync('git', args, { cwd: tempDir, stdio: 'pipe' });
 
     try {
-        execSync(`git clone --depth 1 "${cloneUrl}" "${tempDir}"`, { stdio: 'pipe' });
+        execFileSync('git', ['clone', '--depth', '1', '--', cloneUrl, tempDir], { stdio: 'pipe' });
 
         // Ensure Formula directory exists
         const formulaDir = join(tempDir, 'Formula');
@@ -202,16 +225,16 @@ async function main(): Promise<void> {
 
         // Configure git user for CI
         if (githubToken) {
-            execSync('git config user.name "github-actions[bot]"', { cwd: tempDir, stdio: 'pipe' });
-            execSync('git config user.email "github-actions[bot]@users.noreply.github.com"', { cwd: tempDir, stdio: 'pipe' });
+            git(['config', 'user.name', 'github-actions[bot]']);
+            git(['config', 'user.email', 'github-actions[bot]@users.noreply.github.com']);
         }
 
         // Commit and push
-        execSync('git add Formula/hapi.rb', { cwd: tempDir, stdio: 'pipe' });
+        git(['add', 'Formula/hapi.rb']);
 
         try {
-            execSync(`git commit -m "Update hapi to v${version}"`, { cwd: tempDir, stdio: 'pipe' });
-            execSync('git push origin main', { cwd: tempDir, stdio: 'pipe' });
+            git(['commit', '-m', `Update hapi to v${version}`]);
+            git(['push', 'origin', 'main']);
             console.log(`\nSuccessfully pushed hapi v${version} to homebrew-tap`);
         } catch {
             console.log('\nNo changes to commit (formula already up to date)');
@@ -225,7 +248,9 @@ async function main(): Promise<void> {
     }
 }
 
-main().catch((error) => {
-    console.error('Error:', error.message || error);
-    process.exit(1);
-});
+if (import.meta.main) {
+    main().catch((error) => {
+        console.error('Error:', error.message || error);
+        process.exit(1);
+    });
+}

@@ -73,6 +73,7 @@ import {
     type RpcUploadFileResponse
 } from './rpcGateway'
 import { SessionCache } from './sessionCache'
+import { DEFAULT_NAMESPACE } from '../utils/accessToken'
 import { ingestNotifySummaryFromMessage } from './workGraphNotifyIngest'
 
 type PiResumeAttempt = NonNullable<NonNullable<Session['metadata']>['piResumeAttempt']>
@@ -2417,6 +2418,10 @@ export class SyncEngine {
         namespace: string,
         request: CursorMigrateToAcpRequest
     ): Promise<CursorMigrateOutcome> {
+        // Host filesystem migration belongs to the hub owner (see CursorLegacyMigrator.migrateOne).
+        if (namespace !== DEFAULT_NAMESPACE) {
+            return { ok: false, sessionId, reason: 'internal_error', message: 'legacy Cursor host migration is only available to the hub owner namespace', durationMs: 0 }
+        }
         const session = this.sessionCache.getSessionByNamespace(sessionId, namespace)
             ?? this.sessionCache.refreshSession(sessionId)
         if (!session) {
@@ -3367,6 +3372,10 @@ export class SyncEngine {
 
         if (flagRaw === '0' || flagRaw === 'false' || flagRaw === 'no' || flagRaw === 'off') {
             console.info('[auto-migrate] skipped: env flag disabled', { sessionId: session.id })
+            return session
+        }
+        if (namespace !== DEFAULT_NAMESPACE || session.namespace !== DEFAULT_NAMESPACE) {
+            console.info('[auto-migrate] skipped: not the hub owner namespace', { sessionId: session.id })
             return session
         }
         if (!md || md.flavor !== 'cursor') {

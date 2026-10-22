@@ -410,6 +410,32 @@ describe('normalizeDecryptedMessage', () => {
         expect(call.description).toBe('List /tmp')
     })
 
+    it('treats agy tool names and arg keys as data, not object properties', () => {
+        const message = makeMessage({
+            role: 'agent',
+            content: {
+                type: 'output',
+                data: {
+                    type: 'agy_tool_action',
+                    name: 'CUSTOM',
+                    toolName: 'constructor',
+                    input: JSON.parse('{"__proto__":{"polluted":true},"toString":"shown","Path":"/tmp"}'),
+                    content: 'done'
+                }
+            }
+        })
+        const normalized = normalizeDecryptedMessage(message)
+        if (!normalized || normalized.role !== 'agent') throw new Error('Expected agent message')
+        const call = normalized.content[0]
+        if (call.type !== 'tool-call') throw new Error('expected tool-call')
+        const input = call.input as Record<string, unknown>
+        expect(Object.keys(input).sort()).toEqual(['__proto__', 'path', 'toString'])
+        expect(input.toString).toBe('shown')
+        expect(Object.getPrototypeOf(input)).toBe(Object.prototype)
+        expect(input.polluted).toBeUndefined()
+        expect(({} as Record<string, unknown>).polluted).toBeUndefined()
+    })
+
     it('renders a paired view_file invocation as a Read card with the file path', () => {
         const message = makeMessage({
             role: 'agent',

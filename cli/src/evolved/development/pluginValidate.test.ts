@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -94,11 +94,62 @@ describe('Django example plugin', () => {
 
 const cliEntry = fileURLToPath(new URL('../../index.ts', import.meta.url))
 /** The real CLI entry in a child process with a finite deadline (a blocking open would hit the timeout). */
-function runCli(args: string[]) {
+function runCli(args: string[], env: Record<string, string | undefined> = {}) {
     const started = Date.now()
-    const child = spawnSync(process.execPath.endsWith('bun') ? process.execPath : 'bun', [cliEntry, ...args], { encoding: 'utf8', timeout: 15_000, killSignal: 'SIGKILL', env: { ...process.env, HAPI_EVOLVED_PROXY: '', HAPI_EVOLVED_CAPABILITY_FILE: '' } })
+    const child = spawnSync(process.execPath.endsWith('bun') ? process.execPath : 'bun', [cliEntry, ...args], { encoding: 'utf8', timeout: 15_000, killSignal: 'SIGKILL', env: { ...process.env, HAPI_EVOLVED_PROXY: '', HAPI_EVOLVED_CAPABILITY_FILE: '', ...env } })
     return { status: child.status, signal: child.signal, stdout: child.stdout, stderr: child.stderr, ms: Date.now() - started }
 }
+
+/** Every path below `root` (relative), so a test can assert that a process created nothing there. */
+function tree(root: string): string[] {
+    return readdirSync(root, { recursive: true, encoding: 'utf8' }).sort()
+}
+
+describe('offline plugin validate leaves HAPI state untouched', () => {
+    const quality = fileURLToPath(new URL('../../../../examples/plugins/quality', import.meta.url))
+    const cases: Array<[string, string[], number, string]> = [
+        ['valid', ['evolved', 'plugin', 'validate', quality], 0, '"ok": true'],
+        ['invalid', ['evolved', 'plugin', 'validate', '{plugins}/broken'], 1, '"ok": false'],
+        ['missing file', ['evolved', 'plugin', 'validate', '{plugins}/absent'], 1, 'File not found.'],
+        ['help', ['evolved', 'plugin', 'validate', '--help'], 0, 'hapi evolved plugin validate'],
+        ['plugin help', ['evolved', 'plugin', '--help'], 0, 'hapi evolved plugin validate'],
+        ['missing subcommand', ['evolved', 'plugin'], 1, 'hapi evolved plugin validate'],
+        ['unknown subcommand', ['evolved', 'plugin', 'install', quality], 1, 'hapi evolved plugin validate'],
+        ['too many arguments', ['evolved', 'plugin', 'validate', quality, 'extra'], 1, 'hapi evolved plugin validate'],
+    ]
+
+    it('creates no HAPI home, logs, settings or other files in a fresh HOME/HAPI_HOME and keeps exit codes', () => {
+        const plugins = temp()
+        write(plugins, 'broken/hapi-evolved.plugin.json', '{"schemaVersion": 1}')
+        for (const [name, template, status, output] of cases) {
+            const root = temp(), home = join(root, 'home'), hapiHome = join(root, 'hapi-home')
+            mkdirSync(home)
+            const args = template.map(arg => arg.replace('{plugins}', plugins))
+            // Transpiler cache off: the only files a run could leave are HAPI's own.
+            for (const env of [{ HOME: home, HAPI_HOME: hapiHome }, { HOME: home, HAPI_HOME: undefined }]) {
+                const result = runCli(args, { ...env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' })
+                expect(result.status, name).toBe(status)
+                expect(result.stdout, name).toContain(output)
+                expect(tree(root), name).toEqual(['home'])
+            }
+        }
+    }, 120_000)
+
+    it('leaves an existing HAPI_HOME and its settings byte-for-byte unchanged', () => {
+        const root = temp(), home = join(root, 'home'), hapiHome = join(root, 'hapi-home'), plugins = temp()
+        mkdirSync(home)
+        write(plugins, 'broken/hapi-evolved.plugin.json', '{"schemaVersion": 1}')
+        const settings = write(hapiHome, 'settings.json', '{"synthetic":true}\n')
+        const before = { files: tree(root), settings: readFileSync(settings), mtime: statSync(settings).mtimeMs }
+        for (const [name, template, status] of cases) {
+            const result = runCli(template.map(arg => arg.replace('{plugins}', plugins)), { HOME: home, HAPI_HOME: hapiHome, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' })
+            expect(result.status, name).toBe(status)
+        }
+        expect(tree(root)).toEqual(before.files)
+        expect(readFileSync(settings)).toEqual(before.settings)
+        expect(statSync(settings).mtimeMs).toBe(before.mtime)
+    }, 120_000)
+})
 
 describe('local manifest reading (FIFO, strict UTF-8)', () => {
     it('a FIFO without writer is refused promptly instead of blocking validate or --definition', () => {
@@ -149,6 +200,26 @@ describe('local manifest reading (FIFO, strict UTF-8)', () => {
 })
 
 describe('hapi evolved plugin validate', () => {
+    it('accepts the checked-in quality example through the real CLI and rejects broken references concisely, exit 1', () => {
+        const quality = fileURLToPath(new URL('../../../../examples/plugins/quality/hapi-evolved.plugin.json', import.meta.url))
+        const valid = runCli(['evolved', 'plugin', 'validate', dirname(quality)])
+        expect(valid.status).toBe(0)
+        expect(JSON.parse(valid.stdout)).toEqual({ ok: true, file: quality, manifest: { schemaVersion: 1, id: 'quality-kit', name: 'Quality Kit', version: '1.0.0' }, agents: 1, skills: 1, themes: 1, developmentModules: [], warnings: [] })
+        const root = temp(), manifest = JSON.parse(readFileSync(quality, 'utf8')) as Record<string, any>
+        manifest.agents[0].skills = ['missing-skill']
+        manifest.skills[0].instructions = 'SYNTHETIC-INSTRUCTION-MARKER '.repeat(100)
+        const invalid = runCli(['evolved', 'plugin', 'validate', write(root, 'hapi-evolved.plugin.json', JSON.stringify(manifest))])
+        expect(invalid.status).toBe(1)
+        expect(JSON.parse(invalid.stdout)).toEqual({ ok: false, file: join(root, 'hapi-evolved.plugin.json'), issues: [{ path: 'agents', message: 'Agent skills must refer to unique skills in this manifest' }] })
+        // Too-long instruction text is reported by path and limit, never echoed back.
+        manifest.agents[0].skills = ['regressions']
+        manifest.skills[0].instructions = 'SYNTHETIC-INSTRUCTION-MARKER '.repeat(600)
+        const tooLong = runCli(['evolved', 'plugin', 'validate', write(root, 'hapi-evolved.plugin.json', JSON.stringify(manifest))])
+        expect(tooLong.status).toBe(1)
+        expect(JSON.parse(tooLong.stdout).issues.map((issue: { path: string }) => issue.path)).toContain('skills.0.instructions')
+        for (const output of [invalid.stdout + invalid.stderr, tooLong.stdout + tooLong.stderr]) expect(output).not.toContain('SYNTHETIC-INSTRUCTION-MARKER')
+    }, 40_000)
+
     it('reports bounded path issues for invalid manifests', () => {
         const root = temp(), base = exampleManifest()
         const cases: Array<[Record<string, any> | string, string]> = [

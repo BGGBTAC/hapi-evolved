@@ -3,7 +3,7 @@ import { buildSessionCitationSteerInstruction } from "@hapi/protocol/sessionCita
 import { shouldIncludeCoAuthoredBy } from "./claudeSettings";
 import { DISPLAY_IMAGE_PROMPT_CLAUDE, DISPLAY_MEDIA_PROMPT_CLAUDE, DISPLAY_VIDEO_PROMPT_CLAUDE } from "@/modules/common/displayImagePrompt";
 import { withSessionSummaryInstruction } from "@/modules/common/sessionSummaryInstruction";
-import { peerScopeAllowed } from '@/modules/pingPeer/evolvedPeer';
+import { peerToolsExposed } from '@/modules/pingPeer/evolvedPeer';
 import { withEvolvedOperatingContext } from '@/evolved/operatingContext';
 
 /**
@@ -40,6 +40,6 @@ export function getSystemPrompt(): string {
     const base = includeCoAuthored
         ? BASE_SYSTEM_PROMPT + '\n\n' + CO_AUTHORED_CREDITS
         : BASE_SYSTEM_PROMPT;
-    const withPeers = peerScopeAllowed('peers:send') ? base + '\n' + buildSessionCitationSteerInstruction({ inspectTool: 'mcp__hapi__inspect_peer', pingTool: 'mcp__hapi__ping_peer', listPeersTool: 'mcp__hapi__list_peers', searchPeersTool: 'mcp__hapi__search_peers' }) : base;
+    const withPeers = peerToolsExposed() ? base + '\n' + buildSessionCitationSteerInstruction({ inspectTool: 'mcp__hapi__inspect_peer', pingTool: 'mcp__hapi__ping_peer', listPeersTool: 'mcp__hapi__list_peers', searchPeersTool: 'mcp__hapi__search_peers' }) : base;
     return withSessionSummaryInstruction(withEvolvedOperatingContext(withPeers));
 }

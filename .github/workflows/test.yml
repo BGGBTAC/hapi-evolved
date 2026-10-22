@@ -25,7 +25,7 @@ jobs:
             - name: Check publication boundaries
               run: |
                   bun scripts/publication/check-workflows.ts
-                  bun test scripts/publication/check-workflows.test.ts
+                  bun test scripts/publication/check-workflows.test.ts scripts/publication/bundle-source.test.ts cli/scripts/update-homebrew-formula.test.ts
             - run: bun install --frozen-lockfile
             - run: bun typecheck
             - run: bunx playwright install --with-deps chromium
@@ -70,7 +70,7 @@ jobs:
               with:
                   bun-version: '1.3.14'
             - run: bun install --frozen-lockfile
-            - run: bun run --cwd cli test -- src/codex/utils/codexMcpProxy.test.ts
+            - run: bun run --cwd cli test -- src/codex/utils/codexMcpProxy.test.ts src/agent/backends/acp/windowsArgv.test.ts
 
     evolved-services:
         runs-on: ubuntu-latest

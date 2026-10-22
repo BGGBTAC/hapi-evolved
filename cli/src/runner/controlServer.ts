@@ -3,6 +3,7 @@
  * Provides endpoints for listing sessions, stopping sessions, and runner shutdown
  */
 
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import fastify, { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { serializerCompiler, validatorCompiler, ZodTypeProvider } from 'fastify-type-provider-zod';
@@ -23,10 +24,28 @@ export function startRunnerControlServer({
   spawnSession: (options: SpawnSessionOptions) => Promise<SpawnSessionResult>;
   requestShutdown: () => void;
   onHappySessionWebhook: (sessionId: string, metadata: Metadata) => void;
-}): Promise<{ port: number; stop: () => Promise<void> }> {
+}): Promise<{ port: number; token: string; stop: () => Promise<void> }> {
   return new Promise((resolve) => {
     const app = fastify({
       logger: false // We use our own logger
+    });
+    // Loopback is reachable by other local users and by browser pages (incl. DNS
+    // rebinding), so every request must carry the secret from runner.state.json.
+    const token = randomBytes(32).toString('base64url');
+    const expectedAuthorization = Buffer.from(`Bearer ${token}`);
+    let port = 0;
+
+    app.addHook('onRequest', async (request, reply) => {
+      const host = request.headers.host;
+      if (request.headers.origin !== undefined
+        || (host !== `127.0.0.1:${port}` && host !== `localhost:${port}`)) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+      const authorization = Buffer.from(request.headers.authorization ?? '');
+      if (authorization.length !== expectedAuthorization.length
+        || !timingSafeEqual(authorization, expectedAuthorization)) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
     });
 
     // Set up Zod type provider
@@ -197,11 +216,12 @@ export function startRunnerControlServer({
         throw err;
       }
 
-      const port = parseInt(address.split(':').pop()!);
+      port = parseInt(address.split(':').pop()!);
       logger.debug(`[CONTROL SERVER] Started on port ${port}`);
 
       resolve({
         port,
+        token,
         stop: async () => {
           logger.debug('[CONTROL SERVER] Stopping server');
           await app.close();

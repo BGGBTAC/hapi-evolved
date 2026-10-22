@@ -21,7 +21,13 @@ import { CodexPermissionHandler } from './permissionHandler';
 // No provider login, external call, VM or project data is involved.
 describe.skipIf(process.env.HAPI_RUN_SHARED_CODEX_TESTS !== '1')('native project MCP approval', () => {
     afterEach(() => vi.unstubAllEnvs());
-    it('holds a real HAPI MCP write until approval, including in read-only mode', async () => {
+    const fixtures = {
+        evolved_mcp_call: { arguments: { serverId: '768237a3-3378-4384-aaaf-eed31ae931e9', toolName: 'fixture.update', arguments: {}, version: 1, catalogRevision: 'a'.repeat(64) },
+            path: '/api/evolved/projects/approval-test/mcp/servers/768237a3-3378-4384-aaaf-eed31ae931e9/call' },
+        evolved_browser_call: { arguments: { toolName: 'camofox_create_tab', arguments: { url: 'https://public.test/' }, version: 1, catalogRevision: 'a'.repeat(64) },
+            path: '/evolved-browser/call' },
+    } as const;
+    it.each(['evolved_mcp_call', 'evolved_browser_call'] as const)('holds a real HAPI %s write until approval, including in read-only mode', async (tool) => {
         const directory = await mkdtemp('/tmp/hapi-mcp-approval-');
         const codexHome = join(directory, 'codex'), cwd = join(directory, 'work');
         const mcpServers = new Set<McpServer>();
@@ -39,7 +45,7 @@ describe.skipIf(process.env.HAPI_RUN_SHARED_CODEX_TESTS !== '1')('native project
             registerEvolvedTools(server, new EvolvedClient('approval-test', 'http://runner-proxy:3010', '', (async (url, options) => {
                 calls.push({ path: new URL(String(url)).pathname, method: options?.method ?? 'GET' });
                 return Response.json({ content: [{ type: 'text', text: 'Synthetic remote effect completed.' }], isError: false });
-            }) as typeof fetch), new Set(['evolved_mcp_call']));
+            }) as typeof fetch), new Set([tool]));
             const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
             mcpServers.add(server);
             response.once('close', () => { mcpServers.delete(server); void server.close(); });
@@ -56,9 +62,7 @@ describe.skipIf(process.env.HAPI_RUN_SHARED_CODEX_TESTS !== '1')('native project
                 const id = randomUUID();
                 const item = inputs.some(input => input.type === 'function_call_output')
                     ? { type: 'message', role: 'assistant', id: `msg_${id}`, content: [{ type: 'output_text', text: 'Mock turn complete.' }] }
-                    : { type: 'function_call', call_id: `external_${id}`, namespace: 'mcp__hapi', name: 'evolved_mcp_call', arguments: JSON.stringify({
-                        serverId: '768237a3-3378-4384-aaaf-eed31ae931e9', toolName: 'fixture.update', arguments: {}, version: 1, catalogRevision: 'a'.repeat(64)
-                    }) };
+                    : { type: 'function_call', call_id: `external_${id}`, namespace: 'mcp__hapi', name: tool, arguments: JSON.stringify(fixtures[tool].arguments) };
                 const events = [{ type: 'response.created', response: { id } }, { type: 'response.output_item.done', item },
                     { type: 'response.completed', response: { id, usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } }];
                 response.writeHead(200, { 'Content-Type': 'text/event-stream' });
@@ -90,13 +94,13 @@ describe.skipIf(process.env.HAPI_RUN_SHARED_CODEX_TESTS !== '1')('native project
                 for (const approved of [false, true]) {
                     const before = { calls: calls.length, approvals: approvals.length, completed: completed.length };
                     const started = await client.startThread(buildThreadStartParams({ cwd, mode: { permissionMode: mode, collaborationMode: 'default' },
-                        mcpServers: { hapi: { url: `http://127.0.0.1:${mcpPort}`, tools: { evolved_mcp_call: { approval_mode: 'prompt' } } } } }));
+                        mcpServers: { hapi: { url: `http://127.0.0.1:${mcpPort}`, tools: { [tool]: { approval_mode: 'prompt' } } } } }));
                     await client.request('turn/start', { threadId: started.thread.id, input: [{ type: 'text', text: 'Exercise fixture action once.' }] });
                     await vi.waitFor(() => expect(Object.keys(state.requests ?? {}), JSON.stringify(errors)).toHaveLength(1), { timeout: 15_000 });
                     expect(approvals).toHaveLength(before.approvals + 1);
                     expect(record(approvals.at(-1)).serverName).toBe('hapi');
                     const [id, pending] = Object.entries(state.requests ?? {})[0]!;
-                    expect(pending.tool, JSON.stringify(approvals.at(-1))).toBe('evolved_mcp_call');
+                    expect(pending.tool, JSON.stringify(approvals.at(-1))).toBe(tool);
                     expect(calls).toHaveLength(before.calls);
                     await replies.get('permission')!({ id, approved, decision: approved ? 'approved' : 'denied' });
                     await vi.waitFor(() => expect(completed).toHaveLength(before.completed + 1), { timeout: 15_000 });
@@ -105,7 +109,7 @@ describe.skipIf(process.env.HAPI_RUN_SHARED_CODEX_TESTS !== '1')('native project
                 }
             }
             expect(errors).toEqual([]);
-            expect(calls).toEqual(Array.from({ length: 2 }, () => ({ path: '/api/evolved/projects/approval-test/mcp/servers/768237a3-3378-4384-aaaf-eed31ae931e9/call', method: 'POST' })));
+            expect(calls).toEqual(Array.from({ length: 2 }, () => ({ path: fixtures[tool].path, method: 'POST' })));
         } finally {
             permissionHandler.reset();
             await client.disconnect();

@@ -228,6 +228,15 @@ describe('parseCursorAvailableModelsFromRejection', () => {
             )
         ).toEqual(['cursor-grok-4.5-high-fast']);
     });
+
+    it('cuts at a Tip preceded by a whitespace run and parses huge malformed lines linearly', () => {
+        expect(parseCursorAvailableModelsFromRejection('Available models: a, b \t  tip: run agent')).toEqual(['a', 'b']);
+        expect(parseCursorAvailableModelsFromRejection('Available models: a,Tip: b')).toEqual(['a', 'Tip: b']);
+
+        const startedAt = performance.now();
+        expect(parseCursorAvailableModelsFromRejection(`Available models: a${'\t'.repeat(200_000)}!`)).toEqual(['a' + '\t'.repeat(200_000) + '!']);
+        expect(performance.now() - startedAt).toBeLessThan(500);
+    });
 });
 
 describe('findBestCliSkuForAcpWire', () => {

@@ -8,6 +8,11 @@ import { ProjectsPanel } from './ProjectsTeam'
 import { EvolvedApiError, type ExecutionProfile, type ProjectRole } from './api'
 
 const context = vi.hoisted(() => ({ api: { request: vi.fn(), baseUrl: '' }, project: { id: 'project-1', role: 'admin' as ProjectRole, profile: 'restricted' as ExecutionProfile, rootPath: '/work/project' }, me: { user: { id: 'user-1', isAdmin: false }, accessibleProjects: [] }, refresh: vi.fn(), selectProject: vi.fn() }))
+const standardRunnerScopes = (profile: ExecutionProfile) => [
+    'runner:connect', 'git:read', 'memory:read', 'memory:write', 'codegraph:read',
+    'peers:read', 'peers:send', 'peers:manage',
+    ...(profile === 'restricted' ? [] : ['git:write']),
+]
 vi.mock('./auth', () => ({ useEvolved: () => context }))
 // Module choice during creation has its own tests (ProjectsTeam.test.tsx); here it stays a general project.
 vi.mock('./DevelopmentModuleCreation', () => ({ useDevelopmentCreation: () => ({ blocker: null, development: () => undefined, intent: () => null, deferred: false, reset: () => {}, showServerIssues: () => {}, handleFailure: () => {} }), DevelopmentCreationFields: () => null }))
@@ -208,7 +213,7 @@ describe('Operator access', () => {
         fireEvent.click(screen.getByLabelText('Gedächtnis lesen'))
         fireEvent.click(screen.getByRole('button', { name: 'Runner-Zugang erstellen' }))
         expect(await screen.findByLabelText('Einmaliger Runner-Schlüssel')).toHaveValue('one-time-synthetic-token')
-        expect(context.api.request).toHaveBeenCalledWith('/projects/project-1/runner-leases', expect.objectContaining({ method: 'POST', body: { name: 'Isolated runner', scopes: ['runner:connect', 'git:read', 'memory:read'], actionIds: [], expiresInSeconds: 604800 } }))
+        expect(context.api.request).toHaveBeenCalledWith('/projects/project-1/runner-leases', expect.objectContaining({ method: 'POST', body: { name: 'Isolated runner', scopes: standardRunnerScopes('restricted').filter(scope => scope !== 'memory:read'), actionIds: [], expiresInSeconds: 604800 } }))
         expect(JSON.stringify(client.getQueryCache().getAll().map(query => query.state.data))).not.toContain('one-time-synthetic-token')
         expect(screen.getByRole('button', { name: 'Schlüssel schließen' })).toBeDisabled()
         fireEvent.click(screen.getByLabelText('Ich habe die Operator-Datei sicher abgelegt.'))
@@ -230,7 +235,7 @@ describe('Operator access', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Runner-Zugang erstellen' }))
         expect(await screen.findByLabelText('Einmaliger Runner-Schlüssel')).toHaveValue('synthetic-permanent-token')
         expect(context.api.request).toHaveBeenCalledWith('/projects/project-1/runner-leases', expect.objectContaining({
-            method: 'POST', body: { name: 'Own runner', scopes: ['runner:connect', 'git:read'], actionIds: [], expiresInSeconds: null },
+            method: 'POST', body: { name: 'Own runner', scopes: standardRunnerScopes('restricted'), actionIds: [], expiresInSeconds: null },
         }))
         expect(screen.getByText(/Dauerhaft – bis zum Widerruf\. Nach dem Schließen/)).toBeInTheDocument()
         expect(JSON.stringify(client.getQueryCache().getAll().map(query => query.state.data))).not.toContain('synthetic-permanent-token')
@@ -273,7 +278,7 @@ describe('Operator access', () => {
         fireEvent.change(screen.getByLabelText('Runner-Name'), { target: { value: 'Git runner' } })
         fireEvent.click(screen.getByRole('button', { name: 'Runner-Zugang erstellen' }))
         await waitFor(() => expect(context.api.request).toHaveBeenCalledWith('/projects/project-1/runner-leases', expect.objectContaining({
-            method: 'POST', body: expect.objectContaining({ scopes: ['runner:connect', 'git:read', ...(profile === 'restricted' ? [] : ['git:write'])] }),
+            method: 'POST', body: expect.objectContaining({ scopes: standardRunnerScopes(profile) }),
         })))
     })
     it('lets an administrator restrict Git scopes and discards write scope after a profile change', async () => {

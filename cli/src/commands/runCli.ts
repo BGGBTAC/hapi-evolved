@@ -33,6 +33,20 @@ export async function runCli(): Promise<void> {
         args.push(selection.agent)
     }
 
+    // Offline plugin validation must not load the registry, whose agent commands initialize HAPI_HOME (logs, settings).
+    if (args[0] === 'evolved' && args[1] === 'plugin') {
+        const { runEvolvedPluginCommand } = await import('./evolvedPlugin')
+        runEvolvedPluginCommand(args.slice(1))
+        return
+    }
+
+    // The offline Claude Ads helper likewise stays free of the registry (read-only doctor/status must not write HAPI_HOME).
+    if (args[0] === 'evolved' && args[1] === 'ads') {
+        const { runEvolvedAdsCommand } = await import('./evolvedAds')
+        await runEvolvedAdsCommand(args.slice(1))
+        return
+    }
+
     const { resolveCommand } = await import('./registry')
     const resolved = resolveCommand(args)
     if (!resolved) {

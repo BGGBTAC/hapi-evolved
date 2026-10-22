@@ -46,6 +46,20 @@ describe('runner control client stop-session contract', () => {
         }
     )
 
+    it('authenticates with the control token from the runner state file', async () => {
+        readRunnerStateMock.mockResolvedValue({ pid: 42, httpPort: 3210, controlToken: 'state-token' })
+        const fetchMock = vi.fn(async () => new Response(JSON.stringify({ status: 'stopped' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+        }))
+        vi.stubGlobal('fetch', fetchMock)
+
+        await stopRunnerSession('session-1')
+
+        const init = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1]
+        expect(init.headers).toMatchObject({ Authorization: 'Bearer state-token' })
+    })
+
     it('fails closed when the runner returns a malformed response', async () => {
         vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ success: true }), {
             status: 200,

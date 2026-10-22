@@ -39,6 +39,24 @@ import { buildSyntheticLegacyStore } from './fixtures/buildSyntheticLegacyStore'
 
 const ENABLED = process.env.CURSOR_AGENT_INTEGRATION === '1'
 
+// These identifiers are path components, never operator-selected paths.
+function fixtureIdentifier(value: string): string {
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(value)) {
+        throw new Error('Legacy fixture identifiers must be single safe path components')
+    }
+    return value
+}
+
+describe('legacy fixture path isolation', () => {
+    it.each(['..', '../escape', '/absolute', 'a/b', 'a\\b', 'a\0b', '.', 'a'.repeat(129)])('rejects unsafe component %j before filesystem access', value => {
+        expect(() => fixtureIdentifier(value)).toThrow('single safe path components')
+    })
+    it('accepts workspace hashes and session UUIDs', () => {
+        expect(fixtureIdentifier('0123456789abcdef')).toBe('0123456789abcdef')
+        expect(fixtureIdentifier('93a9705e-bc6a-406d-8dce-8acc014dedbd')).toBe('93a9705e-bc6a-406d-8dce-8acc014dedbd')
+    })
+})
+
 function agentBinaryAvailable(): boolean {
     const which = spawnSync('agent', ['--version'], { stdio: 'pipe' })
     return which.status === 0
@@ -152,12 +170,14 @@ describeIntegration('CursorLegacyMigrator INTEGRATION (real agent acp)', () => {
             // Skip silently; fodder is operator-local data we can't ship.
             return
         }
-        const realSourceStore = join(homedir(), '.cursor', 'chats', fodderWsh, fodderUuid, 'store.db')
+        const workspaceId = fixtureIdentifier(fodderWsh)
+        const sessionId = fixtureIdentifier(fodderUuid)
+        const realSourceStore = join(homedir(), '.cursor', 'chats', workspaceId, sessionId, 'store.db')
         if (!existsSync(realSourceStore)) {
             throw new Error(`LEGACY_FODDER_WSH/UUID set but ${realSourceStore} does not exist`)
         }
         // Copy into fake HOME — operator's real store is NEVER touched.
-        const fakeSourceDir = join(fakeHome, '.cursor', 'chats', fodderWsh, fodderUuid)
+        const fakeSourceDir = join(fakeHome, '.cursor', 'chats', workspaceId, sessionId)
         mkdirSync(fakeSourceDir, { recursive: true })
         copyFileSync(realSourceStore, join(fakeSourceDir, 'store.db'))
 
@@ -214,7 +234,7 @@ describeIntegration('CursorLegacyMigrator INTEGRATION (real agent acp)', () => {
         if (!out.ok) return
         expect(out.acpSessionId).toBe(fodderUuid)
         expect(out.sourceRemoved).toBe(true)
-        expect(existsSync(join(fakeHome, '.cursor', 'acp-sessions', fodderUuid, 'store.db'))).toBe(true)
+        expect(existsSync(join(fakeHome, '.cursor', 'acp-sessions', sessionId, 'store.db'))).toBe(true)
         // Operator's real store ON DISK is unaffected because we operated only against fakeHome.
         expect(existsSync(realSourceStore)).toBe(true)
         expect(updateCalls).toHaveLength(1)

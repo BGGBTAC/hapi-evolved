@@ -33,7 +33,7 @@ const toolHandlers: Record<string, ClientToolHandler> = {
 export async function handleGeminiFunctionCall(
     call: GeminiFunctionCall
 ): Promise<GeminiFunctionResponse> {
-    const handler = toolHandlers[call.name]
+    const handler = Object.hasOwn(toolHandlers, call.name) ? toolHandlers[call.name] : undefined
 
     if (!handler) {
         return {

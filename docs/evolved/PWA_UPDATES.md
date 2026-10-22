@@ -46,5 +46,5 @@ und ein neuer Produktionsbuild werden am gleichen lokalen Origin angeboten.
 `EVOLVED_PWA_OLD_DIST` bestimmt den alten Build, `EVOLVED_PWA_NEW_DIST` optional
 den neuen. `PLAYWRIGHT_CHROME_PATH` kann ein vorhandenes Chromium auswählen.
 Der Nachweis enthält keine Daten einer bestehenden Installation.
-Die [Review- und Testergebnisse](reviews/pwa-update-2026-10-15.json) dokumentieren
+Die [Review- und Testergebnisse](https://github.com/BGGBTAC/hapi-evolved/blob/main/docs/evolved/reviews/pwa-update-2026-10-15.json) dokumentieren
 auch den widerlegten ursprünglichen Tab-Sicherheitsclaim und dessen Korrektur.

@@ -1,18 +1,18 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
 
-export type ControlAction = 'status' | 'prepare' | 'start' | 'get' | 'code' | 'cancel' | 'logout' | 'authority' | 'models'
+export type ControlAction = 'status' | 'prepare' | 'start' | 'get' | 'code' | 'cancel' | 'logout' | 'authority' | 'models' | 'browser' | 'browser-status'
 export type ControlRequest = {
     action: ControlAction; projectId: string; userId: string; sessionHash: string
     profile: 'restricted' | 'workspace' | 'extended'; rootPath: string; leaseId: string
-    provider?: 'codex' | 'claude'; operationId?: string; code?: string; leaseToken?: string; refresh?: boolean
+    provider?: 'codex' | 'claude'; operationId?: string; code?: string; leaseToken?: string; refresh?: boolean; browser?: boolean
 }
 type Envelope = { payload: string; signature: string }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
-const actions: ControlAction[] = ['status', 'prepare', 'start', 'get', 'code', 'cancel', 'logout', 'authority', 'models']
+const actions: ControlAction[] = ['status', 'prepare', 'start', 'get', 'code', 'cancel', 'logout', 'authority', 'models', 'browser', 'browser-status']
 export function validControlRequest(value: unknown): value is ControlRequest {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return false
     const r = value as ControlRequest
-    const allowed = ['action','projectId','userId','sessionHash','profile','rootPath','leaseId','provider','operationId','code','leaseToken','refresh']
+    const allowed = ['action','projectId','userId','sessionHash','profile','rootPath','leaseId','provider','operationId','code','leaseToken','refresh','browser']
     return Object.keys(r).every(k => allowed.includes(k)) && actions.includes(r.action)
         && [r.projectId,r.userId,r.leaseId].every(id => typeof id === 'string' && uuid.test(id))
         && /^[a-f0-9]{64}$/.test(r.sessionHash) && ['restricted','workspace','extended'].includes(r.profile)
@@ -22,6 +22,8 @@ export function validControlRequest(value: unknown): value is ControlRequest {
         && (r.code === undefined || (typeof r.code === 'string' && /^[A-Za-z0-9_.~+#/-]{1,4096}$/.test(r.code)))
         && (r.leaseToken === undefined || (r.action === 'prepare' && /^[A-Za-z0-9_-]{43}$/.test(r.leaseToken)))
         && (r.refresh === undefined || (r.action === 'models' && typeof r.refresh === 'boolean'))
+        && (r.action === 'browser' ? typeof r.browser === 'boolean' : r.browser === undefined)
+        && (!['browser','browser-status'].includes(r.action) || (r.provider === undefined && r.operationId === undefined && r.code === undefined && r.leaseToken === undefined && r.refresh === undefined))
         && (r.action !== 'models' || (r.operationId === undefined && r.code === undefined && r.leaseToken === undefined))
         && (!['start','get','code','cancel','logout','models'].includes(r.action) || r.provider !== undefined)
         && (!['get','code','cancel'].includes(r.action) || r.operationId !== undefined)

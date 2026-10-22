@@ -12,7 +12,7 @@ import {
 import { getConfiguration } from '../../configuration'
 import { readSessionSummaryContractEnabled } from '../../config/sessionSummaryContract'
 import { constantTimeEquals } from '../../utils/crypto'
-import { parseAccessToken } from '../../utils/accessToken'
+import { DEFAULT_NAMESPACE, parseAccessToken } from '../../utils/accessToken'
 import type { Machine, Session, SyncEngine } from '../../sync/syncEngine'
 import { SessionIdentityConflictError, SessionNotAdoptableError } from '../../store/sessions'
 import type { EvolvedStore } from '../../evolved/store'
@@ -355,6 +355,10 @@ export function createCliRoutes(getSyncEngine: () => SyncEngine | null, evolved?
     })
 
     app.post('/sessions/:id/migrate-to-acp', async (c) => {
+        // Legacy Cursor migration acts on hub-host paths; Evolved runners and non-owner CLI tokens may not run it.
+        if (c.get('evolvedAccess') || c.get('namespace') !== DEFAULT_NAMESPACE) {
+            return c.json({ error: 'Legacy Cursor migration is only available to the hub owner' }, 403)
+        }
         const engine = getSyncEngine()
         if (!engine) {
             return c.json({ error: 'Not ready' }, 503)

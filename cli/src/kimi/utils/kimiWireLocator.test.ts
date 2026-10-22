@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -29,10 +29,9 @@ describe('kimiWireLocator', () => {
 
     beforeEach(async () => {
         previousHome = process.env.KIMI_CODE_HOME;
-        homeDir = join(tmpdir(), `kimi-home-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-        workDir = join(tmpdir(), `kimi-wd-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-        await mkdir(homeDir, { recursive: true });
-        await mkdir(workDir, { recursive: true });
+        homeDir = await mkdtemp(join(tmpdir(), 'kimi-home-'));
+        workDir = await mkdtemp(join(tmpdir(), 'kimi-wd-'));
+
         process.env.KIMI_CODE_HOME = homeDir;
     });
 

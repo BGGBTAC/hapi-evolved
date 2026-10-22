@@ -9,7 +9,7 @@ import { trimIdent } from '@/utils/trimIdent';
 import { buildSessionCitationSteerInstruction } from '@hapi/protocol/sessionCitation';
 import { DISPLAY_IMAGE_PROMPT_CODEX, DISPLAY_MEDIA_PROMPT_CODEX, DISPLAY_VIDEO_PROMPT_CODEX } from '@/modules/common/displayImagePrompt';
 import { withSessionSummaryInstruction } from '@/modules/common/sessionSummaryInstruction';
-import { peerScopeAllowed } from '@/modules/pingPeer/evolvedPeer';
+import { peerToolsExposed } from '@/modules/pingPeer/evolvedPeer';
 import { withEvolvedOperatingContext } from '@/evolved/operatingContext';
 
 /**
@@ -34,7 +34,7 @@ export const TITLE_INSTRUCTION = trimIdent(`
  * Session-summary contract is resolved at call time (hub toggle / env).
  */
 export function getCodexSystemPrompt(env: NodeJS.ProcessEnv = process.env): string {
-    const base = peerScopeAllowed('peers:send', env) ? TITLE_INSTRUCTION + '\n' + buildSessionCitationSteerInstruction({ inspectTool: 'functions.hapi__inspect_peer', pingTool: 'functions.hapi__ping_peer', listPeersTool: 'functions.hapi__list_peers', searchPeersTool: 'functions.hapi__search_peers' }) : TITLE_INSTRUCTION
+    const base = peerToolsExposed(env) ? TITLE_INSTRUCTION + '\n' + buildSessionCitationSteerInstruction({ inspectTool: 'functions.hapi__inspect_peer', pingTool: 'functions.hapi__ping_peer', listPeersTool: 'functions.hapi__list_peers', searchPeersTool: 'functions.hapi__search_peers' }) : TITLE_INSTRUCTION
     return withSessionSummaryInstruction(withEvolvedOperatingContext(base, env), env)
 }
 

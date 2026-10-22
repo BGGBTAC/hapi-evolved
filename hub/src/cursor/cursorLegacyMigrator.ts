@@ -51,7 +51,8 @@ import { isLiveLifecycleState } from '@hapi/protocol'
 import type { CursorMigrateOutcome, CursorMigrateRefusalReason } from '@hapi/protocol/apiTypes'
 import type { Metadata } from '@hapi/protocol/schemas'
 import type { Session } from '@hapi/protocol/types'
-import { AcpVerifyProbe, tryAcquireAcpActiveLock, type AcpActiveLockHandle } from './acpVerifyProbe'
+import { AcpVerifyProbe, resolveAcpLockHapiHome, tryAcquireAcpActiveLock, type AcpActiveLockHandle } from './acpVerifyProbe'
+import { DEFAULT_NAMESPACE } from '../utils/accessToken'
 
 /* ---------- types ---------- */
 
@@ -81,11 +82,12 @@ export interface CursorLegacyMigratorDeps {
     hostName?: () => string
     /**
      * Spawn factory for the verify probe. Override in tests to inject a mock probe.
-     * The second arg is the session-owner home (`metadata.homeDir`) resolved by
-     * `migrateOne`, which the default factory passes through to the probe as
-     * `agentLookupHome` so service-account hub deployments resolve `agent` under
-     * the human user's `~/.local/bin` rather than the hub user's. tiann/hapi#844
-     * upstream Codex Major.
+     * The second arg is the trusted operator home (`deps.homeDir()`), which the
+     * default factory passes to the probe as `agentLookupHome`. It is never the
+     * client-reported `metadata.homeDir`: that value only locates legacy data,
+     * it must not choose which executable the hub runs. Service-account hubs
+     * whose `agent` lives elsewhere configure the hub's own PATH (inherited by
+     * the probe and searched first) or inject `homeDir`.
      */
     createProbe?: (env: NodeJS.ProcessEnv, agentLookupHome: string) => AcpVerifyProbe
     /**
@@ -140,7 +142,7 @@ export interface CursorLegacyMigratorDeps {
      * is live can SIGTERM the live one. Refuse the migration in that case
      * because the verify-in-temp-HOME step would otherwise crash the
      * operator's active Cursor ACP session. Codex review #34 P1.
-     * Default: read the lock dir under $HAPI_HOME (or tmpdir/hapi).
+     * Default: read the lock dir under $HAPI_HOME (or ~/.hapi).
      */
     isAgentAcpTransportActive?: () => { active: boolean; holderPid: number | null }
     /**
@@ -492,16 +494,8 @@ export class CursorLegacyMigrator {
             createProbe: deps.createProbe ?? ((env, agentLookupHome) => new AcpVerifyProbe({
                 env,
                 skipLockAcquire: true,
-                // tiann/hapi#844 upstream Codex Major: `migrateOne` resolves the
-                // legacy store under `metadata.homeDir` (the recorded session-
-                // owner home), so the probe MUST also look up `agent` under
-                // that same home. Earlier rounds plumbed `agentLookupHome` into
-                // the factory default using `this.deps.homeDir()` (the HUB's
-                // home), which falls back to the hub user's `~/.local/bin` on
-                // service-account deployments where the human installed Cursor
-                // under a different account. The caller (`verifyInTempHome`)
-                // now passes the resolved `sourceHome` through to keep the
-                // store and the binary discovery rooted in the same home.
+                // Binary lookup is rooted in the operator's home only; the
+                // caller passes deps.homeDir(), never metadata.homeDir.
                 agentLookupHome
             })),
             // Default: never refuse based on the global lock. The verify probe
@@ -535,6 +529,12 @@ export class CursorLegacyMigrator {
     async migrateOne(session: Session, opts: CursorLegacyMigratorOptions): Promise<CursorMigrateOutcome> {
         const start = this.deps.now()
         const log = this.deps.logger
+
+        // Host filesystem migration is an owner operation. Project/runner and
+        // other namespaces may not point it at host paths via session metadata.
+        if (session.namespace !== DEFAULT_NAMESPACE) {
+            return refusal(session.id, 'internal_error', 'legacy Cursor host migration is only available to the hub owner namespace', start, this.deps.now)
+        }
 
         const pre = preflightSession(session, this.deps.now, { forceArchiveRunning: opts.forceArchiveRunning })
         if (pre) return pre
@@ -1145,7 +1145,8 @@ export class CursorLegacyMigrator {
                     env.HOMEPATH = fakeHome
                 }
             }
-            const probe = this.deps.createProbe(env, opts.sourceHome)
+            // Executable lookup uses the operator home, not the reported sourceHome.
+            const probe = this.deps.createProbe(env, this.deps.homeDir())
             const verifyStart = this.deps.now()
             const verifyDeadline = verifyStart + this.opts.verifyTimeoutMs
             try {
@@ -1341,13 +1342,13 @@ async function defaultAwaitLockRelease(storePath: string, timeoutMs: number, min
 
 /**
  * Read the agent acp single-instance lock under $HAPI_HOME (or the same
- * tmpdir/hapi fallback the CLI guard uses) and report whether a live PID
+ * ~/.hapi fallback the CLI guard uses) and report whether a live PID
  * holds it. Mirrors `cli/src/agent/backends/acp/agentCliGuard.ts`
  * (intentionally duplicated — the hub does not depend on the CLI module).
  * Codex review #34 P1.
  */
 function defaultIsAgentAcpTransportActive(): { active: boolean; holderPid: number | null } {
-    const home = process.env.HAPI_HOME?.trim() || join(tmpdir(), 'hapi')
+    const home = resolveAcpLockHapiHome()
     const lockDir = join(home, 'locks', 'agent-acp-active')
     const pidPath = join(lockDir, 'pid')
     // Codex review #34 P2 v5: the CLI agent guard creates the lock dir

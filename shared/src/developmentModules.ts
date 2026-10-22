@@ -222,8 +222,20 @@ export const HAPI_TOOLCHAIN_CHECKS: Readonly<Record<string, CheckLabel>> = Objec
     ssh: { label: 'SSH-Client', category: 'integration' },
     kvm: { label: 'KVM-Beschleunigung', category: 'device' },
 })
+/**
+ * Read-only readiness of the bundled Claude Ads module (runner): pinned Python 3.11/3.12 runtime, vendored asset
+ * provenance, ownership state of the native skill trees and the report directory. Never executes project files.
+ */
+export const HAPI_CLAUDE_ADS_CHECKS: Readonly<Record<string, CheckLabel>> = Object.freeze({
+    'ads.python': { label: 'Python 3.11/3.12 für Claude Ads', category: 'runtime' },
+    'ads.assets': { label: 'Claude-Ads-Assets (Provenienz)', category: 'image' },
+    'ads.skills.claude': { label: 'Native Skills für Claude', category: 'project' },
+    'ads.skills.codex': { label: 'Native Skills für Codex', category: 'project' },
+    'ads.artifacts': { label: 'Berichtsablage', category: 'project' },
+})
 export const DEVELOPMENT_MODULE_PROVIDERS: Readonly<Record<string, DevelopmentProviderSpec>> = Object.freeze({
     'hapi.toolchain': { versions: [1], kinds: ['doctor'], pluginUsable: true, capability: developmentProviderCapability('hapi.toolchain', 1), checks: HAPI_TOOLCHAIN_CHECKS },
+    'hapi.claude-ads': { versions: [1], kinds: ['doctor'], pluginUsable: true, capability: developmentProviderCapability('hapi.claude-ads', 1), checks: HAPI_CLAUDE_ADS_CHECKS },
     'hapi.repository-inventory': { versions: [1], kinds: ['inspect'], pluginUsable: true, capability: developmentProviderCapability('hapi.repository-inventory', 1) },
     'github.commit-status': { versions: [1], kinds: ['integration'], pluginUsable: true, capability: null },
     'builtin.odoo': { versions: [1], kinds: ['doctor', 'inspect'], pluginUsable: false, capability: 'evolved-development' },

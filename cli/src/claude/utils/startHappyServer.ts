@@ -31,7 +31,7 @@ import {
     SESSION_ID_PREFIX_PARAM_DESCRIPTION,
 } from '@hapi/protocol/sessionCitation'
 import { PingPeerError, formatInspectPeerReport, formatPeerSessionsList, inspectPeer, listPeerSessions, peerListFetchLimit, pingPeer, searchPeerSessions } from "@/modules/pingPeer/pingPeer";
-import { archiveEvolvedPeer, initializePeerToolsPolicy, isEvolvedPeerMode, peerToolsExposed, peerScopeAllowed, spawnEvolvedPeer } from '@/modules/pingPeer/evolvedPeer';
+import { archiveEvolvedPeer, isEvolvedPeerMode, peerToolsExposed, spawnEvolvedPeer } from '@/modules/pingPeer/evolvedPeer';
 import { applySessionDisplayRename, normalizeSessionDisplayTitle } from "@/agent/sessionDisplayRename";
 
 type StartHappyServerOptions = {
@@ -58,7 +58,8 @@ const CLAUDE_MANUAL_APPROVAL_HAPI_TOOLS = new Set([
     'inspect_peer',
     'spawn_peer',
     'archive_peer',
-    'evolved_mcp_call'
+    'evolved_mcp_call',
+    'evolved_browser_call'
 ]);
 
 /**
@@ -325,7 +326,6 @@ function createHapiMcpServer(
     });
 
     if (!mediaOnly && peerToolsExposed()) {
-    if (peerScopeAllowed('peers:send')) {
     mcp.registerTool<any, any>('ping_peer', {
         description: PING_PEER_TOOL_DESCRIPTION,
         title: 'Ping Peer Session',
@@ -366,7 +366,6 @@ function createHapiMcpServer(
         }
     });
 
-    }
     mcp.registerTool<any, any>('inspect_peer', {
         description: INSPECT_PEER_TOOL_DESCRIPTION,
         title: 'Inspect Peer Session',
@@ -499,7 +498,7 @@ function createHapiMcpServer(
     });
 
 
-    if (isEvolvedPeerMode() && peerScopeAllowed('peers:manage')) {
+    if (isEvolvedPeerMode()) {
         mcp.registerTool<any, any>('spawn_peer', { description: 'Start a project-scoped Claude or Codex helper with a durable remit. Project policy applies. Reuse operationId when retrying; uncertain spawns require inspection.', inputSchema: { remit: z.string().min(1).max(32000), autoReport: z.boolean().optional(), agent: z.enum(['claude', 'codex']).optional(), directory: z.string().optional(), operationId: z.string().min(1).max(128).describe('Stable operation ID; reuse exactly on retry') } }, async (args: any) => {
             try { return { content: [{ type: 'text' as const, text: JSON.stringify(await spawnEvolvedPeer({ ...args, senderSessionId: client.sessionId })) }] } }
             catch (error) { return { isError: true, content: [{ type: 'text' as const, text: error instanceof Error ? error.message : String(error) }] } }
@@ -570,7 +569,6 @@ function readMcpSessionId(req: IncomingMessage): string | undefined {
 }
 
 export async function startHappyServer(client: ApiSessionClient, options: StartHappyServerOptions = {}) {
-    if (!options.mediaOnly) await initializePeerToolsPolicy();
     const prEnabled = options.mediaOnly ? false : await githubPrEnabled();
     const emitTitleSummary = options.emitTitleSummary ?? true;
     const enableChangeTitle = options.enableChangeTitle ?? true;
@@ -647,8 +645,7 @@ export async function startHappyServer(client: ApiSessionClient, options: StartH
         ? ['change_title', 'display_image', 'display_video', 'display_media', 'list_peers', 'search_peers', 'ping_peer', 'inspect_peer']
         : ['display_image', 'display_video', 'display_media', 'list_peers', 'search_peers', 'ping_peer', 'inspect_peer'];
     if (!peerToolsExposed()) toolNames = toolNames.filter(name => !['list_peers', 'search_peers', 'ping_peer', 'inspect_peer'].includes(name));
-    if (!peerScopeAllowed('peers:send')) toolNames = toolNames.filter(name => name !== 'ping_peer');
-    if (isEvolvedPeerMode() && peerScopeAllowed('peers:manage')) toolNames.push('spawn_peer', 'archive_peer');
+    if (isEvolvedPeerMode()) toolNames.push('spawn_peer', 'archive_peer');
     if (prEnabled) toolNames.push('link_pr');
     if (options.skillLookup) {
         toolNames.push('skill_lookup');

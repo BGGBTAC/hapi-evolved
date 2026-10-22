@@ -223,3 +223,61 @@ test('a changed project root fails with an actionable identity error before touc
     expect(h.dockerCalls).toHaveLength(0)
     expect(h.created).toHaveLength(0)
 })
+
+function browserHarness(image=true){
+    const h=harness(),files:string[]=[],metadata:unknown[]=[]
+    Object.assign(h.mutable,{
+        browserImage:async()=>image,
+        writeBrowserFiles:()=>{files.push('write')},removeBrowserFiles:()=>{files.push('remove')},
+        writeMetadata:(_p:unknown,value:unknown)=>{metadata.push(value)},
+        paths:()=>({directory:'/private/runner',workspace:'/private/workspace',home:'/private/home',lease:'/private/lease',env:'/private/runner.env',metadata:'/private/metadata',container:`hapi-evolved-runner-${request.projectId}-runner-1`,browserKey:'/private/browser.key',browserEnv:'/private/browser.env'}),
+    })
+    return {...h,files,metadata}
+}
+const browserRequest=(browser:boolean):ControlRequest=>({...request,action:'browser',provider:undefined,browser})
+
+test('browser enable starts only the three profile services of this stack with a fresh key and --pull never',async()=>{
+    const h=browserHarness()
+    expect(await h.operator.request(browserRequest(true))).toEqual({ok:true})
+    expect(h.files).toEqual(['write'])
+    const up=h.dockerCalls.at(-1)!
+    expect(up).toEqual(['compose','--env-file','/private/runner.env','--env-file','/private/browser.env','-f','/immutable/source/deploy/evolved/runner.compose.yml','--profile','browser','up','-d','--no-build','--pull','never','--force-recreate','browser-gateway','browser','browser-egress'])
+    expect(h.metadata.at(-1)).toMatchObject({browser:true,leaseId:request.leaseId})
+    expect(h.created).toHaveLength(0)
+})
+
+test('browser disable explicitly removes profile services and key; missing image fails clearly without docker up',async()=>{
+    const h=browserHarness()
+    expect(await h.operator.request(browserRequest(false))).toEqual({ok:true})
+    expect(h.dockerCalls.at(-1)!.slice(-6)).toEqual(['rm','--stop','--force','browser-gateway','browser','browser-egress'])
+    expect(h.dockerCalls.at(-1)).toContain('--profile')
+    expect(h.files).toEqual(['remove'])
+    expect(h.metadata.at(-1)).toMatchObject({browser:false})
+    const missing=browserHarness(false)
+    await expect(missing.operator.request(browserRequest(true))).rejects.toMatchObject({code:'browser_image_missing',status:409})
+    expect(missing.dockerCalls.filter(args=>args.includes('up'))).toHaveLength(0)
+    expect(missing.files).toEqual([])
+})
+
+test('browser authority lost after start tears the sidecar down; status reports exact container states',async()=>{
+    const h=browserHarness();let calls=0
+    Object.assign(h.mutable,{authority:async()=>++calls===1})
+    await expect(h.operator.request(browserRequest(true))).rejects.toMatchObject({code:'authority_lost'})
+    expect(h.dockerCalls.at(-1)!.slice(-6)).toEqual(['rm','--stop','--force','browser-gateway','browser','browser-egress'])
+    const s=browserHarness()
+    Object.assign(s.mutable,{docker:async(args:string[])=>{s.dockerCalls.push(args);if(args[0]==='inspect'&&args.at(-1)!.endsWith('-browser-1'))return 'exited';if(args[0]==='inspect')return 'running';throw new Error('no')}})
+    expect(await s.operator.request({...request,action:'browser-status',provider:undefined})).toEqual({image:true,containers:{'browser-gateway':'running',browser:'exited','browser-egress':'running'}})
+})
+
+test('restore converges a failed disable with the trusted Hub configuration and never starts a browser itself',async()=>{
+    const h=browserHarness(),converge=(metadata:Record<string,unknown>,enabled:unknown)=>(h.operator as unknown as {convergeBrowser(p:unknown,m:unknown,e:unknown):Promise<boolean>}).convergeBrowser((h.mutable.paths as ()=>unknown)(),metadata,enabled)
+    const metadata={leaseId:request.leaseId,rootPath:request.rootPath,profile:request.profile}
+    expect(await converge({...metadata,browser:true},false)).toBe(false)
+    expect(h.dockerCalls.at(-1)!.slice(-6)).toEqual(['rm','--stop','--force','browser-gateway','browser','browser-egress'])
+    expect(h.metadata.at(-1)).toMatchObject({browser:false}); expect(h.files).toEqual(['remove'])
+    const calls=h.dockerCalls.length
+    expect(await converge({...metadata,browser:true},true)).toBe(true)
+    expect(await converge({...metadata,browser:true},undefined)).toBe(true) // older Hub: unchanged
+    expect(await converge({...metadata},true)).toBe(false) // never enables on its own
+    expect(h.dockerCalls.length).toBe(calls)
+})

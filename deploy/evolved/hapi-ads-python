@@ -1,0 +1,4 @@
+#!/bin/sh
+# Private CPython 3.12 for the bundled Claude Ads core only (see docs/evolved/CLAUDE_ADS.md).
+# The library path applies to this child process alone; system Python 3.13 and Odoo are untouched.
+LD_LIBRARY_PATH=/opt/hapi-ads-python/lib exec /opt/hapi-ads-python/bin/python3.12 "$@"

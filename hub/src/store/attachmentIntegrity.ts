@@ -23,6 +23,11 @@ export async function checkAttachmentIntegrity(databasePath: string, attachmentR
     const root = resolve(attachmentRoot)
     if ((await lstat(root)).isSymbolicLink() || await realpath(root) !== root) throw new Error('Attachment root must be a canonical directory without symlinks')
     const directory = await open(root, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
+    // An ancestor may have been swapped between realpath() and open(); trust only the opened inode.
+    if (await realpath(`/proc/self/fd/${directory.fd}`).catch(() => null) !== root) {
+        await directory.close()
+        throw new Error('Attachment root must be a canonical directory without symlinks')
+    }
     let db: Database | undefined
     const report: AttachmentIntegrityReport = { ok: true, checkedRows: 0, checkedFiles: 0, pendingJournalRows: 0, counts: {}, samples: [], samplesTruncated: false }
     const record = (kind: AttachmentIntegrityKind, path: string, attachmentId?: string, expected = false) => {

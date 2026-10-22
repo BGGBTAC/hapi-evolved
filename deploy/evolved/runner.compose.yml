@@ -69,9 +69,99 @@ services:
       EVOLVED_EGRESS_HOSTS: ${EVOLVED_EGRESS_HOSTS:-}
     networks: [project, provider-egress]
     mem_limit: 128m
+  # Optional project browser (jo-inc/camofox-browser 1.18.1 + Camoufox). Never started without
+  # `--profile browser`; the operator starts/stops exactly these three services. docs/evolved/BROWSER.md
+  browser-gateway:
+    <<: *runner
+    profiles: [browser]
+    # A gateway started before Docker registered the browser's DNS name can
+    # cache a failed lookup and report an unknown outcome for the first action.
+    depends_on:
+      browser:
+        condition: service_healthy
+    image: hapi-evolved:0.1.0
+    command: [bun, services/runner-proxy/browserGateway.ts]
+    environment:
+      EVOLVED_PROJECT_ID: ${EVOLVED_PROJECT_ID}
+      EVOLVED_BROWSER_KEY_FILE: /credentials/browser-key
+      EVOLVED_BROWSER_GATEWAY_HOST: 0.0.0.0
+    volumes:
+      - type: bind
+        source: ${EVOLVED_BROWSER_KEY_FILE:-/nonexistent/hapi-evolved-browser.key}
+        target: /credentials/browser-key
+        read_only: true
+        bind: { create_host_path: false }
+    # project: reachable from runner-proxy only (peer-checked). browser-control: the browser only.
+    networks: [project, browser-control]
+    mem_limit: 256m
+    pids_limit: 128
+  browser:
+    <<: *runner
+    profiles: [browser]
+    image: hapi-evolved-browser:0.1.0
+    # Firefox keeps its own content sandbox (seccomp-bpf) under Docker's default seccomp/AppArmor.
+    tmpfs:
+      - "/tmp:rw,nosuid,nodev,size=1g,mode=1777"
+    shm_size: 256m
+    environment:
+      NODE_ENV: production
+      HOME: /tmp/home
+      CAMOFOX_PORT: "9377"
+      CAMOFOX_BIND_HOST: 0.0.0.0
+      CAMOFOX_ACCESS_KEY_FILE: /credentials/browser-key
+      CAMOFOX_CRASH_REPORT_ENABLED: "false"
+      SENTRY_DSN: ""
+      CAMOFOX_DISABLE_DEFAULT_ADDONS: "1"
+      PROMETHEUS_ENABLED: "false"
+      ENABLE_VNC: "false"
+      CAMOFOX_INTERACTIVE: "off"
+      CAMOFOX_COOKIES_DIR: /tmp/home/empty/cookies
+      CAMOFOX_UPLOADS_DIR: /tmp/home/empty/uploads
+      CAMOFOX_PROFILE_DIR: /tmp/home/empty/profiles
+      CAMOFOX_TRACES_DIR: /tmp/home/empty/traces
+      HAPI_BROWSER_EGRESS_PROXY: http://browser-egress:3128
+      MAX_SESSIONS: "4"
+      MAX_TABS_PER_SESSION: "20"
+      MAX_TABS_GLOBAL: "24"
+      MAX_CONCURRENT_PER_USER: "3"
+      SESSION_TIMEOUT_MS: "1800000"
+      # The gateway requires a verified Firefox engine before dispatch. Upstream's
+      # idle shutdown would otherwise leave the sidecar unable to self-wake.
+      BROWSER_IDLE_TIMEOUT_MS: "0"
+      HANDLER_TIMEOUT_MS: "30000"
+      NAVIGATE_TIMEOUT_MS: "30000"
+    volumes:
+      - type: bind
+        source: ${EVOLVED_BROWSER_KEY_FILE:-/nonexistent/hapi-evolved-browser.key}
+        target: /credentials/browser-key
+        read_only: true
+        bind: { create_host_path: false }
+    # No project, backend or provider-egress network: only the gateway and browser-egress.
+    networks: [browser-control, browser-outbound]
+    mem_limit: 2g
+    pids_limit: 512
+    depends_on: [browser-egress]
+    healthcheck:
+      test: [CMD, node, -e, "const fs=require('node:fs');const key=fs.readFileSync(process.env.CAMOFOX_ACCESS_KEY_FILE,'utf8').trim();fetch('http://127.0.0.1:9377/health',{headers:{authorization:'Bearer '+key},signal:AbortSignal.timeout(3000)}).then(async r=>{const body=await r.json();process.exit(r.ok&&body.ok===true&&body.browserConnected===true&&body.browserRunning===true?0:1)}).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+  browser-egress:
+    <<: *runner
+    profiles: [browser]
+    image: hapi-evolved:0.1.0
+    command: [bun, services/runner-proxy/browserEgress.ts]
+    environment:
+      EVOLVED_EGRESS_HOST: 0.0.0.0
+    networks: [browser-outbound, browser-internet]
+    mem_limit: 128m
 networks:
   project: { internal: true }
   provider-egress: {}
   backend:
     external: true
     name: ${EVOLVED_BACKEND_NETWORK:-hapi-evolved_backend}
+  browser-control: { internal: true }
+  browser-outbound: { internal: true }
+  browser-internet: {}

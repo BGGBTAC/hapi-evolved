@@ -264,6 +264,13 @@ test('capability renewal after lease revocation disconnects instead of replaying
 test('proxy routes cannot expose account, vault, bootstrap or lease operations', () => {
     for (const path of ['/api/auth', '/api/evolved/auth/bootstrap', '/api/evolved/runner/token', '/api/evolved/projects/a/secrets', '/api/evolved/projects/a/capabilities']) expect(allowedProxyPath(path)).toBe(false)
     expect(allowedProxyPath('/api/evolved/projects/a/codegraph/impact')).toBe(true)
+    expect(allowedProxyPath('/api/evolved/projects/a/agent-access')).toBe(true)
+    for (const [path, method, search] of [
+        ['/api/evolved/projects/a/agent-access', 'POST', ''],
+        ['/api/evolved/projects/a/agent-access', 'GET', '?all=1'],
+        ['/api/evolved/projects/a/agent-access/other', 'GET', ''],
+        ['/api/evolved/projects/a%2fb/agent-access', 'GET', ''],
+    ]) expect(allowedProxyPath(path, method, search)).toBe(false)
 })
 test('repository proxy routes admit only exact methods, IDs and query shapes', () => {
     const base = '/api/evolved/projects/a', job = '768237a3-3378-4384-aaaf-eed31ae931e9'

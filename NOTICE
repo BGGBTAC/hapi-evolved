@@ -19,6 +19,14 @@ Additional bundled-tool notices include:
 - cli/tools/licenses/difftastic-LICENSE
 - deploy/evolved/security/LICENSE.moby (Docker sandbox profile derivatives;
   source revision and HAPI-eVolved changes in that directory's README.md)
+- vendor/claude-ads/upstream/LICENSE (Claude Ads by AgriciDaniel, MIT; unchanged
+  files of commit fc3908e with SHA-256 inventory in vendor/claude-ads/PROVENANCE.json;
+  the HAPI adapter is in vendor/claude-ads/hapi and cli/src/evolved/ads)
+- deploy/evolved/browser/THIRD_PARTY_NOTICES.md (optional project browser image:
+  jo-inc/camofox-browser 1.18.1, MIT; Camoufox 152.0.4-beta.30 and camoufox-js,
+  MPL-2.0; the tool contracts in shared/src/browserTools.ts are adapted from
+  camofox-browser mcp/lib/tool-contracts.mjs, MIT, Copyright (c) 2025 Jo, Inc;
+  license text in deploy/evolved/browser/LICENSE.camofox-browser)
 
 Dependencies, downloaded native tools, provider CLIs and container base
 images retain their respective licenses. Manifests and lockfiles identify

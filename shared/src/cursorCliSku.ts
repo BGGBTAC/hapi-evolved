@@ -312,7 +312,9 @@ export function parseCursorAvailableModelsFromRejection(text: string): string[] 
     }
 
     let catalog = match[1].trim();
-    const tipIdx = catalog.search(/\s+Tip:/i);
+    // `\s+Tip:` backtracks quadratically over long whitespace runs; one
+    // whitespace char is enough because the slice is trimmed below.
+    const tipIdx = catalog.search(/\sTip:/i);
     if (tipIdx !== -1) {
         catalog = catalog.slice(0, tipIdx).trim();
     }

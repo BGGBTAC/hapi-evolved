@@ -142,7 +142,9 @@ export function createProjectAuthMiddleware(store: EvolvedStore, secret: Uint8Ar
         if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) && c.req.header('origin') !== origin) return c.json({ error: 'Origin denied.' }, 403)
         // These upstream endpoints expose host-global credentials/files or unsupported agents.
         if (/^\/api\/(auth|bind|storage|hub-settings|voice|codex|claude|cursor|pi)(\/|$)/.test(path)
-            || /^\/api\/machines\/[^/]+\/(?:claude|cursor|codex|pi)-(?:sessions|import|discover)/.test(path)) return c.json({ error: 'Endpoint unavailable in Evolved.' }, 403)
+            || /^\/api\/machines\/[^/]+\/(?:claude|cursor|codex|pi)-(?:sessions|import|discover)/.test(path)
+            // Legacy Cursor migration rewrites hub-host files named by session metadata.
+            || /^\/api\/sessions\/[^/]+\/migrate-to-acp\/?$/.test(path)) return c.json({ error: 'Endpoint unavailable in Evolved.' }, 403)
         if (write && access.project.profile === 'restricted' && /\/codex\/plan\/implement$/.test(path)) return c.json({ error: 'Read-only projects cannot execute plans.' }, 403)
         if (write && /\/machines\/[^/]+\/(list-directory|paths\/exists)$/.test(path)) {
             const body = await c.req.json().catch(() => null) as Record<string, unknown> | null

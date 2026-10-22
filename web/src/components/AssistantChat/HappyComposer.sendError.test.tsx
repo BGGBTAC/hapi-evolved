@@ -32,6 +32,7 @@ const runtime = vi.hoisted(() => ({
     setSnapshot: null as null | ((updater: (current: FakeRuntimeState) => FakeRuntimeState) => void),
     pendingSendIntentRef: null as null | { current: ComposerSendIntent },
     sentIntents: [] as ComposerSendIntent[],
+    addedFiles: [] as File[],
     modelChanges: [] as Array<{ provider: string; modelId: string } | string | null>,
     pendingHydration: null as Promise<void> | null,
     dictationEnabled: false,
@@ -58,7 +59,7 @@ vi.mock('@assistant-ui/react', async () => {
                     composer: { text: '', attachments: [] },
                 }))
             },
-            addAttachment: async () => {},
+            addAttachment: async (file: File) => { runtime.addedFiles.push(file) },
         }),
         thread: () => ({ cancelRun: () => {} }),
     }
@@ -647,4 +648,55 @@ it('refreshes voice Send after empty attachment hydration completes', async () =
         runtime.dictationEnabled = false
         runtime.setSnapshot = null
     }
+})
+
+describe('HappyComposer paste routing (upstream all-file paste + evolved long paste)', () => {
+    afterEach(() => {
+        cleanup()
+        runtime.addedFiles = []
+    })
+
+    function paste(target: Element, clipboard: { files?: File[]; text?: string }) {
+        return fireEvent.paste(target, {
+            clipboardData: {
+                files: clipboard.files ?? [],
+                getData: (type: string) => type === 'text/plain' ? clipboard.text ?? '' : '',
+            },
+        })
+    }
+
+    it('attaches pasted non-image files such as PDFs and archives', async () => {
+        renderComposer('', null)
+        const pdf = new File(['%PDF'], 'report.pdf', { type: 'application/pdf' })
+        const zip = new File(['PK'], 'bundle.zip', { type: 'application/zip' })
+
+        expect(paste(screen.getByRole('textbox'), { files: [pdf, zip] })).toBe(false)
+        await waitFor(() => expect(runtime.addedFiles).toEqual([pdf, zip]))
+        expect(screen.queryByText('Large pasted text')).toBeNull()
+    })
+
+    it('still blocks pasted files while a schedule is pending', async () => {
+        renderComposer('', { type: 'absolute', ms: 1234 })
+        const pdf = new File(['%PDF'], 'report.pdf', { type: 'application/pdf' })
+
+        expect(paste(screen.getByRole('textbox'), { files: [pdf] })).toBe(false)
+        await act(async () => {})
+        expect(runtime.addedFiles).toEqual([])
+    })
+
+    it('opens the long-paste choice for oversized plain text instead of attaching', () => {
+        renderComposer('', null)
+
+        expect(paste(screen.getByRole('textbox'), { text: 'long line\n'.repeat(4000) })).toBe(false)
+        expect(screen.getByText('Large pasted text')).toBeInTheDocument()
+        expect(runtime.addedFiles).toEqual([])
+    })
+
+    it('leaves short plain-text paste to the native input', () => {
+        renderComposer('', null)
+
+        expect(paste(screen.getByRole('textbox'), { text: 'short' })).toBe(true)
+        expect(screen.queryByText('Large pasted text')).toBeNull()
+        expect(runtime.addedFiles).toEqual([])
+    })
 })

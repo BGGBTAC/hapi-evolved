@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
-import { createHash, randomUUID } from 'node:crypto'
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { inspectCursorChatStore } from './cursorChatStoreStatus'
@@ -8,9 +8,9 @@ import { inspectCursorChatStore } from './cursorChatStoreStatus'
 const homes: string[] = []
 
 async function makeHome(): Promise<string> {
-    const home = join(tmpdir(), `hapi-cursor-store-${randomUUID()}`)
+    const home = await mkdtemp(join(tmpdir(), 'hapi-cursor-store-'))
     homes.push(home)
-    await mkdir(home, { recursive: true })
+
     return home
 }
 

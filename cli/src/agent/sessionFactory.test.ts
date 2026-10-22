@@ -520,9 +520,9 @@ describe('buildMachineMetadata runner-only capabilities', () => {
     it('advertises exactly the implemented development-module providers next to the shared machine capabilities', () => {
         const capabilities = buildMachineMetadata({ asRunner: true }).capabilities ?? []
         expect(capabilities).toEqual(expect.arrayContaining([...CURRENT_MACHINE_CAPABILITIES,
-            MACHINE_CAPABILITIES.EvolvedDevelopmentToolchainProvider, MACHINE_CAPABILITIES.EvolvedDevelopmentInventoryProvider]))
+            MACHINE_CAPABILITIES.EvolvedDevelopmentToolchainProvider, MACHINE_CAPABILITIES.EvolvedDevelopmentInventoryProvider, MACHINE_CAPABILITIES.EvolvedDevelopmentClaudeAdsProvider]))
         expect(capabilities.filter(capability => capability.startsWith('evolvedDevelopment.provider.')).sort())
-            .toEqual(['evolvedDevelopment.provider.hapi.repository-inventory.v1', 'evolvedDevelopment.provider.hapi.toolchain.v1'])
+            .toEqual(['evolvedDevelopment.provider.hapi.claude-ads.v1', 'evolvedDevelopment.provider.hapi.repository-inventory.v1', 'evolvedDevelopment.provider.hapi.toolchain.v1'])
         expect(new Set(capabilities).size).toBe(capabilities.length)
     })
 

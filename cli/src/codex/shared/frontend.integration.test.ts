@@ -388,7 +388,7 @@ describe.skipIf(process.env.HAPI_RUN_SHARED_CODEX_TESTS !== '1' || process.platf
             await api(`/sessions/${webId}/archive`, {});
             await eventually(webDetail, value => record(value.session).active === false, 'end reopened Web session');
         } catch (error) {
-            await writeFile('/tmp/hapi-shared-e2e-terminal.log', output + '\nRUNNER:\n' + runnerOutput);
+            await writeFile(join(home, 'terminal.log'), output + '\nRUNNER:\n' + runnerOutput);
             throw error;
         } finally {
             eventsAbort.abort(); await eventStream;

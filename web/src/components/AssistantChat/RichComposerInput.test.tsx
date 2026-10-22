@@ -380,3 +380,48 @@ describe('RichComposerInput session drops', () => {
         })
     })
 })
+
+describe('RichComposerInput paste', () => {
+    it('forwards pasted non-image files to onPaste', () => {
+        const onPaste = vi.fn((event: { preventDefault: () => void }) => event.preventDefault())
+        const onValueChange = vi.fn()
+        render(
+            <RichComposerInput
+                value=""
+                onValueChange={onValueChange}
+                onMirrorChange={() => {}}
+                onPaste={onPaste}
+            />
+        )
+
+        const file = new File(['%PDF'], 'report.pdf', { type: 'application/pdf' })
+        fireEvent.paste(screen.getByTestId('rich-composer-input'), {
+            clipboardData: { files: [file], getData: () => '' },
+        })
+
+        expect(onPaste).toHaveBeenCalledTimes(1)
+        expect(onValueChange).not.toHaveBeenCalled()
+    })
+
+    // Evolved consults the parent for every paste (long-text modal), so onPaste
+    // runs even without files; plain text is inserted only when it declines.
+    it('inserts plain text when onPaste does not claim a file-less paste', () => {
+        const onPaste = vi.fn()
+        const onValueChange = vi.fn()
+        render(
+            <RichComposerInput
+                value=""
+                onValueChange={onValueChange}
+                onMirrorChange={() => {}}
+                onPaste={onPaste}
+            />
+        )
+
+        fireEvent.paste(screen.getByTestId('rich-composer-input'), {
+            clipboardData: { files: [], getData: () => 'pasted text' },
+        })
+
+        expect(onPaste).toHaveBeenCalledTimes(1)
+        expect(onValueChange).toHaveBeenLastCalledWith('pasted text')
+    })
+})

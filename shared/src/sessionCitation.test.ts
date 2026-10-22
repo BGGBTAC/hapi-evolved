@@ -97,6 +97,68 @@ describe('normalizeSessionIdPrefix', () => {
     })
 })
 
+/** The former production regex; quadratic, so only used as the semantic reference. */
+const SESSION_PATH_IN_TEXT_RE =
+    /(?:^|[^A-Za-z0-9_-])(?:\.?\/)?(?:[\w.-]+\/)*sessions\/([^/?#\s)\]"']+)/g
+
+describe('extractSessionCitationIds linear scanner', () => {
+    /** The original global-regex extraction, kept as the semantic reference. */
+    function referenceIds(text: string): string[] {
+        const re = new RegExp(SESSION_PATH_IN_TEXT_RE.source, 'g')
+        const seen = new Set<string>()
+        const ids: string[] = []
+        let match: RegExpExecArray | null
+        while ((match = re.exec(text)) !== null) {
+            let id: string
+            try { id = decodeURIComponent(match[1] ?? '').replace(/[.,;:!?]+$/u, '') } catch { continue }
+            if (!id || id.includes('.') || seen.has(id)) continue
+            seen.add(id)
+            ids.push(id)
+        }
+        return ids
+    }
+
+    it('matches the regex semantics on tricky citations', () => {
+        const cases = [
+            'x/sessions/a/sessions/b',
+            '/a.sessions/x/sessions/y',
+            'see /sessions/abc, and ./base/sessions/def!',
+            'mysessions/nope a.sessions/yes //sessions/z ./sessions/w',
+            '/sessions/sessions/abc',
+            'web/src/routes/sessions/chat.tsx',
+            '[t](/sessions/%41b) (/sessions/c?x=1) "/sessions/d"',
+            'sessions/first then sessions/ empty',
+        ]
+        for (const text of cases) expect(extractSessionCitationIds(text)).toEqual(referenceIds(text))
+    })
+
+    it('agrees with the regex on random malformed paths', () => {
+        const parts = ['sessions/', '/sessions/', 's', '/', '.', '-', 'a', '_', ' ', ',', ')', '?', '#', '"', '%41', '%', '!', './', '//']
+        let seed = 1
+        const next = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648
+        for (let iteration = 0; iteration < 5000; iteration += 1) {
+            let text = ''
+            const length = 1 + Math.floor(next() * 24)
+            for (let index = 0; index < length; index += 1) text += parts[Math.floor(next() * parts.length)]
+            expect(extractSessionCitationIds(text)).toEqual(referenceIds(text))
+        }
+    })
+
+    it('stays linear on long dotted, slashed and punctuated input', () => {
+        const inputs = [
+            ',' + '.-'.repeat(100_000),
+            'a/'.repeat(100_000),
+            '/sessions/' + '.'.repeat(200_000) + 'x',
+        ]
+        for (const text of inputs) {
+            const startedAt = performance.now()
+            extractSessionCitationIds(text)
+            expect(performance.now() - startedAt).toBeLessThan(500)
+        }
+        expect(normalizeSessionIdPrefix('a/'.repeat(100_000) + 'sessions/abc')).toBe('abc')
+    })
+})
+
 describe('buildSessionCitationSteerInstruction', () => {
     it('mentions both citation forms and forbids local FS search', () => {
         const text = buildSessionCitationSteerInstruction({

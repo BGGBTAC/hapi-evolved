@@ -6,6 +6,49 @@ or container image.
 
 ## Unreleased
 
+- No entries yet.
+
+## [0.1.0-preview.3](https://github.com/BGGBTAC/hapi-evolved/releases/tag/v0.1.0-preview.3) — 2026-10-22
+
+- Every managed Claude and Codex session receives the installed feature catalog and
+  can query its live project profile, runner scopes and inter-agent status through
+  `evolved_access`. Standard managed runners receive project Git, memory,
+  Codegraph and peer scopes; individual repository, Vault, MCP and resource grants
+  remain explicit. Existing managed leases gain these scopes when renewed.
+- Bundled Claude Ads development module from `AgriciDaniel/claude-ads` at the
+  pinned `fc3908e` commit, with offline project workflows, unchanged upstream
+  skills and provenance checks. Importing assets accepts only clean, tracked
+  upstream files.
+- Optional project browser (Camofox): a per-project sidecar with jo-inc/camofox-browser
+  1.18.1 and Camoufox 152.0.4-beta.30, enabled per project in the MCP Shop and used by agents
+  through `evolved_browser_*` tools. The Hub checks lease, profile and grants before and after
+  every action; browser state is shared within a project runner and ephemeral. Egress reaches all
+  public sites and blocks private networks. Gateway readiness checks require a connected Firefox
+  engine, and the managed browser remains available after idle time. The image is operator-built; see
+  docs/evolved/BROWSER.md.
+- Core HAPI sync through `5d8deb201189dc1f183c4f5bf38c87ec4d34dd70`:
+  configurable ElevenLabs conversation duration, a responsive session toolbar
+  with overflow actions, improved search clear/calendar controls, final-phase
+  Codex status summaries and non-image file pasting in the composer. Evolved's
+  project controls, search modes and large-text paste choices are retained.
+- English subscription-capacity documentation, a runnable quality-check example,
+  an accessible knowledge-title counter and confirmation buttons that do not
+  accidentally submit their surrounding form. Offline plugin validation no
+  longer initializes a CLI home or log directory.
+- File RPCs resolve relative paths through checked directory handles inside the
+  session workspace, closing symlink-swap races. Local runner control uses an
+  automatically generated private bearer token; update the runner and CLI together. Windows agent
+  launchers preserve arguments instead of interpreting them as shell commands.
+- Host-file Cursor migration and custom ElevenLabs-agent operations respect
+  owner authorization. Concurrent Hub initialization preserves the winning
+  identity/key file; operator-key and attachment checks validate opened handles.
+- Linear-time message/citation parsing, safe handling of inherited object keys,
+  private temporary test and database-copy files, and version/checksum-pinned
+  tunnel downloads. Security checks remain enabled.
+- Updated application, PWA, website and documentation dependencies. The docs
+  use exactly pinned VitePress 2.0.0-alpha.20; see the dated dependency review
+  for the migration checks and limits.
+
 - Guided project setup for new and existing projects, including repository-dependent
   plugin modules; creation enters the new project and readiness follows its bound checkout.
 - Separate Odoo.sh staging and production settings, explicit environment status reads,
