@@ -11,11 +11,11 @@ const KEY = 'K'.repeat(43)
 const revision = 'a'.repeat(64)
 const context = `hapi-${'b'.repeat(32)}`
 
-async function setup(options: { echoKey?: boolean; peer?: boolean } = {}) {
+async function setup(options: { echoKey?: boolean; peer?: boolean; healthy?: boolean; probeFails?: boolean } = {}) {
     const dir = mkdtempSync(join(tmpdir(), 'evolved-browser-gw-')), keyFile = join(dir, 'key')
     cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
     writeFileSync(keyFile, KEY, { mode: 0o600 })
-    const state = { authorize: [] as Array<Record<string, unknown>>, reports: [] as Array<Record<string, unknown>>, upstream: [] as string[], deny: null as null | 'dispatch' | 'result' | 'all', outage: null as null | 'text503' | 'text403' | 'html500', enabled: true, probe: null as string | null, hold: null as Promise<void> | null }
+    const state = { authorize: [] as Array<Record<string, unknown>>, reports: [] as Array<Record<string, unknown>>, upstream: [] as string[], deny: null as null | 'dispatch' | 'result' | 'all', outage: null as null | 'text503' | 'text403' | 'html500', enabled: true, healthy: options.healthy !== false, probeFails: options.probeFails === true, probe: null as string | null, hold: null as Promise<void> | null }
     const tabs = new Map<string, string[]>()
     const browser = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(request) {
         const url = new URL(request.url)
@@ -23,7 +23,8 @@ async function setup(options: { echoKey?: boolean; peer?: boolean } = {}) {
         const body = request.method === 'GET' || request.method === 'DELETE' ? {} : await request.json() as Record<string, string>
         const user = url.searchParams.get('userId') ?? body.userId
         state.upstream.push(`${request.method} ${url.pathname}${url.search ? '?' : ''} ${user ?? ''}`)
-        if (url.pathname === '/health') return Response.json({ ok: true, engine: 'camoufox' })
+        if (url.pathname === '/health') return Response.json({ ok: true, browserConnected: state.healthy, browserRunning: state.healthy, engine: 'camoufox' })
+        if (url.pathname === '/tabs' && request.method === 'POST' && user?.startsWith('hapi-probe-') && state.probeFails) return Response.json({ error: 'Firefox is still starting' }, { status: 503 })
         if (url.pathname === '/tabs' && request.method === 'POST') { const id = crypto.randomUUID(); tabs.set(user!, [...(tabs.get(user!) ?? []), id]); return Response.json({ tabId: id, url: body.url ?? 'about:blank' }) }
         if (url.pathname === '/tabs') return Response.json({ running: true, tabs: (tabs.get(user!) ?? []).map(tabId => ({ tabId, url: 'https://public.test/', title: 'T' })) })
         if (url.pathname.startsWith('/sessions/') && request.method === 'DELETE') { tabs.delete(decodeURIComponent(url.pathname.slice(10))); return Response.json({ ok: true }) }
@@ -150,6 +151,32 @@ test('status reports truthful health, startup engine probe and purges on disable
     expect((await fetch(`http://127.0.0.1:${f.port}/evolved-browser/status`)).status).toBe(403)
     f.state.deny = 'all'
     expect((await f.call('camofox_list_tabs', {}, 'query')).status).toBe(403)
+})
+
+test('actions are not dispatched before Firefox is verified, and startup recovers automatically', async () => {
+    const f = await setup({ probeFails: true })
+    expect(f.state.reports[0]).toMatchObject({ service: 'reachable', engine: 'failed' })
+    const before = f.state.upstream.length
+    const early = await f.call('camofox_create_tab', {})
+    expect(early).toMatchObject({ status: 503, body: { code: 'browser_not_ready', retryable: true } })
+    expect(f.state.upstream.slice(before).some(line => line.startsWith('POST /tabs'))).toBe(false)
+    f.state.probeFails = false
+    await f.gateway.report()
+    expect(f.state.reports.at(-1)).toMatchObject({ service: 'reachable', engine: 'ready' })
+    expect((await f.call('camofox_create_tab', {})).status).toBe(200)
+})
+
+test('health HTTP 200 without a Firefox connection revokes readiness until it returns', async () => {
+    const f = await setup({ healthy: false })
+    expect(f.state.reports[0]).toMatchObject({ service: 'unhealthy', engine: 'unknown' })
+    expect((await f.call('camofox_create_tab', {})).body).toMatchObject({ code: 'browser_not_ready', retryable: true })
+    f.state.healthy = true
+    await f.gateway.report()
+    expect(f.state.reports.at(-1)).toMatchObject({ service: 'reachable', engine: 'ready' })
+    f.state.healthy = false
+    await f.gateway.report()
+    expect(f.state.reports.at(-1)).toMatchObject({ service: 'unhealthy', engine: 'unknown' })
+    expect((await f.call('camofox_create_tab', {})).body.code).toBe('browser_not_ready')
 })
 
 test('only the runner-proxy peer may call the gateway', async () => {

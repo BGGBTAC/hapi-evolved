@@ -132,6 +132,9 @@ export function createBrowserGateway(config: GatewayConfig) {
         const args = parsed.data as Json
         const authorization = { mode, toolName: input.toolName, version: input.version, catalogRevision: input.catalogRevision }
         const grant = await authorize({ phase: 'dispatch', ...authorization })
+        // Before the first verified Firefox page load, no action has been sent.
+        // A retry here is safe; after dispatch, the outcome remains unknown.
+        if (engine?.state !== 'ready') throw new GatewayError('browser_not_ready', 'The project browser is still starting. Check evolved_browser_status and try again when it is ready.', 503, { retryable: true })
         const known = tabs.get(grant.contextId) ?? new Set<string>()
         if (typeof args.tabId === 'string' && !known.has(args.tabId)) throw new GatewayError('browser_tab_not_found', 'Unknown tab for this project browser. Use camofox_list_tabs or camofox_create_tab.', 404)
         if (input.toolName === 'camofox_create_tab' && known.size >= BROWSER_LIMITS.trackedTabs) throw new GatewayError('browser_tab_limit', `At most ${BROWSER_LIMITS.trackedTabs} tabs per project; close a tab first.`, 429)
@@ -197,7 +200,7 @@ export function createBrowserGateway(config: GatewayConfig) {
             await upstream({ method: 'DELETE', path: `/sessions/${enc(contextId)}`, timeoutMs: 10_000 }).then(r => r.body?.cancel()).catch(() => undefined)
         }
     }
-    let probed = false, reporting = false
+    let reporting = false
     async function report(): Promise<void> {
         if (closed || reporting) return
         reporting = true
@@ -206,11 +209,16 @@ export function createBrowserGateway(config: GatewayConfig) {
             try {
                 const response = await upstream({ method: 'GET', path: '/health', timeoutMs: 5000 })
                 const body = await response.json().catch(() => ({})) as Json
-                service = response.ok && body.ok === true ? 'reachable' : 'unhealthy'
+                service = response.ok && body.ok === true && body.browserConnected === true && body.browserRunning === true ? 'reachable' : 'unhealthy'
             } catch { service = 'unreachable' }
             let next: BrowserReport = { service, engine: 'unknown', upstreamVersion: CAMOFOX_UPSTREAM_VERSION }
-            if (service === 'reachable' && !probed) { probed = true; next = { ...next, engine: await probe() }; engine = { state: next.engine as 'ready' | 'failed', at: Date.now() } }
-            if (service !== 'reachable') { probed = false; engine = null }
+            // Recheck a failed startup on the next report, and refresh a healthy
+            // result before the Hub's ten-minute engine freshness window ends.
+            if (service === 'reachable' && (!engine || engine.state === 'failed' || Date.now() - engine.at >= 5 * 60_000)) {
+                next = { ...next, engine: await probe() }
+                engine = { state: next.engine as 'ready' | 'failed', at: Date.now() }
+            }
+            if (service !== 'reachable') engine = null
             let reply: Json
             try { reply = await hub('report', next) } catch (error) {
                 if (error instanceof HubDenial && [401, 403].includes(error.status)) await purgeAll()

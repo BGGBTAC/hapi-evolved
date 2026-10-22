@@ -187,7 +187,7 @@ export function createBrowserRoutes(options: { store: EvolvedStore; origin: stri
         const tools = config.enabled ? BROWSER_TOOLS.filter(tool => config.enabledTools.includes(tool.name) && (!restricted || config.readOnlyTools.includes(tool.name)))
             .map(tool => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema, readOnly: config.readOnlyTools.includes(tool.name) })) : []
         const runtime = await runtimeState(c, project, principal, config, false)
-        const available = config.enabled && managedRunner && tools.length > 0 && ['ready', 'service_ready', 'starting'].includes(runtime.state)
+        const available = config.enabled && managedRunner && tools.length > 0 && runtime.state === 'ready'
         return c.json({ enabled: config.enabled, available, managedRunner, profile: project.profile, version: config.version, catalogRevision: BROWSER_CATALOG_REVISION, runtime, tools,
             sharing: 'One browser state (tabs, cookies, logins) is shared by all agent sessions of this project runner lease; ephemeral, lost on restart, disable or lease change. No per-session isolation.',
             guidance: !config.enabled ? 'The project browser is disabled. A project administrator can enable it in the MCP Shop; do not install or start another browser.'

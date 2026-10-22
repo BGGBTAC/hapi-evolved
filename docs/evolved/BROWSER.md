@@ -15,7 +15,8 @@ Android) und neben Remote-MCPs. Er ändert weder das Entwicklungsmodul noch MCP-
 3. Der Status zeigt ehrlich, was gerade gilt: *Browser-Image fehlt*, *Projektdienst nicht verbunden*,
    *Gestoppt*, *Startet …*, *Dienst erreichbar, Browser ungeprüft*, *Bereit* (Firefox hat eine
    Seite geladen), *Fehler* oder *Keine aktuelle Rückmeldung*. Ein erreichbarer Dienst allein ist
-   noch kein startfähiger Browser; **Browser prüfen** startet Firefox und lädt eine leere Seite.
+   noch kein startfähiger Browser. Beim Start lädt HAPI selbst eine leere Testseite;
+   **Browser prüfen** wiederholt diese Prüfung bei Bedarf.
 4. **Deaktivieren** stoppt den Browser sofort und verwirft Tabs, Cookies und Anmeldungen.
    War die Projektdienst-Steuerung dabei nicht erreichbar, gleicht der Operator den Zustand innerhalb
    von etwa 30 Sekunden (spätestens nach einem Neustart) mit der Hub-Konfiguration ab und stoppt den Browser.
@@ -59,6 +60,9 @@ den vom Hub zuletzt bestätigten Laufzeitzustand, das Profil und die genauen Fre
 `version`, `catalogRevision`). Das funktioniert auch, wenn der Browser deaktiviert oder gestoppt ist; jede
 Agentsitzung kennt damit ihre tatsächlichen Browserrechte. Handeln kann nur der aktuelle verwaltete Projektdienst. `evolved_browser_query` nutzt nur-lesend
 freigegebene Werkzeuge, `evolved_browser_call` alle übrigen mit der normalen Aktionsfreigabe.
+`available: true` erscheint erst nach einer erfolgreichen Firefox-Testseite; vorher bleiben
+Werkzeuge und Rechte sichtbar, Aktionen antworten sicher mit `browser_not_ready` und können
+nach `Bereit` erneut versucht werden.
 Die Grenze setzt der Hub: Mitgliedschaft, aktuelle verwaltete Lease, Profil und jede einzelne
 Freigabe werden vor dem Absenden und erneut vor der Rückgabe des Ergebnisses geprüft. Die
 native Freigabe ist Transparenz, keine Sicherheitsgrenze. `browser_outcome_unknown` und
@@ -85,6 +89,10 @@ Alle drei stehen in `deploy/evolved/runner.compose.yml` unter `profiles: [browse
 `docker compose config` bitgleich zum Stand ohne Browser; `runner`, `runner-proxy` und `egress`
 bleiben unverändert. Der `runner-proxy` bedient gewöhnliche Routen nur dem Peer `runner`; dem Peer
 `browser-gateway` erlaubt er ausschließlich `POST /api/evolved/projects/<eigenes Projekt>/browser/authorize|report`.
+Beim Kaltstart wartet Compose mit dem Gateway auf den authentifizierten Healthcheck des Browsers
+und dessen bestätigte Firefox-Verbindung;
+so ist dessen Docker-DNS-Name vor dem ersten Aufruf vorhanden. Der anschließende Firefox-Test
+meldet erst dann `Bereit`, wenn eine leere Seite erfolgreich geladen wurde.
 
 Der Browser-Zugriffsschlüssel (`CAMOFOX_ACCESS_KEY`) wird bei jedem Start vom Operator zufällig
 erzeugt (`<state>/runners/<projekt>/browser.key`, UID-Besitz, 0600) und nur in `browser-gateway` und

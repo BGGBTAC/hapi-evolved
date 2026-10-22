@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 
 const source = (name: string) => readFileSync(new URL(name, import.meta.url), 'utf8')
 type Service = { profiles?: string[]; image?: string; networks: string[]; volumes?: Array<string | { source: string; target: string; read_only?: boolean; bind?: { create_host_path?: boolean } }>
-    environment?: Record<string, string>; read_only: boolean; cap_drop: string[]; security_opt: string[]; depends_on?: string[]; mem_limit?: string; user?: string }
+    environment?: Record<string, string>; read_only: boolean; cap_drop: string[]; security_opt: string[]; depends_on?: string[] | Record<string, { condition: string }>; healthcheck?: { test: string[]; interval: string; timeout: string; retries: number; start_period: string }; mem_limit?: string; user?: string }
 const compose = Bun.YAML.parse(source('./runner.compose.yml')) as { services: Record<string, Service>; networks: Record<string, { internal?: boolean; external?: boolean }> }
 const browserServices = ['browser-gateway', 'browser', 'browser-egress']
 
@@ -27,6 +27,14 @@ describe('optional project browser topology', () => {
         expect(members('browser-control')).toEqual(['browser', 'browser-gateway'])
         expect(members('browser-outbound')).toEqual(['browser', 'browser-egress'])
         expect(members('browser-internet')).toEqual(['browser-egress'])
+    })
+    test('the gateway waits for an authenticated healthy browser before its first upstream lookup', () => {
+        expect(compose.services['browser-gateway']!.depends_on).toEqual({ browser: { condition: 'service_healthy' } })
+        const check = compose.services.browser!.healthcheck!
+        expect(check.test.slice(0, 3)).toEqual(['CMD', 'node', '-e'])
+        expect(check.test[3]).toContain("headers:{authorization:'Bearer '+key}")
+        expect(check.test[3]).toContain('body.ok===true&&body.browserConnected===true&&body.browserRunning===true')
+        expect(check.retries).toBeGreaterThanOrEqual(10)
     })
     test('the access key is mounted read-only into exactly the gateway and the browser, never auto-created', () => {
         const holders = Object.entries(compose.services).filter(([, service]) => (service.volumes ?? []).some(volume => typeof volume === 'object' && volume.target === '/credentials/browser-key')).map(([name]) => name).sort()

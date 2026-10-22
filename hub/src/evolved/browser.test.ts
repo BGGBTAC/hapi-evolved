@@ -156,7 +156,7 @@ describe('agent browser discovery', () => {
         expect(body.guidance).toContain('disabled')
         const { config } = await f.enable()
         body = await (await agent(f, lease.capability)).json() as any
-        expect(body).toMatchObject({ enabled: true, available: true, managedRunner: true, version: config.version, catalogRevision: BROWSER_CATALOG_REVISION, runtime: { state: 'starting' } })
+        expect(body).toMatchObject({ enabled: true, available: false, managedRunner: true, version: config.version, catalogRevision: BROWSER_CATALOG_REVISION, runtime: { state: 'starting' } })
         expect(body.tools.map((tool: { name: string }) => tool.name).sort()).toEqual([...BROWSER_DEFAULT_TOOLS].sort())
         expect(body.tools.find((tool: { name: string }) => tool.name === 'camofox_list_tabs').readOnly).toBe(true)
         expect(body.sharing).toContain('No per-session isolation')
@@ -210,7 +210,7 @@ describe('agent runtime truthfulness', () => {
         expect(await agent(f, lease.capability)).toMatchObject({ available: false, runtime: { state: 'failed', errorCode: 'runner_unavailable' } })
         const g = fixture(), other = g.lease(g.project.id)
         await g.enable()
-        expect(await agent(g, other.capability)).toMatchObject({ available: true, runtime: { state: 'starting' } })
+        expect(await agent(g, other.capability)).toMatchObject({ available: false, runtime: { state: 'starting' } })
         g.advance(60_000)
         expect(await agent(g, other.capability)).toMatchObject({ available: false, runtime: { state: 'stale' } })
     })

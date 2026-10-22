@@ -23,7 +23,7 @@ export class UnixProviderControl implements ProviderControl {
     constructor(private socket:string, private key:Uint8Array) {}
     async request(request:ControlRequest):Promise<unknown> {
         let response:Response
-        try { response = await fetch('http://runner-control/control', { unix:this.socket, method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(signControl(this.key,request,'operator')), signal:AbortSignal.timeout(request.action==='prepare'?90_000:20_000) }) }
+        try { response = await fetch('http://runner-control/control', { unix:this.socket, method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(signControl(this.key,request,'operator')), signal:AbortSignal.timeout(['prepare','browser'].includes(request.action)?90_000:20_000) }) }
         catch { throw new EvolvedError('runner_unavailable','Der Projektdienst ist vorübergehend nicht erreichbar. Bitte erneut versuchen.',503) }
         if (!response.ok) {
             const body = await response.json().catch(()=>null) as {code?:string}|null
