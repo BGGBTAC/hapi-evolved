@@ -28,6 +28,7 @@ import { odooToolchain } from './layout'
 import { boundModule, developmentAction, developmentContext, developmentKnowledge, isRouteUnavailable } from './moduleAdapter'
 import { loadLocalModule, pluginModuleDigest } from './pluginValidate'
 import { runnerDevelopmentProvider } from './providers'
+import { runAdsDoctor } from '../ads/doctor'
 
 export const DEVELOPMENT_USAGE = `hapi evolved development context
 hapi evolved development knowledge [--topic <id> | <search words>] [--limit <1-20>]
@@ -139,7 +140,8 @@ async function runLocalModule(command: 'doctor' | 'inspect', module: LocalModule
         if (!module.doctor) throw new Error('This module defines no doctor checks')
         if (!runnerDevelopmentProvider(module.doctor.provider, 'module_doctor')) throw new Error(`Doctor provider ${module.doctor.provider.id} v${module.doctor.provider.version} is not implemented by this runner`)
         const checks = module.doctor.checks.filter(check => developmentModuleApplies(check.when, module.values)).map(check => check.id)
-        return { ...module.provenance(module.doctor.provider), ...await runToolchainDoctor({ projectRoot, checkout, checks }) }
+        const report = module.doctor.provider.id === 'hapi.claude-ads' ? await runAdsDoctor({ projectRoot, checkout, checks }) : await runToolchainDoctor({ projectRoot, checkout, checks })
+        return { ...module.provenance(module.doctor.provider), ...report }
     }
     if (!module.inspect) throw new Error('This module defines no repository inspection')
     if (!runnerDevelopmentProvider(module.inspect.provider, 'module_inspect')) throw new Error(`Inspect provider ${module.inspect.provider.id} v${module.inspect.provider.version} is not implemented by this runner`)

@@ -6,8 +6,9 @@ import {
 import {
     DevelopmentModuleCatalogResponseSchema, DevelopmentModuleConflictResponseSchema, DevelopmentModuleContextSchema, DevelopmentModuleDetailResponseSchema, DevelopmentModuleSettingsErrorSchema,
     DevelopmentModulesResponseSchema, DevelopmentModuleUnavailableResponseSchema, DEVELOPMENT_MODULE_LIMITS, modeForBuiltinModuleId, parseDevelopmentModuleId,
-    type DevelopmentModuleCatalogEntry, type DevelopmentModuleSettings, type DevelopmentModuleSettingsInput, type DevelopmentModuleState, type ProjectDevelopmentModuleConfig,
+    type DevelopmentModuleCatalogEntry, type DevelopmentModuleSettings, type DevelopmentModuleSettingsInput, type DevelopmentModuleSource, type DevelopmentModuleState, type ProjectDevelopmentModuleConfig,
 } from '@hapi/protocol/developmentModules'
+import { isBundledPluginId } from '@hapi/protocol/bundledPlugins'
 import type { EvolvedSession } from './auth'
 import { EvolvedApiError, projectPath } from './api'
 
@@ -148,6 +149,11 @@ export function settingsInput(settings: DevelopmentModuleSettings): DevelopmentM
 /** The builtin sections (and shared repository) in v1 form for the reviewed builtin validators. */
 export function builtinSections(settings: Pick<DevelopmentModuleSettingsInput, 'activeModuleId' | 'repositoryId' | 'odoo' | 'ios' | 'android'>): DevelopmentSettings {
     return { mode: modeForBuiltinModuleId(settings.activeModuleId) ?? 'none', repositoryId: settings.repositoryId, odoo: settings.odoo, ios: settings.ios, android: settings.android }
+}
+/** Short origin label: builtin packs, immutable plugins bundled with HAPI, or installed GitHub plugins. */
+export function moduleOriginLabel(source: DevelopmentModuleSource): string {
+    if (source.kind === 'builtin') return 'Mitgeliefert'
+    return `${isBundledPluginId(source.pluginId) ? 'Mitgeliefertes Plugin' : 'Plugin'} ${source.pluginName} ${source.pluginVersion}`
 }
 export const moduleStateLabels: Record<DevelopmentModuleState, string> = {
     none: 'Allgemein', ready: 'Bereit', adoption_required: 'Neue Fassung muss übernommen werden', disabled: 'Plugin deaktiviert',

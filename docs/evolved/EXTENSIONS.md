@@ -61,6 +61,15 @@ ihre Einstellungen bleiben erhalten. Ein Update, das ein in einem Projekt aktive
 entfernt, wird abgelehnt; ein Update mit geänderter Moduldefinition muss in jedem
 betroffenen Projekt übernommen werden.
 
+### Mitgelieferte Plugins
+
+Einige Plugins kommen mit HAPI selbst (derzeit „Claude Ads (mitgeliefert)“, siehe
+[CLAUDE_ADS.md](CLAUDE_ADS.md)). Sie verwenden dasselbe Manifestformat, erscheinen immer
+im Katalog und sind als „Mitgeliefert · unveränderlich“ gekennzeichnet: Update,
+Deaktivieren, Deinstallieren und Ersetzen durch ein GitHub-Plugin mit gleicher Quelle oder
+ID werden abgelehnt (`plugin_bundled`). Ihre Entwicklungsmodule werden – wie alle – nur
+ausdrücklich je Projekt aktiviert.
+
 ## Manifestformat
 
 Das [vollständige Beispiel](https://github.com/BGGBTAC/hapi-evolved/blob/main/examples/plugins/quality/hapi-evolved.plugin.json)

@@ -7,6 +7,7 @@ import { developmentProviderCapability } from '@hapi/protocol/developmentModules
  */
 export const RUNNER_DEVELOPMENT_PROVIDERS = Object.freeze({
     'hapi.toolchain': { version: 1, action: 'module_doctor' },
+    'hapi.claude-ads': { version: 1, action: 'module_doctor' },
     'hapi.repository-inventory': { version: 1, action: 'module_inspect' },
 } as const)
 export type RunnerDevelopmentProviderId = keyof typeof RUNNER_DEVELOPMENT_PROVIDERS

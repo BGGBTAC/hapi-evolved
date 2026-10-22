@@ -261,6 +261,7 @@ Provider sind feste Implementierungen des Hosts. Ein Modul verweist mit
 |---|---|---|---|---|
 | `hapi.toolchain` | 1 | Doctor | ja | `evolvedDevelopment.provider.hapi.toolchain.v1` |
 | `hapi.repository-inventory` | 1 | Inspect | ja | `evolvedDevelopment.provider.hapi.repository-inventory.v1` |
+| `hapi.claude-ads` | 1 | Doctor (Claude Ads: Python 3.11/3.12, Assets, native Skills, Ablage) | ja | `evolvedDevelopment.provider.hapi.claude-ads.v1` |
 | `github.commit-status` | 1 | Integration (Hub, über die Projektfreigabe) | ja | – |
 | `builtin.odoo`, `builtin.ios`, `builtin.android` | 1 | Doctor und Inspect | nein | `evolved-development` |
 

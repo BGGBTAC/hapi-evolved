@@ -7,6 +7,7 @@ import { createEvolvedRequestGuard, parseBody } from './security'
 import { extensionAdministrationNow, extensionHuman, extensionSessionHash } from './extensionAccess'
 import { agentDefinitionSchema, agentInstructionsFit, parsePluginManifest, PLUGIN_MANIFEST_FILE, PLUGIN_MAX_BYTES, type PluginManifest } from './pluginManifest'
 import { developmentModuleUsage, pluginModuleSummaries, type DevelopmentModuleUsage } from './developmentModules'
+import { loadBundledPlugins } from './bundledPlugins'
 
 const repositorySchema = z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/)
     .refine(value => !['.', '..'].includes(value.split('/')[1]!)).transform(value => value.toLowerCase())
@@ -14,7 +15,8 @@ const refSchema = z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9][A-Za-z0-
 const sourceSchema = z.object({ repository: repositorySchema, ref: refSchema.default('HEAD') }).strict()
 const confirmationSchema = z.object({ previewId: z.string().uuid(), commitSha: z.string().regex(/^[a-f0-9]{40}$/), manifestSha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict()
 type Source = { repository: string; repositoryId: string; commitSha: string; manifestSha256: string }
-export type InstalledPlugin = Source & { id: string; enabled: boolean; manifest: PluginManifest; installedAt: number; updatedAt: number; revision: number; invalid?: true }
+/** `bundled`: shipped with HAPI (immutable, in memory, never a table row); see ./bundledPlugins. */
+export type InstalledPlugin = Source & { id: string; enabled: boolean; manifest: PluginManifest; installedAt: number; updatedAt: number; revision: number; invalid?: true; bundled?: true }
 type PluginRow = { id: string; repository: string; repository_id: string; commit_sha: string; manifest_sha256: string; manifest: string; enabled: number; installed_at: number; updated_at: number; revision: number }
 type PreviewRow = { id: string; user_id: string; session_hash: string; plugin_id: string | null; base_sha: string | null; repository: string; repository_id: string; commit_sha: string; manifest_sha256: string; manifest: string; expires_at: number }
 export type PluginPreview = Source & { previewId: string; pluginId: string | null; expiresAt: number; manifest: PluginManifest }
@@ -30,7 +32,7 @@ const revisionHash = (plugin: InstalledPlugin) => digest(`${plugin.commitSha}:${
 export class PluginService {
     private activeFetches = 0
     private readonly attempts = new Map<string, { count: number; until: number }>()
-    constructor(readonly store: EvolvedStore, private readonly fetcher: typeof fetch = fetch) {
+    constructor(readonly store: EvolvedStore, private readonly fetcher: typeof fetch = fetch, readonly bundled: readonly InstalledPlugin[] = loadBundledPlugins()) {
         store.db.exec(`CREATE TABLE IF NOT EXISTS evolved_plugins (
             id TEXT PRIMARY KEY,repository TEXT NOT NULL,repository_id TEXT NOT NULL UNIQUE,commit_sha TEXT NOT NULL,
             manifest_sha256 TEXT NOT NULL,manifest TEXT NOT NULL,enabled INTEGER NOT NULL,installed_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,revision INTEGER NOT NULL DEFAULT 1
@@ -40,26 +42,41 @@ export class PluginService {
             commit_sha TEXT NOT NULL,manifest_sha256 TEXT NOT NULL,manifest TEXT NOT NULL,expires_at INTEGER NOT NULL
         );`)
     }
-    list(): InstalledPlugin[] { return (this.store.db.query('SELECT * FROM evolved_plugins ORDER BY installed_at,id').all() as PluginRow[]).map(installed) }
+    list(): InstalledPlugin[] { return [...this.bundled, ...(this.store.db.query('SELECT * FROM evolved_plugins ORDER BY installed_at,id').all() as PluginRow[]).map(installed)] }
     /** Cheap change detection for registries that cache parsed manifests. */
     versions(): Array<{ id: string; revision: number; manifestSha256: string; enabled: boolean }> {
-        return (this.store.db.query('SELECT id,revision,manifest_sha256,enabled FROM evolved_plugins ORDER BY installed_at,id').all() as Array<{ id: string; revision: number; manifest_sha256: string; enabled: number }>)
+        const rows = (this.store.db.query('SELECT id,revision,manifest_sha256,enabled FROM evolved_plugins ORDER BY installed_at,id').all() as Array<{ id: string; revision: number; manifest_sha256: string; enabled: number }>)
             .map(row => ({ id: row.id, revision: row.revision, manifestSha256: row.manifest_sha256, enabled: !!row.enabled }))
+        return [...this.bundled.map(plugin => ({ id: plugin.id, revision: plugin.revision, manifestSha256: plugin.manifestSha256, enabled: plugin.enabled })), ...rows]
+    }
+    private bundledPlugin(id: string): InstalledPlugin | null { return this.bundled.find(plugin => plugin.id === id) ?? null }
+    /** Plugin routes never change, replace or remove a bundled plugin. */
+    private assertMutable(id: string): void {
+        if (this.bundledPlugin(id)) throw new EvolvedError('plugin_bundled', 'Bundled plugins ship with HAPI and cannot be updated, disabled or uninstalled.', 409)
+    }
+    private assertNoBundledCollision(repository: string, repositoryId: string | null, manifestId: string | null): void {
+        if (this.bundled.some(plugin => plugin.repository === repository || plugin.repositoryId === repositoryId || plugin.manifest.id === manifestId))
+            throw new EvolvedError('plugin_bundled', 'This plugin ships with HAPI and cannot be installed or replaced from GitHub.', 409)
     }
     /**
      * Lifecycle change. Every effective enable/disable advances the monotonic `revision`, so in-flight development-module
      * snapshots detect a disable/re-enable (ABA) even when the module digest is unchanged. Call inside a write transaction.
      */
     setEnabled(id: string, enabled: boolean): void {
+        this.assertMutable(id)
         const row = this.store.db.query('SELECT enabled FROM evolved_plugins WHERE id=?').get(id) as { enabled: number } | null
         if (!row) throw new EvolvedError('plugin_not_found', 'Plugin not found.', 404)
         if (!!row.enabled !== enabled) this.store.db.prepare('UPDATE evolved_plugins SET enabled=?,updated_at=?,revision=revision+1 WHERE id=?').run(enabled ? 1 : 0, this.store.now(), id)
     }
     find(id: string): InstalledPlugin | null {
+        const bundled = this.bundledPlugin(id)
+        if (bundled) return bundled
         const row = this.store.db.query('SELECT * FROM evolved_plugins WHERE id=?').get(id) as PluginRow | null
         return row ? installed(row) : null
     }
     get(id: string): InstalledPlugin {
+        const bundled = this.bundledPlugin(id)
+        if (bundled) return bundled
         const row = this.store.db.query('SELECT * FROM evolved_plugins WHERE id=?').get(id) as PluginRow | null
         if (!row) throw new EvolvedError('plugin_not_found', 'Plugin not found.', 404)
         return installed(row)
@@ -90,6 +107,8 @@ export class PluginService {
         const rate = this.attempts.get(userId) ?? { count: 0, until: now + 60_000 }
         if (rate.count >= 6 || this.activeFetches >= 4) throw new EvolvedError('plugin_rate_limited', 'Plugin previews are busy. Try again shortly.', 429)
         rate.count++; this.attempts.set(userId, rate)
+        if (pluginId) this.assertMutable(pluginId)
+        else this.assertNoBundledCollision(source.repository, null, null)
         const previous = pluginId ? this.get(pluginId) : undefined
         if (previous?.invalid) throw new EvolvedError('plugin_invalid', 'Remove the invalid plugin before reviewing a fresh installation.', 409)
         if (previous && previous.repository !== source.repository) throw new EvolvedError('plugin_source_changed', 'An update must use the installed repository.', 409)
@@ -105,6 +124,7 @@ export class PluginService {
             const commitSha = commit.toLowerCase(), raw = await this.read(`https://raw.githubusercontent.com/${source.repository}/${commitSha}/${PLUGIN_MANIFEST_FILE}`, PLUGIN_MAX_BYTES)
             const manifest = parsePluginManifest(raw)
             if (previous && previous.manifest.id !== manifest.id) throw new EvolvedError('plugin_identity_changed', 'An update must retain the plugin identifier.', 409)
+            if (!previous) this.assertNoBundledCollision(source.repository, repositoryId, manifest.id)
             if (previous) this.assertDependencies(previous.id, manifest)
             return { repository: source.repository, repositoryId, commitSha, manifestSha256: digest(raw), raw, manifest, previous }
         } catch (error) {
@@ -155,6 +175,7 @@ export class PluginService {
         }
     }
     install(userId: string, sessionHash: string, confirmation: z.infer<typeof confirmationSchema>, pluginId?: string): InstalledPlugin {
+        if (pluginId) this.assertMutable(pluginId)
         const preview = this.store.db.query('SELECT * FROM evolved_plugin_previews WHERE id=?').get(confirmation.previewId) as PreviewRow | null
         if (!preview || preview.expires_at <= this.store.now() || preview.user_id !== userId || preview.session_hash !== sessionHash) throw new EvolvedError('plugin_preview_expired', 'Open a fresh preview in this session.', 409)
         if (preview.plugin_id !== (pluginId ?? null) || preview.commit_sha !== confirmation.commitSha || preview.manifest_sha256 !== confirmation.manifestSha256 || digest(preview.manifest) !== confirmation.manifestSha256) {
@@ -162,6 +183,7 @@ export class PluginService {
         }
         const manifest = parsePluginManifest(preview.manifest), now = this.store.now()
         const id = pluginId ?? randomUUID()
+        if (!pluginId) this.assertNoBundledCollision(preview.repository, preview.repository_id, manifest.id)
         if (pluginId) {
             const current = this.get(pluginId)
             if (current.invalid || revisionHash(current) !== preview.base_sha || current.repositoryId !== preview.repository_id || current.manifest.id !== manifest.id) throw new EvolvedError('plugin_update_conflict', 'Installed plugin changed. Review a new update preview.', 409)
@@ -227,7 +249,7 @@ export function createPluginRoutes(service: PluginService, origin: string): Hono
     })
     app.delete('/plugins/:id', async c => {
         await extensionHuman(c, store, true)
-        store.db.transaction(() => { const principal = extensionAdministrationNow(c, store), current = service.get(c.req.param('id')); store.db.prepare('DELETE FROM evolved_plugins WHERE id=?').run(current.id); store.audit(principal.user.id, null, 'plugin.uninstalled', current.id) }).immediate()
+        store.db.transaction(() => { const principal = extensionAdministrationNow(c, store), current = service.get(c.req.param('id')); if (current.bundled) throw new EvolvedError('plugin_bundled', 'Bundled plugins ship with HAPI and cannot be uninstalled.', 409); store.db.prepare('DELETE FROM evolved_plugins WHERE id=?').run(current.id); store.audit(principal.user.id, null, 'plugin.uninstalled', current.id) }).immediate()
         return c.json({ ok: true })
     })
     return app

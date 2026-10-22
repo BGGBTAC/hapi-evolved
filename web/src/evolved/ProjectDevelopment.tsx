@@ -18,10 +18,11 @@ import { DevelopmentTasks } from './DevelopmentTasks'
 import { DevelopmentHandbook } from './DevelopmentHandbook'
 import {
     builtinSections, conflictConfig, describeActiveModule, describeDevelopmentError, describeFieldIssue, describeIssue, describeModuleState, developmentPath,
-    developmentScope, formatTimestamp, invalidateDevelopmentQueries, modeHints, modeLabels, moduleStateLabels, sameSettings, settingsInput, settingsIssues,
+    developmentScope, formatTimestamp, invalidateDevelopmentQueries, modeHints, modeLabels, moduleOriginLabel, moduleStateLabels, sameSettings, settingsInput, settingsIssues,
     shortDigest, useDevelopmentModuleContext, useDevelopmentModuleDetail, useDevelopmentModules, validateSettings,
 } from './developmentApi'
 import type { SetupIntent } from './setupIntent'
+import { isBundledPluginId } from '@hapi/protocol/bundledPlugins'
 import './development.css'
 
 /**
@@ -402,7 +403,7 @@ function modulePickerOptions(catalog: readonly DevelopmentModuleCatalogEntry[], 
     const savedActive = persisted.settings.activeModuleId
     const options: ModulePickerOption[] = [{ id: null, title: modeLabels.none, detail: 'Keine Spezialisierung; Sitzungen arbeiten wie bisher.' }]
     for (const entry of catalog) {
-        const origin = entry.source.kind === 'plugin' ? `Plugin ${entry.source.pluginName} ${entry.source.pluginVersion}` : 'Mitgeliefert'
+        const origin = moduleOriginLabel(entry.source)
         const stored = draft.modules[entry.id]
         const outdated = !!stored && stored.moduleDigest !== entry.digest
         const saved = entry.id === savedActive
@@ -423,12 +424,12 @@ function modulePickerOptions(catalog: readonly DevelopmentModuleCatalogEntry[], 
 
 function ModuleSource({ entry, saved }: { entry: DevelopmentModuleCatalogEntry; saved: PluginModuleSettingsEntry | null }) {
     if (entry.source.kind === 'builtin') return <p className="ev-dev-wide ev-muted">Mitgeliefert mit HAPI · Fassung {entry.contentVersion} · wird mit HAPI aktualisiert.</p>
-    const source = entry.source
-    return <details className="ev-dev-wide"><summary>Herkunft: Plugin {source.pluginName} {source.pluginVersion} · {source.repository}{!source.enabled ? ' · deaktiviert' : ''}</summary>
+    const source = entry.source, bundled = isBundledPluginId(source.pluginId)
+    return <details className="ev-dev-wide"><summary>Herkunft: {moduleOriginLabel(source)} · {source.repository}{bundled ? ' · unveränderlich' : ''}{!source.enabled ? ' · deaktiviert' : ''}</summary>
         <dl className="ev-dev-provenance">
             <dt>Installiert</dt><dd>Fassung {entry.contentVersion} · Commit <code>{source.commitSha.slice(0, 12)}</code> · Manifest <code>{source.manifestSha256.slice(0, 12)}</code> · Modul <code>{shortDigest(entry.digest)}</code></dd>
             <dt>Im Projekt</dt><dd>{saved ? <>Übernommen am {formatTimestamp(saved.adopted.at)} aus Version {saved.adopted.pluginVersion}, Commit <code>{saved.adopted.commitSha.slice(0, 12)}</code> · Modul <code>{shortDigest(saved.moduleDigest)}</code>{saved.moduleDigest !== entry.digest ? ' · ältere Fassung' : ''}</> : 'Noch nicht gespeichert'}</dd>
-            <dt>Aktualisierung</dt><dd>Neue Plugin-Fassungen gelten erst, wenn ein Projektadministrator sie hier übernimmt.</dd>
+            <dt>Aktualisierung</dt><dd>{bundled ? 'Mit HAPI ausgeliefert und über die Plugin-Verwaltung weder änderbar noch entfernbar. Eine neue Fassung kommt nur mit einem HAPI-Release und gilt erst, wenn ein Projektadministrator sie hier übernimmt.' : 'Neue Plugin-Fassungen gelten erst, wenn ein Projektadministrator sie hier übernimmt.'}</dd>
             <dt>Inhalt</dt><dd>{entry.counts.tasks} Aufgaben · {entry.counts.topics} Handbuchthemen · {entry.counts.checks} Prüfungen{entry.providers.some(provider => !provider.supported) ? ' · enthält nicht unterstützte Prüfungen' : ''}</dd>
         </dl>
         {entry.reasons.length > 0 && <ul className="ev-dev-links">{entry.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>}

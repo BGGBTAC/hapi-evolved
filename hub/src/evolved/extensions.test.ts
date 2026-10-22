@@ -36,7 +36,8 @@ function setup() {
         if (url.includes('/commits/')) return new Headers(init?.headers).get('accept') === 'application/vnd.github.sha' ? new Response(sha + '\n') : Response.json({ sha, files: [{ patch: 'x'.repeat(256 * 1024) }] })
         return Response.json({ id: repositoryId, full_name: 'owner/repo', private: metadataPrivate })
     }) as typeof fetch
-    const plugins = new PluginService(store, fetcher), started: unknown[][] = [], archived: string[] = []
+    // GitHub plugin lifecycle in isolation; bundled plugins (immutable, always listed) are covered by bundledPlugins.test.ts.
+    const plugins = new PluginService(store, fetcher, []), started: unknown[][] = [], archived: string[] = []
     const messages = new Map<string, Array<{ localId: string; text: string }>>(), known = new Set<string>()
     let onSpawn: (() => void | Promise<void>) | undefined, onMessage: (() => void | Promise<void>) | undefined, capability = true
     const machine = () => ({ id: 'machine', active: true, metadata: { host: 'runner', capabilities: capability ? [MACHINE_CAPABILITIES.AgentAvailability] : [] } })

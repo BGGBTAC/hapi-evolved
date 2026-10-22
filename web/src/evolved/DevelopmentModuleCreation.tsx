@@ -9,7 +9,7 @@ import type { EvolvedSession } from './auth'
 import { EvolvedApiError } from './api'
 import { SegmentedChoice } from './DevelopmentModePicker'
 import { DevelopmentModuleFields, DevelopmentModulePicker, type ModulePickerOption } from './DevelopmentModuleFields'
-import { describeDevelopmentError, describeFieldIssue, settingsIssues, modeHints, modeLabels, moduleStateLabels, useGlobalDevelopmentCatalog, useGlobalDevelopmentModuleDetail } from './developmentApi'
+import { describeDevelopmentError, describeFieldIssue, settingsIssues, modeHints, modeLabels, moduleOriginLabel, moduleStateLabels, useGlobalDevelopmentCatalog, useGlobalDevelopmentModuleDetail } from './developmentApi'
 
 /** Contract-v2 `development` field of POST /projects (`DevelopmentModuleCreationSchema`). */
 type Creation = { contractVersion: typeof DEVELOPMENT_MODULE_CONTRACT_VERSION; settings: DevelopmentModuleSettingsInput }
@@ -125,7 +125,7 @@ export function DevelopmentCreationFields({ creation, disabled }: { creation: Re
     const { catalog, moduleId, entry } = creation
     const options: ModulePickerOption[] = [{ id: null, title: modeLabels.none, detail: 'Keine Spezialisierung' }]
     for (const item of catalog.current?.modules ?? []) options.push({
-        id: item.id, title: item.title, detail: `${item.source.kind === 'plugin' ? `Plugin ${item.source.pluginName} ${item.source.pluginVersion}` : 'Mitgeliefert'} · Fassung ${item.contentVersion}`,
+        id: item.id, title: item.title, detail: `${moduleOriginLabel(item.source)} · Fassung ${item.contentVersion}`,
         badge: item.state !== 'ready' ? moduleStateLabels[item.state] : undefined, tone: item.state !== 'ready' ? 'warn' : undefined, disabled: item.state !== 'ready',
     })
     const mode = modeForBuiltinModuleId(moduleId)

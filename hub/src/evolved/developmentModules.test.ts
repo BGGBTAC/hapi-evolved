@@ -9,6 +9,7 @@ import {
     developmentSettingsToModuleSettings, type DevelopmentModuleDefinitionInput, type DevelopmentModulesResponse,
 } from '@hapi/protocol/developmentModules'
 import type { PluginManifestInput } from '@hapi/protocol/pluginManifest'
+import { CLAUDE_ADS_MODULE_ID } from '@hapi/protocol/bundledPlugins'
 import { createDevelopmentService, DevelopmentConfigInvalidError } from './development'
 import { DevelopmentModuleRegistry } from './developmentModules'
 import { parsePluginManifest } from './pluginManifest'
@@ -578,7 +579,8 @@ describe('core follow-up: lifecycle generation, digest scope, catalogue, quarant
         const t = setup(), pluginId = await t.install(), moduleId = t.moduleId(pluginId, t.localA)
         const outsider = t.store.createSession('viewer')
         const list = DevelopmentModuleCatalogResponseSchema.parse(await (await t.app.request(`${origin}/api/evolved/development-modules`, { headers: { origin, cookie: `${SESSION_COOKIE}=${outsider}` } })).json())
-        expect(list.modules.map(module => module.id)).toEqual(['builtin:odoo', 'builtin:ios', 'builtin:android', moduleId, t.moduleId(pluginId, t.localB)])
+        // The bundled Claude Ads module is listed (installation-level ready) but never active anywhere without an explicit project save.
+        expect(list.modules.map(module => module.id)).toEqual(['builtin:odoo', 'builtin:ios', 'builtin:android', CLAUDE_ADS_MODULE_ID, moduleId, t.moduleId(pluginId, t.localB)])
         expect(JSON.stringify(list)).not.toContain(BODY_MARKER)
         const detail = DevelopmentModuleDetailResponseSchema.parse(await (await t.request(`/development-modules/${encodeURIComponent(moduleId)}`, { user: 'viewer' })).json())
         expect(detail.module).toMatchObject({ id: moduleId, form: { kind: 'fields' } })

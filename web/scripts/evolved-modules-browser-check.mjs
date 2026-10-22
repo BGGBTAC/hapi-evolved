@@ -267,12 +267,46 @@ try {
     if (!await packageName.isDisabled() || await packageName.inputValue() !== 'mein_paket') fail('Disabled module values are not shown read-only');
     if (await page.getByRole('button', { name: 'Sitzung vorbereiten' }).count()) fail('Tasks offered for a disabled module');
 
+    // ADS-01: the bundled Claude Ads plugin is listed immutable; its module is activated only by an explicit project save
+    // through the generic form (no doctor, no task start, no repository needed).
+    const adsModuleId = 'plugin:d6608d8c-e211-5d30-9735-6712fee7c5e9:ads';
+    await workspaceArea(page, 'Agenten & Plugins');
+    const adsCard = page.locator('.ev-agent-card').filter({ has: page.getByText('Claude Ads (mitgeliefert)', { exact: true }) });
+    await adsCard.getByText('Mitgeliefert · unveränderlich', { exact: true }).waitFor();
+    for (const name of ['Update prüfen', 'Deaktivieren', 'Deinstallieren']) if (await adsCard.getByRole('button', { name, exact: true }).count()) fail(`Bundled plugin offers ${name}`);
+    await workspaceArea(page, 'Projekte');
+    await page.getByLabel('Projektname', { exact: true }).fill('Ads Alpha');
+    const adsCreated = page.waitForResponse(r => new URL(r.url()).pathname === '/api/evolved/projects' && r.request().method() === 'POST' && r.status() === 201);
+    await page.getByRole('button', { name: 'Projekt anlegen', exact: true }).click();
+    const adsProjectId = (await (await adsCreated).json()).project.id;
+    const adsBefore = await (await page.request.get(`${origin}/api/evolved/projects/${adsProjectId}/development/modules`)).json();
+    const adsEntry = adsBefore.catalog.modules.find(entry => entry.id === adsModuleId);
+    if (adsBefore.config.settings.activeModuleId !== null || adsBefore.config.revision !== 0 || adsEntry?.state !== 'ready') fail(`Bundled module not offered or auto-activated: ${JSON.stringify(adsBefore.config.active)}`);
+    await page.getByLabel('Aktives Projekt', { exact: true }).selectOption({ label: 'Ads Alpha' });
+    await workspaceArea(page, 'Entwicklung');
+    await page.getByRole('radio', { name: 'Claude Ads (Paid Media)', exact: true }).check();
+    await page.getByLabel(/^Kunde \/ Marke/).fill('Synthetic Shop');
+    await page.getByLabel(/^Primäre Plattform/).selectOption('google');
+    await page.getByLabel(/^Exportdateien/).fill('exports/google.csv');
+    await page.getByLabel(/^Tresor-Referenz/).fill('vault:ads-readonly');
+    if (await page.getByLabel(/token|passwort|api.?key/i).count()) fail('Ads form offers a secret field');
+    await page.getByRole('button', { name: 'Speichern', exact: true }).click();
+    await page.getByText(/Gespeichert als Revision 1\./).waitFor();
+    const adsPut = puts.at(-1), adsValues = adsPut?.settings.modules?.[adsModuleId];
+    if (adsPut?.settings.activeModuleId !== adsModuleId || adsValues?.moduleDigest !== adsEntry.digest || adsValues.values.client !== 'Synthetic Shop' || adsValues.values.primaryPlatform !== 'google'
+        || JSON.stringify(adsValues.values.evidencePaths) !== '["exports/google.csv"]' || adsValues.values.vaultResource !== 'vault:ads-readonly') fail(`Unexpected Ads save body: ${JSON.stringify(adsPut)}`);
+    await page.getByText(/Herkunft: Mitgeliefertes Plugin .* unveränderlich/).waitFor();
+    for (const title of ['Native Skills einrichten', 'Leitfaden prüfen (nur lesend)', 'Google Ads prüfen', 'Bericht erstellen']) await page.getByText(title, { exact: true }).first().waitFor();
+    await page.screenshot({ path: join(evidence, 'ads-1440-module.png'), fullPage: false });
+    const adsAfter = await (await page.request.get(`${origin}/api/evolved/projects/${adsProjectId}/development/modules`)).json();
+    if (adsAfter.config.active.state !== 'ready' || adsAfter.config.settings.modules[adsModuleId].adopted.commitSha !== 'fc3908e786c318776df89a3a098333da377364be') fail(`Ads module not ready after save: ${JSON.stringify(adsAfter.config.active)}`);
+
     const after = await bundleHash();
     if (before !== after) fail('Web bundle changed during the module run');
     if (legacy.length) fail(`Web app used v1 development routes: ${legacy.join(', ')}`);
     if (actions.length) fail(`Module changes triggered actions: ${actions.join(', ')}`);
     if (errors.length) fail('Browser errors: ' + errors.join('; '));
-    console.log(`PASS real isolated Hub: module-only plugin install activates nothing; creation racing a plugin update is refused (409), reloaded explicitly and retried with the new digest keeping the draft; unknown modules scenario-${suffix}/other-${suffix} rendered by the unchanged bundle (sha256 ${before.slice(0, 16)}); typed values incl. false/0 persisted via v2 CAS; reload; inactive values kept; 1440/390/320 without overflow; required error + Enter focus without request; R2 adoption with new required field and removed option; disable keeps read-only values without fallback. Evidence: ${evidence}`);
+    console.log(`PASS real isolated Hub: module-only plugin install activates nothing; creation racing a plugin update is refused (409), reloaded explicitly and retried with the new digest keeping the draft; unknown modules scenario-${suffix}/other-${suffix} rendered by the unchanged bundle (sha256 ${before.slice(0, 16)}); typed values incl. false/0 persisted via v2 CAS; reload; inactive values kept; 1440/390/320 without overflow; required error + Enter focus without request; R2 adoption with new required field and removed option; disable keeps read-only values without fallback; bundled Claude Ads listed immutable and activated only by an explicit save with its digest. Evidence: ${evidence}`);
     await context.close();
 } finally {
     if (browser) await browser.close();

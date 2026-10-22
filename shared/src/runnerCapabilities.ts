@@ -41,6 +41,8 @@ export const MACHINE_CAPABILITIES = {
     // Literal values equal developmentProviderCapability(id, version) in developmentModules.
     EvolvedDevelopmentToolchainProvider: 'evolvedDevelopment.provider.hapi.toolchain.v1',
     EvolvedDevelopmentInventoryProvider: 'evolvedDevelopment.provider.hapi.repository-inventory.v1',
+    // Read-only readiness of the bundled Claude Ads module (Python runtime, vendored assets, native skills).
+    EvolvedDevelopmentClaudeAdsProvider: 'evolvedDevelopment.provider.hapi.claude-ads.v1',
 } as const
 
 export type MachineCapability =

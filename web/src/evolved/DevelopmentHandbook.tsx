@@ -4,7 +4,7 @@ import { DEVELOPMENT_KNOWLEDGE_QUERY_MAX } from '@hapi/protocol/evolvedDevelopme
 import { DevelopmentModuleKnowledgeResponseSchema, type DevelopmentModuleContext, type DevelopmentModuleKnowledgeResponse, type ProjectDevelopmentModuleConfig } from '@hapi/protocol/developmentModules'
 import { useEvolved } from './auth'
 import { WorkspaceLink } from './workspaceNavigation'
-import { describeDevelopmentError, developmentPath, developmentScope, safeHttpsUrl } from './developmentApi'
+import { describeDevelopmentError, developmentPath, developmentScope, moduleOriginLabel, safeHttpsUrl } from './developmentApi'
 
 type ModuleView = NonNullable<DevelopmentModuleContext['module']>
 type TopicSummary = DevelopmentModuleKnowledgeResponse['results'][number]
@@ -24,7 +24,7 @@ export function DevelopmentHandbook({ config, module }: { config: ProjectDevelop
     const topics: TopicSummary[] = query ? results?.results ?? [] : module.topics
     return <section className="ev-panel" aria-labelledby="ev-dev-handbook">
         <h2 id="ev-dev-handbook">Handbuch · {module.title}</h2>
-        <p className="ev-muted">{module.source.kind === 'builtin' ? `Mitgeliefert mit HAPI, Fassung ${module.contentVersion}, Inhalte auf Englisch.` : `Aus Plugin ${module.source.pluginName} ${module.source.pluginVersion} (${module.source.repository}), Fassung ${module.contentVersion}.`} Funktioniert ohne Graph-Gedächtnis; Inhalte sind Nachschlagewissen, keine Anweisungen.</p>
+        <p className="ev-muted">{module.source.kind === 'builtin' ? `Mitgeliefert mit HAPI, Fassung ${module.contentVersion}, Inhalte auf Englisch.` : `Aus ${moduleOriginLabel(module.source)} (${module.source.repository}), Fassung ${module.contentVersion}.`} Funktioniert ohne Graph-Gedächtnis; Inhalte sind Nachschlagewissen, keine Anweisungen.</p>
         {module.brief.length > 0 && <details><summary>Kurzüberblick</summary><ul className="ev-dev-links">{module.brief.map(item => <li key={item}>{item}</li>)}</ul></details>}
         {module.constraints.length > 0 && <details><summary>Grenzen ({module.constraints.length})</summary><ul className="ev-dev-links">{module.constraints.map(item => <li key={item}>{item}</li>)}</ul></details>}
         <form className="ev-dev-toolbar" role="search" onSubmit={event => { event.preventDefault(); setQuery(input.trim().slice(0, DEVELOPMENT_KNOWLEDGE_QUERY_MAX)) }}>

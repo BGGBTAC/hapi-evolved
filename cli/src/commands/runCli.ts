@@ -40,6 +40,13 @@ export async function runCli(): Promise<void> {
         return
     }
 
+    // The offline Claude Ads helper likewise stays free of the registry (read-only doctor/status must not write HAPI_HOME).
+    if (args[0] === 'evolved' && args[1] === 'ads') {
+        const { runEvolvedAdsCommand } = await import('./evolvedAds')
+        await runEvolvedAdsCommand(args.slice(1))
+        return
+    }
+
     const { resolveCommand } = await import('./registry')
     const resolved = resolveCommand(args)
     if (!resolved) {

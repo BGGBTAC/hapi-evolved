@@ -229,6 +229,17 @@ it('plugin update requires a fresh explicit preview, and uninstallation needs co
     await waitFor(() => expect(context.api.request).toHaveBeenCalledWith('/plugins/plugin-1', expect.objectContaining({ method: 'DELETE' })))
 })
 
+it('a bundled plugin is labelled immutable and offers no update, disable or uninstall action', async () => {
+    plugins = [installed, { ...installed, id: 'd6608d8c-e211-5d30-9735-6712fee7c5e9', repository: 'agricidaniel/claude-ads', manifest: { ...manifest, id: 'claude-ads', name: 'Claude Ads (mitgeliefert)' }, bundled: true } as typeof installed]
+    mount()
+    const card = (await screen.findByText('Claude Ads (mitgeliefert)')).closest('article')!
+    expect(within(card).getByText('Mitgeliefert · unveränderlich')).toBeInTheDocument()
+    expect(within(card).getByText(/je Projekt unter „Entwicklung“ aktiviert/)).toBeInTheDocument()
+    for (const name of ['Update prüfen', 'Deaktivieren', 'Deinstallieren']) expect(within(card).queryByRole('button', { name })).not.toBeInTheDocument()
+    const other = screen.getByText('Example Plugin').closest('article')!
+    expect(within(other).getByRole('button', { name: 'Update prüfen' })).toBeInTheDocument()
+})
+
 it('a lost mutation response reloads persisted plugin state instead of reporting silent success', async () => {
     plugins = [installed]
     context.api.request.mockImplementation(async (path: string, options: { method?: string }) => {
