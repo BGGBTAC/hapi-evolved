@@ -50,7 +50,7 @@
         "evolved:cli": "bun cli/src/index.ts evolved",
         "typecheck:proxy": "cd services/runner-proxy && bun run typecheck",
         "test:proxy": "cd services/runner-proxy && bun test",
-        "test:deployment": "bun test deploy/evolved/browser.test.ts deploy/evolved/check-runner.test.ts deploy/evolved/install.test.ts deploy/evolved/security.test.ts deploy/evolved/validate-runner-vm.test.ts deploy/evolved/development/hapi-dev.test.ts",
+        "test:deployment": "bun test deploy/evolved/browser.test.ts deploy/evolved/check-runner.test.ts deploy/evolved/install.test.ts deploy/evolved/security.test.ts deploy/evolved/validate-runner-vm.test.ts deploy/evolved/development/hapi-dev.test.ts scripts/claude-ads/vendor.test.ts",
         "typecheck:runner-auth": "cd services/runner-auth && bun run typecheck",
         "typecheck:runner-control": "cd services/runner-control && bun run typecheck",
         "test:runner-auth": "cd services/runner-auth && bun test",

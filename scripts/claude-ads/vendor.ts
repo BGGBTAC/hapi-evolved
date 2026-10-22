@@ -102,14 +102,27 @@ function gitHead(checkout: string): string {
     return result.stdout.trim()
 }
 
+/** A clean worktree can still contain ignored files. Every imported byte must
+ * come from a path tracked by the pinned upstream commit. */
+export function assertTrackedUpstreamFiles(checkout: string, files: readonly string[]): void {
+    const result = spawnSync('git', ['-C', checkout, 'ls-files', '-z', '--cached'], {
+        encoding: 'utf8', maxBuffer: 16 * 1024 * 1024,
+        env: { PATH: '/usr/bin:/bin', GIT_CONFIG_NOSYSTEM: '1', HOME: '/nonexistent' },
+    })
+    if (result.status !== 0) throw new Error('Cannot list tracked upstream files')
+    const tracked = new Set(result.stdout.split('\0').filter(Boolean))
+    for (const rel of files) if (!tracked.has(rel)) throw new Error(`Upstream file is not tracked: ${rel}`)
+}
+
 export function readProvenance(): Provenance { return JSON.parse(readFileSync(PROVENANCE, 'utf8')) as Provenance }
 
 function importUpstream(checkout: string) {
     const head = gitHead(checkout)
     if (head !== CLAUDE_ADS_UPSTREAM.commit) throw new Error(`Upstream checkout is at ${head}, expected pinned ${CLAUDE_ADS_UPSTREAM.commit}`)
-    const dirty = spawnSync('git', ['-C', checkout, 'status', '--porcelain', '--untracked-files=no'], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', GIT_CONFIG_NOSYSTEM: '1', HOME: '/nonexistent' } })
-    if (dirty.status !== 0 || dirty.stdout.trim()) throw new Error('Upstream checkout has modified tracked files')
+    const dirty = spawnSync('git', ['-C', checkout, 'status', '--porcelain', '--untracked-files=all'], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', GIT_CONFIG_NOSYSTEM: '1', HOME: '/nonexistent' } })
+    if (dirty.status !== 0 || dirty.stdout.trim()) throw new Error('Upstream checkout is not clean')
     const files = upstreamFiles(checkout)
+    assertTrackedUpstreamFiles(checkout, files)
     if (existsSync(UPSTREAM) && readdirSync(UPSTREAM).length) throw new Error(`${posix(relative(REPO, UPSTREAM))} already exists; remove it deliberately before re-importing`)
     const inventory: ProvenanceFile[] = []
     for (const rel of files) {

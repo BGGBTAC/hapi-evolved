@@ -125,7 +125,9 @@ services:
       MAX_TABS_GLOBAL: "24"
       MAX_CONCURRENT_PER_USER: "3"
       SESSION_TIMEOUT_MS: "1800000"
-      BROWSER_IDLE_TIMEOUT_MS: "300000"
+      # The gateway requires a verified Firefox engine before dispatch. Upstream's
+      # idle shutdown would otherwise leave the sidecar unable to self-wake.
+      BROWSER_IDLE_TIMEOUT_MS: "0"
       HANDLER_TIMEOUT_MS: "30000"
       NAVIGATE_TIMEOUT_MS: "30000"
     volumes:

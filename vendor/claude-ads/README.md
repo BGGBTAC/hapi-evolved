@@ -10,7 +10,7 @@
 Commands (run from the repository root):
 
 ```bash
-bun scripts/claude-ads/vendor.ts import <clean checkout at the pinned commit>   # only into an empty upstream/
+bun scripts/claude-ads/vendor.ts import <clean checkout at the pinned commit>   # only tracked files into an empty upstream/
 bun scripts/claude-ads/vendor.ts generate
 bun scripts/claude-ads/vendor.ts check
 ```

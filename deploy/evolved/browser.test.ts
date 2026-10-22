@@ -53,7 +53,8 @@ describe('optional project browser topology', () => {
         expect(browser.read_only).toBe(true); expect(browser.cap_drop).toEqual(['ALL']); expect(browser.security_opt).toEqual(['no-new-privileges:true'])
         expect(browser.user).toBe('${EVOLVED_UID:-1000}:${EVOLVED_GID:-1000}')
         expect(browser.environment).toMatchObject({ NODE_ENV: 'production', CAMOFOX_CRASH_REPORT_ENABLED: 'false', SENTRY_DSN: '', CAMOFOX_DISABLE_DEFAULT_ADDONS: '1',
-            PROMETHEUS_ENABLED: 'false', ENABLE_VNC: 'false', CAMOFOX_ACCESS_KEY_FILE: '/credentials/browser-key', HAPI_BROWSER_EGRESS_PROXY: 'http://browser-egress:3128' })
+            PROMETHEUS_ENABLED: 'false', ENABLE_VNC: 'false', CAMOFOX_ACCESS_KEY_FILE: '/credentials/browser-key', HAPI_BROWSER_EGRESS_PROXY: 'http://browser-egress:3128',
+            BROWSER_IDLE_TIMEOUT_MS: '0' })
         for (const key of ['CAMOFOX_ACCESS_KEY', 'CAMOFOX_API_KEY', 'CAMOFOX_ADMIN_KEY', 'PROXY_HOST', 'PROXY_USERNAME', 'PROXY_PASSWORD']) expect(browser.environment![key]).toBeUndefined()
         const config = JSON.parse(source('./browser/camofox.config.json'))
         expect(config.plugins).toEqual({ youtube: { enabled: false }, persistence: { enabled: false }, vnc: { enabled: false }, 'hapi-egress': { enabled: true } })

@@ -49,6 +49,10 @@ Erreichbar sind alle öffentlichen Websites über HTTP (Port 80) und HTTPS (Port
 Website-Liste. Private, Loopback-, Link-Local-, Carrier-NAT- und Metadatenadressen (IPv4/IPv6)
 sind gesperrt, auch bei Weiterleitungen, Unterressourcen und `fetch()` aus Seiten-JavaScript.
 Der Browser hat keinen Weg zum Hub, zum Runner, zu Vault, Datenbanken oder Projektdiensten.
+Nach Aktivierung bleibt Firefox geladen, bis ein Administrator den Projektbrowser deaktiviert
+oder neu startet. Der Upstream-Leerlaufstopp ist deaktiviert, weil er sonst die bestätigte
+Bereitschaft und spätere Agentenaufrufe dauerhaft blockieren würde. Der Container ist auf
+2 GiB Speicher begrenzt; ungenutzte Projektbrowser sollten deaktiviert werden.
 Die Anti-Erkennung ist eine Eigenschaft des Upstream-Projekts und keine Zusage, jede
 Bot-Erkennung zu bestehen; die Nutzungsbedingungen der Zielseiten bleiben Sache des Betreibers.
 
