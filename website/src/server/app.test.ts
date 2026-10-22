@@ -15,10 +15,10 @@ let root: string;
 let server: Server;
 let port: number;
 
-function send(method: string, urlPath: string) {
+function send(method: string, urlPath: string, destination = port) {
   return new Promise<{ status: number; headers: Record<string, unknown>; body: Buffer }>(
     (resolve, reject) => {
-      const req = request({ host: "127.0.0.1", port, method, path: urlPath }, (res) => {
+      const req = request({ host: "127.0.0.1", port: destination, method, path: urlPath }, (res) => {
         const chunks: Buffer[] = [];
         res.on("data", (chunk: Buffer) => chunks.push(chunk));
         res.on("end", () =>
@@ -89,5 +89,20 @@ test("files outside the static root are not served", async () => {
   for (const route of ["/../secret.txt", "/%2e%2e/secret.txt", "/assets/%2e%2e/%2e%2e/secret.txt"]) {
     const res = await send("GET", route);
     assert.ok(!res.body.toString().includes("outside static root"), route);
+  }
+});
+
+test("limits repeated static and fallback requests before filesystem access", async () => {
+  const limited = createServer(createApp(path.join(root, "public"), 2));
+  await new Promise<void>((resolve) => limited.listen(0, "127.0.0.1", resolve));
+  try {
+    const destination = (limited.address() as AddressInfo).port;
+    assert.equal((await send("GET", "/assets/app-0123abcd.bin", destination)).status, 200);
+    assert.equal((await send("GET", "/some/deep/route", destination)).status, 200);
+    const rejected = await send("GET", "/some/deep/route", destination);
+    assert.equal(rejected.status, 429);
+    assert.notEqual(rejected.body.toString(), indexHtml);
+  } finally {
+    await new Promise<void>((resolve) => limited.close(() => resolve()));
   }
 });
