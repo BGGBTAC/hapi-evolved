@@ -1,5 +1,6 @@
 import { workspaceArea, workspaceLogout } from './evolved-navigation.mjs';
 import { checkComposer } from './evolved-composer-check.mjs';
+import { checkCoreToolbar } from './evolved-core-toolbar-check.mjs';
 import { checkMarkdownFiles } from './evolved-markdown-check.mjs';
 import { checkPrAndAttachments } from './evolved-pr-attachment-check.mjs';
 import { chromium } from 'playwright';
@@ -188,6 +189,7 @@ try {
  if(side.count!==1||JSON.stringify(side.body)!==JSON.stringify({model:'synthetic-side-model',messages:[{role:'user',content:'SYNTHETIC_SIDE_QUESTION'}],max_tokens:1024,stream:false}))throw Error('Side channel sent unexpected context or duplicate request');
  console.log('PASS real separate /btw browser dialog with explicit provider/model/budget, single synthetic text request, no main transcript/tools');
  await page.keyboard.press('Escape');
+ await checkCoreToolbar(page,origin);
  await checkComposer(page,origin,searchSessionId);
 
  if(errors.length)throw Error('Page errors: '+errors.join('; '));

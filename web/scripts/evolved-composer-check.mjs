@@ -38,7 +38,28 @@ export async function checkComposer(page, origin, {sessionId}) {
         await page.getByRole('button',{name:'Original senden',exact:true}).click();
         const restored=(await originalUpload).postDataJSON();
         if(restored.mimeType!=='image/png'||!Buffer.from(restored.content,'base64').equals(original))throw Error('Original image bytes not preserved');
-        console.log('PASS real long-paste .txt choice and exact bytes; browser canvas optimization of >4MiB opaque PNG and exact original-version switch');
+        // Upstream #2026: any pasted file attaches, not only images. Clipboard text next to the files
+        // (as file managers provide) must neither open the long-text dialog nor reach the editor.
+        const pdf=Buffer.concat([Buffer.from('%PDF-1.4\n%synthetic\n'),Buffer.from(Array.from({length:4096},(_,i)=>(i*37+11)%256)),Buffer.from('\n%%EOF\n')]);
+        const zip=Buffer.concat([Buffer.from([0x50,0x4b,0x05,0x06]),Buffer.alloc(18)]);
+        const sidecarText='SYNTHETIC_FILE_PASTE_TEXT\n'+Array.from({length:45},(_,i)=>`sidecar line ${i}`).join('\n');
+        const fileUploads=[];const collect=request=>{if(new URL(request.url()).pathname===`/api/sessions/${sessionId}/upload`&&request.method()==='POST')fileUploads.push(request.postDataJSON())};
+        page.on('request',collect);
+        try {
+            const editorBefore=await editor.evaluate(element=>'value' in element?element.value:element.textContent);
+            await editor.evaluate((element,{pdf,zip,text})=>{const clipboardData=new DataTransfer();clipboardData.items.add(new File([new Uint8Array(pdf)],'synthetic-report.pdf',{type:'application/pdf'}));clipboardData.items.add(new File([new Uint8Array(zip)],'synthetic-archive.zip',{type:'application/zip'}));clipboardData.setData('text/plain',text);element.dispatchEvent(new ClipboardEvent('paste',{clipboardData,bubbles:true,cancelable:true}))},{pdf:[...pdf],zip:[...zip],text:sidecarText});
+            for(let i=0;i<100&&fileUploads.length<2;i++)await page.waitForTimeout(100);
+            if(fileUploads.length!==2)throw Error(`Expected two non-image paste uploads, saw ${fileUploads.length}`);
+            const byName=Object.fromEntries(fileUploads.map(upload=>[upload.filename,upload]));
+            const pdfUpload=byName['synthetic-report.pdf'], zipUpload=byName['synthetic-archive.zip'];
+            if(pdfUpload?.mimeType!=='application/pdf'||!Buffer.from(pdfUpload.content,'base64').equals(pdf))throw Error('Pasted PDF bytes or type changed');
+            if(zipUpload?.mimeType!=='application/zip'||!Buffer.from(zipUpload.content,'base64').equals(zip))throw Error('Pasted ZIP bytes or type changed');
+            if(await page.getByRole('dialog',{name:'Large pasted text'}).count())throw Error('File paste opened the long-text dialog');
+            const editorAfter=await editor.evaluate(element=>'value' in element?element.value:element.textContent);
+            if(editorAfter!==editorBefore||editorAfter.includes('SYNTHETIC_FILE_PASTE_TEXT'))throw Error('Clipboard text beside pasted files reached the editor');
+            for(const name of ['synthetic-report.pdf','synthetic-archive.zip'])await page.getByTestId('composer-shell').getByText(name,{exact:false}).first().waitFor();
+        } finally {page.off('request',collect)}
+        console.log('PASS real long-paste .txt choice and exact bytes; browser canvas optimization of >4MiB opaque PNG and exact original-version switch; pasted PDF+ZIP clipboard files attach with exact bytes/types while sidecar text stays out of the editor and long-text dialog');
     } finally {
         socket?.disconnect();
         await page.evaluate(async lease=>{await fetch(`/api/evolved/projects/${lease.projectId}/runner-leases/${lease.id}`,{method:'DELETE'})},lease);

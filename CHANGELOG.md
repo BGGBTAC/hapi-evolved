@@ -15,6 +15,19 @@ or container image.
   an accessible knowledge-title counter and confirmation buttons that do not
   accidentally submit their surrounding form. Offline plugin validation no
   longer initializes a CLI home or log directory.
+- File RPCs resolve relative paths inside the session workspace and reject
+  symlinks that escape it. Local runner control uses an automatically generated
+  private bearer token; update the runner and CLI together. Windows agent
+  launchers preserve arguments instead of interpreting them as shell commands.
+- Host-file Cursor migration and custom ElevenLabs-agent operations respect
+  owner authorization. Concurrent Hub initialization preserves the winning
+  identity/key file; operator-key and attachment checks validate opened handles.
+- Linear-time message/citation parsing, safe handling of inherited object keys,
+  private temporary test and database-copy files, and version/checksum-pinned
+  tunnel downloads. Security checks remain enabled.
+- Updated application, PWA, website and documentation dependencies. The docs
+  use exactly pinned VitePress 2.0.0-alpha.20; see the dated dependency review
+  for the migration checks and limits.
 
 - Guided project setup for new and existing projects, including repository-dependent
   plugin modules; creation enters the new project and readiness follows its bound checkout.

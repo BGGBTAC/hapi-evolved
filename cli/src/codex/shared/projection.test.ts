@@ -120,6 +120,8 @@ describe('shared history projection', () => {
         });
         await complete('final', 'final_answer', `Finished.\n${footer}`);
         await complete('footer-only', 'commentary', footer);
+        await complete('late-commentary', 'commentary', `Late progress.\n${footer}`);
+        await complete('late-partial', 'partial_answer', 'Partial answer arriving after the final.');
         await projection.notification('turn/completed', { threadId: 'root', turn: { id: 'turn', status: 'completed' } });
         await projection.notification('item/completed', { threadId: 'root', turnId: 'turn2', item: { type: 'agentMessage', id: 'c2', phase: 'commentary', text: `Progress.\n${footer}` } });
         await projection.notification('turn/completed', { threadId: 'root', turn: { id: 'turn2', status: 'completed' } });

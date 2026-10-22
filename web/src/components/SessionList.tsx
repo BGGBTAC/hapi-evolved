@@ -64,7 +64,7 @@ function SessionListHeaderOverflow(props: { children: ReactNode }) {
                 <button
                     type="button"
                     data-testid="session-list-header-overflow"
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
+                    className="session-list-more-button flex h-9 w-9 shrink-0 @max-xs:h-[44px] @max-xs:w-[44px] items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
                     title={t('sessions.toolbar.more')}
                     aria-label={t('sessions.toolbar.more')}
                 >
@@ -136,7 +136,11 @@ function measureSearchChrome(search: HTMLElement): number {
     const triggerPad = triggerStyle
         ? (Number.parseFloat(triggerStyle.paddingLeft) || 0) + (Number.parseFloat(triggerStyle.paddingRight) || 0)
         : 0
-    return parts.reduce((sum, el) => sum + el.offsetWidth, 0) + triggerPad + gap * Math.max(0, parts.length - 1)
+    // The trigger's own min-width can exceed icon + padding (px touch floor in narrow rows).
+    const triggerMin = triggerStyle ? Number.parseFloat(triggerStyle.minWidth) || 0 : 0
+    const icon = trigger ? parts.find((el) => trigger.contains(el)) : undefined
+    const triggerExtra = icon ? Math.max(0, triggerMin - icon.offsetWidth - triggerPad) : 0
+    return parts.reduce((sum, el) => sum + el.offsetWidth, 0) + triggerPad + triggerExtra + gap * Math.max(0, parts.length - 1)
 }
 
 export type SessionToolbarExtra = {
@@ -753,6 +757,21 @@ function SessionDateRangePicker(props: {
         new Intl.DateTimeFormat(undefined, { weekday: 'narrow' }).format(new Date(2026, 5, 7 + day))
     ))
 
+    // The preferred edge can push the 18rem panel past the viewport on a
+    // narrow sidebar (280px) or a large font; open towards the side that fits.
+    const panelRef = useRef<HTMLDivElement>(null)
+    const [align, setAlign] = useState(props.align)
+    useLayoutEffect(() => {
+        const panel = panelRef.current
+        const container = panel?.offsetParent
+        if (!panel || !container) return
+        const margin = 8
+        const box = container.getBoundingClientRect()
+        const fitsRight = box.right - panel.offsetWidth >= margin
+        const fitsLeft = box.left + panel.offsetWidth <= window.innerWidth - margin
+        setAlign(props.align === 'right' ? (fitsRight || !fitsLeft ? 'right' : 'left') : (fitsLeft || !fitsRight ? 'left' : 'right'))
+    }, [props.align])
+
     const selectDate = (value: string) => {
         if (!props.start || props.end) {
             props.onChange(value, '')
@@ -763,9 +782,9 @@ function SessionDateRangePicker(props: {
     }
 
     return (
-        <div className={cn(
-            'absolute top-full z-30 mt-2 w-72 rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] p-3 shadow-xl',
-            props.align === 'left' ? 'left-0' : 'right-0'
+        <div ref={panelRef} className={cn(
+            'absolute top-full z-30 mt-2 w-72 max-w-[calc(100vw-1rem)] rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] p-3 shadow-xl',
+            align === 'left' ? 'left-0' : 'right-0'
         )}>
             <div className="mb-2 flex items-center justify-between">
                 <button
@@ -896,6 +915,14 @@ export function SessionListSearch(props: {
         ? t('sessions.search.content.placeholder')
         : t('sessions.search.open')
 
+    // Below @xs the inline toggle would leave the query ~2 characters; it moves into the scope menu.
+    const excludeToggle = (className: string, inMenu = false) => searchMode === 'metadata' && props.onExcludeMatchesChange ? (
+        <button type="button" className={className} aria-label="Suchtreffer ausschließen" title={props.excludeMatches ? 'Ausschließen' : 'Einschließen'} aria-pressed={props.excludeMatches ?? false} onClick={() => props.onExcludeMatchesChange?.(!props.excludeMatches)}>
+            <span className={inMenu ? undefined : 'hidden @md:inline'}>{props.excludeMatches ? 'Ausschließen' : 'Einschließen'}</span>
+            {inMenu ? null : <span className="@md:hidden" aria-hidden="true">{props.excludeMatches ? '≠' : '='}</span>}
+        </button>
+    ) : null
+
     const renderSearchMode = () => canSearchContent ? (
         <div className="relative shrink-0">
             <button
@@ -905,7 +932,8 @@ export function SessionListSearch(props: {
                 onClick={() => setSearchModeOpen(open => !open)}
                 className="flex h-full w-auto items-center gap-0.5 border-r border-[var(--app-border)] px-1.5 text-xs leading-none text-[var(--app-hint)] transition-colors hover:text-[var(--app-fg)]"
             >
-                <span className="shrink-0 whitespace-nowrap leading-none">{t(`sessions.search.scope.${searchMode}`)}</span>
+                {/* Narrow rows keep the chevron only; the placeholder names the scope (48px calendar + clear leave no room). */}
+                <span className="hidden shrink-0 whitespace-nowrap leading-none @md:inline">{t(`sessions.search.scope.${searchMode}`)}</span>
                 <ChevronDownIcon className={cn(
                     'h-3.5 w-3.5 shrink-0 transition-transform duration-200',
                     searchModeOpen && 'rotate-180'
@@ -932,6 +960,7 @@ export function SessionListSearch(props: {
                             {t(`sessions.search.scope.${mode}`)}
                         </button>
                     ))}
+                    {excludeToggle('flex min-h-8 w-full items-center justify-center whitespace-nowrap rounded-md border-t border-[var(--app-border)] px-2 py-0.5 text-sm @xs:hidden', true)}
                 </div>
             ) : null}
         </div>
@@ -957,7 +986,8 @@ export function SessionListSearch(props: {
                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] focus-visible:ring-inset',
                     variant === 'standalone'
                         ? cn(
-                            'min-h-[48px] min-w-[48px] rounded-full p-2',
+                            // Narrow rows (rem-based, so large fonts reach it sooner) keep px targets: rem padding would outgrow the row.
+                            'min-h-[48px] min-w-[48px] rounded-full p-2 @max-xs:p-0',
                             'hover:bg-[var(--app-subtle-bg)]',
                             hasDateRange ? 'text-[var(--app-link)]' : 'text-[var(--app-hint)] hover:text-[var(--app-fg)]'
                         )
@@ -1064,7 +1094,7 @@ export function SessionListSearch(props: {
                         className={cn(
                             'relative flex min-h-[40px] items-center gap-1 transition-colors',
                             hasTextQuery
-                                ? 'min-w-0 flex-1 rounded-l-full bg-[var(--app-chat-user-chip-bg)] px-2 py-1 text-[var(--app-chat-user-chip-fg)] hover:opacity-90'
+                                ? 'min-w-0 flex-1 rounded-l-full bg-[var(--app-chat-user-chip-bg)] px-2 py-1 text-[var(--app-chat-user-chip-fg)] hover:opacity-90 @max-xs:min-h-[44px] @max-xs:min-w-[44px] @max-xs:px-[6px] @max-xs:py-0'
                                 : 'min-w-[40px] shrink-0 rounded-full p-2 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'
                         )}
                         title={collapsedLabel}
@@ -1087,7 +1117,7 @@ export function SessionListSearch(props: {
                                 collapsedButtonRef.current?.focus()
                             }}
                             data-toolbar-chrome=""
-                            className="flex h-10 w-10 min-h-[40px] min-w-[40px] shrink-0 items-center justify-center rounded-r-full bg-[var(--app-chat-user-chip-action-bg)] text-[var(--app-chat-user-chip-action-fg)] transition-colors hover:text-[var(--app-chat-user-chip-action-hover-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] focus-visible:ring-inset"
+                            className="flex h-10 w-10 min-h-[40px] min-w-[40px] shrink-0 items-center justify-center rounded-r-full @max-xs:h-[44px] @max-xs:w-[44px] bg-[var(--app-chat-user-chip-action-bg)] text-[var(--app-chat-user-chip-action-fg)] transition-colors hover:text-[var(--app-chat-user-chip-action-hover-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] focus-visible:ring-inset"
                             title={t('sessions.search.clear')}
                             aria-label={t('sessions.search.clear')}
                         >
@@ -1113,11 +1143,12 @@ export function SessionListSearch(props: {
             }}
         >
             <div className="relative flex min-h-12 min-w-0 items-stretch overflow-visible rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] transition-colors focus-within:border-[var(--app-link)]">
-                <div className="pointer-events-none flex shrink-0 items-center pl-2.5 text-[var(--app-hint)]">
+                {/* Decorative only; narrow rows give its width to the query. */}
+                <div className="pointer-events-none hidden shrink-0 items-center pl-2.5 text-[var(--app-hint)] @md:flex">
                     <SearchIcon className="h-5 w-5" />
                 </div>
                 {renderSearchMode()}
-                {searchMode === 'metadata' && props.onExcludeMatchesChange && <button type="button" className="px-2 text-xs" aria-label="Suchtreffer ausschließen" aria-pressed={props.excludeMatches ?? false} onClick={() => props.onExcludeMatchesChange?.(!props.excludeMatches)}>{props.excludeMatches ? 'Ausschließen' : 'Einschließen'}</button>}
+                {excludeToggle('hidden shrink-0 items-center px-2 text-xs @xs:flex')}
                 <input
                     ref={inputRef}
                     type="search"
@@ -1505,10 +1536,12 @@ export function SessionList(props: {
     const toolbarMeasureRef = useRef<HTMLDivElement>(null)
     const machineMenuRef = useRef<HTMLDivElement>(null)
     const filterMenuRef = useRef<HTMLDetailsElement>(null)
+    const filterPanelRef = useRef<HTMLDivElement>(null)
+    const [filterPanelShiftPx, setFilterPanelShiftPx] = useState(0)
     const actionsObserverRef = useRef<ResizeObserver | null>(null)
     const [headerRowWidth, setHeaderRowWidth] = useState(0)
     const [toolbarSlotWidths, setToolbarSlotWidths] = useState<Record<string, number>>({})
-    const [toolbarChrome, setToolbarChrome] = useState({ morePx: TOOLBAR_MORE_PX, gapPx: TOOLBAR_GAP_PX, machinePx: 0, filterPx: 0 })
+    const [toolbarChrome, setToolbarChrome] = useState({ morePx: TOOLBAR_MORE_PX, gapPx: TOOLBAR_GAP_PX, machinePx: 0, filterPx: 0, filterMaxPx: 0 })
     const [searchChromePx, setSearchChromePx] = useState(0)
     const [searchMaxPx, setSearchMaxPx] = useState(0)
     // jsdom reports clientWidth 0; the row observer publishes the stubbed width.
@@ -2289,7 +2322,7 @@ export function SessionList(props: {
         const next: Record<string, number> = {}
         for (const node of root.querySelectorAll<HTMLElement>('[data-measure-id]')) {
             const id = node.dataset.measureId
-            if (!id || id === '__more') continue
+            if (!id || id.startsWith('__')) continue
             const width = node.offsetWidth
             if (width > 0) next[id] = width
         }
@@ -2306,12 +2339,17 @@ export function SessionList(props: {
         const morePx = moreNode && moreNode.offsetWidth > 0 ? moreNode.offsetWidth : TOOLBAR_MORE_PX
         const gapPx = Number.isFinite(parsedGap) && parsedGap > 0 ? parsedGap : TOOLBAR_GAP_PX
         const machinePx = machineMenuRef.current?.offsetWidth ?? 0
-        // Evolved status/sort filter stays pinned like the machine menu.
-        const filterPx = filterMenuRef.current?.offsetWidth ?? 0
+        // Evolved status/sort filter stays pinned like the machine menu. Its
+        // summary copy keeps the width known after a move into More.
+        const filterPx = filterMenuRef.current?.offsetWidth
+            || root.querySelector<HTMLElement>('[data-measure-id="__filter"]')?.offsetWidth
+            || 0
+        const filterMaxPx = root.querySelector<HTMLElement>('[data-measure-id="__filter-max"]')?.offsetWidth ?? 0
         setToolbarChrome((previous) => (
-            previous.morePx === morePx && previous.gapPx === gapPx && previous.machinePx === machinePx && previous.filterPx === filterPx
+            previous.morePx === morePx && previous.gapPx === gapPx && previous.machinePx === machinePx
+                && previous.filterPx === filterPx && previous.filterMaxPx === filterMaxPx
                 ? previous
-                : { morePx, gapPx, machinePx, filterPx }
+                : { morePx, gapPx, machinePx, filterPx, filterMaxPx }
         ))
         // Search may use a 9rem chip. Reserve padding + gap + visible machine
         // menu + More so that chip cannot eat the trailing controls (#2040).
@@ -2328,6 +2366,27 @@ export function SessionList(props: {
         const nextSearchMax = rowBox > 0 ? Math.max(0, rowBox - rowPad - trailing) : 0
         setSearchMaxPx((previous) => previous === nextSearchMax ? previous : nextSearchMax)
     })
+
+    // The filter no longer sits at the row's right edge since keep-rank shedding
+    // left-packs the actions. Its right-anchored panel spilled off the left
+    // viewport edge on phones; shift it right just enough to stay on screen.
+    const placeFilterPanel = useCallback(() => {
+        const details = filterMenuRef.current
+        const panel = filterPanelRef.current
+        if (!details?.open || !panel) {
+            setFilterPanelShiftPx(0)
+            return
+        }
+        const margin = 8
+        const anchorRight = details.getBoundingClientRect().right
+        const spill = margin - (anchorRight - panel.offsetWidth)
+        const room = window.innerWidth - margin - anchorRight
+        setFilterPanelShiftPx(Math.max(0, Math.min(spill, room)))
+    }, [])
+    useEffect(() => {
+        window.addEventListener('resize', placeFilterPanel)
+        return () => window.removeEventListener('resize', placeFilterPanel)
+    }, [placeFilterPanel])
 
     // Pull-to-refresh on the scrollable list. Touch-only gesture mirroring the
     // pull-to-load-older pattern in HappyThread; desktop has no overscroll
@@ -2489,12 +2548,12 @@ export function SessionList(props: {
                                 // Shed one control at a time, highest keep first.
                                 // Do not ml-auto a lone ⋯ across empty space, and do
                                 // not fold the whole row at a single width gate (#2039).
-                                const machineAndGap = (toolbarChrome.machinePx > 0
+                                const machinePart = toolbarChrome.machinePx > 0
                                     ? toolbarChrome.machinePx + toolbarChrome.gapPx
-                                    : 0)
-                                    + (toolbarChrome.filterPx > 0
-                                        ? toolbarChrome.filterPx + toolbarChrome.gapPx
-                                        : 0)
+                                    : 0
+                                const filterPart = toolbarChrome.filterPx > 0
+                                    ? toolbarChrome.filterPx + toolbarChrome.gapPx
+                                    : 0
                                 // Prefer the flex allocation. It tracks the row, not the
                                 // icons already on it. If they all fit, More is empty.
                                 const allocated = headerActionsRef.current?.clientWidth ?? 0
@@ -2504,7 +2563,7 @@ export function SessionList(props: {
                                         ? headerRowWidth
                                         : 0
                                 const budget = gutter > 0
-                                    ? Math.max(0, gutter - machineAndGap)
+                                    ? Math.max(0, gutter - machinePart - filterPart)
                                     : toolbarActionBudget(0, searchQuery.length > 0)
                                 const slotWidth = (id: string, fallback: number) => {
                                     const measured = toolbarSlotWidths[id] ?? 0
@@ -2562,10 +2621,34 @@ export function SessionList(props: {
                                         node: props.headerActions
                                     })
                                 }
-                                const { visibleIds, overflowIds } = shedToolbarSlots(definedSlots, budget, {
-                                    morePx: toolbarChrome.morePx,
-                                    gapPx: toolbarChrome.gapPx
-                                })
+                                const shedMetrics = { morePx: toolbarChrome.morePx, gapPx: toolbarChrome.gapPx }
+                                let { visibleIds, overflowIds } = shedToolbarSlots(definedSlots, budget, shedMetrics)
+                                // The pinned filter yields to More only when it and More cannot
+                                // share the row (280px sidebar at large font scales); More then
+                                // stays visible for it, so reserve its width up front. Decided on
+                                // the widest label, so toggling ● cannot move an open filter.
+                                const filterInMore = gutter > 0 && toolbarChrome.filterMaxPx > 0 && overflowIds.length > 0
+                                    && gutter - machinePart - toolbarChrome.filterMaxPx - toolbarChrome.gapPx < toolbarChrome.morePx
+                                if (filterInMore) {
+                                    ({ visibleIds, overflowIds } = shedToolbarSlots(
+                                        definedSlots,
+                                        Math.max(0, gutter - machinePart - toolbarChrome.morePx - toolbarChrome.gapPx),
+                                        shedMetrics
+                                    ))
+                                }
+                                const filterLabel = `Filter${statusFilter !== 'all' || showUnreadOnly ? ' ●' : ''}`
+                                const filterSummaryClass = 'flex min-h-10 shrink-0 cursor-pointer whitespace-nowrap items-center rounded px-2 text-sm'
+                                const filterMenu = (
+                                    <details ref={filterMenuRef} data-testid="session-list-header-filter" className="relative shrink-0" onToggle={placeFilterPanel}>
+                                        <summary className={filterSummaryClass} aria-label="Sitzungsfilter">{filterLabel}</summary>
+                                        <div ref={filterPanelRef} style={filterPanelShiftPx > 0 ? { right: -filterPanelShiftPx } : undefined} className="absolute right-0 z-50 grid w-[min(15rem,calc(100vw-1rem))] gap-3 rounded border bg-[var(--app-bg)] p-3 shadow-lg">
+                                            <label>Status<select aria-label="Sitzungsstatus" className="block w-full rounded border p-2" value={statusFilter} onChange={event => setStatusFilter(event.target.value as SessionStatusFilter)}><option value="all">Alle</option><option value="active">Aktiv</option><option value="working">Arbeitet gerade</option><option value="blocked">Blockiert</option></select></label>
+                                            <label className="flex gap-2"><input type="checkbox" checked={showUnreadOnly} onChange={event => setShowUnreadOnly(event.target.checked)} />Nur ungelesene</label>
+                                            <label>Sortierung<select aria-label="Aktivitätssortierung" className="block w-full rounded border p-2" value={activitySort} onChange={event => { const value = event.target.value as SessionActivitySort; setActivitySort(value); try { localStorage.setItem('hapi:session-activity-sort', value) } catch { /* optional preference */ } }}><option value="message">Letzte Nachricht</option><option value="response">Letzte Agentenantwort</option></select></label>
+                                            <button type="button" onClick={() => { setStatusFilter('all'); setShowUnreadOnly(false); setMachineFilter(null) }}>Filter zurücksetzen</button>
+                                        </div>
+                                    </details>
+                                )
                                 const byId = new Map(definedSlots.map((slot) => [slot.id, slot]))
                                 const visible = visibleIds.map((id) => byId.get(id)).filter((slot) => slot != null)
                                 const overflow = overflowIds.map((id) => byId.get(id)).filter((slot) => slot != null)
@@ -2582,7 +2665,9 @@ export function SessionList(props: {
                                                     {slot.node}
                                                 </span>
                                             ))}
-                                            <span data-measure-id="__more" className="inline-flex h-9 w-9 shrink-0" />
+                                            <span data-measure-id="__more" className="session-list-more-button inline-flex h-9 w-9 shrink-0 @max-xs:h-[44px] @max-xs:w-[44px]" />
+                                            <span data-measure-id="__filter" className={filterSummaryClass}>{filterLabel}</span>
+                                            <span data-measure-id="__filter-max" className={filterSummaryClass}>Filter ●</span>
                                         </div>
                                         {showMachineFilterBar ? (
                                             <div
@@ -2598,22 +2683,15 @@ export function SessionList(props: {
                                                 />
                                             </div>
                                         ) : null}
-                                        <details ref={filterMenuRef} data-testid="session-list-header-filter" className="relative shrink-0">
-                                            <summary className="flex min-h-10 shrink-0 cursor-pointer whitespace-nowrap items-center rounded px-2 text-sm" aria-label="Sitzungsfilter">Filter{statusFilter !== 'all' || showUnreadOnly ? ' ●' : ''}</summary>
-                                            <div className="absolute right-0 z-50 grid min-w-60 gap-3 rounded border bg-[var(--app-bg)] p-3 shadow-lg">
-                                                <label>Status<select aria-label="Sitzungsstatus" className="block w-full rounded border p-2" value={statusFilter} onChange={event => setStatusFilter(event.target.value as SessionStatusFilter)}><option value="all">Alle</option><option value="active">Aktiv</option><option value="working">Arbeitet gerade</option><option value="blocked">Blockiert</option></select></label>
-                                                <label className="flex gap-2"><input type="checkbox" checked={showUnreadOnly} onChange={event => setShowUnreadOnly(event.target.checked)} />Nur ungelesene</label>
-                                                <label>Sortierung<select aria-label="Aktivitätssortierung" className="block w-full rounded border p-2" value={activitySort} onChange={event => { const value = event.target.value as SessionActivitySort; setActivitySort(value); try { localStorage.setItem('hapi:session-activity-sort', value) } catch { /* optional preference */ } }}><option value="message">Letzte Nachricht</option><option value="response">Letzte Agentenantwort</option></select></label>
-                                                <button type="button" onClick={() => { setStatusFilter('all'); setShowUnreadOnly(false); setMachineFilter(null) }}>Filter zurücksetzen</button>
-                                            </div>
-                                        </details>
+                                        {filterInMore ? null : filterMenu}
                                         {visible.map((slot) => (
                                             <span key={slot.id} data-testid={`session-toolbar-slot-${slot.id}`} data-toolbar-slot="" className="contents">
                                                 {slot.node}
                                             </span>
                                         ))}
-                                        {overflow.length > 0 ? (
+                                        {overflow.length > 0 || filterInMore ? (
                                             <SessionListHeaderOverflow>
+                                                {filterInMore ? filterMenu : null}
                                                 {overflow.map((slot) => (
                                                     <span key={slot.id} data-testid={`session-toolbar-slot-${slot.id}`} data-toolbar-slot="" className="contents">
                                                         {slot.node}
