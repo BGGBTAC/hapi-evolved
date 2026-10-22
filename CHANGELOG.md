@@ -6,6 +6,16 @@ or container image.
 
 ## Unreleased
 
+- Core HAPI sync through `5d8deb201189dc1f183c4f5bf38c87ec4d34dd70`:
+  configurable ElevenLabs conversation duration, a responsive session toolbar
+  with overflow actions, improved search clear/calendar controls, final-phase
+  Codex status summaries and non-image file pasting in the composer. Evolved's
+  project controls, search modes and large-text paste choices are retained.
+- English subscription-capacity documentation, a runnable quality-check example,
+  an accessible knowledge-title counter and confirmation buttons that do not
+  accidentally submit their surrounding form. Offline plugin validation no
+  longer initializes a CLI home or log directory.
+
 - Guided project setup for new and existing projects, including repository-dependent
   plugin modules; creation enters the new project and readiness follows its bound checkout.
 - Separate Odoo.sh staging and production settings, explicit environment status reads,
