@@ -401,9 +401,9 @@ body {
 .app-session-sidebar { background: var(--app-dialog-bg); }
 .app-workspace-return { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; padding: 22px 22px 17px; min-width: 0; text-align: left; }
 .app-workspace-return > small { font-size: 12px; color: var(--app-hint); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.app-session-toolbar { display: flex; align-items: center; gap: 4px; }
-.app-session-toolbar > button { min-width: 40px; min-height: 40px; border-radius: 12px; }
-.app-session-toolbar .session-list-new-button { background: var(--app-button); color: var(--app-button-text); }
+/* Session toolbar slots (inline, measure copy and More popover share [data-toolbar-slot]). */
+[data-toolbar-slot] > button { min-width: 40px; min-height: 40px; border-radius: 12px; }
+[data-toolbar-slot] > .session-list-new-button { background: var(--app-button); color: var(--app-button-text); }
 .app-session-header { border-bottom: 1px solid var(--app-divider); background: var(--app-dialog-bg); }
 .app-session-header > div { min-height: 76px; }
 .app-session-header button { flex-shrink: 0; min-width: 40px; min-height: 40px; border-radius: 12px; }
@@ -433,7 +433,7 @@ body {
     .app-workspace-return { padding: 18px 20px 12px; }
     .app-session-header > div { gap: 4px; padding-inline: 8px; min-height: 68px; }
     .app-session-header button { min-width: 44px; min-height: 44px; }
-    .app-session-toolbar > button { min-width: 44px; min-height: 44px; }
+    [data-toolbar-slot] > button { min-width: 44px; min-height: 44px; }
     [data-testid="composer-toolbar-items"] button { min-height: 44px; min-width: 44px; flex-shrink: 0; }
     .app-button { min-height: 44px; min-width: 44px; }
     .app-settings main { padding-bottom: max(20px, env(safe-area-inset-bottom)); }

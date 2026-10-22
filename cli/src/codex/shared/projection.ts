@@ -3,6 +3,7 @@ import type { ApiSessionClient } from '@/api/apiSession';
 import { normalizeSessionDisplayTitle } from '@/agent/sessionDisplayRename';
 import { registerGeneratedImageFromPath } from '@/modules/common/generatedImages';
 import { AppServerEventConverter } from '../utils/appServerEventConverter';
+import { codexAssistantText } from '../utils/assistantText';
 import { record, string } from './gateway';
 import { codexPlanProposalId } from './plan';
 
@@ -135,7 +136,11 @@ export class SharedCodexProjection {
         }
         const itemId = string(item.id) ?? string(p.itemId);
         if (!this.parentThreadId && turnId && method === 'item/completed' && item.type === 'agentMessage' && typeof item.text === 'string') {
-            this.finalTurnText.set(turnId, item.text);
+            // Same phase rule as transcript output: intermediate messages never
+            // carry the status footer into a peer report, and footer-only
+            // commentary does not displace the previous answer.
+            const finalText = codexAssistantText(item.text, item.phase);
+            if (finalText) this.finalTurnText.set(turnId, finalText);
             if (this.finalTurnText.size > 128) this.finalTurnText.delete(this.finalTurnText.keys().next().value!);
         }
         if (!this.parentThreadId && turnId && method === 'turn/completed' && !fromHistory) {
