@@ -24,6 +24,7 @@ export const TOOLBAR_CASES = [
 
 /** Settle until real ResizeObserver/useLayoutEffect passes stop moving the toolbar. */
 async function settle(page) {
+    await page.evaluate(() => document.fonts.ready);
     await page.waitForFunction(() => new Promise(resolve => {
         const snap = () => {
             const row = document.querySelector('[data-testid="session-list-header-row"]');
@@ -33,8 +34,18 @@ async function settle(page) {
                 return `${Math.round(r.x)},${Math.round(r.width)}`;
             }).join('|') + `#${row.querySelectorAll('[data-testid^="session-toolbar-slot-"]').length}`;
         };
-        const first = snap();
-        requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => resolve(first !== 'missing' && first === snap()))));
+        // Font loading and the measured overflow pass can span several frames
+        // after navigation. Require a continuous stable interval, rather than
+        // comparing two frames that can bracket a still-pending layout change.
+        let previous = '', stable = 0;
+        const check = () => {
+            const current = snap();
+            stable = current !== 'missing' && current === previous ? stable + 1 : 0;
+            previous = current;
+            if (stable >= 10) resolve(true);
+            else requestAnimationFrame(check);
+        };
+        requestAnimationFrame(check);
     }), null, { polling: 50, timeout: 10_000 });
 }
 
