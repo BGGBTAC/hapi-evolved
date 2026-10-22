@@ -49,8 +49,8 @@ function isWithin(target: string, root: string): boolean {
  * Like validatePath, but also follows symlinks: the real location of the target
  * (or of its nearest existing ancestor, for paths that do not exist yet) must stay
  * inside the real working directory. This is a static check: a concurrent writer
- * with the user's own rights can still swap path components afterwards, so file
- * I/O should open realPath with O_NOFOLLOW and verify the opened handle.
+ * can still swap components afterwards. Linux file RPCs therefore anchor every
+ * ancestor with openContainedParent/openContainedDirectory before I/O.
  */
 export async function resolveContainedPath(targetPath: string, workingDirectory: string): Promise<ContainedPathResult> {
     const validation = validatePath(targetPath, workingDirectory);

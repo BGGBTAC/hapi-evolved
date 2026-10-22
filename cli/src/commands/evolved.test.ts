@@ -70,6 +70,13 @@ it('lists exact repository metadata by default and optionally inspects the proje
     await expect(run('repositories', 'another-project')).rejects.toThrow('Unknown command')
     expect(t.fetcher).toHaveBeenCalledTimes(2)
 })
+it('shows live project access with the local CLI fallback', async () => {
+    const t = setup()
+    await run('access')
+    expect(String(t.fetcher.mock.calls[0][0])).toBe('http://runner-proxy:3010/api/evolved/projects/test-project/agent-access')
+    await expect(run('access', 'other-project')).rejects.toThrow('Unknown command')
+    expect(t.fetcher).toHaveBeenCalledTimes(1)
+})
 it('starts clone without UUID boilerplate, allows explicit reconciliation and polls without another POST', async () => {
     const t = setup()
     await run('sync', 'clone', '42')

@@ -252,6 +252,16 @@ stdio-MCP-Server ausgeliefert. Das rein lokale, lesende Werkzeug
 `evolved_context` stellt ihn jederzeit erneut bereit, auch bei unerreichbarem
 Hub. Es ist keine Prüfung der aktuellen Dienstverfügbarkeit.
 
+`evolved_access` (CLI: `hapi evolved access`) liest zusätzlich die aktuellen
+Projekt- und Runner-Rechte aus dem Hub. Bei neuen Codex-MCP-Verbindungen sowie
+bei Claude-SessionStart/SubagentStart wird ein begrenzter Snapshot automatisch
+mitgegeben. Ist der Hub kurzzeitig nicht erreichbar, bleibt der statische
+Kontext erhalten und der Snapshot wird ausdrücklich als unbekannt markiert.
+Nach Änderungen an Rechten oder einem warmen Resume muss der Agent
+`evolved_access` und die jeweiligen Live-Kataloge erneut abfragen. Der Scope
+allein belegt keinen Repository-, Tresor-, MCP- oder Browser-Grant; diese
+werden von ihren eigenen Tools und vom Hub bei jedem Aufruf geprüft.
+
 Claude bekommt die Grundlage zusätzlich über seine Lebenszyklushooks beim
 Start, Fortsetzen und nach der Kontextkomprimierung sowie beim Start nativer
 Unteragenten. Codex erhält die Grundlage auch dann, wenn der Aufrufer eigene

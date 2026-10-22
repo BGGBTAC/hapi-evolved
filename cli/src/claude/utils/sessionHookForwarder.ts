@@ -1,6 +1,6 @@
 import { request } from 'node:http';
 import { LocalPermissionDecisionSchema } from './localPermissionProtocol';
-import { getEvolvedOperatingContext } from '@/evolved/operatingContext';
+import { getEvolvedLiveAccessFromEnvironment, getEvolvedOperatingContext } from '@/evolved/operatingContext';
 
 export const SESSION_HOOK_FORWARD_TIMEOUT_MS = 1_000;
 
@@ -371,11 +371,12 @@ export async function runSessionHookForwarder(args: string[]): Promise<void> {
         // PreToolUse is observation-only for Claude. In particular, mode
         // tracking must not emit an `allow` that bypasses the native prompt.
 
-        // This static context does not depend on a healthy hub, graph service,
-        // or capability-file reads. SubagentStart is not a root session event.
-        const operatingContext = hookEventName === 'SessionStart' || hookEventName === 'SubagentStart'
+        // Static rules survive a Hub failure. Live access is a bounded snapshot;
+        // SubagentStart receives its own current project rights as well.
+        const staticContext = hookEventName === 'SessionStart' || hookEventName === 'SubagentStart'
             ? getEvolvedOperatingContext()
             : '';
+        const operatingContext = staticContext ? staticContext + await getEvolvedLiveAccessFromEnvironment() : '';
         if (operatingContext) {
             process.stdout.write(JSON.stringify({
                 hookSpecificOutput: { hookEventName, additionalContext: operatingContext }

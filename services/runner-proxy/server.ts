@@ -83,6 +83,7 @@ export function allowedProxyPath(path: string, method = 'GET', search = ''): boo
         return allowedDevelopmentRequest(development?.[1], method, search)
     }
     if (/^\/api\/evolved\/projects\/[A-Za-z0-9_-]{1,80}\/agent-credentials$/.test(path)) return method === 'GET' && search === ''
+    if (/^\/api\/evolved\/projects\/[A-Za-z0-9_-]{1,80}\/agent-access$/.test(path)) return method === 'GET' && search === ''
     const mcp = /^\/api\/evolved\/projects\/[A-Za-z0-9_-]{1,80}\/mcp\/servers(?:\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\/(tools|query|call))?$/.exec(path)
     if (mcp) return search === '' && method === (mcp[2] === 'call' || mcp[2] === 'query' ? 'POST' : 'GET')
     if (/^\/api\/evolved\/projects\/[^/]+\/codegraph(?:\/|$)/.test(path)) {

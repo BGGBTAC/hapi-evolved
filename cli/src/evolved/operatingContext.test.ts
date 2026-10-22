@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { buildEvolvedOperatingContext, getEvolvedOperatingContext, withEvolvedOperatingContext } from './operatingContext'
+import { buildEvolvedOperatingContext, getEvolvedLiveAccessContext, getEvolvedOperatingContext, withEvolvedOperatingContext } from './operatingContext'
 import { EVOLVED_CAPABILITIES, EVOLVED_CAPABILITY_TOPICS, getEvolvedCapability } from './capabilities'
 
 afterEach(() => vi.unstubAllEnvs())
@@ -37,5 +37,21 @@ describe('Evolved operating context boundaries', () => {
         expect(once.endsWith(buildEvolvedOperatingContext())).toBe(true)
         expect(withEvolvedOperatingContext(once, env)).toBe(once)
         expect(withEvolvedOperatingContext(base, {})).toBe(base)
+    })
+
+    it('includes only validated live rights and reports an unavailable snapshot without guessing', async () => {
+        const client = {
+            projectId: 'project-one',
+            projectPath: (suffix: string) => `/projects/project-one${suffix}`,
+            request: vi.fn(async () => ({ projectId: 'project-one', profile: 'workspace', scopes: ['runner:connect', 'git:read'], actionIds: ['resource-1'], token: 'private-token' }))
+        } as unknown as import('./client').EvolvedClient
+        const env = { HAPI_EVOLVED_PROXY: '1' }
+        const context = await getEvolvedLiveAccessContext(client, env)
+        expect(context).toContain('profile: workspace; runner scopes: runner:connect, git:read')
+        expect(context).not.toContain('private-token')
+        expect(context).not.toContain('resource-1')
+        expect(vi.mocked(client.request)).toHaveBeenCalledWith('/projects/project-one/agent-access', 'GET', undefined, {}, { timeoutMs: 2500 })
+        vi.mocked(client.request).mockResolvedValueOnce({ projectId: 'another-project', profile: 'extended', scopes: ['git:write'] })
+        expect(await getEvolvedLiveAccessContext(client, env)).toContain('access unavailable')
     })
 })

@@ -6,11 +6,12 @@ import type { FileReadResponse, GeneratedImageResponse } from '@hapi/protocol/ap
 import { RPC_METHODS } from '@hapi/protocol/rpcMethods'
 import type { RpcHandlerManager } from '@/api/rpc/RpcHandlerManager'
 import { resolveContainedPath } from '../pathSecurity'
+import { openContainedParent } from '../anchoredPaths'
 import { getGeneratedImage } from '../generatedImages'
 import { getErrorMessage, rpcError } from '../rpcResponses'
 
-// The canonical path was checked against the working directory; refuse a final
-// component that has since become a symlink, and never block on FIFOs/devices.
+// Refuse a changed final component and never block on FIFOs/devices. On Linux,
+// openContainedParent also holds every ancestor against a concurrent swap.
 const NOFOLLOW = constants.O_NOFOLLOW ?? 0
 const NONBLOCK = constants.O_NONBLOCK ?? 0
 
@@ -64,19 +65,24 @@ export function registerFileHandlers(rpcHandlerManager: RpcHandlerManager, worki
         }
 
         try {
-            // Read metadata and content from one handle so both describe the same file.
-            const handle = await open(validation.realPath, constants.O_RDONLY | NOFOLLOW | NONBLOCK)
+            const parent = await openContainedParent(validation.realPath, workingDirectory)
             try {
-                const stats = await requireRegularFile(handle)
-                const buffer = await handle.readFile()
-                return {
-                    success: true,
-                    content: buffer.toString('base64'),
-                    size: stats.size,
-                    modified: stats.mtime.getTime()
+                // Read metadata and content from one handle so both describe the same file.
+                const handle = await open(parent.path, constants.O_RDONLY | NOFOLLOW | NONBLOCK)
+                try {
+                    const stats = await requireRegularFile(handle)
+                    const buffer = await handle.readFile()
+                    return {
+                        success: true,
+                        content: buffer.toString('base64'),
+                        size: stats.size,
+                        modified: stats.mtime.getTime()
+                    }
+                } finally {
+                    await handle.close()
                 }
             } finally {
-                await handle.close()
+                await parent.close()
             }
         } catch (error) {
             logger.debug('Failed to read file:', error)
@@ -112,54 +118,57 @@ export function registerFileHandlers(rpcHandlerManager: RpcHandlerManager, worki
         if (!validation.valid) {
             return rpcError(validation.error)
         }
-        // Operate on the validated canonical path, not on data.path relative to process.cwd().
-        const targetPath = validation.realPath
         const buffer = Buffer.from(data.content, 'base64')
 
         try {
-            if (data.expectedHash === null || data.expectedHash === undefined) {
-                let handle: FileHandle
-                try {
-                    // O_EXCL never follows a symlink and fails if anything appeared meanwhile.
-                    handle = await open(targetPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NOFOLLOW, 0o666)
-                } catch (error) {
-                    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-                        return rpcError('File already exists but was expected to be new')
+            const parent = await openContainedParent(validation.realPath, workingDirectory)
+            try {
+                if (data.expectedHash === null || data.expectedHash === undefined) {
+                    let handle: FileHandle
+                    try {
+                        // O_EXCL never follows a symlink and fails if anything appeared meanwhile.
+                        handle = await open(parent.path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NOFOLLOW, 0o666)
+                    } catch (error) {
+                        if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+                            return rpcError('File already exists but was expected to be new')
+                        }
+                        throw error
                     }
-                    throw error
-                }
-                try {
-                    await writeAll(handle, buffer)
-                } finally {
-                    await handle.close()
-                }
-            } else {
-                let handle: FileHandle
-                try {
-                    handle = await open(targetPath, constants.O_RDWR | NOFOLLOW | NONBLOCK)
-                } catch (error) {
-                    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-                        return rpcError('File does not exist but hash was provided')
+                    try {
+                        await writeAll(handle, buffer)
+                    } finally {
+                        await handle.close()
                     }
-                    throw error
-                }
-                try {
-                    // Hash check and overwrite use the same handle, i.e. the same file.
-                    await requireRegularFile(handle)
-                    const existingHash = createHash('sha256').update(await handle.readFile()).digest('hex')
-                    if (existingHash !== data.expectedHash) {
-                        return rpcError(`File hash mismatch. Expected: ${data.expectedHash}, Actual: ${existingHash}`)
+                } else {
+                    let handle: FileHandle
+                    try {
+                        handle = await open(parent.path, constants.O_RDWR | NOFOLLOW | NONBLOCK)
+                    } catch (error) {
+                        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+                            return rpcError('File does not exist but hash was provided')
+                        }
+                        throw error
                     }
-                    await handle.truncate(0)
-                    await writeAll(handle, buffer)
-                } finally {
-                    await handle.close()
+                    try {
+                        // Hash check and overwrite use the same handle, i.e. the same file.
+                        await requireRegularFile(handle)
+                        const existingHash = createHash('sha256').update(await handle.readFile()).digest('hex')
+                        if (existingHash !== data.expectedHash) {
+                            return rpcError(`File hash mismatch. Expected: ${data.expectedHash}, Actual: ${existingHash}`)
+                        }
+                        await handle.truncate(0)
+                        await writeAll(handle, buffer)
+                    } finally {
+                        await handle.close()
+                    }
                 }
+
+                const hash = createHash('sha256').update(buffer).digest('hex')
+
+                return { success: true, hash }
+            } finally {
+                await parent.close()
             }
-
-            const hash = createHash('sha256').update(buffer).digest('hex')
-
-            return { success: true, hash }
         } catch (error) {
             logger.debug('Failed to write file:', error)
             return rpcError(getErrorMessage(error, 'Failed to write file'))

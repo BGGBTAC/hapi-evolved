@@ -15,7 +15,7 @@ import { githubPrEnabled, registerGithubPrTool } from '@/modules/githubPr';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { EVOLVED_TOOL_NAMES, registerEvolvedTools } from '@/evolved/mcp';
 import { evolvedClientFromEnvironment } from '@/evolved/client';
-import { getEvolvedOperatingContext } from '@/evolved/operatingContext';
+import { getEvolvedLiveAccessContext, getEvolvedOperatingContext } from '@/evolved/operatingContext';
 import { initializePeerToolsPolicy, isEvolvedPeerMode, peerScopeAllowed } from '@/modules/pingPeer/evolvedPeer';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -87,12 +87,18 @@ export async function runHappyMcpStdioBridge(argv: string[]): Promise<void> {
       return client;
     }
 
+    // Include a bounded, current project-rights snapshot when the project tool
+    // is actually advertised. A failed lookup leaves the static rules intact.
+    const operatingContext = getEvolvedOperatingContext();
+    const evolvedClient = operatingContext && toolNames.has('evolved_access') ? evolvedClientFromEnvironment() : undefined;
+    const liveAccess = evolvedClient ? await getEvolvedLiveAccessContext(evolvedClient) : '';
+
     // Create STDIO MCP server
     const server = new McpServer({
       name: 'HAPI MCP Bridge',
       version: '1.0.0',
-    }, { instructions: getEvolvedOperatingContext() || undefined });
-    if (process.env.HAPI_EVOLVED_CAPABILITY_FILE || process.env.HAPI_EVOLVED_PROXY === '1') registerEvolvedTools(server, evolvedClientFromEnvironment(), toolNames);
+    }, { instructions: operatingContext ? operatingContext + liveAccess : undefined });
+    if (process.env.HAPI_EVOLVED_CAPABILITY_FILE || process.env.HAPI_EVOLVED_PROXY === '1') registerEvolvedTools(server, evolvedClient ?? evolvedClientFromEnvironment(), toolNames);
 
     // Register tools and forward to HTTP MCP
     const changeTitleInputSchema: z.ZodTypeAny = z.object({

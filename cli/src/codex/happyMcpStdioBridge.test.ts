@@ -76,10 +76,23 @@ describe('runHappyMcpStdioBridge tool forwarding', () => {
         vi.stubEnv('HAPI_PEER_SCOPES', '')
         vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
         await runHappyMcpStdioBridge(['--url', 'http://127.0.0.1:43006'])
-        expect(harness.instructions).toBe(getEvolvedOperatingContext())
+        expect(harness.instructions).toContain(getEvolvedOperatingContext())
+        expect(harness.instructions).toContain('live project access unavailable')
         expect(harness.tools.has('evolved_context')).toBe(true)
         for (const name of ['evolved_mcp_servers', 'evolved_mcp_tools', 'evolved_mcp_query', 'evolved_mcp_call']) expect(harness.tools.has(name)).toBe(true)
         expect(harness.configs.get('evolved_mcp_call')?.annotations).toMatchObject({ readOnlyHint: false, idempotentHint: false })
+    })
+
+    it('adds current project scopes to the MCP connection instructions', async () => {
+        vi.stubEnv('HAPI_EVOLVED_PROXY', '1')
+        vi.stubEnv('EVOLVED_PROJECT_ID', 'context-test')
+        vi.stubEnv('HAPI_EVOLVED_URL', 'http://127.0.0.1:1')
+        vi.stubEnv('HAPI_PEER_TOOLS', '')
+        vi.stubEnv('HAPI_PEER_SCOPES', '')
+        vi.spyOn(globalThis, 'fetch').mockImplementation(async () => Response.json({ projectId: 'context-test', profile: 'workspace', scopes: ['runner:connect', 'git:read'] }))
+        await runHappyMcpStdioBridge(['--url', 'http://127.0.0.1:43006'])
+        expect(harness.instructions).toContain('profile: workspace; runner scopes: runner:connect, git:read')
+        expect(harness.instructions).not.toContain('evolved-local')
     })
 
     it.each([['--tools', ''], ['--tools='], ['--tools', 'display_image,evolved_context,evolved_mcp_query'], ['--tools=display_image,evolved_context,evolved_mcp_query']])('honors explicit tool selection for native and Evolved tools: %j', async (...selection) => {

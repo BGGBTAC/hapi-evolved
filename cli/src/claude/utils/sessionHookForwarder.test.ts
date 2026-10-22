@@ -34,6 +34,7 @@ afterEach(async () => {
 describe('Evolved operating context hooks', () => {
     it.each(['startup', 'resume', 'compact', 'clear'])('refreshes context after SessionStart %s despite an unavailable observer', async source => {
         vi.stubEnv('HAPI_EVOLVED_PROXY', '1');
+        vi.stubEnv('EVOLVED_PROJECT_ID', '');
         const port = await startStub(() => ({ status: 503, body: 'unavailable' }));
         const previousExitCode = process.exitCode;
         process.exitCode = undefined;
@@ -47,12 +48,13 @@ describe('Evolved operating context hooks', () => {
             process.exitCode = previousExitCode;
         }
         expect(JSON.parse(out.get())).toEqual({
-            hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: getEvolvedOperatingContext() }
+            hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: expect.stringContaining(getEvolvedOperatingContext() + '\n[HAPI-eVolved live project access unavailable.') }
         });
     });
 
     it('provides context to a native child without forwarding it as a root session', async () => {
         vi.stubEnv('HAPI_EVOLVED_PROXY', '1');
+        vi.stubEnv('EVOLVED_PROJECT_ID', '');
         const observer = vi.fn(() => ({ status: 200, body: '{}' }));
         const port = await startStub(observer);
         const out = captureStdout();
@@ -62,8 +64,26 @@ describe('Evolved operating context hooks', () => {
         } finally { out.restore(); }
         expect(observer).not.toHaveBeenCalled();
         expect(JSON.parse(out.get())).toEqual({
-            hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: getEvolvedOperatingContext() }
+            hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: expect.stringContaining(getEvolvedOperatingContext() + '\n[HAPI-eVolved live project access unavailable.') }
         });
+    });
+
+    it('includes the current project scopes in a new session without exposing credentials', async () => {
+        vi.stubEnv('HAPI_EVOLVED_PROXY', '1');
+        vi.stubEnv('EVOLVED_PROJECT_ID', 'project-one');
+        const port = await startStub(path => path.endsWith('/agent-access')
+            ? { status: 200, body: JSON.stringify({ projectId: 'project-one', profile: 'workspace', scopes: ['runner:connect', 'git:read'] }) }
+            : { status: 200, body: '{}' });
+        vi.stubEnv('HAPI_EVOLVED_URL', `http://127.0.0.1:${port}`);
+        const out = captureStdout();
+        try {
+            await withStdin(JSON.stringify({ hook_event_name: 'SessionStart', source: 'startup', session_id: 's-1' }),
+                () => runSessionHookForwarder(['--port', String(port), '--token', 'tok']));
+        } finally { out.restore(); }
+        const context = JSON.parse(out.get()).hookSpecificOutput.additionalContext as string;
+        expect(context).toContain(getEvolvedOperatingContext());
+        expect(context).toContain('profile: workspace; runner scopes: runner:connect, git:read');
+        expect(context).not.toContain('evolved-local');
     });
 });
 

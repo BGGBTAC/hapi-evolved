@@ -41,6 +41,21 @@ it('MCP discovers real schemas, calls project-bound APIs and rejects invalid arg
         expect(t.calls).toHaveLength(1)
     } finally { await caller.close(); await server.close() }
 })
+it('reads live project access through the current capability without exposing its token', async () => {
+    const access = { projectId: 'project-one', profile: 'workspace', scopes: ['runner:connect', 'git:read'], actionIds: [] }
+    const t = setup(() => Response.json(access)), server = new McpServer({ name: 'test', version: '1' }), caller = new Client({ name: 'test', version: '1' })
+    registerEvolvedTools(server, t.client)
+    const [a, b] = InMemoryTransport.createLinkedPair()
+    await server.connect(a); await caller.connect(b)
+    try {
+        expect((await caller.listTools()).tools.find(tool => tool.name === 'evolved_access')?.annotations?.readOnlyHint).toBe(true)
+        const result = await caller.callTool({ name: 'evolved_access', arguments: {} })
+        expect(result.isError).not.toBe(true)
+        expect(JSON.parse((result.content as Array<{ text: string }>)[0].text)).toEqual(access)
+        expect(t.calls[0].url).toBe('https://evolved.test/api/evolved/projects/project-one/agent-access')
+        expect(JSON.stringify(result)).not.toContain(t.token)
+    } finally { await caller.close(); await server.close() }
+})
 it('any Evolved MCP agent can reload the canonical operating context without a remote request or live-state claim', async () => {
     const t = setup(() => { throw new Error('Context must not access a backend') })
     const server = new McpServer({ name: 'test', version: '1' }), caller = new Client({ name: 'test', version: '1' })
@@ -71,7 +86,8 @@ it('standalone MCP sends the operating instructions on every new connection', as
         const caller = new Client({ name: 'standalone-test', version: '1' })
         try {
             await caller.connect(transport)
-            expect(caller.getInstructions()).toBe(buildEvolvedOperatingContext())
+            expect(caller.getInstructions()).toContain(buildEvolvedOperatingContext())
+            expect(caller.getInstructions()).toContain('live project access unavailable')
             expect((await caller.listTools()).tools.map(tool => tool.name)).toContain('evolved_context')
             expect((await caller.listTools()).tools.map(tool => tool.name)).toEqual(expect.arrayContaining(['evolved_mcp_servers', 'evolved_mcp_tools', 'evolved_mcp_query', 'evolved_mcp_call']))
             const result = await caller.callTool({ name: 'evolved_context', arguments: {} })

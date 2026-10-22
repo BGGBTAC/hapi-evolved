@@ -168,6 +168,23 @@ describe('Evolved authentication and authorization', () => {
         expect((await s.call(path, { scopes: ['runner:connect', 'git:admin'] })).status).toBe(400)
         expect(s.store.db.prepare('SELECT COUNT(*) AS count FROM evolved_capabilities WHERE project_id=?').get(project.id)).toEqual({ count: 1 })
     })
+    test('agents see only their live project access and never gain permissions by querying it', async () => {
+        const s = setup(), { userId } = await enroll(s)
+        const team = s.store.createTeam(userId, 'Access team')
+        const project = s.store.createProject(userId, team.id, 'Access project')
+        const other = s.store.createProject(userId, team.id, 'Other project')
+        const path = `/projects/${project.id}/agent-access`
+        const token = s.store.issueCapability(userId, project.id, ['runner:connect', 'git:read'], ['synthetic-action'], 300).token
+        const response = await s.call(path, undefined, { bearer: token })
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({ projectId: project.id, profile: project.profile, role: 'admin', scopes: ['runner:connect', 'git:read'], actionIds: ['synthetic-action'], capabilityExpiresAt: expect.any(Number) })
+        expect((await s.call(`/projects/${other.id}/agent-access`, undefined, { bearer: token })).status).toBe(403)
+        expect((await s.call(path)).status).toBe(403)
+        const noRunner = s.store.issueCapability(userId, project.id, ['memory:read'], [], 300)
+        expect((await s.call(path, undefined, { bearer: noRunner.token })).status).toBe(403)
+        s.store.setProfile(userId, project.id, 'extended')
+        expect((await s.call(path, undefined, { bearer: token })).status).toBe(401)
+    })
     test('runner leases refresh short capabilities but cannot outlive revocation, absolute expiry or issuer rights', async () => {
         const s = setup(), { userId } = await enroll(s), team = s.store.createTeam(userId, 'Runner team'), project = s.store.createProject(userId, team.id, 'Runner project')
         const response = await s.call(`/projects/${project.id}/runner-leases`, { name: 'Local runner', scopes: ['runner:connect'], expiresInSeconds: 3600 })

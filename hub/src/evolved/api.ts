@@ -50,6 +50,20 @@ export function createEvolvedRoutes(config: EvolvedRoutesConfig): Hono<EvolvedEn
     app.route('/saved-prompts', createSavedPromptRoutes(store))
     app.route('/', createCredentialGrantRoutes(store, vault))
     app.get('/me', c => c.json(c.get('principal')))
+    app.get('/projects/:id/agent-access', c => {
+        const principal = c.get('principal')
+        if (!principal.capability) throw new EvolvedError('capability_required', 'Project agent access requires a runner capability.', 403)
+        requireScope(principal, 'runner:connect', c.req.param('id'))
+        const project = store.requireProject(principal.user.id, c.req.param('id'))
+        return c.json({
+            projectId: project.id,
+            profile: project.profile,
+            role: project.role,
+            scopes: principal.capability.scopes,
+            actionIds: principal.capability.actionIds,
+            capabilityExpiresAt: principal.capability.expiresAt,
+        })
+    })
     app.get('/teams', c => {
         const principal = c.get('principal'); requireHuman(principal)
         return c.json({ teams: store.listTeams(principal.user.id) })
