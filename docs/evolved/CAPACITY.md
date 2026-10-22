@@ -1,5 +1,7 @@
 # Gemeldete Abo-Kapazität
 
+Deutsch · [English version](CAPACITY.en.md)
+
 Die Projektübersicht zeigt die von Claude Code und Codex tatsächlich gemeldeten
 Nutzungsfenster. Diese Grenzen gelten **für das jeweilige Anbieterkonto**, auch
 wenn die Meldung aus einer Session dieses Projekts stammt. Sie sind weder ein

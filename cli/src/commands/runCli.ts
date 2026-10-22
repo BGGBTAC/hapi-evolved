@@ -33,6 +33,13 @@ export async function runCli(): Promise<void> {
         args.push(selection.agent)
     }
 
+    // Offline plugin validation must not load the registry, whose agent commands initialize HAPI_HOME (logs, settings).
+    if (args[0] === 'evolved' && args[1] === 'plugin') {
+        const { runEvolvedPluginCommand } = await import('./evolvedPlugin')
+        runEvolvedPluginCommand(args.slice(1))
+        return
+    }
+
     const { resolveCommand } = await import('./registry')
     const resolved = resolveCommand(args)
     if (!resolved) {

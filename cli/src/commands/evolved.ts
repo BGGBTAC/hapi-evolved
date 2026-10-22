@@ -3,7 +3,7 @@ import { evolvedClientFromEnvironment } from '@/evolved/client'
 import { EVOLVED_CAPABILITY_TOPICS, getEvolvedCapability } from '@/evolved/capabilities'
 import { buildEvolvedOperatingContext, EVOLVED_OPERATING_CONTEXT_VERSION } from '@/evolved/operatingContext'
 import { DEVELOPMENT_USAGE, runDevelopmentCommand } from '@/evolved/development/command'
-import { PLUGIN_VALIDATE_USAGE, validatePluginManifestFile } from '@/evolved/development/pluginValidate'
+import { runEvolvedPluginCommand } from './evolvedPlugin'
 
 export const evolvedCommand: CommandDefinition = {
     name: 'evolved', requiresRuntimeAssets: false,
@@ -31,13 +31,7 @@ export const evolvedCommand: CommandDefinition = {
             console.log(JSON.stringify(await runDevelopmentCommand(args.slice(1), evolvedClientFromEnvironment), null, 2))
             return
         }
-        if (args[0] === 'plugin') {
-            if (args[1] !== 'validate' || args.length > 3 || args.includes('--help')) { console.log(PLUGIN_VALIDATE_USAGE); if (!args.includes('--help')) process.exitCode = 1; return }
-            const report = validatePluginManifestFile(args[2] ?? '.')
-            console.log(JSON.stringify(report, null, 2))
-            if (!report.ok) process.exitCode = 1
-            return
-        }
+        if (args[0] === 'plugin') return runEvolvedPluginCommand(args)
         const client = evolvedClientFromEnvironment()
         let result: unknown
         if (args[0] === 'codegraph' && ['status', 'search', 'graph', 'node', 'impact', 'affected'].includes(args[1] ?? '')) {

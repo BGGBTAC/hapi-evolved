@@ -117,4 +117,18 @@ describe('CLI entrypoint', () => {
         expect(ensureRuntimeAssetsMock).not.toHaveBeenCalled()
         expect(runMock).not.toHaveBeenCalled()
     })
+
+    it.each([
+        [['evolved', 'plugin', 'validate', '--help'], undefined],
+        [['evolved', 'plugin'], 1],
+    ] as const)('dispatches offline plugin validation %j without the command registry or runtime assets', async (args, exitCode) => {
+        getCliArgsMock.mockReturnValue([...args])
+        await runCli()
+
+        expect(console.log).toHaveBeenCalledWith(expect.stringContaining('hapi evolved plugin validate'))
+        expect(process.exitCode).toBe(exitCode)
+        expect(resolveCommandMock).not.toHaveBeenCalled()
+        expect(ensureRuntimeAssetsMock).not.toHaveBeenCalled()
+        expect(runMock).not.toHaveBeenCalled()
+    })
 })

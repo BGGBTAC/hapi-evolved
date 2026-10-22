@@ -141,7 +141,7 @@ experimentation. See [data handling](docs/evolved/DATA_HANDLING.md) and
 | [Development modules](docs/evolved/DEVELOPMENT_MODULES.md) | Author guide for plugin development modules, providers and validation |
 | [Project MCP shop](docs/evolved/MCP_SHOP.md) | Context7, shared remote tools and project permissions |
 | [Agents and plugins](docs/evolved/EXTENSIONS.md) | Reusable specialists and extension manifests |
-| [Subscription capacity](docs/evolved/CAPACITY.md) | Usage sources, reset times and freshness |
+| [Subscription capacity](docs/evolved/CAPACITY.en.md) | Usage sources, reset times and freshness — English ([German](docs/evolved/CAPACITY.md)) |
 | [Operator guide](docs/evolved/DEPLOYMENT.md) | Services, isolation, backups and upgrades — German |
 | [Architecture](docs/evolved/PROJECT.md) | Components and trust boundaries — German |
 | [Interface](docs/evolved/DESIGN.md) | Desktop/PWA layout and accessibility |
