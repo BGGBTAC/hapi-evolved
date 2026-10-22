@@ -15,10 +15,10 @@ let root: string;
 let server: Server;
 let port: number;
 
-function send(method: string, urlPath: string, destination = port) {
+function send(method: string, urlPath: string, destination = port, headers: Record<string, string> = {}) {
   return new Promise<{ status: number; headers: Record<string, unknown>; body: Buffer }>(
     (resolve, reject) => {
-      const req = request({ host: "127.0.0.1", port: destination, method, path: urlPath }, (res) => {
+      const req = request({ host: "127.0.0.1", port: destination, method, path: urlPath, headers }, (res) => {
         const chunks: Buffer[] = [];
         res.on("data", (chunk: Buffer) => chunks.push(chunk));
         res.on("end", () =>
@@ -97,9 +97,9 @@ test("limits repeated static and fallback requests before filesystem access", as
   await new Promise<void>((resolve) => limited.listen(0, "127.0.0.1", resolve));
   try {
     const destination = (limited.address() as AddressInfo).port;
-    assert.equal((await send("GET", "/assets/app-0123abcd.bin", destination)).status, 200);
-    assert.equal((await send("GET", "/some/deep/route", destination)).status, 200);
-    const rejected = await send("GET", "/some/deep/route", destination);
+    assert.equal((await send("GET", "/assets/app-0123abcd.bin", destination, { "x-forwarded-for": "198.51.100.1" })).status, 200);
+    assert.equal((await send("GET", "/some/deep/route", destination, { "x-forwarded-for": "198.51.100.2" })).status, 200);
+    const rejected = await send("GET", "/some/deep/route", destination, { "x-forwarded-for": "198.51.100.3" });
     assert.equal(rejected.status, 429);
     assert.notEqual(rejected.body.toString(), indexHtml);
   } finally {

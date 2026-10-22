@@ -8,7 +8,8 @@ export function createApp(staticPath: string, requestsPerMinute = 1200) {
   // The static SPA still performs a filesystem lookup on every uncached request.
   // Use the transport peer address: untrusted forwarding headers must not let a
   // caller create arbitrary rate-limit identities.
-  app.use(rateLimit({ windowMs: 60_000, limit: requestsPerMinute, standardHeaders: "draft-8", legacyHeaders: false }));
+  app.use(rateLimit({ windowMs: 60_000, limit: requestsPerMinute, standardHeaders: "draft-8", legacyHeaders: false,
+    validate: { xForwardedForHeader: false } }));
   app.use(express.static(staticPath));
 
   // Handle client-side routing - serve index.html for all routes
