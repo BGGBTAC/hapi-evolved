@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEvolved } from './auth'
 import { EvolvedApiError, isProjectAdmin, projectPath, type McpAuth, type McpCallHistory, type McpCatalog, type McpConnection } from './api'
 import { ConfirmButton, Empty, ErrorNotice, Field, Loading, Panel, formatDate, submit } from './ui'
+import { ProjectBrowserCard } from './ProjectBrowser'
 import './mcp-shop.css'
 
 type Credential = { mode: McpAuth['mode']; headerName?: string; token?: string }
@@ -103,6 +104,7 @@ function ProjectMcpShop() {
             {!catalog.isPending && !catalog.data?.connections.length && <Empty>Noch keine MCP-Verbindung eingerichtet. Wähle Context7 oder verbinde einen eigenen Server.</Empty>}
             <div className="ev-mcp-connections">{catalog.data?.connections.map(connection => <ConnectionCard key={connection.id} connection={connection} path={path} canManage={canManage} restricted={project!.profile === 'restricted'} onChanged={accept} reload={reload} onRemoved={() => client.setQueryData<McpCatalog>(key, value => value ? { ...value, connections: value.connections.filter(item => item.id !== connection.id) } : value)} />)}</div>
         </Panel>}
+        <ProjectBrowserCard />
         <p className="ev-muted">Aktualisierte Claude- und Codex-Sitzungen finden freigegebene MCPs direkt über HAPI. Bereits vor diesem Update gestartete Agenten müssen einmal fortgesetzt oder neu gestartet werden. Als nur lesend freigegebene Werkzeuge können Agenten ohne Einzelbestätigung verwenden. Andere Aufrufe nutzen die normale Aktionsfreigabe des Agenten; eingeschränkte Profile erhalten ausschließlich lesend freigegebene Werkzeuge.</p>
     </div>
 }

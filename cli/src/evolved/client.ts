@@ -53,6 +53,24 @@ export class EvolvedClient {
         if (payload === null) throw new Error('Invalid Evolved API response')
         return payload
     }
+    /** Project browser facade: discovery via the Hub; actions only through the runner-proxy relay of a managed project runner. */
+    async browser(operation: 'status' | 'tools' | 'query' | 'call', body?: unknown): Promise<unknown> {
+        // Rights and state come from the Hub, also while the optional browser sidecar is stopped.
+        if (operation === 'status' || operation === 'tools') return this.request(this.projectPath('/browser/agent'))
+        if (process.env.HAPI_EVOLVED_PROXY !== '1' || this.base.hostname !== 'runner-proxy' || this.base.port !== '3010') {
+            throw new EvolvedRequestError('The project browser is available only to agents in a managed project runner.', 503, 'browser_unavailable')
+        }
+        const response = await this.fetcher(new URL(`/evolved-browser/${operation}`, this.base), {
+            method: body === undefined ? 'GET' : 'POST', headers: { 'content-type': 'application/json' },
+            body: body === undefined ? undefined : JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(95_000),
+        })
+        const payload: unknown = await response.json().catch(() => null)
+        if (!response.ok || payload === null || typeof payload !== 'object') {
+            const detail = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>
+            throw new EvolvedRequestError(typeof detail.error === 'string' ? detail.error : `Project browser request failed (${response.status})`, response.status, typeof detail.code === 'string' ? detail.code : undefined)
+        }
+        return payload
+    }
     projectPath(path: string): string { return `/projects/${encodeURIComponent(this.projectId)}${path}` }
     repositories(workspace = false): Promise<unknown> {
         return this.request(this.projectPath(`/repositories?workspace=${workspace ? '1' : '0'}`), 'GET', undefined, {}, { timeoutMs: REPOSITORY_REQUEST_TIMEOUT_MS })

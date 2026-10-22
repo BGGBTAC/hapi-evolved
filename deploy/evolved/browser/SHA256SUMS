@@ -1,0 +1,6 @@
+# Pinned inputs of deploy/evolved/Browser.Dockerfile (verified at build time).
+# npm @askjo/camofox-browser@1.18.1 (gitHead 39c82094013480b373df6600d44c7f036f58356e, MIT)
+b89badde10eaf3df0327c850cdc880560ea445d88bd6502314716a7123df3d66  camofox-browser-1.18.1.tgz
+# daijro/camoufox v152.0.4-beta.30 (MPL-2.0), sizes 663467670 / 653870625 bytes
+5720d45b894ce1770543de024c6f10d514b38be560fa2dc3226b3d8586caf672  camoufox-152.0.4-beta.30-lin.x86_64.zip
+60447260af8bebdb0ec3f2aa72f687b879e5598367303de2e3fdbc7a5be8c124  camoufox-152.0.4-beta.30-lin.arm64.zip

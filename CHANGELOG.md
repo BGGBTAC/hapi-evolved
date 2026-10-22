@@ -6,6 +6,12 @@ or container image.
 
 ## Unreleased
 
+- Optional project browser (Camofox): a per-project sidecar with jo-inc/camofox-browser
+  1.18.1 and Camoufox 152.0.4-beta.30, enabled per project in the MCP Shop and used by agents
+  through `evolved_browser_*` tools. The Hub checks lease, profile and grants before and after
+  every action; browser state is shared within a project runner and ephemeral. Egress reaches all
+  public sites and blocks private networks. The image is operator-built; see
+  docs/evolved/BROWSER.md.
 - Core HAPI sync through `5d8deb201189dc1f183c4f5bf38c87ec4d34dd70`:
   configurable ElevenLabs conversation duration, a responsive session toolbar
   with overflow actions, improved search clear/calendar controls, final-phase

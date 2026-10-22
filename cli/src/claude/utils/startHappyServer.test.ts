@@ -338,6 +338,8 @@ describe('toClaudeAllowedHapiMcpTools', () => {
             'mcp__hapi__evolved_mcp_tools',
             'mcp__hapi__evolved_mcp_query'
         ])
+        expect(toClaudeAllowedHapiMcpTools(['evolved_browser_status', 'evolved_browser_tools', 'evolved_browser_query', 'evolved_browser_call']))
+            .toEqual(['mcp__hapi__evolved_browser_status', 'mcp__hapi__evolved_browser_tools', 'mcp__hapi__evolved_browser_query'])
         expect(toClaudeAllowedHapiMcpTools(['display_video'])).not.toContain('mcp__hapi__display_video')
         expect(toClaudeAllowedHapiMcpTools(['display_media'])).not.toContain('mcp__hapi__display_media')
     })
@@ -380,7 +382,7 @@ it('publishes the same operating context on every scoped MCP connection', async 
                 await client.connect(new StreamableHTTPClientTransport(new URL(server.url)))
                 expect(client.getInstructions()).toBe(getEvolvedOperatingContext())
                 expect(client.getInstructions()).toContain('evolved_memory_propose')
-                expect((await client.listTools()).tools.map(tool => tool.name)).toEqual(expect.arrayContaining(['evolved_mcp_servers', 'evolved_mcp_tools', 'evolved_mcp_query', 'evolved_mcp_call']))
+                expect((await client.listTools()).tools.map(tool => tool.name)).toEqual(expect.arrayContaining(['evolved_mcp_servers', 'evolved_mcp_tools', 'evolved_mcp_query', 'evolved_mcp_call', 'evolved_browser_status', 'evolved_browser_tools', 'evolved_browser_query', 'evolved_browser_call']))
             } finally { await client.close() }
         }
     } finally {

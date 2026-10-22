@@ -58,7 +58,8 @@ const CLAUDE_MANUAL_APPROVAL_HAPI_TOOLS = new Set([
     'inspect_peer',
     'spawn_peer',
     'archive_peer',
-    'evolved_mcp_call'
+    'evolved_mcp_call',
+    'evolved_browser_call'
 ]);
 
 /**

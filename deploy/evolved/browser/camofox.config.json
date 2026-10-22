@@ -1,0 +1,13 @@
+{
+  "id": "camofox-browser",
+  "name": "Camofox Browser (HAPI-eVolved project browser)",
+  "version": "1.18.1",
+  "newPageTimeoutMs": 10000,
+  "interactive": { "mode": "off" },
+  "plugins": {
+    "youtube": { "enabled": false },
+    "persistence": { "enabled": false },
+    "vnc": { "enabled": false },
+    "hapi-egress": { "enabled": true }
+  }
+}

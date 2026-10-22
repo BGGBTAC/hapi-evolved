@@ -84,6 +84,7 @@ export function allowedProxyPath(path: string, method = 'GET', search = ''): boo
     }
     if (/^\/api\/evolved\/projects\/[A-Za-z0-9_-]{1,80}\/agent-credentials$/.test(path)) return method === 'GET' && search === ''
     if (/^\/api\/evolved\/projects\/[A-Za-z0-9_-]{1,80}\/agent-access$/.test(path)) return method === 'GET' && search === ''
+    if (/^\/api\/evolved\/projects\/[A-Za-z0-9_-]{1,80}\/browser\/agent$/.test(path)) return method === 'GET' && search === ''
     const mcp = /^\/api\/evolved\/projects\/[A-Za-z0-9_-]{1,80}\/mcp\/servers(?:\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\/(tools|query|call))?$/.exec(path)
     if (mcp) return search === '' && method === (mcp[2] === 'call' || mcp[2] === 'query' ? 'POST' : 'GET')
     if (/^\/api\/evolved\/projects\/[^/]+\/codegraph(?:\/|$)/.test(path)) {
@@ -103,7 +104,32 @@ export function allowedProxyPath(path: string, method = 'GET', search = ''): boo
         || /^\/api\/evolved\/github-pr\/(?:features|link)$/.test(path)
         || /^\/api\/evolved\/(memory\/search|projects\/[^/]+\/(memory(?:\/.*)?|resources(?:\/.*)?))$/.test(path)
 }
-export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; projectId: string; host?: string; port?: number; credentialRunnerLookup?: () => Promise<readonly string[]>; publicGitFetcher?: PublicGitFetcher }) {
+/** The only Hub routes the browser gateway may use, for exactly this project. Everything else from that peer is denied. */
+export function allowedGatewayPath(path: string, method: string, search: string, projectId: string): boolean {
+    const match = /^\/api\/evolved\/projects\/([A-Za-z0-9_-]{1,80})\/browser\/(authorize|report)$/.exec(path)
+    return !!match && match[1] === projectId && method === 'POST' && search === ''
+}
+const BROWSER_RELAY = /^\/evolved-browser\/(query|call)$/
+const MAX_BROWSER_RELAY_RESPONSE = 2 * 1024 * 1024
+export type PeerRole = 'runner' | 'browser-gateway'
+async function boundedText(response: Response, limit: number): Promise<string> {
+    const reader = response.body?.getReader()
+    if (!reader) return ''
+    const chunks: Uint8Array[] = []; let size = 0
+    try {
+        for (;;) {
+            const { done, value } = await reader.read()
+            if (done) break
+            size += value.byteLength
+            if (size > limit) throw new Error('Browser response too large')
+            chunks.push(value)
+        }
+    } finally { await reader.cancel().catch(() => {}) }
+    return Buffer.concat(chunks).toString('utf8')
+}
+export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; projectId: string; host?: string; port?: number; credentialRunnerLookup?: () => Promise<readonly string[]>; publicGitFetcher?: PublicGitFetcher
+    /** Test-only override; production resolves Docker's network-scoped service aliases. */
+    peerLookup?: (role: PeerRole) => Promise<readonly string[]>; browserGatewayUrl?: string; allowLoopbackPeer?: boolean }) {
     const hub = new URL(config.hubUrl)
     if (hub.username || hub.password || !['http:', 'https:'].includes(hub.protocol)) throw new Error('Invalid Hub URL')
     let grant: Grant | null = null, renewing: Promise<Grant> | null = null
@@ -133,6 +159,29 @@ export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; p
             return peers.check(address, family === 6 ? 'ipv6' : 'ipv4')
         } catch { return false } finally { if (timeout) clearTimeout(timeout) }
     }
+    // Ordinary agent routes are served only to the project's runner container (or loopback inside this
+    // container). The optional browser gateway shares the project network; it may use only its two
+    // internal Hub routes. Containers drop NET_RAW, so source addresses on the bridge cannot be spoofed.
+    const lookupPeer = config.peerLookup ?? (async (role: PeerRole) => (await lookup(role, { all: true, verbatim: true })).map(peer => peer.address))
+    const peerCache = new Map<PeerRole, { at: number; addresses: Promise<readonly string[]> }>()
+    const peerIs = async (address: string | undefined, role: PeerRole): Promise<boolean> => {
+        const family = address && isIP(address)
+        if (!address || !family) return false
+        let cached = peerCache.get(role)
+        if (!cached || Date.now() - cached.at > 2000) {
+            let timeout: ReturnType<typeof setTimeout> | undefined
+            const addresses = Promise.race([lookupPeer(role).catch(() => [] as readonly string[]), new Promise<readonly string[]>(resolve => { timeout = setTimeout(() => resolve([]), 1500) })]).finally(() => clearTimeout(timeout))
+            cached = { at: Date.now(), addresses }; peerCache.set(role, cached)
+        }
+        const addresses = await cached.addresses
+        if (!addresses.length || addresses.length > 16) return false
+        const peers = new BlockList()
+        for (const candidate of addresses) { const f = isIP(candidate); if (f) peers.addAddress(candidate, f === 6 ? 'ipv6' : 'ipv4') }
+        return peers.check(address, family === 6 ? 'ipv6' : 'ipv4')
+    }
+    const loopback = (address: string | undefined) => !!address && (address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1')
+    const peerRole = async (address: string | undefined): Promise<PeerRole | 'loopback' | null> =>
+        (config.allowLoopbackPeer ?? true) && loopback(address) ? 'loopback' : await peerIs(address, 'runner') ? 'runner' : await peerIs(address, 'browser-gateway') ? 'browser-gateway' : null
     async function current(minRemainingMs = 30_000): Promise<Grant> {
         if (grant && grant.expiresAt > Date.now() + minRemainingMs) return grant
         if (renewing) return renewing
@@ -247,6 +296,19 @@ export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; p
         maxRequestBodySize: 68 * 1024 * 1024,
         fetch: async (request, server) => {
             const url = new URL(request.url)
+            const peer = await peerRole(server.requestIP(request)?.address)
+            if (!peer) return new Response('Peer denied', { status: 403, headers: { 'cache-control': 'no-store' } })
+            if (peer === 'browser-gateway') {
+                if (request.headers.has('origin') || request.headers.has('cookie') || !allowedGatewayPath(url.pathname, request.method, url.search, config.projectId)) return new Response('Endpoint denied', { status: 403, headers: { 'cache-control': 'no-store' } })
+                try {
+                    const body = await request.arrayBuffer()
+                    if (body.byteLength > 4096) return new Response('Request too large', { status: 413 })
+                    const access = await current()
+                    const response = await fetch(new URL(url.pathname, hub), { method: 'POST', headers: { authorization: `Bearer ${access.token}`, 'content-type': 'application/json' }, body, redirect: 'error', signal: AbortSignal.timeout(10_000) })
+                    if (response.status === 401) grant = null
+                    return new Response(response.body, { status: response.status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
+                } catch { return new Response('Runner lease unavailable', { status: 503 }) }
+            }
             if (url.pathname.startsWith('/socket.io/')) return handler.fetch(request, server)
             if (request.headers.has('origin')) return new Response('Browser access denied', { status: 403 })
             if (url.pathname.startsWith('/evolved-git/')) {
@@ -304,6 +366,19 @@ export function createRunnerProxy(config: { hubUrl: string; leaseFile: string; p
                     controller.abort(); finish()
                     return new Response('Git operation denied or interrupted; inspect remote refs before retrying a push.', { status: 502 })
                 }
+            }
+            const relay = BROWSER_RELAY.exec(url.pathname)
+            if (relay) {
+                // Fixed internal target; the agent controls neither host, path, headers nor identity.
+                const method = 'POST'
+                if (request.method !== method || url.search || request.headers.has('cookie')) return new Response('Endpoint denied', { status: 403 })
+                try {
+                    const body = method === 'POST' ? await request.arrayBuffer() : undefined
+                    if ((body?.byteLength ?? 0) > 80 * 1024) return Response.json({ code: 'browser_request_too_large', error: 'Browser request exceeds 80 KiB.' }, { status: 413 })
+                    const response = await fetch(new URL(url.pathname, config.browserGatewayUrl ?? 'http://browser-gateway:3011'), { method, body, headers: { 'content-type': 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(90_000) })
+                    const text = await boundedText(response, MAX_BROWSER_RELAY_RESPONSE)
+                    return new Response(text, { status: response.status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
+                } catch { return Response.json({ code: 'browser_unavailable', error: 'The project browser is not running or not reachable. An administrator can enable it in the MCP Shop.' }, { status: 503, headers: { 'cache-control': 'no-store' } }) }
             }
             if (url.pathname === '/evolved-runner-environment') {
                 if (request.method !== 'POST' || url.search || request.headers.has('cookie')) return new Response('Endpoint denied', { status: 403 })

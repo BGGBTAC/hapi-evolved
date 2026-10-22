@@ -15,7 +15,9 @@ describe('Evolved operating context boundaries', () => {
         }
         // Instructions are repeated across lifecycle/connection boundaries. Keep
         // the always-present rules/index bounded; details stay in the lookup tool.
-        expect(context.length).toBeLessThan(11_000)
+        // Budget grows only with a new feature (project browser topic + one bootstrap line); keep summaries short.
+        expect(context.length).toBeLessThan(11_400)
+        expect(context).toContain('evolved_browser_status reports this project')
         expect(getEvolvedCapability('__proto__')).toBeUndefined()
         expect(getEvolvedCapability('constructor')).toBeUndefined()
     })

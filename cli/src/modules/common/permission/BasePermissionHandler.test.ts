@@ -116,7 +116,7 @@ describe('resolveToolAutoApprovalDecision search_peers', () => {
 
 
 describe('project MCP external calls', () => {
-    it.each(['evolved_mcp_call', 'mcp__hapi__evolved_mcp_call', 'hapi_evolved_mcp_call'])('requires approval for %s even in read-only mode', tool => {
+    it.each(['evolved_mcp_call', 'mcp__hapi__evolved_mcp_call', 'hapi_evolved_mcp_call', 'evolved_browser_call', 'mcp__hapi__evolved_browser_call'])('requires approval for %s even in read-only mode', tool => {
         for (const mode of ['default', 'read-only'] as const) {
             expect(resolveToolAutoApprovalDecision(mode, tool, 'call-1')).toBeNull()
             expect(resolveToolAutoApprovalDecision(mode, tool, 'change_title-save_memory')).toBeNull()
@@ -128,5 +128,6 @@ describe('project MCP external calls', () => {
         expect(resolveToolAutoApprovalDecision('always-proceed', 'evolved_mcp_call', 'call')).toBe('approved_for_session')
         expect(resolveToolAutoApprovalDecision('safe-yolo', 'evolved_mcp_call', 'call')).toBe('approved')
         expect(resolveToolAutoApprovalDecision('read-only', 'evolved_mcp_query', 'call')).toBe('approved')
+        expect(resolveToolAutoApprovalDecision('safe-yolo', 'evolved_browser_call', 'call')).toBe('approved')
     })
 })

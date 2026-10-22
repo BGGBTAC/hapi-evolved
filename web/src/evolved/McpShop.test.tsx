@@ -6,6 +6,7 @@ import { McpShopPanel } from './McpShop'
 
 const context = vi.hoisted(() => ({ api: { baseUrl: '', request: vi.fn() }, me: { user: { id: 'user-1' } }, project: null as EvolvedProject | null }))
 vi.mock('./auth', () => ({ useEvolved: () => context }))
+vi.mock('./ProjectBrowser', () => ({ ProjectBrowserCard: () => null }))
 const template: McpCatalog['templates'][number] = { id: 'context7', name: 'Context7', description: 'Aktuelle Bibliotheksdokumentation für deine Agenten.', endpoint: 'https://mcp.context7.com/mcp', docsUrl: 'https://context7.com/docs' }
 const tool = (name = 'lookup', readOnly = false): McpTool => ({ name, description: 'Search documentation <img src="https://tracking.invalid/pixel">', inputSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] }, fingerprint: `fingerprint-${name}`, readOnly })
 const connection = (overrides: Partial<McpConnection> = {}): McpConnection => ({ id: 'connection-1', name: 'Docs server', kind: 'custom', endpoint: 'https://docs.example.com/mcp', version: 1, enabled: false, auth: { mode: 'none', configured: false }, status: { state: 'untested', checkedAt: null }, catalogRevision: null, tools: [], enabledTools: [], createdAt: 1000, updatedAt: 1000, ...overrides })

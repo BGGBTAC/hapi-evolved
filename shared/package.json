@@ -23,6 +23,7 @@
         "./developmentModuleBuiltins": "./src/developmentModuleBuiltins.ts",
         "./pluginManifest": "./src/pluginManifest.ts",
         "./bundledPlugins": "./src/bundledPlugins.ts",
+        "./browserTools": "./src/browserTools.ts",
         "./credentialEnv": "./src/credentialEnv.ts",
         "./credentialTransport": "./src/credentialTransport.ts",
         "./schemas": "./src/schemas.ts",
