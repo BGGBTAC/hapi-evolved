@@ -60,7 +60,9 @@ export async function getEvolvedLiveAccessContext(client: EvolvedClient, env: No
             || access.scopes.some(scope => typeof scope !== 'string' || !/^[a-z]+:[a-z]+$/.test(scope))) {
             throw new Error('Invalid access response')
         }
-        return `\n[HAPI-eVolved live project access]\nProject: ${client.projectId}; profile: ${access.profile}; runner scopes: ${access.scopes.join(', ') || '(none)'}. This is a snapshot, not a grant for any repository, credential, MCP or external service. Refresh with evolved_access after changes.\n[/HAPI-eVolved live project access]`
+        const peerStatus = typeof access.peerCommunicationEnabled === 'boolean'
+            ? `; inter-agent communication: ${access.peerCommunicationEnabled ? 'enabled' : 'disabled'}` : ''
+        return `\n[HAPI-eVolved live project access]\nProject: ${client.projectId}; profile: ${access.profile}; runner scopes: ${access.scopes.join(', ') || '(none)'}${peerStatus}. This is a snapshot, not a grant for any repository, credential, MCP or external service. Refresh with evolved_access after changes.\n[/HAPI-eVolved live project access]`
     } catch {
         return '\n[HAPI-eVolved live project access unavailable. Use evolved_access before relying on project permissions.]'
     }

@@ -5,6 +5,7 @@ import { EvolvedError, EvolvedStore, hashToken, randomToken, type EvolvedProject
 import { authenticateEvolvedRequest, cookieToken, parseBody, requireFreshPasskey, requireHuman, type EvolvedEnv } from './security'
 import { signControl, verifyControl, type ControlRequest } from './runnerControlProtocol'
 import { providerModelCatalogSchema, unavailableModelCatalog, type ProviderModelCatalog } from './providerModels'
+import { standardRunnerScopes } from './runnerScopes'
 
 const provider = z.enum(['codex', 'claude'])
 function parseProvider(value:string):'codex'|'claude' {
@@ -147,7 +148,7 @@ export function createProviderRoutes(store:EvolvedStore, options:{control?:Provi
                 token=randomToken(); const id=randomUUID()
                 store.db.transaction(()=>{
                     if(managed) store.db.prepare('UPDATE evolved_runner_leases SET revoked_at=COALESCE(revoked_at,?) WHERE id=?').run(store.now(),managed.lease_id)
-                    const scopes=['runner:connect','git:read','memory:read','memory:write','codegraph:read','peers:read','peers:send','peers:manage',...(project.profile==='restricted'?[]:['git:write'])]
+                    const scopes=standardRunnerScopes(project.profile)
                     store.db.prepare('INSERT INTO evolved_runner_leases VALUES(?,?,?,?,?,?,?,?,?,?,NULL)').run(id,'Verwalteter Projektdienst',hashToken(token!),principal.user.id,project.id,JSON.stringify(scopes),'[]',project.profile,store.now(),null)
                     store.db.prepare('INSERT INTO evolved_managed_runners VALUES(?,?,0) ON CONFLICT(project_id) DO UPDATE SET lease_id=excluded.lease_id,ready=0').run(project.id,id)
                     store.audit(principal.user.id,project.id,'runner.managed_created',id)

@@ -177,7 +177,7 @@ describe('Evolved authentication and authorization', () => {
         const token = s.store.issueCapability(userId, project.id, ['runner:connect', 'git:read'], ['synthetic-action'], 300).token
         const response = await s.call(path, undefined, { bearer: token })
         expect(response.status).toBe(200)
-        expect(await response.json()).toEqual({ projectId: project.id, profile: project.profile, role: 'admin', scopes: ['runner:connect', 'git:read'], actionIds: ['synthetic-action'], capabilityExpiresAt: expect.any(Number) })
+        expect(await response.json()).toEqual({ projectId: project.id, profile: project.profile, role: 'admin', scopes: ['runner:connect', 'git:read'], actionIds: ['synthetic-action'], peerCommunicationEnabled: expect.any(Boolean), capabilityExpiresAt: expect.any(Number) })
         expect((await s.call(`/projects/${other.id}/agent-access`, undefined, { bearer: token })).status).toBe(403)
         expect((await s.call(path)).status).toBe(403)
         const noRunner = s.store.issueCapability(userId, project.id, ['memory:read'], [], 300)

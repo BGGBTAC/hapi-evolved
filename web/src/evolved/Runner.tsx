@@ -39,7 +39,10 @@ function RunnerForProject() {
     const leases = useQuery({ queryKey: ['evolved', 'runner-leases', api.baseUrl, me.user.id, project!.id], enabled: admin, queryFn: ({ signal }) => api.request<{ leases: RunnerLease[] }>(path, { signal }) })
     const [name, setName] = useState('')
     const canPush = project?.profile === 'workspace' || project?.profile === 'extended'
-    const [scopes, setScopes] = useState<string[]>(['runner:connect', 'git:read', ...(canPush ? ['git:write'] : [])])
+    const [scopes, setScopes] = useState<string[]>([
+        'runner:connect', 'git:read', 'memory:read', 'memory:write', 'codegraph:read',
+        'peers:read', 'peers:send', 'peers:manage', ...(canPush ? ['git:write'] : []),
+    ])
     const [actionIds, setActionIds] = useState('')
     const [validity, setValidity] = useState<'permanent' | 'limited'>('permanent')
     const [hours, setHours] = useState('24')
@@ -68,7 +71,7 @@ function RunnerForProject() {
         </fieldset>
         {validity === 'limited' && <Field label="HAPI-Zugang gültig für (Stunden, maximal 168)"><input type="number" min="1" max="168" step="1" required value={hours} onChange={event => setHours(event.target.value)} /></Field>}
         <details className="ev-disclosure"><summary>Berechtigungen anpassen · {scopes.length} ausgewählt</summary><fieldset disabled={action.busy}><legend className="ev-sr-only">Berechtigungen</legend><div className="ev-permission-grid">{permissions.map(([scope, label]) => <label className="ev-check" key={scope}><input type="checkbox" checked={scopes.includes(scope) && (scope !== 'git:write' || canPush)} disabled={scope === 'git:write' && !canPush} onChange={event => setScopes(previous => event.target.checked ? [...previous, scope] : previous.filter(item => item !== scope))} />{label}</label>)}</div></fieldset></details>
-        <p className="ev-muted">Git-Zugriff gilt nur für die unter „GitHub“ freigegebenen Repositorys. Im eingeschränkten Profil bleibt Push gesperrt.</p>
+        <p className="ev-muted">Die Standardauswahl erlaubt alle integrierten Projektdienste. Git-Zugriff gilt nur für die unter „GitHub“ freigegebenen Repositorys; im eingeschränkten Profil bleibt Push gesperrt. Externe Ressourcenaktionen brauchen zusätzliche, einzeln freigegebene IDs.</p>
         {scopes.includes('resource:execute') && <Field label="Freigegebene Ressourcen-IDs" hint="Komma oder Leerzeichen als Trennzeichen. Nur diese vorkonfigurierten Aktionen sind erlaubt."><textarea rows={2} value={actionIds} onChange={event => setActionIds(event.target.value)} /></Field>}
         <button className="ev-primary" disabled={action.busy || !name.trim() || !scopes.length || !!created}>Runner-Zugang erstellen</button>
     </form></Panel><ActionStatus action={action} /></div>

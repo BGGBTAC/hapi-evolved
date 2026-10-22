@@ -11,6 +11,7 @@ import { createCredentialGrantRoutes, revokeCredentialLeases, withCredentialProj
 import type { AgentCredentialGrant } from './agentCredentialVault'
 import { DevelopmentDetailedError, developmentCreation } from './development'
 import type { DevelopmentModuleRegistry } from './developmentModules'
+import { peerPolicy } from './peers'
 
 const role = z.enum(['viewer', 'member', 'admin'])
 const profile = z.enum(['restricted', 'workspace', 'extended'])
@@ -61,6 +62,7 @@ export function createEvolvedRoutes(config: EvolvedRoutesConfig): Hono<EvolvedEn
             role: project.role,
             scopes: principal.capability.scopes,
             actionIds: principal.capability.actionIds,
+            peerCommunicationEnabled: peerPolicy(store, project.id).enabled,
             capabilityExpiresAt: principal.capability.expiresAt,
         })
     })

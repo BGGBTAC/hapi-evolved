@@ -6,6 +6,7 @@ import type { VaultClient } from './vault'
 import { getManagedCredentialLease, withCredentialProjectLock } from './credentialGrants'
 import { EvolvedError, EvolvedStore, hashToken, randomToken, type AgentProfile, type EvolvedPrincipal } from './store'
 import { authenticateEvolvedRequest, parseBody, requireFreshPasskey, requireHuman, type EvolvedEnv } from './security'
+import { standardRunnerScopes } from './runnerScopes'
 
 type LeaseRow = { id: string; name: string; token_hash: string; user_id: string; project_id: string; scopes: string; action_ids: string; profile: AgentProfile; created_at: number; expires_at: number | null; revoked_at: number | null }
 const scopeSchema = z.enum(['runner:connect', 'memory:read', 'memory:write', 'codegraph:read', 'resource:execute', 'peers:read', 'peers:send', 'peers:manage', 'git:read', 'git:write'])
@@ -22,7 +23,23 @@ export function exchangeRunnerLease(store: EvolvedStore, token: string) {
     return store.db.transaction(() => {
         const { lease, project } = currentLease(store, token)
         const lifetime = lease.expires_at === null ? 900 : Math.min(900, Math.floor((lease.expires_at - store.now()) / 1000))
-        const cap = store.issueCapability(lease.user_id, lease.project_id, JSON.parse(lease.scopes) as string[], JSON.parse(lease.action_ids) as string[], lifetime, lease.id)
+        let scopes = JSON.parse(lease.scopes) as string[]
+        // Managed leases are created by HAPI rather than configured by the user.
+        // Upgrade old leases on their next token exchange, preserving the token,
+        // runner home, and any explicit grants. Manual narrow leases stay narrow.
+        const hasManagedTable = !!store.db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='evolved_managed_runners'").get()
+        const managed = hasManagedTable
+            ? store.db.query('SELECT lease_id FROM evolved_managed_runners WHERE project_id=?').get(project.id) as { lease_id: string } | null
+            : null
+        if (managed?.lease_id === lease.id) {
+            const upgraded = [...new Set([...scopes, ...standardRunnerScopes(project.profile)])]
+            if (upgraded.length !== scopes.length) {
+                store.db.query('UPDATE evolved_runner_leases SET scopes=? WHERE id=? AND project_id=?').run(JSON.stringify(upgraded), lease.id, project.id)
+                store.audit(lease.user_id, project.id, 'runner.managed_scopes_upgraded', lease.id)
+                scopes = upgraded
+            }
+        }
+        const cap = store.issueCapability(lease.user_id, lease.project_id, scopes, JSON.parse(lease.action_ids) as string[], lifetime, lease.id)
         return { ...cap, projectId: project.id, namespace: project.namespace, profile: project.profile, rootPath: project.rootPath, leaseExpiresAt: lease.expires_at }
     })()
 }
@@ -110,7 +127,7 @@ export function createRunnerRoutes(store: EvolvedStore, vault?: VaultClient): Ho
         await c.req.text()
         const principal = await human(c.req.raw); requireFreshPasskey(c, store, principal)
         let project = store.requireProject(principal.user.id, c.req.param('id'), 'admin')
-        const body = await parseBody(c, z.object({ name: z.string().trim().min(1).max(120), scopes: z.array(scopeSchema).min(1).max(10).default(['runner:connect', 'git:read', ...(project.profile === 'restricted' ? [] : ['git:write'])] as z.infer<typeof scopeSchema>[]), actionIds: z.array(z.string().min(1).max(128)).max(50).default([]), expiresInSeconds: z.number().int().min(60).max(7 * 86400).nullable().default(86400) }).strict())
+        const body = await parseBody(c, z.object({ name: z.string().trim().min(1).max(120), scopes: z.array(scopeSchema).min(1).max(10).default(standardRunnerScopes(project.profile) as z.infer<typeof scopeSchema>[]), actionIds: z.array(z.string().min(1).max(128)).max(50).default([]), expiresInSeconds: z.number().int().min(60).max(7 * 86400).nullable().default(86400) }).strict())
         const current = await human(c.req.raw); requireFreshPasskey(c, store, current)
         project = store.requireProject(current.user.id, c.req.param('id'), 'admin')
         if (project.profile === 'restricted' && body.scopes.includes('git:write')) throw new EvolvedError('profile_denied', 'Restricted runners cannot receive Git push permission.', 403)

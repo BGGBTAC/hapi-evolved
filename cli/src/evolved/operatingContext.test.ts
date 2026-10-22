@@ -43,11 +43,12 @@ describe('Evolved operating context boundaries', () => {
         const client = {
             projectId: 'project-one',
             projectPath: (suffix: string) => `/projects/project-one${suffix}`,
-            request: vi.fn(async () => ({ projectId: 'project-one', profile: 'workspace', scopes: ['runner:connect', 'git:read'], actionIds: ['resource-1'], token: 'private-token' }))
+            request: vi.fn(async () => ({ projectId: 'project-one', profile: 'workspace', scopes: ['runner:connect', 'git:read'], peerCommunicationEnabled: true, actionIds: ['resource-1'], token: 'private-token' }))
         } as unknown as import('./client').EvolvedClient
         const env = { HAPI_EVOLVED_PROXY: '1' }
         const context = await getEvolvedLiveAccessContext(client, env)
         expect(context).toContain('profile: workspace; runner scopes: runner:connect, git:read')
+        expect(context).toContain('inter-agent communication: enabled')
         expect(context).not.toContain('private-token')
         expect(context).not.toContain('resource-1')
         expect(vi.mocked(client.request)).toHaveBeenCalledWith('/projects/project-one/agent-access', 'GET', undefined, {}, { timeoutMs: 2500 })

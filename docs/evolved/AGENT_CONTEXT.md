@@ -262,6 +262,14 @@ Nach Änderungen an Rechten oder einem warmen Resume muss der Agent
 allein belegt keinen Repository-, Tresor-, MCP- oder Browser-Grant; diese
 werden von ihren eigenen Tools und vom Hub bei jedem Aufruf geprüft.
 
+Neue manuelle und verwaltete Runner erhalten standardmäßig die Scopes für
+Projektverbindung, Git-Lesen, Gedächtnis, Codegraph und Agentenkommunikation;
+Git-Push bleibt auf die dafür geeigneten Projektprofile begrenzt. Ältere
+verwaltete Leases bekommen fehlende Standards beim nächsten Tokenaustausch,
+ohne Token oder Anbieteranmeldung auszutauschen. Bewusst enger vergebene
+manuelle Leases bleiben eng. Externe Ressourcenaktionen benötigen weiterhin
+`resource:execute` und die ausdrückliche Freigabe ihrer einzelnen Action-IDs.
+
 Claude bekommt die Grundlage zusätzlich über seine Lebenszyklushooks beim
 Start, Fortsetzen und nach der Kontextkomprimierung sowie beim Start nativer
 Unteragenten. Codex erhält die Grundlage auch dann, wenn der Aufrufer eigene
