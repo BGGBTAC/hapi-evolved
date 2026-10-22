@@ -102,7 +102,7 @@ export const BrowserReportSchema = z.object({
 }).strict()
 export type BrowserReport = z.infer<typeof BrowserReportSchema>
 export const BrowserAuthorizeSchema = z.object({
-    phase: z.enum(['catalog', 'dispatch', 'result', 'cleanup']),
+    phase: z.enum(['catalog', 'dispatch', 'result']),
     mode: z.enum(['query', 'call']).optional(),
     toolName: toolName.optional(),
     version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),

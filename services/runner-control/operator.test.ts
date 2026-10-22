@@ -268,3 +268,16 @@ test('browser authority lost after start tears the sidecar down; status reports 
     Object.assign(s.mutable,{docker:async(args:string[])=>{s.dockerCalls.push(args);if(args[0]==='inspect'&&args.at(-1)!.endsWith('-browser-1'))return 'exited';if(args[0]==='inspect')return 'running';throw new Error('no')}})
     expect(await s.operator.request({...request,action:'browser-status',provider:undefined})).toEqual({image:true,containers:{'browser-gateway':'running',browser:'exited','browser-egress':'running'}})
 })
+
+test('restore converges a failed disable with the trusted Hub configuration and never starts a browser itself',async()=>{
+    const h=browserHarness(),converge=(metadata:Record<string,unknown>,enabled:unknown)=>(h.operator as unknown as {convergeBrowser(p:unknown,m:unknown,e:unknown):Promise<boolean>}).convergeBrowser((h.mutable.paths as ()=>unknown)(),metadata,enabled)
+    const metadata={leaseId:request.leaseId,rootPath:request.rootPath,profile:request.profile}
+    expect(await converge({...metadata,browser:true},false)).toBe(false)
+    expect(h.dockerCalls.at(-1)!.slice(-6)).toEqual(['rm','--stop','--force','browser-gateway','browser','browser-egress'])
+    expect(h.metadata.at(-1)).toMatchObject({browser:false}); expect(h.files).toEqual(['remove'])
+    const calls=h.dockerCalls.length
+    expect(await converge({...metadata,browser:true},true)).toBe(true)
+    expect(await converge({...metadata,browser:true},undefined)).toBe(true) // older Hub: unchanged
+    expect(await converge({...metadata},true)).toBe(false) // never enables on its own
+    expect(h.dockerCalls.length).toBe(calls)
+})

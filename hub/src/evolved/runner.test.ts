@@ -1,3 +1,4 @@
+import { BrowserConfigStore } from './browser'
 import { afterEach, describe, expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { createEvolvedRoutes } from './api'
@@ -85,6 +86,10 @@ describe('permanent runner access', () => {
         const authority = await t.call('/runner/authority', undefined, { bearer: lease.token })
         expect(authority.status).toBe(200)
         expect(await authority.json()).toMatchObject({ projectId: t.project.id, profile: 'workspace', expiresAt: null })
+        // Trusted browser configuration for operator convergence: absent table/row means disabled.
+        expect(await (await t.call('/runner/authority', undefined, { bearer: lease.token })).json()).toMatchObject({ browserEnabled: false })
+        new BrowserConfigStore(t.store).update('admin-test', t.project.id, { version: 0, enabled: true, enabledTools: ['camofox_list_tabs'], readOnlyTools: [] })
+        expect(await (await t.call('/runner/authority', undefined, { bearer: lease.token })).json()).toMatchObject({ browserEnabled: true })
         const cap = await t.exchange(lease.token)
         expect(cap.leaseExpiresAt).toBeNull()
         expect(cap.expiresAt).toBe(t.now() + 900_000)

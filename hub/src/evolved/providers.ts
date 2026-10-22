@@ -31,6 +31,8 @@ export class UnixProviderControl implements ProviderControl {
             if (body?.code==='operation_not_found') throw new EvolvedError('operation_not_found','Diese Anmeldung ist nicht mehr verfügbar. Bitte erneut verbinden.',404)
             if (body?.code==='runner_config_missing') throw new EvolvedError('runner_config_missing','Die gespeicherte Projektdienst-Konfiguration fehlt. Bitte erneut verbinden; HAPI richtet sie neu ein.',409)
             if (body?.code==='workspace_identity_changed') throw new EvolvedError('workspace_identity_changed','Der Projektordner wurde außerhalb von HAPI ersetzt oder verschoben. Der Projektdienst bleibt gesperrt; bitte den Installationsadministrator den Ordner und Workspace-Anker prüfen lassen.',409)
+            if (body?.code==='browser_image_missing') throw new EvolvedError('browser_image_missing','Das Browser-Image hapi-evolved-browser:0.1.0 fehlt auf diesem Server.',409)
+            if (body?.code==='authority_lost') throw new EvolvedError('authority_lost','Die Berechtigung für diesen Projektdienst wurde während der Aktion geändert.',403)
             if (body?.code==='logout_failed') throw new EvolvedError('logout_failed','Die native Abmeldung konnte nicht bestätigt werden. Bitte den Status aktualisieren und erneut versuchen.',409)
             if (body?.code && ['invalid_code','code_state_mismatch','invalid_state'].includes(body.code)) throw new EvolvedError('invalid_code','Dieser Bestätigungscode passt nicht zur laufenden Anmeldung. Bitte den vollständigen Code aus dem gerade geöffneten Anbieterfenster einfügen.',400)
             throw new EvolvedError('runner_unavailable','Der Projektdienst konnte die Aktion nicht abschließen. Bitte erneut versuchen.',503)

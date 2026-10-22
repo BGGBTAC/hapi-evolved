@@ -14,8 +14,8 @@ const runtimeText: Record<BrowserRuntimeState, { label: string; detail: string }
     starting: { label: 'Startet …', detail: 'Die Container laufen; der Browser hat sich noch nicht gemeldet.' },
     service_ready: { label: 'Dienst erreichbar, Browser ungeprüft', detail: 'Der Dienst antwortet. Ob Firefox wirklich startet, zeigt erst eine Browserprüfung.' },
     ready: { label: 'Bereit', detail: 'Firefox wurde gestartet und hat eine Seite geladen.' },
-    failed: { label: 'Fehler', detail: 'Der Browser ist ausgefallen oder die Prüfung ist fehlgeschlagen. Der Projektdienst und die Agenten laufen weiter.' },
-    stale: { label: 'Keine aktuelle Rückmeldung', detail: 'Der Browser hat sich länger nicht gemeldet.' },
+    failed: { label: 'Fehler', detail: 'Der Browser ist ausgefallen, konnte nicht gestartet werden oder die Prüfung ist fehlgeschlagen. Er startet nicht von selbst neu; starte ihn mit „Erneut starten“. Der Projektdienst und die Agenten laufen weiter.' },
+    stale: { label: 'Keine aktuelle Rückmeldung', detail: 'Der Browser hat sich länger nicht gemeldet. Agenten gilt er als nicht verfügbar, bis er sich wieder meldet.' },
     unavailable: { label: 'Status nicht verfügbar', detail: 'Die Projektdienst-Steuerung ist gerade nicht erreichbar.' },
 }
 const lifecycleText: Record<string, string> = {

@@ -56,6 +56,12 @@ export class BrowserConfigStore {
 export function createBrowserRoutes(options: { store: EvolvedStore; origin: string; control?: ProviderControl }): Hono {
     const { store, origin } = options, app = new Hono(), configs = new BrowserConfigStore(store)
     const runtimes = new Map<string, Runtime>()
+    // Last operator observation (admin status read or lifecycle result), reused for agents, who never call the operator.
+    const observed = new Map<string, { state: BrowserRuntimeState; errorCode?: string; at: number }>()
+    const observe = (projectId: string, state: BrowserRuntimeState, errorCode?: string) => {
+        if (observed.size >= 4096 && !observed.has(projectId)) observed.delete(observed.keys().next().value!)
+        observed.set(projectId, { state, ...(errorCode ? { errorCode } : {}), at: store.now() })
+    }
     const base = '/projects/:id/browser'
     for (const path of [base, `${base}/*`]) {
         app.use(path, createEvolvedRequestGuard(origin))
@@ -101,16 +107,23 @@ export function createBrowserRoutes(options: { store: EvolvedStore; origin: stri
         if (useOperator && options.control) {
             try {
                 const status = operatorStatus.parse(await control(c, project, principal, 'browser-status'))
-                if (!status.image) return result('image_missing')
                 const states = Object.values(status.containers)
-                if (states.some(state => state === 'exited' || state === 'dead')) return result('failed', 'browser_container_exited')
-                if (states.some(state => state !== 'running')) return result('stopped')
+                const seen: [BrowserRuntimeState, string?] = !status.image ? ['image_missing']
+                    : states.some(state => state === 'exited' || state === 'dead') ? ['failed', 'browser_container_exited']
+                    : states.some(state => state !== 'running') ? ['stopped'] : ['starting']
+                observe(project.id, ...seen)
+                if (seen[0] !== 'starting') return result(...seen)
             } catch (error) {
                 if (error instanceof EvolvedError && error.code === 'browser_runner_missing') return result('runner_missing')
                 return result('unavailable', 'browser_control_unavailable')
             }
+        } else {
+            // Agents: a recent operator failure wins unless the gateway reported afterwards.
+            const seen = observed.get(project.id)
+            if (seen && seen.state !== 'starting' && store.now() - seen.at <= ENGINE_FRESH_MS && (!report || report.at < seen.at)) return result(seen.state, seen.errorCode)
         }
-        if (!report) return result('starting')
+        // Enabled but no report long after the last configuration change: never "starting" forever.
+        if (!report) return result(config.updatedAt !== null && store.now() - config.updatedAt > REPORT_STALE_MS ? 'stale' : 'starting')
         if (store.now() - report.at > REPORT_STALE_MS) return result('stale')
         if (report.report.service !== 'reachable') return result('failed', report.report.service === 'unreachable' ? 'browser_unreachable' : 'browser_unhealthy')
         if (report.engineState === 'failed') return result('failed', 'browser_engine_failed')
@@ -135,9 +148,12 @@ export function createBrowserRoutes(options: { store: EvolvedStore; origin: stri
         let lifecycle: { ok: boolean; errorCode?: string } = { ok: true }
         // Start/stop only on an actual change; disabling always stops (explicit, Compose profiles are not stopped implicitly).
         if (before.enabled !== config.enabled || !config.enabled) {
-            if (!config.enabled) runtimes.delete(project.id)
+            if (!config.enabled) { runtimes.delete(project.id); observed.delete(project.id) }
             try { await control(c, project, principal, 'browser', config.enabled) }
-            catch (error) { lifecycle = { ok: false, errorCode: error instanceof EvolvedError ? error.code : 'browser_lifecycle_failed' } }
+            catch (error) {
+                lifecycle = { ok: false, errorCode: error instanceof EvolvedError ? error.code : 'browser_lifecycle_failed' }
+                if (config.enabled) observe(project.id, lifecycle.errorCode === 'browser_image_missing' ? 'image_missing' : lifecycle.errorCode === 'browser_runner_missing' ? 'runner_missing' : 'failed', lifecycle.errorCode)
+            }
         }
         return c.json({ ...await status(c, project, principal), lifecycle })
     })
@@ -145,7 +161,9 @@ export function createBrowserRoutes(options: { store: EvolvedStore; origin: stri
         await parseBody(c, z.object({}).strict())
         const { principal, project } = await human(c, 'admin'); requireFreshPasskey(c, store, principal)
         if (!configs.get(project.id).enabled) throw new EvolvedError('browser_disabled', 'Der Projektbrowser ist deaktiviert.', 409)
-        await control(c, project, principal, 'browser', true)
+        try { await control(c, project, principal, 'browser', true) }
+        catch (error) { if (error instanceof EvolvedError && error.code === 'browser_image_missing') observe(project.id, 'image_missing', error.code); throw error }
+        observe(project.id, 'starting')
         store.audit(principal.user.id, project.id, 'browser.start', project.id)
         return c.json(await status(c, project, principal))
     })
@@ -169,7 +187,7 @@ export function createBrowserRoutes(options: { store: EvolvedStore; origin: stri
         const tools = config.enabled ? BROWSER_TOOLS.filter(tool => config.enabledTools.includes(tool.name) && (!restricted || config.readOnlyTools.includes(tool.name)))
             .map(tool => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema, readOnly: config.readOnlyTools.includes(tool.name) })) : []
         const runtime = await runtimeState(c, project, principal, config, false)
-        const available = config.enabled && managedRunner && tools.length > 0
+        const available = config.enabled && managedRunner && tools.length > 0 && ['ready', 'service_ready', 'starting'].includes(runtime.state)
         return c.json({ enabled: config.enabled, available, managedRunner, profile: project.profile, version: config.version, catalogRevision: BROWSER_CATALOG_REVISION, runtime, tools,
             sharing: 'One browser state (tabs, cookies, logins) is shared by all agent sessions of this project runner lease; ephemeral, lost on restart, disable or lease change. No per-session isolation.',
             guidance: !config.enabled ? 'The project browser is disabled. A project administrator can enable it in the MCP Shop; do not install or start another browser.'
@@ -185,7 +203,6 @@ export function createBrowserRoutes(options: { store: EvolvedStore; origin: stri
         const permitted = (name: BrowserToolName, mode: 'query' | 'call') => config.enabledTools.includes(name) && (!(restricted || mode === 'query') || config.readOnlyTools.includes(name))
         const grant: BrowserGrant = { projectId: project.id, contextId: browserContextId(project.id, leaseId), sessionKey: 'hapi', version: config.version, catalogRevision: BROWSER_CATALOG_REVISION, profile: project.profile,
             tools: BROWSER_TOOLS.filter(tool => permitted(tool.name, 'call')).map(tool => ({ ...tool, readOnlyEligible: config.readOnlyTools.includes(tool.name) })) }
-        if (body.phase === 'cleanup') return c.json(grant)
         if (!config.enabled) throw new EvolvedError('browser_disabled', 'Der Projektbrowser ist für dieses Projekt deaktiviert.', 403)
         if (body.phase === 'catalog') return c.json(grant)
         if (!body.toolName || !body.mode || body.version === undefined || !body.catalogRevision) throw new EvolvedError('invalid_body', 'Invalid request body.')

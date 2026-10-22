@@ -245,9 +245,10 @@ export class RunnerOperator {
                         if(metadata.browser&&!this.closed&&[401,403].includes(response.status))await this.stopBrowser(p).catch(()=>undefined)
                         return
                     }
-                    const authority=await response.json() as {projectId?:string;profile?:string;rootPath?:string;expiresAt?:number|null}
+                    const authority=await response.json() as {projectId?:string;profile?:string;rootPath?:string;expiresAt?:number|null;browserEnabled?:boolean}
                     if(authority.projectId!==projectId||authority.profile!==metadata.profile||authority.rootPath!==metadata.rootPath
                         ||!(authority.expiresAt===null||typeof authority.expiresAt==='number'&&authority.expiresAt>Date.now()))return
+                    const browser=await this.convergeBrowser(p,metadata,authority.browserEnabled)
                     const anchor=await this.anchor(r,metadata.workspaceIdentity)
                     if(this.closed)return
                     const running=await this.docker(['inspect','--format','{{.State.Running}}',p.container],3000).catch(()=>'false')
@@ -255,10 +256,19 @@ export class RunnerOperator {
                     const args=['compose','--env-file',p.env,'-f',join(this.config.source,'deploy/evolved/runner.compose.yml'),'up','-d','--no-build','--pull','never']
                     if(anchor.restored)args.push('--force-recreate')
                     await this.docker(args,60_000)
-                    if(metadata.browser&&!this.closed)await this.startBrowser(r,p).catch(()=>undefined)
+                    if(browser&&!this.closed)await this.startBrowser(r,p).catch(()=>undefined)
                 })}catch{/* Missing/revoked configuration stays stopped; explicit connect can repair it. */}
             }
         }finally{this.restoring=false}
+    }
+    /** A disable that could not reach the operator converges here: the Hub's lease-authenticated authority
+     * reply is the trusted configuration. Older Hubs omit the field and change nothing. Never starts a browser. */
+    protected async convergeBrowser(p:ReturnType<RunnerOperator['paths']>,metadata:Metadata,enabled:unknown):Promise<boolean>{
+        if(!metadata.browser)return false
+        if(enabled!==false)return true
+        await this.stopBrowser(p)
+        this.writeMetadata(p,{...metadata,browser:false})
+        return false
     }
     private composeArgs(p:ReturnType<RunnerOperator['paths']>,browser:boolean){
         return ['compose','--env-file',p.env,...(browser?['--env-file',p.browserEnv]:[]),'-f',join(this.config.source,'deploy/evolved/runner.compose.yml'),...(browser?['--profile','browser']:[])]

@@ -15,7 +15,7 @@ async function setup(options: { echoKey?: boolean; peer?: boolean } = {}) {
     const dir = mkdtempSync(join(tmpdir(), 'evolved-browser-gw-')), keyFile = join(dir, 'key')
     cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
     writeFileSync(keyFile, KEY, { mode: 0o600 })
-    const state = { authorize: [] as Array<Record<string, unknown>>, reports: [] as Array<Record<string, unknown>>, upstream: [] as string[], deny: null as null | 'dispatch' | 'result' | 'all', enabled: true, probe: null as string | null, hold: null as Promise<void> | null }
+    const state = { authorize: [] as Array<Record<string, unknown>>, reports: [] as Array<Record<string, unknown>>, upstream: [] as string[], deny: null as null | 'dispatch' | 'result' | 'all', outage: null as null | 'text503' | 'text403' | 'html500', enabled: true, probe: null as string | null, hold: null as Promise<void> | null }
     const tabs = new Map<string, string[]>()
     const browser = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(request) {
         const url = new URL(request.url)
@@ -40,6 +40,8 @@ async function setup(options: { echoKey?: boolean; peer?: boolean } = {}) {
         const path = new URL(request.url).pathname, body = await request.json() as Record<string, unknown>
         if (path.endsWith('/report')) { state.reports.push(body); return Response.json({ enabled: state.enabled, probe: state.probe ? { id: state.probe } : null }) }
         state.authorize.push(body)
+        if (state.outage && body.phase === 'result') return state.outage === 'text503' ? new Response('Runner lease unavailable', { status: 503 })
+            : state.outage === 'text403' ? new Response('Endpoint denied', { status: 403 }) : new Response('<html>oops</html>', { status: 500 })
         if (state.deny === 'all' || state.deny === body.phase) return Response.json({ code: 'browser_disabled', error: 'disabled' }, { status: 403 })
         return Response.json({ projectId: project, contextId: context, sessionKey: 'hapi', version: 3, catalogRevision: revision, profile: 'workspace', tools: [{ name: 'camofox_create_tab', description: 'd', inputSchema: { type: 'object' }, readOnlyEligible: false }] })
     } })
@@ -153,4 +155,25 @@ test('status reports truthful health, startup engine probe and purges on disable
 test('only the runner-proxy peer may call the gateway', async () => {
     const f = await setup({ peer: false })
     expect((await f.call('camofox_list_tabs')).status).toBe(403)
+})
+
+test('a transient Hub/proxy outage after dispatch withholds the result but keeps the shared browser state', async () => {
+    const f = await setup()
+    const tabId = JSON.parse((await f.call('camofox_create_tab', {})).body.content[0].text).result.tabId
+    for (const outage of ['text503', 'text403', 'html500'] as const) {
+        f.state.outage = outage
+        const before = f.state.upstream.length
+        const reply = await f.call('camofox_click', { tabId, ref: 'e1' })
+        expect(reply.status).toBe(503)
+        expect(reply.body).toMatchObject({ code: 'browser_outcome_withheld', retryable: false, cause: 'browser_authority_unavailable' })
+        // Exactly one dispatch, no retry and no session purge.
+        expect(f.state.upstream.slice(before).filter(line => line.includes('/click'))).toHaveLength(1)
+        expect(f.state.upstream.slice(before).some(line => line.startsWith('DELETE /sessions/'))).toBe(false)
+    }
+    f.state.outage = null
+    const still = await f.call('camofox_snapshot', { tabId }, 'query')
+    expect(still.status).toBe(200)
+    // A non-JSON proxy reply to the health report is also not a denial.
+    f.state.deny = null
+    expect(f.tabs.get(context)).toContain(tabId)
 })

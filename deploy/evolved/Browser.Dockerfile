@@ -27,9 +27,9 @@ COPY deploy/evolved/browser/package.json deploy/evolved/browser/package-lock.jso
 COPY deploy/evolved/browser/plugins/hapi-egress/ ./plugins/hapi-egress/
 # Lockfile install without lifecycle scripts (no postinstall browser/GeoIP/add-on download).
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
-# better-sqlite3 (used by camoufox-js) compiled from its verified source with local Node headers, offline.
-RUN --network=none cd node_modules/better-sqlite3 && node /usr/local/lib/node_modules/npm/node_modules/node-gyp/bin/node-gyp.js rebuild --release --nodedir=/usr/local \
-    && node -e "new (require('better-sqlite3'))(':memory:').prepare('select 1').get()"
+# better-sqlite3 uses the native prebuild included in the integrity-checked npm package.
+# Exercise that exact native module offline; this does not claim a source compilation.
+RUN --network=none node -e "new (require('better-sqlite3'))(':memory:').prepare('select 1').get()"
 RUN --network=none node patch-upstream.mjs server.js && rm patch-upstream.mjs \
     && printf '{"version":"152.0.4","release":"beta.30"}' > /out/camoufox/version.json \
     && CAMOUFOX_INSTALL_DIR=/out/camoufox node --input-type=module -e "import { camoufoxPath, launchPath, installedVerStr } from 'camoufox-js/dist/pkgman.js'; camoufoxPath(false); launchPath(); if (installedVerStr() !== '152.0.4-beta.30') process.exit(1)" \

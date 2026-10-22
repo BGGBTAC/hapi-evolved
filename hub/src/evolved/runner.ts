@@ -59,7 +59,10 @@ export function createRunnerRoutes(store: EvolvedStore, vault?: VaultClient): Ho
         if (!authorization.startsWith('Bearer ')) throw new EvolvedError('invalid_lease', 'Runner lease required.', 401)
         const { lease, project } = currentLease(store, authorization.slice(7))
         if (!(JSON.parse(lease.scopes) as string[]).includes('runner:connect')) throw new EvolvedError('scope_denied', 'Runner connection scope required.', 403)
-        return c.json({ projectId: project.id, profile: project.profile, rootPath: project.rootPath, expiresAt: lease.expires_at })
+        // The operator converges the optional project browser with this trusted configuration.
+        const hasBrowser = store.db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='evolved_project_browser'").get()
+        const browserEnabled = hasBrowser ? (store.db.query('SELECT enabled FROM evolved_project_browser WHERE project_id=?').get(project.id) as { enabled: number } | null)?.enabled === 1 : false
+        return c.json({ projectId: project.id, profile: project.profile, rootPath: project.rootPath, expiresAt: lease.expires_at, browserEnabled })
     })
     app.post('/runner/environment', async c => {
         if (c.req.header('cookie') || c.req.header('origin') || new URL(c.req.url).search) throw new EvolvedError('lease_only', 'Private runner credentials required.', 403)

@@ -20,6 +20,8 @@ type Content = { type: 'text'; text: string } | { type: 'image'; data: string; m
 export class GatewayError extends Error {
     constructor(readonly code: string, message: string, readonly status = 400, readonly extra: Json = {}) { super(message) }
 }
+/** An authenticated JSON refusal by the Hub (revocation, disable, profile/grant change). Only these purge state. */
+export class HubDenial extends GatewayError {}
 export type GatewayConfig = {
     projectId: string; keyFile: string; browserUrl?: string; proxyUrl?: string; host?: string; port?: number
     reportIntervalMs?: number; peerLookup?: () => Promise<readonly string[]>; allowLoopbackPeer?: boolean
@@ -91,8 +93,14 @@ export function createBrowserGateway(config: GatewayConfig) {
         const response = await fetch(new URL(`/api/evolved/projects/${enc(config.projectId)}/browser/${path}`, proxyUrl), {
             method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(10_000),
         }).catch(() => { throw new GatewayError('browser_authority_unavailable', 'Hub authorization is unavailable.', 503) })
-        const value = await response.json().catch(() => ({})) as Json
-        if (!response.ok) throw new GatewayError(typeof value.code === 'string' && /^[a-z_]{1,80}$/.test(value.code) ? value.code : 'browser_denied', typeof value.error === 'string' ? value.error.slice(0, 300) : 'Browser access denied.', response.status === 409 ? 409 : response.status === 401 ? 401 : 403)
+        const value = await response.json().catch(() => null) as Json | null
+        if (!response.ok) {
+            // Proxy text replies, 5xx and malformed bodies are outages, never a denial.
+            if (value && typeof value.code === 'string' && /^[a-z_]{1,80}$/.test(value.code) && [401, 403, 409].includes(response.status))
+                throw new HubDenial(value.code, typeof value.error === 'string' ? value.error.slice(0, 300) : 'Browser access denied.', response.status)
+            throw new GatewayError('browser_authority_unavailable', 'Hub authorization is unavailable.', 503)
+        }
+        if (!value) throw new GatewayError('browser_authority_unavailable', 'Hub authorization is unavailable.', 503)
         return value
     }
     const authorize = async (body: Json): Promise<BrowserGrant> => {
@@ -143,8 +151,12 @@ export function createBrowserGateway(config: GatewayConfig) {
         } finally { active-- }
         try { await authorize({ phase: 'result', ...authorization }) }
         catch (error) {
-            await purge(grant.contextId)
-            throw new GatewayError('browser_outcome_withheld', 'Browser authorization changed during the operation; the result was withheld and the project browser context was closed.', 403, { retryable: false, cause: error instanceof GatewayError ? error.code : 'browser_denied' })
+            // Revocation closes the shared context; an outage or stale revision only withholds this result.
+            if (error instanceof HubDenial && [401, 403].includes(error.status)) {
+                await purge(grant.contextId)
+                throw new GatewayError('browser_outcome_withheld', 'Browser authorization was revoked during the operation; the result was withheld and the project browser context was closed.', 403, { retryable: false, cause: error.code })
+            }
+            throw new GatewayError('browser_outcome_withheld', 'Browser authorization could not be confirmed after the action; the result was withheld. The action may have happened; the browser state was kept. Do not retry automatically.', 503, { retryable: false, cause: error instanceof GatewayError ? error.code : 'browser_authority_unavailable' })
         }
         if (!response.ok) {
             let detail = ''
@@ -201,7 +213,7 @@ export function createBrowserGateway(config: GatewayConfig) {
             if (service !== 'reachable') { probed = false; engine = null }
             let reply: Json
             try { reply = await hub('report', next) } catch (error) {
-                if (error instanceof GatewayError && [401, 403].includes(error.status)) await purgeAll()
+                if (error instanceof HubDenial && [401, 403].includes(error.status)) await purgeAll()
                 return
             }
             if (reply.enabled !== true) await purgeAll()

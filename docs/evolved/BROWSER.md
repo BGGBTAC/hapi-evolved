@@ -17,6 +17,12 @@ Android) und neben Remote-MCPs. Er ändert weder das Entwicklungsmodul noch MCP-
    Seite geladen), *Fehler* oder *Keine aktuelle Rückmeldung*. Ein erreichbarer Dienst allein ist
    noch kein startfähiger Browser; **Browser prüfen** startet Firefox und lädt eine leere Seite.
 4. **Deaktivieren** stoppt den Browser sofort und verwirft Tabs, Cookies und Anmeldungen.
+   War die Projektdienst-Steuerung dabei nicht erreichbar, gleicht der Operator den Zustand innerhalb
+   von etwa 30 Sekunden (spätestens nach einem Neustart) mit der Hub-Konfiguration ab und stoppt den Browser.
+5. Die drei Browserdienste starten wie der verwaltete Runner **nicht** automatisch neu (Neustartrichtlinie
+   `no`). Nach einem Absturz oder Speicherlimit zeigt der Status *Fehler*; **Erneut starten** behebt das.
+   Agenten sehen denselben Zustand: fehlendes Image, Startfehler oder lange ausbleibende Rückmeldungen
+   melden `available: false`.
 
 Standardmäßig freigegeben sind Tabs öffnen/auflisten, Snapshot, Screenshot, Klicken, Tippen,
 Navigieren, Scrollen und Tab schließen. `camofox_evaluate` (JavaScript in der Seite) muss
@@ -57,6 +63,9 @@ Die Grenze setzt der Hub: Mitgliedschaft, aktuelle verwaltete Lease, Profil und 
 Freigabe werden vor dem Absenden und erneut vor der Rückgabe des Ergebnisses geprüft. Die
 native Freigabe ist Transparenz, keine Sicherheitsgrenze. `browser_outcome_unknown` und
 `browser_outcome_withheld` nie automatisch wiederholen.
+Widerruft der Hub die Berechtigung während einer Aktion, wird das Ergebnis zurückgehalten und der gemeinsame
+Browserzustand geschlossen. Ist der Hub nur kurz nicht erreichbar, wird das Ergebnis ebenfalls zurückgehalten
+(`browser_outcome_withheld`, 503), der Browserzustand bleibt aber erhalten.
 
 ## Architektur
 
@@ -106,8 +115,9 @@ docker build -f deploy/evolved/Browser.Dockerfile -t hapi-evolved-browser:0.1.0 
 Der Build prüft Größe und SHA-256 der Camoufox-ZIP (`deploy/evolved/browser/SHA256SUMS`), die
 npm-Integrität des Upstream-Tarballs (64 Dateien bytegleich mit Commit `39c82094…`), installiert
 mit `npm ci --ignore-scripts` aus `deploy/evolved/browser/package-lock.json` (Upstream-Lock, nur
-`@modelcontextprotocol/sdk` 1.32.0, `hono` 4.13.11, `proxy-addr` 2.0.8 aktualisiert) und kompiliert
-`better-sqlite3` ohne Netz. Das Basis-Image ist per Digest gepinnt; Debian-Pakete stammen aus den
+`@modelcontextprotocol/sdk` 1.32.0, `hono` 4.13.11, `proxy-addr` 2.0.8 aktualisiert). Das native
+`better-sqlite3`-Modul stammt aus dem integritätsgeprüften npm-Paket; ein SQLite-Aufruf prüft es
+ohne Netz. Es wird nicht aus Quellcode neu kompiliert. Das Basis-Image ist per Digest gepinnt; Debian-Pakete stammen aus den
 signierten Paketquellen des Basis-Images, ohne Versionspin. Zur Laufzeit wird nichts geladen.
 
 Nach einem Update von `runner.compose.yml` oder `services/runner-proxy/*` auch

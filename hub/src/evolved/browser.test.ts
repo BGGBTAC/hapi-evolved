@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { BROWSER_DEFAULT_TOOLS } from '@hapi/protocol/browserTools'
-import { EvolvedStore, hashToken, randomToken } from './store'
+import { EvolvedError, EvolvedStore, hashToken, randomToken } from './store'
 import { BROWSER_CATALOG_REVISION, browserContextId, createBrowserRoutes } from './browser'
 import { createProviderRoutes, type ProviderControl } from './providers'
 import type { ControlRequest } from './runnerControlProtocol'
@@ -21,7 +21,8 @@ function fixture(profile: 'restricted' | 'workspace' = 'workspace') {
     const sessions = Object.fromEntries(['admin', 'member', 'viewer', 'other'].map(user => [user, store.createSession(user)]))
     const controls: ControlRequest[] = []
     let operator: { image: boolean; containers: Record<string, string> } = { image: true, containers: { 'browser-gateway': 'running', browser: 'running', 'browser-egress': 'running' } }
-    const control: ProviderControl = { request: async r => { controls.push(r); return r.action === 'browser-status' ? operator : { ok: true } } }
+    let lifecycleError: EvolvedError | null = null, statusFails = false
+    const control: ProviderControl = { request: async r => { controls.push(r); if (lifecycleError && (r.action === 'browser' || statusFails)) throw lifecycleError; return r.action === 'browser-status' ? operator : { ok: true } } }
     createProviderRoutes(store) // creates evolved_managed_runners
     const lease = (projectId: string, managed = true) => {
         const id = crypto.randomUUID(), token = randomToken()
@@ -39,7 +40,7 @@ function fixture(profile: 'restricted' | 'workspace' = 'workspace') {
         expect(response.status).toBe(200)
         return await response.json() as { config: { version: number }; lifecycle: { ok: boolean } }
     }
-    return { store, project, other, sessions, controls, control, lease, request, enable, advance: (ms: number) => { offset += ms }, setOperator: (value: typeof operator) => { operator = value } }
+    return { store, project, other, sessions, controls, control, lease, request, enable, advance: (ms: number) => { offset += ms }, failLifecycle: (error: EvolvedError | null, status = false) => { lifecycleError = error; statusFails = status }, setOperator: (value: typeof operator) => { operator = value } }
 }
 const call = (version: number, toolName = 'camofox_create_tab', mode = 'call') => ({ phase: 'dispatch', mode, toolName, version, catalogRevision: BROWSER_CATALOG_REVISION })
 
@@ -140,7 +141,7 @@ describe('project browser gateway authorization', () => {
         expect(catalog.tools.map(tool => tool.name).sort()).toEqual(['camofox_list_tabs', 'camofox_snapshot'])
         await f.request('PUT', '', { version: config.version, enabled: false, enabledTools: [], readOnlyTools: [] })
         expect((await f.request('POST', '/authorize', call(config.version + 1, 'camofox_snapshot'), { bearer: lease.capability })).status).toBe(403)
-        expect((await f.request('POST', '/authorize', { phase: 'cleanup' }, { bearer: lease.capability })).status).toBe(200)
+        expect((await f.request('POST', '/authorize', { phase: 'cleanup' }, { bearer: lease.capability })).status).toBe(400)
         const report = await (await f.request('POST', '/report', { service: 'reachable', engine: 'unknown' }, { bearer: lease.capability })).json()
         expect(report).toEqual({ enabled: false, probe: null })
     })
@@ -184,5 +185,33 @@ describe('agent browser discovery', () => {
         await f.enable()
         const manual = f.lease(f.project.id, false)
         expect(await (await agent(f, manual.capability)).json()).toMatchObject({ enabled: true, available: false, managedRunner: false, runtime: { state: 'runner_missing' } })
+    })
+})
+
+describe('agent runtime truthfulness', () => {
+    const agent = async (f: ReturnType<typeof fixture>, bearer: string) => await (await f.request('GET', '/agent', undefined, { bearer })).json() as any
+    test('missing image seen by the operator makes the browser unavailable to agents', async () => {
+        const f = fixture(), lease = f.lease(f.project.id)
+        f.setOperator({ image: false, containers: { 'browser-gateway': 'missing', browser: 'missing', 'browser-egress': 'missing' } })
+        f.failLifecycle(new EvolvedError('browser_image_missing', 'missing', 409))
+        const response = await f.request('PUT', '', { version: 0, enabled: true, enabledTools: [...BROWSER_DEFAULT_TOOLS], readOnlyTools: ['camofox_list_tabs'] })
+        expect(await response.json()).toMatchObject({ lifecycle: { ok: false, errorCode: 'browser_image_missing' }, runtime: { state: 'image_missing' } })
+        expect(await agent(f, lease.capability)).toMatchObject({ enabled: true, available: false, runtime: { state: 'image_missing' } })
+        // A later gateway report supersedes the old observation.
+        f.advance(1000)
+        await f.request('POST', '/report', { service: 'reachable', engine: 'ready' }, { bearer: lease.capability })
+        expect(await agent(f, lease.capability)).toMatchObject({ available: true, runtime: { state: 'ready' } })
+    })
+    test('operator failure at enable time is visible; no reports for long is stale, not starting forever', async () => {
+        const f = fixture(), lease = f.lease(f.project.id)
+        // Operator socket down for lifecycle and status alike.
+        f.failLifecycle(new EvolvedError('runner_unavailable', 'down', 503), true)
+        await f.enable()
+        expect(await agent(f, lease.capability)).toMatchObject({ available: false, runtime: { state: 'failed', errorCode: 'runner_unavailable' } })
+        const g = fixture(), other = g.lease(g.project.id)
+        await g.enable()
+        expect(await agent(g, other.capability)).toMatchObject({ available: true, runtime: { state: 'starting' } })
+        g.advance(60_000)
+        expect(await agent(g, other.capability)).toMatchObject({ available: false, runtime: { state: 'stale' } })
     })
 })

@@ -191,7 +191,7 @@ describe('Evolved authentication and authorization', () => {
         expect(response.status).toBe(201)
         const lease = await response.json() as { id: string; token: string; expiresAt: number }
         for (let index = 0; index < 8; index++) expect((await s.call('/runner/authority', undefined, { bearer: lease.token })).status).toBe(200)
-        expect(await (await s.call('/runner/authority', undefined, { bearer: lease.token })).json()).toEqual({ projectId: project.id, profile: project.profile, rootPath: project.rootPath, expiresAt: lease.expiresAt })
+        expect(await (await s.call('/runner/authority', undefined, { bearer: lease.token })).json()).toEqual({ projectId: project.id, profile: project.profile, rootPath: project.rootPath, expiresAt: lease.expiresAt, browserEnabled: false })
         const mint = await s.call('/runner/token', {}, { bearer: lease.token })
         expect(mint.status).toBe(200)
         const cap = await mint.json() as { token: string; expiresAt: number; namespace: string }
