@@ -45,7 +45,7 @@ root-owned file `/usr/local/lib/hapi-evolved/bun` with mode `0755`.
 
 Native Codex also needs the dedicated **runner AppArmor and Seccomp profiles**.
 Use an AppArmor 4 host with unprivileged user namespaces (tested: Ubuntu 24.04),
-then follow [profile installation and native verification](../../deploy/evolved/security/README.md)
+then follow [profile installation and native verification](https://github.com/BGGBTAC/hapi-evolved/blob/main/deploy/evolved/security/README.md)
 before starting the operator. Keep `deploy/evolved/security/` in the protected
 source tree. The profile allows Codex to create its own read-only/workspace sandbox
 without adding container capabilities or changing host-wide security settings.

@@ -450,4 +450,4 @@ Test-Labels, `--keepdb`), sechs Handbuchthemen mit Primärquellen (geprüft am
 Aufgaben (davon eine mit dem plugin-eigenen Spezialisten `django-reviewer`), Doctor über
 `hapi.toolchain` v1, Inspect über `hapi.repository-inventory` v1 und zwei Integrationen.
 Zum Ausprobieren die Datei in den Stamm eines eigenen öffentlichen Repositorys kopieren
-und dieses installieren; siehe [Beispiel-README](../../examples/plugins/django/README.md).
+und dieses installieren; siehe [Beispiel-README](https://github.com/BGGBTAC/hapi-evolved/blob/main/examples/plugins/django/README.md).

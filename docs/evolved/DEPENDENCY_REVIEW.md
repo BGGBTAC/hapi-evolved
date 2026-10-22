@@ -1,5 +1,49 @@
 # Dependency review — community source preview
 
+## Follow-up — 2026-10-22
+
+The Bun workspace audit now returns `{}` with exit status 0 after a fresh
+`bun install --frozen-lockfile --ignore-scripts` using Bun 1.3.14. The lockfile
+is byte-stable across that install. This supersedes the retained findings in the
+October 16 snapshot below; it is not a complete system security audit or a promise
+about advisories published after this review.
+
+| Dependency group | Resolution |
+|---|---|
+| MCP and request parsing | MCP SDK 1.32.0 and Hono 4.13.11; Express 5.3.0 resolves body-parser 2.4.0 and qs 6.16.1. The small website server also uses Express 5, with its named SPA wildcard and six real HTTP regression tests. |
+| Compatible transitive updates | Babel core 7.29.7, AJV 8.18.0, bn.js 4.12.3, colord 2.9.4, follow-redirects 1.16.1, query-string 9.5.1 (decode-uri-component 0.5.0), UUID 13.0.1 and YAML 2.8.4. The separate cosmiconfig YAML 1.10.3 branch is preserved. Each new override satisfies its consumers' declared ranges. |
+| Web and PWA tooling | Vite 7.3.7, Vitest 4.1.12, vite-plugin-pwa 1.3.0 and Workbox 7.4.1. Workbox's supported Terser plugin resolves serialize-javascript 7.1.2 without forcing a new major into the old plugin. |
+| Documentation | Exactly pinned [VitePress 2.0.0-alpha.20](https://github.com/vuejs/vitepress/releases/tag/v2.0.0-alpha.20), using its supported Vite 8.3.5 dependency. This removes the Vite 5/esbuild 0.21 branch. It is an explicitly reviewed prerelease, confined to the documentation toolchain. |
+| Unused styling plugin | Removed the unused website `@tailwindcss/typography` dependency, eliminating its vulnerable selector-parser branch. Website HTML, JavaScript and CSS output is unchanged. |
+
+Validation on the freshly installed graph includes all seven root typechecks,
+website typechecking, 65 focused CLI tests, 43 Hub tests, 20 web tests and six
+website HTTP tests. Web/PWA, website/documentation and embedded Hub builds pass.
+The independent dependency review checks both locked ranges and actual consumer
+resolution: an incremental Bun install had retained old isolated-store symlinks,
+so final checks used a fresh installation. React, React DOM, TypeScript, the
+renderer versions and Bun itself were not upgraded by this follow-up.
+
+Chromium checks pass for the old and new documentation builds: desktop navigation,
+local search (16 results for GitHub), dark theme, the custom theme component and
+mobile navigation at 390 pixels. No local failed requests or JavaScript errors
+occurred. Three source Markdown links that already broke the old documentation
+build now point to their repository files. A wider static-output crawl still
+finds the same 24 pre-existing links to source/evidence files outside the generated
+site; this is not a claim that every historical documentation link works.
+
+The PWA manifest check passes with 155 unique entries, 51 matching content
+revisions and no unrevisioned stable-name assets. Chromium installs the actual
+worker and loads the exact current root shell and a KaTeX font offline. It does
+not test arbitrary deep links. The Express regression can be rerun with
+`bun test ./website/src/server/app.test.ts`; repository-wide integration checks
+remain the responsibility of the final combined change and required CI.
+
+## Historical snapshot — 2026-10-16
+
+The remainder records the previous review and its then-open findings. Use the
+October 22 follow-up above for the current workspace dependency status.
+
 Review date: 2026-10-16. Scope: the committed Bun workspace dependency graph, installed with Bun 1.3.14. This is a dependency review, not a complete system security audit. It does not cover native provider binaries, operating-system packages, container base images, or the separately locked Codegraph npm service.
 
 The five originally reported GitHub Dependabot advisories are addressed. A broader npm advisory query found additional affected versions; compatible high/critical runtime updates were included before community promotion. The final graph has no matching critical advisory and retains two high advisories in build tooling, described below. Lower-severity findings remain open. This is not a zero-vulnerability claim.

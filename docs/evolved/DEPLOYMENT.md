@@ -16,7 +16,7 @@ Die Erstinitialisierung als Dienst-UID muss **vor** der Übernahme der äußeren
 Native Codex verwendet Bubblewrap für seine Read-only-/Workspace-Dateirechte.
 Dafür verlangt der Runner ein eigenes AppArmor-Enforce-Profil und die mitgelieferte
 Seccomp-Policy. Getestet ist Ubuntu 24.04 mit AppArmor 4 und aktivierten
-unprivilegierten User-Namespaces. [Installation und native Abnahme](../../deploy/evolved/security/README.md)
+unprivilegierten User-Namespaces. [Installation und native Abnahme](https://github.com/BGGBTAC/hapi-evolved/blob/main/deploy/evolved/security/README.md)
 erfolgen vor dem Steuerdienststart; fehlende Unterstützung führt zu einer klaren
 Startfehlermeldung. Globale Hostregeln, zusätzliche Container-Capabilities und
 die Dateirechte der Sitzungen werden nicht erweitert.
