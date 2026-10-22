@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { writeFileSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { writeFileSync, readFileSync, rmSync, statSync, symlinkSync, linkSync } from 'node:fs'
 import { join } from 'node:path'
 
 const { dir } = vi.hoisted(() => {
@@ -57,6 +57,20 @@ describe('writeRunnerState', () => {
         expect(statSync(stateFile).mode & 0o777).toBe(0o600)
         expect(JSON.parse(readFileSync(stateFile, 'utf8')).controlToken).toBe('secret')
         rmSync(stateFile, { force: true })
+    })
+
+    it.skipIf(process.platform === 'win32')('refuses links to other files without changing their contents', () => {
+        const stateFile = join(dir, 'runner.state.json')
+        const other = join(dir, 'unrelated.txt')
+        const state = { pid: 1, httpPort: 2, controlToken: 'secret', startTime: 'now', startedWithCliVersion: '0' }
+        writeFileSync(other, 'keep this file')
+        for (const link of [symlinkSync, linkSync]) {
+            link(other, stateFile)
+            expect(() => writeRunnerState(state)).toThrow()
+            expect(readFileSync(other, 'utf8')).toBe('keep this file')
+            rmSync(stateFile)
+        }
+        rmSync(other)
     })
 })
 
