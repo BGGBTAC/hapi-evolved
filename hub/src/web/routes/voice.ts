@@ -662,6 +662,13 @@ export function createVoiceRoutes(options: { dataDir?: string } = {}): Hono<WebA
 
         const { customAgentId, customApiKey, voiceId } = parsed.data
 
+        // A caller-chosen agent id is reconciled (PATCH) and tokenised with the API key in use.
+        // Other namespaces may pair it with their own key, not with the hub owner's account.
+        if (customAgentId && !customApiKey && c.get('namespace') !== 'default') {
+            console.warn('[Voice][Token] Custom agent id without custom key denied', { requestId })
+            return c.json({ allowed: false, error: 'A custom ElevenLabs agent requires its own API key' }, 403)
+        }
+
         // Use custom credentials if provided, otherwise fall back to env vars
         const apiKey = customApiKey || getProviderEnvironment().ELEVENLABS_API_KEY
         const voiceAgentMap = parseVoiceAgentMap()

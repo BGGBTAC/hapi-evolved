@@ -38,6 +38,7 @@ describe('SyncEngine.maybeAutoMigrateLegacyCursorSession', () => {
     function makeLegacySession(overrides: Partial<Session['metadata']> = {}): Session {
         return {
             id: 'session-auto-migrate-test',
+            namespace: 'default',
             machineId: 'machine-x',
             createdAt: 1000,
             updatedAt: 1000,

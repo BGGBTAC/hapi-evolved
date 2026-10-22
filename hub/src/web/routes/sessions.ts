@@ -43,6 +43,7 @@ import { TitleSuggestionError } from '../../sync/titleSuggestion'
 import { requireSessionFromParam, requireSyncEngine } from './guards'
 import { normalizeSessionSearchQuery, scoreSessionSearchMatch } from './sessionSearchMatch'
 import { permissionAllowed, projectPermissionMode, withinProject } from '../../evolved/bridge'
+import { DEFAULT_NAMESPACE } from '../../utils/accessToken'
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 const MAX_CONTENT_SEARCH_REQUEST_BYTES = MAX_CONTENT_SEARCH_SESSION_SCOPE_BYTES + 4 * 1024
@@ -752,6 +753,10 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
     })
 
     app.post('/sessions/:id/migrate-to-acp', async (c) => {
+        // Legacy Cursor migration acts on hub-host paths; Evolved projects (evolved-<id>) and other namespaces may not run it.
+        if (c.get('namespace') !== DEFAULT_NAMESPACE) {
+            return c.json({ error: 'Legacy Cursor migration is only available to the hub owner' }, 403)
+        }
         const engine = requireSyncEngine(c, getSyncEngine)
         if (engine instanceof Response) {
             return engine

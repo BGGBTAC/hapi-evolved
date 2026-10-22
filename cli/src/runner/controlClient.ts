@@ -57,12 +57,27 @@ async function runnerPost(path: string, body?: any): Promise<{ error?: string } 
     const timeout = process.env.HAPI_RUNNER_HTTP_TIMEOUT ? parseInt(process.env.HAPI_RUNNER_HTTP_TIMEOUT) : 10_000;
     const response = await fetch(`http://127.0.0.1:${state.httpPort}${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(state.controlToken ? { Authorization: `Bearer ${state.controlToken}` } : {})
+      },
       body: JSON.stringify(body || {}),
       // Mostly increased for stress test
       signal: AbortSignal.timeout(timeout)
     });
     
+    if (response.status === 401 || response.status === 403) {
+      // The runner never falls back to unauthenticated access; a missing/stale
+      // token means this CLI and the running runner disagree about runner.state.json.
+      const errorMessage = `Runner rejected control request ${path} (HTTP ${response.status}): `
+        + 'runner.state.json has no valid control token for this runner. '
+        + 'Restart it with `hapi runner stop` and `hapi runner start` so CLI and runner versions match.';
+      logger.debug(`[CONTROL CLIENT] ${errorMessage}`);
+      return {
+        error: errorMessage
+      };
+    }
+
     if (!response.ok) {
       const errorMessage = `Request failed: ${path}, HTTP ${response.status}`;
       logger.debug(`[CONTROL CLIENT] ${errorMessage}`);

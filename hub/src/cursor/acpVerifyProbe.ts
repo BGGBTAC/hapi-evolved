@@ -15,7 +15,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, delimiter as pathDelimiter } from 'node:path'
-import { tmpdir } from 'node:os'
+import { homedir } from 'node:os'
 
 export interface AcpProbeOptions {
     /** Path to the `agent` binary. Default 'agent'. */
@@ -26,7 +26,7 @@ export interface AcpProbeOptions {
     timeoutMs?: number
     /**
      * Override the $HAPI_HOME directory used for the agent-acp-active lock.
-     * Defaults to `process.env.HAPI_HOME` (with tmpdir/hapi fallback) — same
+     * Defaults to `process.env.HAPI_HOME` (with ~/.hapi fallback) — same
      * scheme as cli/src/agent/backends/acp/agentCliGuard.ts. Tests can pass a
      * temp dir here to avoid clobbering the operator's real lock.
      */
@@ -45,16 +45,25 @@ export interface AcpProbeOptions {
      * on PATH. Used when constructing the fallback PATH augmentation
      * (~/.local/bin and ~/.npm-global/bin). Defaults to `process.env.HOME`.
      *
-     * Codex review #34 P2: in deployment shapes where the hub runs as a
-     * service account whose `process.env.HOME` differs from the human
-     * user who installed Cursor (`metadata.homeDir`), the caller (the
-     * migrator) needs to thread its recorded session-owner home through
-     * to the verify probe so the binary lookup happens against the right
-     * filesystem location. Independent of any HOME override passed via
+     * Must be trusted operator configuration: client-reported session
+     * metadata (`metadata.homeDir`) never selects the executable. A
+     * service-account hub whose `agent` lives under another account sets
+     * the hub's own PATH (searched before these fallbacks) or injects the
+     * migrator's `homeDir`. Independent of any HOME override passed via
      * `options.env` (which is for the spawned agent's cache/state
      * isolation, not its binary lookup).
      */
     agentLookupHome?: string
+}
+
+/**
+ * HAPI_HOME used for the agent-acp-active lock. Mirrors the CLI's
+ * resolveHapiHomeDir() (cli/src/configuration.ts) so hub and CLI agree on
+ * one owner-private lock path instead of a shared, pre-creatable tmpdir.
+ */
+export function resolveAcpLockHapiHome(env: NodeJS.ProcessEnv = process.env): string {
+    const configured = env.HAPI_HOME?.trim()
+    return configured ? configured.replace(/^~/, homedir()) : join(homedir(), '.hapi')
 }
 
 /**
@@ -220,7 +229,7 @@ export class AcpVerifyProbe {
 
     constructor(private readonly options: AcpProbeOptions = {}) {
         this.defaultTimeoutMs = options.timeoutMs ?? 20_000
-        const home = options.hapiHome ?? process.env.HAPI_HOME?.trim() ?? join(tmpdir(), 'hapi')
+        const home = options.hapiHome ?? resolveAcpLockHapiHome()
         this.lockDir = join(home, 'locks', 'agent-acp-active')
         this.lockPidFile = join(this.lockDir, 'pid')
     }
@@ -259,10 +268,10 @@ export class AcpVerifyProbe {
         // operator hand-tuning their systemd dropin.
         //
         // Resolution order for the lookup home:
-        //   1. options.agentLookupHome  — caller-supplied (migrator threads
-        //      its recorded session-owner homeDir here; covers the service-
-        //      account-hub deployment where process.env.HOME and the human
-        //      user who installed Cursor differ)
+        //   1. options.agentLookupHome  — trusted caller-supplied home (the
+        //      migrator passes its operator homeDir; client-reported
+        //      metadata.homeDir must never choose the executable). Service-
+        //      account hubs add other installs to the hub's own PATH.
         //   2. process.env.HOME         — hub process's own home (covers the
         //      common single-user deployment)
         //

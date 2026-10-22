@@ -92,7 +92,8 @@ export async function cursorLocal(opts: {
         spawnName: 'agent',
         installHint: 'Cursor Agent CLI (curl https://cursor.com/install -fsS | bash)',
         includeCause: true,
-        logExit: true,
-        shell: process.platform === 'win32'
+        logExit: true
+        // No shell: model/worktree/--add-dir are untrusted; cross-spawn resolves
+        // Windows .cmd shims and escapes args itself (shell would opt out).
     });
 }

@@ -1703,7 +1703,7 @@ export async function startRunner(options: { workspaceRoots?: string[] } = {}): 
     };
 
     // Start control server
-    const { port: controlPort, stop: stopControlServer } = await startRunnerControlServer({
+    const { port: controlPort, token: controlToken, stop: stopControlServer } = await startRunnerControlServer({
       getChildren: getCurrentChildren,
       stopSession,
       spawnSession,
@@ -1750,6 +1750,7 @@ export async function startRunner(options: { workspaceRoots?: string[] } = {}): 
       sharedCodexRuntime: true,
       pid: process.pid,
       httpPort: controlPort,
+      controlToken,
       startTime: new Date().toLocaleString(),
       startedWithCliVersion: packageJson.version,
       startedWithCliMtimeMs,

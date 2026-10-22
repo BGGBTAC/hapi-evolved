@@ -1,10 +1,10 @@
 import { logger } from '@/ui/logger'
-import { readdir, stat } from 'fs/promises'
-import { basename, join, resolve } from 'path'
+import { lstat, readdir } from 'fs/promises'
+import { basename, join } from 'path'
 import type { DirectoryEntry, ListDirectoryResponse, StatFilesResponse } from '@hapi/protocol/apiTypes'
 import { RPC_METHODS } from '@hapi/protocol/rpcMethods'
 import type { RpcHandlerManager } from '@/api/rpc/RpcHandlerManager'
-import { validatePath } from '../pathSecurity'
+import { resolveContainedPath, validatePath } from '../pathSecurity'
 import { getErrorMessage, rpcError } from '../rpcResponses'
 
 interface ListDirectoryRequest {
@@ -41,18 +41,20 @@ export function registerDirectoryHandlers(rpcHandlerManager: RpcHandlerManager, 
 
         const targetPath = data.path || '.'
 
-        const validation = validatePath(targetPath, workingDirectory)
+        const validation = await resolveContainedPath(targetPath, workingDirectory)
         if (!validation.valid) {
-            return rpcError(validation.error ?? 'Invalid directory path')
+            return rpcError(validation.error)
         }
 
         try {
-            const resolvedPath = resolve(workingDirectory, targetPath)
-            const entries = await readdir(resolvedPath, { withFileTypes: true })
+            // I/O on the checked canonical path; lstat so a child swapped for a
+            // symlink after readdir is not followed. Names are returned as before.
+            const realDirectory = validation.realPath
+            const entries = await readdir(realDirectory, { withFileTypes: true })
 
             const directoryEntries: DirectoryEntry[] = await Promise.all(
                 entries.map(async (entry) => {
-                    const fullPath = join(resolvedPath, entry.name)
+                    const fullPath = join(realDirectory, entry.name)
                     let type: 'file' | 'directory' | 'other' = 'other'
                     let size: number | undefined
                     let modified: number | undefined
@@ -67,7 +69,7 @@ export function registerDirectoryHandlers(rpcHandlerManager: RpcHandlerManager, 
 
                     if (!entry.isSymbolicLink()) {
                         try {
-                            const stats = await stat(fullPath)
+                            const stats = await lstat(fullPath)
                             size = stats.size
                             modified = stats.mtime.getTime()
                         } catch (error) {
@@ -111,7 +113,12 @@ export function registerDirectoryHandlers(rpcHandlerManager: RpcHandlerManager, 
 
         const entries = await Promise.all(data.paths.map(async (path) => {
             try {
-                const stats = await stat(resolve(workingDirectory, path))
+                // A symlink escaping the working directory is reported like a missing file.
+                const contained = await resolveContainedPath(path, workingDirectory)
+                if (!contained.valid) {
+                    return { path }
+                }
+                const stats = await lstat(contained.realPath)
                 return {
                     path,
                     size: stats.size,
@@ -131,16 +138,18 @@ export function registerDirectoryHandlers(rpcHandlerManager: RpcHandlerManager, 
 
         const targetPath = data.path || '.'
 
-        const validation = validatePath(targetPath, workingDirectory)
+        const validation = await resolveContainedPath(targetPath, workingDirectory)
         if (!validation.valid) {
-            return rpcError(validation.error ?? 'Invalid directory path')
+            return rpcError(validation.error)
         }
 
-        const resolvedRoot = resolve(workingDirectory, targetPath)
+        const resolvedRoot = validation.path
 
-        async function buildTree(path: string, name: string, currentDepth: number): Promise<TreeNode | null> {
+        // fsPath is the canonical path used for I/O; path keeps the lexical form
+        // (e.g. through an in-root symlink alias) that clients display.
+        async function buildTree(fsPath: string, path: string, name: string, currentDepth: number): Promise<TreeNode | null> {
             try {
-                const stats = await stat(path)
+                const stats = await lstat(fsPath)
 
                 const node: TreeNode = {
                     name,
@@ -151,7 +160,7 @@ export function registerDirectoryHandlers(rpcHandlerManager: RpcHandlerManager, 
                 }
 
                 if (stats.isDirectory() && currentDepth < data.maxDepth) {
-                    const entries = await readdir(path, { withFileTypes: true })
+                    const entries = await readdir(fsPath, { withFileTypes: true })
                     const children: TreeNode[] = []
 
                     await Promise.all(
@@ -161,8 +170,7 @@ export function registerDirectoryHandlers(rpcHandlerManager: RpcHandlerManager, 
                                 return
                             }
 
-                            const childPath = join(path, entry.name)
-                            const childNode = await buildTree(childPath, entry.name, currentDepth + 1)
+                            const childNode = await buildTree(join(fsPath, entry.name), join(path, entry.name), entry.name, currentDepth + 1)
                             if (childNode) {
                                 children.push(childNode)
                             }
@@ -191,7 +199,7 @@ export function registerDirectoryHandlers(rpcHandlerManager: RpcHandlerManager, 
             }
 
             const baseName = resolvedRoot === '/' ? '/' : basename(resolvedRoot) || resolvedRoot
-            const tree = await buildTree(resolvedRoot, baseName, 0)
+            const tree = await buildTree(validation.realPath, resolvedRoot, baseName, 0)
 
             if (!tree) {
                 return rpcError('Failed to access the specified path')

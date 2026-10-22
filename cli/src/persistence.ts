@@ -6,7 +6,7 @@
 
 import { FileHandle } from 'node:fs/promises'
 import { readFile, writeFile, mkdir, open, unlink, rename, chmod } from 'node:fs/promises'
-import { existsSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs'
+import { chmodSync, existsSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs'
 import { withSettingsFileLock } from '@hapi/protocol/settingsFileLock'
 import { configuration } from '@/configuration'
 import { isProcessAlive } from '@/utils/process';
@@ -36,6 +36,8 @@ export interface RunnerLocallyPersistedState {
   sharedCodexRuntime?: boolean;
   pid: number;
   httpPort: number;
+  /** Bearer secret for the loopback control server; the state file is written 0600. */
+  controlToken?: string;
   startTime: string;
   startedWithCliVersion: string;
   startedWithCliMtimeMs?: number;
@@ -177,11 +179,19 @@ export async function readRunnerState(): Promise<RunnerLocallyPersistedState | n
   }
 }
 
+/** Runner state safe to print (doctor output gets pasted into bug reports). */
+export function runnerStateForDisplay(state: RunnerLocallyPersistedState): RunnerLocallyPersistedState {
+  return state.controlToken ? { ...state, controlToken: '[redacted]' } : state;
+}
+
 /**
  * Write runner state to local file (synchronously for atomic operation)
  */
 export function writeRunnerState(state: RunnerLocallyPersistedState): void {
-  writeFileSync(configuration.runnerStateFile, JSON.stringify(state, null, 2), 'utf-8');
+  // mode only applies on creation; tighten files left by older runners before
+  // the control token is written into them.
+  if (existsSync(configuration.runnerStateFile)) chmodSync(configuration.runnerStateFile, 0o600);
+  writeFileSync(configuration.runnerStateFile, JSON.stringify(state, null, 2), { encoding: 'utf-8', mode: 0o600 });
 }
 
 /**

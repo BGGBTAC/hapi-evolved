@@ -45,18 +45,99 @@ function isPlausibleSessionId(id: string): boolean {
 }
 
 /**
- * Match `/sessions/<id>` (optional BASE_URL prefix segments) inside free text.
- * Captures the id only; surrounding markdown / prose is ignored.
+ * Match `/sessions/<id>` (optional BASE_URL prefix segments) inside free text and
+ * capture the id; surrounding markdown / prose is ignored. Semantics are those of
+ * `/(?:^|[^A-Za-z0-9_-])(?:\.?\/)?(?:[\w.-]+\/)*sessions\/([^/?#\s)\]"']+)/g`
+ * (kept as the differential reference in sessionCitation.test.ts), implemented as
+ * a linear scanner because that global regex is quadratic on long dotted/slashed text.
  */
-const SESSION_PATH_IN_TEXT_RE =
-    /(?:^|[^A-Za-z0-9_-])(?:\.?\/)?(?:[\w.-]+\/)*sessions\/([^/?#\s)\]"']+)/g
+const SESSIONS_SEGMENT = 'sessions/'
+
+function isWordOrDash(code: number): boolean {
+    return (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122)
+        || code === 95 || code === 45
+}
+
+/** `[\w./-]`: characters a prefix path chain may contain. */
+function isChainChar(code: number): boolean {
+    return isWordOrDash(code) || code === 46 || code === 47
+}
+
+/** `[^/?#\s)\]"']`: characters of the captured id. */
+function isIdChar(char: string): boolean {
+    return !'/?#)]"\''.includes(char) && !/\s/.test(char)
+}
+
+/**
+ * Linear equivalent of the reference regex exec iteration: per start
+ * position the regex takes the boundary, then greedily the longest valid
+ * `(\.?\/)?(?:[\w.-]+\/)*` chain that still ends in `sessions/<id>`.
+ */
+function findSessionPathMatches(text: string): Array<{ start: number; id: string }> {
+    const n = text.length
+    // idEnd[i]: end of the id run starting at i.
+    const idEnd = new Int32Array(n + 1)
+    idEnd[n] = n
+    for (let i = n - 1; i >= 0; i -= 1) idEnd[i] = isIdChar(text[i]!) ? idEnd[i + 1]! : i
+    const isOccurrence = (i: number): boolean =>
+        text.startsWith(SESSIONS_SEGMENT, i) && idEnd[i + SESSIONS_SEGMENT.length]! > i + SESSIONS_SEGMENT.length
+    // lastBoundaryOccurrence[x]: largest i <= x with text[i - 1] === '/' and a citation at i.
+    const lastBoundaryOccurrence = new Int32Array(n + 1)
+    let last = -1
+    for (let i = 0; i <= n; i += 1) {
+        if (i > 0 && text.charCodeAt(i - 1) === 47 && isOccurrence(i)) last = i
+        lastBoundaryOccurrence[i] = last
+    }
+    // nextBreak[t]: first x >= t that ends a chain (non-chain char or a second consecutive '/').
+    const nextBreak = new Int32Array(n + 2)
+    nextBreak[n] = n
+    nextBreak[n + 1] = n
+    for (let x = n - 1; x >= 0; x -= 1) {
+        const code = text.charCodeAt(x)
+        const breaks = !isChainChar(code) || (code === 47 && x > 0 && text.charCodeAt(x - 1) === 47)
+        nextBreak[x] = breaks ? x : nextBreak[x + 1]!
+    }
+
+    // Occurrence reached from path start p, preferring the longest chain like the greedy regex.
+    const occurrenceFrom = (p: number): number => {
+        const q = text.charCodeAt(p) === 47 ? p + 1 : p
+        const limit = q >= n || !isChainChar(text.charCodeAt(q)) || text.charCodeAt(q) === 47
+            ? q
+            : nextBreak[q + 1]!
+        const furthest = lastBoundaryOccurrence[Math.min(limit, n)]!
+        if (furthest > p) return furthest
+        return isOccurrence(p) ? p : -1
+    }
+
+    const matches: Array<{ start: number; id: string }> = []
+    let k = 0
+    while (k < n) {
+        let found = k === 0 ? occurrenceFrom(0) : -1
+        if (found === -1 && !isWordOrDash(text.charCodeAt(k))) found = occurrenceFrom(k + 1)
+        if (found === -1) {
+            k += 1
+            continue
+        }
+        const idStart = found + SESSIONS_SEGMENT.length
+        matches.push({ start: k, id: text.slice(idStart, idEnd[idStart]) })
+        k = idEnd[idStart]!
+    }
+    return matches
+}
+
+/** Strip trailing prose punctuation (`/[.,;:!?]+$/`) without regex backtracking. */
+function stripTrailingPunctuation(value: string): string {
+    let end = value.length
+    while (end > 0 && '.,;:!?'.includes(value[end - 1]!)) end -= 1
+    return value.slice(0, end)
+}
 
 /** Decode a path segment; return null if not a plausible hub session id. */
 function decodeSessionIdSegment(raw: string): string | null {
     try {
         // Bare citations in prose often trail `,` / `.` / `!` - strip those only.
         // Internal dots (e.g. `chat.tsx`) stay and fail isPlausibleSessionId.
-        const id = decodeURIComponent(raw).replace(/[.,;:!?]+$/u, '')
+        const id = stripTrailingPunctuation(decodeURIComponent(raw))
         return isPlausibleSessionId(id) ? id : null
     } catch {
         return null
@@ -71,10 +152,8 @@ export function extractSessionCitationIds(text: string): string[] {
     if (!text) return []
     const seen = new Set<string>()
     const ids: string[] = []
-    SESSION_PATH_IN_TEXT_RE.lastIndex = 0
-    let match: RegExpExecArray | null
-    while ((match = SESSION_PATH_IN_TEXT_RE.exec(text)) !== null) {
-        const id = decodeSessionIdSegment(match[1] ?? '')
+    for (const match of findSessionPathMatches(text)) {
+        const id = decodeSessionIdSegment(match.id)
         if (!id || seen.has(id)) continue
         seen.add(id)
         ids.push(id)

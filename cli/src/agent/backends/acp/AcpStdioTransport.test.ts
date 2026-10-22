@@ -43,8 +43,8 @@ vi.mock('@/utils/process', () => ({
     killProcessByChildProcess: vi.fn(async () => undefined)
 }));
 
-vi.mock('node:child_process', () => ({
-    spawn: vi.fn(() => {
+vi.mock('cross-spawn', () => ({
+    default: vi.fn(() => {
         spawnState.spawnCallOrder.push('spawn');
         spawnState.exitHandlers = [];
         spawnState.closeHandlers = [];

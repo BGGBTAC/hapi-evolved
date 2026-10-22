@@ -37,7 +37,8 @@ export async function kimiLocal(opts: {
         cwd: opts.path,
         env,
         signal: opts.abort,
-        shell: process.platform === 'win32',
+        // No shell: session/model are untrusted; cross-spawn resolves Windows
+        // .cmd shims and escapes args itself (shell would opt out).
         logLabel: 'KimiLocal',
         spawnName: 'kimi',
         installHint: 'Kimi CLI',

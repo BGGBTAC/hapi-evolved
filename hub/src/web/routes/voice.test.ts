@@ -11,8 +11,8 @@ import { resetProviderCredentialEnvLocksForTests } from '../../config/providerCr
 
 const JWT_SECRET = new TextEncoder().encode('test-secret')
 
-async function authHeaders() {
-    const token = await new SignJWT({ uid: 1, ns: 'default' })
+async function authHeaders(ns = 'default') {
+    const token = await new SignJWT({ uid: 1, ns })
         .setProtectedHeader({ alg: 'HS256' })
         .setIssuedAt()
         .setExpirationTime('1h')
@@ -340,6 +340,44 @@ describe('voice transcription routes', () => {
 })
 
 describe('POST /api/voice/token', () => {
+    it('binds a custom agent id to the caller key outside the owner namespace', async () => {
+        const app = createApp()
+        const prevKey = process.env.ELEVENLABS_API_KEY
+        process.env.ELEVENLABS_API_KEY = 'owner-key'
+        const requests: Array<{ url: string; key: string | null }> = []
+        const originalFetch = global.fetch
+        // @ts-expect-error test override
+        global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+            requests.push({ url: String(input), key: new Headers(init?.headers).get('xi-api-key') })
+            if (String(input).includes('/convai/conversation/token?agent_id=')) return new Response(JSON.stringify({ token: 'tok_custom' }), { status: 200 })
+            return new Response(JSON.stringify({}), { status: 200 })
+        }) as typeof fetch
+        try {
+            const request = async (ns: string, body: Record<string, string>) => app.request('/api/voice/token', {
+                method: 'POST',
+                headers: { ...(await authHeaders(ns)), 'content-type': 'application/json' },
+                body: JSON.stringify(body)
+            })
+            const denied = await request('alice', { customAgentId: 'agent_owner_private' })
+            expect(denied.status).toBe(403)
+            expect(requests).toEqual([])
+
+            const ownKey = await request('alice', { customAgentId: 'agent_alice', customApiKey: 'alice-key' })
+            expect(ownKey.status).toBe(200)
+            expect(requests.length).toBeGreaterThan(0)
+            expect(requests.every((r) => r.key === 'alice-key')).toBe(true)
+
+            requests.length = 0
+            const owner = await request('default', { customAgentId: 'agent_owner_custom' })
+            expect(owner.status).toBe(200)
+            expect(requests.every((r) => r.key === 'owner-key')).toBe(true)
+        } finally {
+            global.fetch = originalFetch
+            if (prevKey) process.env.ELEVENLABS_API_KEY = prevKey
+            else delete process.env.ELEVENLABS_API_KEY
+        }
+    })
+
     it('creates/selects voice-specific agent when voiceId is provided', async () => {
         const app = createApp()
         const headers = {

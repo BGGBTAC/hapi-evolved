@@ -11,7 +11,7 @@ export function countHookCoveredExecCalls(source: unknown): number | null {
         if (tail.startsWith('.')) {
             toolName = tail.slice(1).match(/^[$A-Z_a-z][$\w]*/)?.[0] ?? null;
         } else if (tail.startsWith('[')) {
-            const bracket = tail.match(/^\[\s*(['"])([$A-Z_a-z][$\w]*(?:__[$A-Z_a-z][$\w]*)*)\1\s*\]/);
+            const bracket = tail.match(/^\[\s*(['"])([$A-Z_a-z][$\w]*)\1\s*\]/);
             toolName = bracket?.[2] ?? null;
         }
 

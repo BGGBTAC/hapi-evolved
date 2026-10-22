@@ -3,8 +3,8 @@ import { PassThrough } from 'node:stream';
 
 const spawnMock = vi.hoisted(() => vi.fn());
 
-vi.mock('node:child_process', () => ({
-    spawn: spawnMock
+vi.mock('cross-spawn', () => ({
+    default: spawnMock
 }));
 
 vi.mock('@/ui/logger', () => ({
@@ -124,6 +124,28 @@ describe('cursorLegacyRemoteLauncher', () => {
         expect(args).toContain('--resume');
         expect(args).toContain('legacy-id');
         expect(args).not.toContain('acp');
+    });
+
+    it('passes chat text as one argument without a Windows shell', async () => {
+        const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+        Object.defineProperty(process, 'platform', { value: 'win32' });
+        try {
+            spawnMock.mockReturnValue(makeChild());
+            const prompt = 'hi" & calc.exe & echo "';
+            const queue = new MessageQueue2<EnhancedMode>(() => 'm');
+            queue.push(prompt, { permissionMode: 'default' });
+            queue.close();
+
+            const { cursorLegacyRemoteLauncher } = await import('./cursorLegacyRemoteLauncher');
+            await cursorLegacyRemoteLauncher(makeSession(queue, makeClient()));
+
+            const args = spawnMock.mock.calls[0]?.[1] as string[];
+            const options = spawnMock.mock.calls[0]?.[2] as { shell?: unknown };
+            expect(args[args.indexOf('-p') + 1]).toBe(prompt);
+            expect(options.shell).toBeFalsy();
+        } finally {
+            if (platform) Object.defineProperty(process, 'platform', platform);
+        }
     });
 
     it('requeues the user message and surfaces an auth banner when agent exits with auth-required stderr', async () => {

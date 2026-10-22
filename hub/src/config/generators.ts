@@ -1,6 +1,7 @@
+import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { chmod, link, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { basename, dirname, join } from 'node:path'
 import { updateSettings, type Settings, type SettingsUpdateOutcome } from './settings'
 
 export type GetOrCreateResult<T> = {
@@ -61,7 +62,21 @@ export async function getOrCreateJsonFile<T>(options: {
         await mkdir(dir, { recursive: true, mode: dirMode })
     }
 
-    await writeFile(options.filePath, options.writeValue(generated), { mode: fileMode })
-    await chmod(options.filePath, fileMode).catch(() => {})
+    // Publish complete content without replacing a file another starter created after
+    // the existence check: link() fails with EEXIST instead of clobbering it.
+    const temporary = join(dir, `.${basename(options.filePath)}.${randomUUID()}.tmp`)
+    try {
+        await writeFile(temporary, options.writeValue(generated), { mode: fileMode, flag: 'wx' })
+        await chmod(temporary, fileMode).catch(() => {})
+        try {
+            await link(temporary, options.filePath)
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+            const raw = await readFile(options.filePath, 'utf8')
+            return { value: options.readValue(raw), created: false }
+        }
+    } finally {
+        await rm(temporary, { force: true })
+    }
     return { value: generated, created: true }
 }

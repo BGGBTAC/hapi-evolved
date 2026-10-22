@@ -88,4 +88,32 @@ describe('directory RPC handlers', () => {
         expect(parsed.success).toBe(false)
         expect(parsed.error).toContain('outside the working directory')
     })
+
+    it('refuses to list or tree a symlinked directory outside the working directory', async () => {
+        const outside = await createTempDir('hapi-dir-handler-outside')
+        try {
+            await writeFile(join(outside, 'private.txt'), 'secret')
+            await symlink(outside, join(rootDir, 'escape'), 'dir')
+
+            for (const method of ['listDirectory', 'getDirectoryTree']) {
+                const response = await rpc.handleRequest({
+                    method: `session-test:${method}`,
+                    params: JSON.stringify({ path: 'escape', maxDepth: 1 })
+                })
+                const parsed = JSON.parse(response) as { success: boolean; error?: string }
+                expect(parsed.success).toBe(false)
+                expect(parsed.error).toContain('outside the working directory')
+            }
+
+            const statResponse = await rpc.handleRequest({
+                method: 'session-test:statFiles',
+                params: JSON.stringify({ paths: ['escape/private.txt'] })
+            })
+            const stats = JSON.parse(statResponse) as { success: boolean; entries?: Array<{ path: string; size?: number }> }
+            expect(stats.success).toBe(true)
+            expect(stats.entries).toEqual([{ path: 'escape/private.txt' }])
+        } finally {
+            await rm(outside, { recursive: true, force: true })
+        }
+    })
 })

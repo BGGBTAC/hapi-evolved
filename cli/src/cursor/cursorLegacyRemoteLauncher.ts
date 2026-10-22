@@ -1,5 +1,5 @@
 import React from 'react';
-import { spawn } from 'node:child_process';
+import spawn from 'cross-spawn';
 import { createInterface } from 'node:readline';
 import { logger } from '@/ui/logger';
 import { killProcessByChildProcess } from '@/utils/process';
@@ -267,11 +267,12 @@ class CursorRemoteLauncher extends RemoteLauncherBase {
         onEvent: (event: ReturnType<typeof parseCursorEvent> & object) => void
     ): Promise<{ exitCode: number | null; stderr: string }> {
         return new Promise((resolve, reject) => {
+            // args carry the chat prompt; cross-spawn escapes them for Windows
+            // command shims, whereas `shell: true` would let cmd.exe interpret them.
             const child = spawn(getAgentLaunchCommand('cursor'), args, {
                 cwd,
                 env: process.env,
                 stdio: ['ignore', 'pipe', 'pipe'],
-                shell: process.platform === 'win32',
                 windowsHide: process.platform === 'win32'
             });
 
@@ -302,7 +303,7 @@ class CursorRemoteLauncher extends RemoteLauncherBase {
                 resolve({ exitCode: code, stderr: stderrCapture });
             });
 
-            const rl = createInterface({ input: child.stdout, crlfDelay: Infinity });
+            const rl = createInterface({ input: child.stdout!, crlfDelay: Infinity });
             rl.on('line', (line) => {
                 const event = parseCursorEvent(line);
                 if (event) {

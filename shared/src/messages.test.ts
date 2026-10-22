@@ -373,6 +373,13 @@ describe('extractSearchableMessageText', () => {
         expect(stripAgyEchoedTaskResult(
             'Inside the task-246 log...\n[Message] timestamp=2026-07-08T06:04:31Z sender=u/task-246 content=Task finished with result:\nHidden task output'
         )).toBe('Inside the task-246 log...')
+        expect(stripAgyEchoedTaskResult('Visible\n\n\n[Message]  timestamp=1 hidden')).toBe('Visible')
+        expect(stripAgyEchoedTaskResult('  no marker here \n')).toBe('no marker here')
+
+        const newlineHeavy = '\n'.repeat(200_000) + 'x'
+        const startedAt = Date.now()
+        expect(stripAgyEchoedTaskResult(newlineHeavy)).toBe('x')
+        expect(Date.now() - startedAt).toBeLessThan(500)
 
         expect(extractSearchableMessageText({
             role: 'agent',
