@@ -1,8 +1,13 @@
-import { describe, expect, it } from 'vitest'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { afterEach, describe, expect, it } from 'vitest'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { clearGeneratedImages, decodeGeneratedImageBase64, detectAudioMimeType, detectDisplayMediaMimeType, detectImageMimeType, detectVideoMimeType, getGeneratedImage, MAX_GENERATED_IMAGE_BASE64_CHARS, MAX_GENERATED_IMAGE_BYTES, readBoundedRegularFile, registerGeneratedImage, registerGeneratedImageFromAcpBlock, registerGeneratedImageFromPath, safeAcpFileName } from './generatedImages'
+
+const tempDirs: string[] = []
+afterEach(() => {
+    for (const directory of tempDirs.splice(0)) rmSync(directory, { recursive: true, force: true })
+})
 
 describe('generatedImages', () => {
     it('detects supported image MIME types from file bytes', () => {
@@ -194,8 +199,9 @@ describe('generatedImages', () => {
     })
 
     it('ignores URI-only ACP image blocks that would read local disk without a permission prompt', async () => {
-        const dir = join(tmpdir(), `hapi-acp-uri-only-${Date.now()}`)
-        mkdirSync(dir, { recursive: true })
+        const dir = mkdtempSync(join(tmpdir(), 'hapi-acp-uri-only-'))
+        tempDirs.push(dir)
+
         const path = join(dir, 'secret.png')
         writeFileSync(path, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]))
 
@@ -211,8 +217,9 @@ describe('generatedImages', () => {
     })
 
     it('registers images from local file paths in ACP uri blocks', async () => {
-        const dir = join(tmpdir(), `hapi-acp-image-${Date.now()}`)
-        mkdirSync(dir, { recursive: true })
+        const dir = mkdtempSync(join(tmpdir(), 'hapi-acp-image-'))
+        tempDirs.push(dir)
+
         const path = join(dir, 'inline.png')
         const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00])
         writeFileSync(path, bytes)
@@ -223,8 +230,9 @@ describe('generatedImages', () => {
     })
 
     it('registers mp4 from local file paths after MIME sniffing', async () => {
-        const dir = join(tmpdir(), `hapi-inline-mp4-${Date.now()}`)
-        mkdirSync(dir, { recursive: true })
+        const dir = mkdtempSync(join(tmpdir(), 'hapi-inline-mp4-'))
+        tempDirs.push(dir)
+
         const path = join(dir, 'inline.mp4')
         const bytes = Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d])
         writeFileSync(path, bytes)
@@ -235,8 +243,9 @@ describe('generatedImages', () => {
     })
 
     it('readBoundedRegularFile rejects oversize files without allocating the full path size', async () => {
-        const dir = join(tmpdir(), `hapi-bounded-read-${Date.now()}`)
-        mkdirSync(dir, { recursive: true })
+        const dir = mkdtempSync(join(tmpdir(), 'hapi-bounded-read-'))
+        tempDirs.push(dir)
+
         const path = join(dir, 'big.bin')
         writeFileSync(path, Buffer.alloc(1024, 0xab))
 

@@ -8,10 +8,8 @@ import { spawn, execSync } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { reapTestOwnedProcesses } from './auditTestProcesses'
 import { TEST_OWNED_MARKER_KEY } from './integrationEnv'
-
-// Workers can't inherit process.env from globalSetup, so we write config to a file
-// and let setupFile.ts read it in each worker.
-export const TEST_CONFIG_FILE = join(tmpdir(), 'hapi-test-config.json')
+import type { TestProject } from 'vitest/node'
+import type {} from './hubTestConfig'
 
 async function getFreePort(): Promise<number> {
     return new Promise((resolve, reject) => {
@@ -52,7 +50,7 @@ function findBunExec(): string {
 let hubProcess: ChildProcess | null = null
 let tmpHome: string | null = null
 
-export async function setup() {
+export async function setup(project: TestProject) {
     const port = await getFreePort()
     tmpHome = mkdtempSync(join(tmpdir(), 'hapi-test-'))
     const token = randomBytes(20).toString('base64url')
@@ -91,8 +89,9 @@ export async function setup() {
         [TEST_OWNED_MARKER_KEY]: `hub:${tmpHome}`,
     }
 
-    // Write config so setupFile.ts can inject env vars into each test worker
-    writeFileSync(TEST_CONFIG_FILE, JSON.stringify({ port, token, tmpHome, bunExec, stubClaudePath }))
+    // Vitest transports this per-project context directly to workers. No shared
+    // temp-file name, symlink race, cross-run collision, or plaintext token file.
+    project.provide('hapiTestConfig', { port, token, tmpHome, bunExec, stubClaudePath })
 
     const hubEntry = join(
         dirname(fileURLToPath(import.meta.url)),
@@ -126,7 +125,6 @@ async function stopHubProcess(): Promise<void> {
 
 export async function teardown() {
     await stopHubProcess()
-    try { rmSync(TEST_CONFIG_FILE) } catch {}
 
     // Final audit: test children carry `HAPI_TEST_MARKER=<tmpHome>` in their
     // environment (see integrationEnv.ts). Anything still alive after the

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -11,9 +11,9 @@ describe('kimiSessionTitleWatcher', () => {
     let watcher: KimiSessionTitleWatcher | null = null;
 
     beforeEach(async () => {
-        testDir = join(tmpdir(), `kimi-title-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+        testDir = await mkdtemp(join(tmpdir(), 'kimi-title-'));
         statePath = join(testDir, 'state.json');
-        await mkdir(testDir, { recursive: true });
+
     });
 
     afterEach(async () => {

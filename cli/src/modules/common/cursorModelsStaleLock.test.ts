@@ -1,10 +1,10 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { _resetAgentCliGuardForTests } from '@/agent/backends/acp/agentCliGuard';
 
-const testHome = join(tmpdir(), `hapi-cursor-models-lock-${process.pid}`);
+const testHome = mkdtempSync(join(tmpdir(), 'hapi-cursor-models-lock-'));
 
 const { spawnMock } = vi.hoisted(() => ({
     spawnMock: vi.fn()

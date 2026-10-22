@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -11,8 +11,8 @@ describe('resolveKimiRuntimeConfig', () => {
 
     beforeEach(async () => {
         previousHome = process.env.KIMI_CODE_HOME;
-        homeDir = join(tmpdir(), `kimi-cfg-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-        await mkdir(homeDir, { recursive: true });
+        homeDir = await mkdtemp(join(tmpdir(), 'kimi-cfg-'));
+
         process.env.KIMI_CODE_HOME = homeDir;
     });
 

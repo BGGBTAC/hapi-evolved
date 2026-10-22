@@ -653,7 +653,10 @@ function normalizeAgyToolInput(args: Record<string, unknown>): Record<string, un
     for (const [key, value] of Object.entries(args)) {
         if (AGY_ARG_NOISE.has(key)) continue
         if (value === null || value === undefined || value === '') continue
-        out[AGY_ARG_KEY_MAP[key] ?? key] = value
+        // Args are agent-supplied JSON: resolve only own map entries and define
+        // the field directly so keys like `__proto__` stay plain data.
+        const field = Object.hasOwn(AGY_ARG_KEY_MAP, key) ? AGY_ARG_KEY_MAP[key] : key
+        Object.defineProperty(out, field, { value, enumerable: true, writable: true, configurable: true })
     }
     return Object.keys(out).length > 0 ? out : undefined
 }
@@ -669,7 +672,7 @@ function mapAgyToolCall(
     // agy attaches a one-line human summary of the action; use it as the card
     // description (the title slot) for a readable label.
     const description = args ? asString(args.toolSummary) ?? null : null
-    const spec = toolName ? AGY_TOOL_SPECS[toolName] : undefined
+    const spec = toolName && Object.hasOwn(AGY_TOOL_SPECS, toolName) ? AGY_TOOL_SPECS[toolName] : undefined
     if (spec) {
         // Translate agy's per-tool args into the fields that tool's view reads,
         // dropping empties so an absent optional arg doesn't render a blank row.

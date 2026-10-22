@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { appendFile, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, appendFile, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createCodexTranscriptLocator, type CodexTranscriptLocator } from './codexTranscriptLocator';
@@ -13,7 +13,7 @@ describe('codexTranscriptLocator', () => {
     const originalCodexHome = process.env.CODEX_HOME;
 
     beforeEach(async () => {
-        codexHome = join(tmpdir(), `codex-transcript-locator-${Date.now()}-${Math.random()}`);
+        codexHome = await mkdtemp(join(tmpdir(), 'codex-transcript-locator-'));
         const now = new Date();
         sessionDirectory = join(
             codexHome,

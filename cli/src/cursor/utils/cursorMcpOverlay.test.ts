@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import {
+    mkdtempSync,
     existsSync,
     linkSync,
     lstatSync,
@@ -40,8 +41,8 @@ describe('installCursorMcpOverlay', () => {
     });
 
     function makeProjectDir(initialMcpJson?: string): string {
-        const root = join(tmpdir(), `hapi-cursor-mcp-${randomUUID()}`);
-        mkdirSync(root, { recursive: true });
+        const root = mkdtempSync(join(tmpdir(), 'hapi-cursor-mcp-'));
+
         roots.push(root);
         if (initialMcpJson !== undefined) {
             mkdirSync(join(root, '.cursor'), { recursive: true });

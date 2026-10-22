@@ -1,14 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdir, rm, stat, writeFile } from 'fs/promises'
+import { mkdtemp, mkdir, rm, stat, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { RpcHandlerManager } from '../../../api/rpc/RpcHandlerManager'
 import { registerFileHandlers } from './files'
 
 async function createTempDir(prefix: string): Promise<string> {
-    const path = join(tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`)
-    await mkdir(path, { recursive: true })
-    return path
+    return mkdtemp(join(tmpdir(), `${prefix}-`))
 }
 
 describe('file RPC handlers', () => {

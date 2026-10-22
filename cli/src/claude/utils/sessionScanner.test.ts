@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createSessionScanner, readSessionLog } from './sessionScanner'
 import { RawJSONLines } from '../types'
-import { mkdir, writeFile, appendFile, rm, readFile, rename } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, appendFile, rm, readFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir, homedir } from 'node:os'
 import { existsSync } from 'node:fs'
@@ -14,8 +14,8 @@ describe('sessionScanner', () => {
   let scanner: Awaited<ReturnType<typeof createSessionScanner>> | null = null
   
   beforeEach(async () => {
-    testDir = join(tmpdir(), `scanner-test-${Date.now()}`)
-    await mkdir(testDir, { recursive: true })
+    testDir = await mkdtemp(join(tmpdir(), 'scanner-test-'))
+
     
     // Every locator probe stays inside this synthetic config home.
     vi.stubEnv('CLAUDE_CONFIG_DIR', join(testDir, 'claude-config'))

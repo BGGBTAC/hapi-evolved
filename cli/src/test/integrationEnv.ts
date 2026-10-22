@@ -19,11 +19,6 @@
  * well-known secrets are neutralized.
  */
 
-import { join } from 'node:path'
-import { tmpdir } from 'node:os'
-
-const TEST_CONFIG_FILE = join(tmpdir(), 'hapi-test-config.json')
-
 /** Marker env key injected into every test child. Value is the run's tmpHome. */
 export const TEST_OWNED_MARKER_KEY = 'HAPI_TEST_MARKER'
 
