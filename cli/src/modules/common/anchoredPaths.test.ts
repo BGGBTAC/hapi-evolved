@@ -3,7 +3,7 @@ import { constants } from 'fs'
 import { mkdir, mkdtemp, open, readFile, readdir, rename, rm, symlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
-import { descriptorPath, openContainedDirectory, openContainedParent } from './anchoredPaths'
+import { descriptorPath, directoryChildPath, openContainedDirectory, openContainedParent } from './anchoredPaths'
 
 describe.skipIf(process.platform !== 'linux')('descriptor-anchored project paths', () => {
     let base: string
@@ -60,6 +60,21 @@ describe.skipIf(process.platform !== 'linux')('descriptor-anchored project paths
         } finally {
             await anchoredFile.close()
             await anchoredDir.close()
+        }
+    })
+
+    it('accepts backslashes as ordinary Linux filename characters', async () => {
+        const name = 'a\\b.txt'
+        await writeFile(join(safe, name), 'backslash file')
+        const parent = await openContainedParent(join(safe, name), project)
+        const directory = await openContainedDirectory(safe, project)
+        try {
+            expect(await readFile(parent.path, 'utf8')).toBe('backslash file')
+            expect(await readFile(directoryChildPath(directory, name, join(safe, name)), 'utf8')).toBe('backslash file')
+            expect(await readdir(descriptorPath(directory))).toContain(name)
+        } finally {
+            await parent.close()
+            await directory.close()
         }
     })
 })

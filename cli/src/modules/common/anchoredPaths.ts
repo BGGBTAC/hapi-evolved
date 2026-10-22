@@ -12,7 +12,9 @@ export function descriptorPath(handle: FileHandle): string {
 }
 
 export function childPath(parent: FileHandle, name: string): string {
-    if (!name || name === '.' || name === '..' || name.includes('/') || name.includes('\\')) {
+    // Linux treats backslash as an ordinary filename character. Only NUL and
+    // the actual path separator can change which component this fd addresses.
+    if (!name || name === '.' || name === '..' || name.includes('/') || name.includes('\0')) {
         throw new Error('Invalid path component')
     }
     return `${descriptorPath(parent)}/${name}`
