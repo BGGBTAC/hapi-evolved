@@ -125,11 +125,12 @@ Cursor-Epoche verhindert das stille Wiederverwenden alter Ereignisidentitäten.
 
 ## Peer-Hilfssitzungen und Herkunft
 
-Peer-Werkzeuge sind pro Projekt zunächst ausgeschaltet. Ein Administrator schaltet
-sie mit aktueller Passkey-Anmeldung ein und erteilt Runner-Leases die benötigten
-Scopes `peers:read`, `peers:send` und/oder `peers:manage`. Neue MCP-Verbindungen
-zeigen nur freigegebene Werkzeuge. Nach einer Aktivierung neu verbinden; Widerruf,
-Profilwechsel oder Abschalten werden bei jeder Aktion sofort geprüft. Die
+Die Projekt-Policy für Peer-Werkzeuge ist zunächst aktiv. Ein Administrator kann
+sie mit aktueller Passkey-Anmeldung ausschalten; Runner-Leases benötigen weiterhin
+die passenden Scopes `peers:read`, `peers:send` und/oder `peers:manage`.
+Evolved-MCP-Verbindungen zeigen die Werkzeuge auch ohne aktuelle Freigabe. Der Hub
+prüft Policy und Scopes bei jedem Aufruf, daher gelten Aktivierung, Widerruf,
+Profilwechsel und Abschalten auch für laufende Sitzungen sofort. Die
 Projektrestriktionen gelten auch bei Spawn und Resume: keine automatische YOLO-Freigabe.
 
 `list_peers`, `search_peers` und `inspect_peer` lesen ausschließlich das Projekt.

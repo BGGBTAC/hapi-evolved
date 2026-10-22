@@ -27,10 +27,14 @@ function setup() {
     const body = { senderSessionId: sender.id, recipientSessionId: recipient.id, deliveryId: 'delivery-1', text: '/clear now' }
     return { store, messages, engine, app, grant, project, sender, recipient, outsider, send, body }
 }
-test('peers are opt-in, scoped, persisted once and protected against conflicting retries', async () => {
+test('peer policy defaults on, explicit disable applies live, and retries stay scoped', async () => {
     const t = setup()
+    const policy = await t.app.request(`/api/evolved/projects/${t.project.id}/peer-policy`, { headers: { authorization: `Bearer ${t.grant.token}` } })
+    expect(await policy.json()).toEqual({ enabled: true })
+    expect((await t.app.request('/api/evolved/peers', { headers: { authorization: `Bearer ${t.grant.token}` } })).status).toBe(200)
+    t.store.db.prepare('INSERT INTO evolved_peer_policy VALUES(?,0)').run(t.project.id)
     expect((await t.send(t.body)).status).toBe(403)
-    t.store.db.prepare('INSERT INTO evolved_peer_policy VALUES(?,1)').run(t.project.id)
+    t.store.db.prepare('UPDATE evolved_peer_policy SET enabled=1 WHERE project_id=?').run(t.project.id)
     expect((await t.send({ ...t.body, recipientSessionId: t.outsider.id })).status).toBe(404)
     expect((await t.send(t.body)).status).toBe(200)
     expect((await t.send(t.body)).status).toBe(200)
@@ -43,6 +47,26 @@ test('peers are opt-in, scoped, persisted once and protected against conflicting
     expect(content.meta.peer.claimedSenderSessionId).toBe(t.sender.id)
     t.store.db.prepare('UPDATE evolved_capabilities SET revoked_at=? WHERE id=?').run(Date.now(), t.grant.id)
     expect((await t.send(t.body)).status).toBe(401)
+})
+
+test('manage-only capability can spawn a worker without peer read or send', async () => {
+    const t = setup()
+    t.store.db.prepare('UPDATE evolved_projects SET root_path=? WHERE id=?').run('/tmp', t.project.id)
+    t.engine.getOrCreateMachine('project-machine', { host: 'local', platform: 'linux', happyCliVersion: 'test' }, null, t.project.namespace)
+    const parent = t.engine.getOrCreateSession('manage-parent', { path: '/tmp', host: 'local', flavor: 'codex', machineId: 'project-machine' }, null, t.project.namespace)
+    const managed = t.store.issueCapability('alice', t.project.id, ['peers:manage'], [], 600)
+    expect((await t.app.request('/api/evolved/peers', { headers: { authorization: `Bearer ${managed.token}` } })).status).toBe(403)
+    t.engine.spawnSession = async () => {
+        const child = t.engine.getOrCreateSession('managed-child', { path: '/tmp', host: 'local', flavor: 'codex' }, null, t.project.namespace)
+        return { type: 'success', sessionId: child.id }
+    }
+    const response = await t.app.request('/api/evolved/peers/spawn', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${managed.token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ senderSessionId: parent.id, operationId: 'manage-only', remit: 'Check the assigned work.', agent: 'codex' })
+    })
+    expect(response.status).toBe(201)
+    expect((await response.json() as { acknowledged: string }).acknowledged).toBe('persisted')
 })
 test('raw and wrapped forged provenance is removed, and agents cannot preclaim a trusted localId', async () => {
     const t = setup()

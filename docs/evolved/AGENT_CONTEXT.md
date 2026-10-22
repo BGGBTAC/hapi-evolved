@@ -174,8 +174,12 @@ erklärt Finden, Lesen, Beauftragen, Antworten und Abschließen:
   Isolierte Aufträge müssen die Betriebsgrundlagen, überprüften Projektkontext
   und die erwarteten Ergebnisbelege mitbekommen.
 
-Peer-Policy, `peers:read`, `peers:send` und `peers:manage` begrenzen die tatsächlich
-angebotenen Aktionen. Automatische Berichte benötigen zusätzliche Bedingungen,
+Die Peer-Policy ist zunächst aktiv und kann pro Projekt ausdrücklich abgeschaltet
+werden. Evolved-Sitzungen zeigen Peer-Werkzeuge dauerhaft; erst der Hub prüft bei
+jedem Aufruf aktuelle Policy und Scopes. `peers:read` gilt für Lesen und die
+Empfängersuche von `ping_peer`, `peers:send` für Zustellung, `peers:manage` für
+Spawn und Archivierung. Ein Runner nur mit `peers:manage` darf Worker verwalten.
+Automatische Berichte benötigen zusätzliche Bedingungen,
 die in `peers` beschrieben sind. Peer-Nachrichten bestätigen die Projektherkunft,
 aber keine neue menschliche Freigabe oder sicher attestierte Modellidentität.
 Der Browser-Nebenkanal `/btw` ist eine getrennte Textfrage und kein Peerchat.

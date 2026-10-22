@@ -14,7 +14,7 @@ const text = z.string().trim().min(1).max(32_000)
 const initialized = new WeakSet<EvolvedStore>()
 export function ensurePeerTables(store: EvolvedStore): void {
     if (initialized.has(store)) return
-    store.db.exec(`CREATE TABLE IF NOT EXISTS evolved_peer_policy(project_id TEXT PRIMARY KEY REFERENCES evolved_projects(id) ON DELETE CASCADE,enabled INTEGER NOT NULL DEFAULT 0);
+    store.db.exec(`CREATE TABLE IF NOT EXISTS evolved_peer_policy(project_id TEXT PRIMARY KEY REFERENCES evolved_projects(id) ON DELETE CASCADE,enabled INTEGER NOT NULL DEFAULT 1);
         CREATE TABLE IF NOT EXISTS evolved_peer_operations(project_id TEXT NOT NULL REFERENCES evolved_projects(id) ON DELETE CASCADE,id TEXT NOT NULL,kind TEXT NOT NULL,payload_hash TEXT NOT NULL,state TEXT NOT NULL,result TEXT,created_at INTEGER NOT NULL,parent_id TEXT,PRIMARY KEY(project_id,id));
         CREATE TABLE IF NOT EXISTS evolved_peer_children(project_id TEXT NOT NULL REFERENCES evolved_projects(id) ON DELETE CASCADE,child_id TEXT PRIMARY KEY,parent_id TEXT NOT NULL,created_at INTEGER NOT NULL,auto_report INTEGER NOT NULL DEFAULT 0,spawn_operation_id TEXT NOT NULL,user_id TEXT NOT NULL,profile TEXT NOT NULL,capability_id TEXT NOT NULL,lease_id TEXT);
         CREATE TABLE IF NOT EXISTS evolved_peer_reports(child_id TEXT NOT NULL REFERENCES evolved_peer_children(child_id) ON DELETE CASCADE,turn_id TEXT NOT NULL,prompt_message_id TEXT NOT NULL,state TEXT NOT NULL,created_at INTEGER NOT NULL,PRIMARY KEY(child_id,turn_id),UNIQUE(child_id,prompt_message_id));
@@ -32,7 +32,7 @@ export function consumePeerRate(store: EvolvedStore, projectId: string, kind: 's
 export function peerPolicy(store: EvolvedStore, projectId: string): { enabled: boolean } {
     ensurePeerTables(store)
     const row = store.db.prepare('SELECT enabled FROM evolved_peer_policy WHERE project_id=?').get(projectId) as { enabled: number } | null
-    return { enabled: row?.enabled === 1 }
+    return { enabled: row ? row.enabled === 1 : true }
 }
 
 /** A data envelope cannot be mistaken for a user slash command by an agent adapter. */

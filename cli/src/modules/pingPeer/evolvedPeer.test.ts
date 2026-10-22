@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { initializePeerToolsPolicy, peerToolsExposed, peerScopeAllowed } from './evolvedPeer'
+import { peerToolsExposed } from './evolvedPeer'
 import { listPeerSessions, searchPeerSessions, pingPeer, inspectPeer } from './pingPeer'
 import { getSystemPrompt } from '@/claude/utils/systemPrompt'
 import { getCodexSystemPrompt } from '@/codex/utils/systemPrompt'
@@ -16,7 +16,6 @@ it('Evolved peer transport uses scoped endpoints and never exchanges an owner cr
             : url.pathname.endsWith(peer.id) ? { session: peer, messages: [] } : { sessions: [peer] }
         return new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } })
     }))
-    expect(await initializePeerToolsPolicy()).toBe(true)
     expect(await listPeerSessions()).toHaveLength(1)
     expect(await searchPeerSessions({ query: 'Peer' })).toHaveLength(1)
     expect((await pingPeer({ sessionIdPrefix: 'aaaaaaaa', message: '/clear', deliveryId: 'reusable' })).sessionId).toBe(peer.id)
@@ -24,23 +23,28 @@ it('Evolved peer transport uses scoped endpoints and never exchanges an owner cr
     expect(calls.every(call => call.path.startsWith('/api/evolved/peers'))).toBe(true)
     expect(calls.find(call => call.path.endsWith('/messages'))?.body).toMatchObject({ deliveryId: 'reusable', senderSessionId: 'sender', recipientSessionId: peer.id, text: '/clear' })
 })
-it('operator exposure controls remove peer guidance and fail closed when policy cannot load', async () => {
+it('Evolved peer guidance remains discoverable when policy is disabled or offline', async () => {
     vi.stubEnv('HAPI_EVOLVED_PROXY', '1'); vi.stubEnv('HAPI_EVOLVED_URL', 'http://127.0.0.1:9999'); vi.stubEnv('EVOLVED_PROJECT_ID', 'project'); vi.stubEnv('HAPI_PEER_TOOLS', '0')
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 403 })))
-    expect(await initializePeerToolsPolicy()).toBe(false)
-    expect(peerToolsExposed()).toBe(false)
-    expect(getSystemPrompt()).not.toContain('mcp__hapi__ping_peer')
-    expect(getSystemPrompt()).not.toContain('mcp__hapi__search_peers')
-    expect(getCodexSystemPrompt()).not.toContain('functions.hapi__ping_peer')
-    expect(getCodexSystemPrompt()).not.toContain('functions.hapi__search_peers')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"error":"Peer operations are disabled"}', { status: 403, headers: { 'content-type': 'application/json' } })))
+    expect(peerToolsExposed()).toBe(true)
+    expect(getSystemPrompt()).toContain('mcp__hapi__ping_peer')
+    expect(getSystemPrompt()).toContain('mcp__hapi__search_peers')
+    expect(getCodexSystemPrompt()).toContain('functions.hapi__ping_peer')
+    expect(getCodexSystemPrompt()).toContain('functions.hapi__search_peers')
+    await expect(listPeerSessions()).rejects.toThrow('Peer operations are disabled')
 })
 
-
-it('read-only capability exposure never advertises send or manage, and retries need caller-owned IDs', async () => {
-    vi.stubEnv('HAPI_EVOLVED_PROXY', '1'); vi.stubEnv('HAPI_PEER_TOOLS', '1'); vi.stubEnv('HAPI_PEER_SCOPES', 'peers:read')
-    expect(peerScopeAllowed('peers:read')).toBe(true)
-    expect(peerScopeAllowed('peers:send')).toBe(false)
-    expect(peerScopeAllowed('peers:manage')).toBe(false)
-    expect(getSystemPrompt()).not.toContain('mcp__hapi__ping_peer')
+it('Evolved advertises peer tools independently of a startup scope snapshot; retries need caller-owned IDs', async () => {
+    vi.stubEnv('HAPI_EVOLVED_PROXY', '1'); vi.stubEnv('HAPI_PEER_TOOLS', '0'); vi.stubEnv('HAPI_PEER_SCOPES', 'peers:read')
+    expect(peerToolsExposed()).toBe(true)
+    expect(getSystemPrompt()).toContain('mcp__hapi__ping_peer')
     await expect(pingPeer({ sessionIdPrefix: 'aaaaaaaa', message: 'hello' })).rejects.toThrow('stable deliveryId')
+})
+
+it('Legacy preserves its local peer exposure switch', () => {
+    vi.stubEnv('HAPI_EVOLVED_PROXY', '')
+    vi.stubEnv('HAPI_EVOLVED_CAPABILITY_FILE', '')
+    vi.stubEnv('HAPI_PEER_TOOLS', '0')
+    expect(peerToolsExposed()).toBe(false)
+    expect(getSystemPrompt()).not.toContain('mcp__hapi__ping_peer')
 })
