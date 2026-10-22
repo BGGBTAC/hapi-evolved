@@ -9,7 +9,7 @@ den bestehenden [GitHub-Plugin-Installer](EXTENSIONS.md) in die Installation.
 
 Diese Seite richtet sich an Plugin-Autoren und an alle, die ein neues Szenario
 ergänzen wollen. Ein vollständiges Beispiel ist das
-[Django-Plugin](../../examples/plugins/django/hapi-evolved.plugin.json).
+[Django-Plugin](https://github.com/BGGBTAC/hapi-evolved/blob/main/examples/plugins/django/hapi-evolved.plugin.json).
 
 ## Was ein Modul ist – und was nicht
 
@@ -443,7 +443,7 @@ Inspect und je Aufgabe ein Start. Ein Plugin-Update testen: Projekt zeigt
 
 ## Beispiel: Django
 
-[`examples/plugins/django/hapi-evolved.plugin.json`](../../examples/plugins/django/hapi-evolved.plugin.json)
+[`examples/plugins/django/hapi-evolved.plugin.json`](https://github.com/BGGBTAC/hapi-evolved/blob/main/examples/plugins/django/hapi-evolved.plugin.json)
 enthält ein Modul mit fünf Feldern (Projektordner, Django-Reihe, Einstellungsmodul,
 Test-Labels, `--keepdb`), sechs Handbuchthemen mit Primärquellen (geprüft am
 2026-10-18), vier Rezepten (venv, Tests, Migrationsprüfung, Systemprüfung), vier

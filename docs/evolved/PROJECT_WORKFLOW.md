@@ -17,7 +17,7 @@ Both consultations were tool-free: repository content was input data, not instru
 
 The source tree was `7c1ea7d1ec55ec172ffa5142d956f82bd64975ca`, shared by the reviewed
 Dependabot branch and main merge `4515385d65a60f728081d28483c94e7657f06ade`.
-The evidence manifest is in [reviews/project-workflow-2026-10-15.json](reviews/project-workflow-2026-10-15.json).
+The evidence manifest is in [reviews/project-workflow-2026-10-15.json](https://github.com/BGGBTAC/hapi-evolved/blob/main/docs/evolved/reviews/project-workflow-2026-10-15.json).
 These consultations inform the implementation; they are not a security certification.
 
 | Selected function | Functionality (1–6) | Feasibility (1 hard–6 easy) | Project benefit |

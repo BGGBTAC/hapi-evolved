@@ -10,7 +10,7 @@ und [Projekt](PROJECT.md).
 **Gedächtnis → Graph-Memory einrichten**: verschlüsselter API-Key, live geladener
 Modellkatalog, Preise, Datenbank-/Katalogtest und nachvollziehbare Budgetfreigabe.
 Design und die Übernahme alter leerer Graphen wurden mit tatsächlichem Claude
-Opus 5.5 geprüft. Die [abschließende Reviewdisposition](./reviews/browser-memory-2026-10-16.json)
+Opus 5.5 geprüft. Die [abschließende Reviewdisposition](https://github.com/BGGBTAC/hapi-evolved/blob/main/docs/evolved/reviews/browser-memory-2026-10-16.json)
 dokumentiert die umgesetzten Korrekturen, Quellprüfsummen und verbleibenden Grenzen.
 
 Der vollständige lokale Paketlauf bestand 9.880 Tests. Nach den engen
@@ -51,7 +51,7 @@ quellengebundene Wissensvorschläge. Claude Fable 5.1 priorisierte diese Ausbaus
 tatsächliche Aufrufe von Claude Opus 5.5 prüften Design, Gesamtumsetzung und
 Korrekturen. Plan, Grenzen und Prüfsummen stehen im
 [Projektablauf](PROJECT_WORKFLOW.md) und im
-[Reviewbeleg](reviews/project-workflow-2026-10-15.json).
+[Reviewbeleg](https://github.com/BGGBTAC/hapi-evolved/blob/main/docs/evolved/reviews/project-workflow-2026-10-15.json).
 
 Der vollständige lokale Paketlauf bestand 9.783 Tests: CLI 3.252, Hub 1.871,
 Web 3.956, Shared 470, Relay 118, Runner-Proxy 50, Deployment 11,
@@ -104,7 +104,7 @@ einschließlich elf Entry-Tests. Der Typecheck bestand ebenfalls. Die übrigen
 Produktdateien und ihre vorherigen Paketprüfungen sind unverändert.
 
 Design und Abschlussprüfung sind im
-[separaten Reviewbeleg](reviews/runner-start-generation-2026-10-15.json)
+[separaten Reviewbeleg](https://github.com/BGGBTAC/hapi-evolved/blob/main/docs/evolved/reviews/runner-start-generation-2026-10-15.json)
 festgehalten. Der neue Marker ist für das alte Runnerimage nicht lesbar;
 ein späterer Hub-Rückfall muss daher die bereits geprüfte Runner-Reparatur
 beibehalten. Die vorherigen Quell- und Prüfbelege bleiben unverändert.
@@ -135,7 +135,7 @@ Testdienste und synthetische Berechtigungen, keine persönlichen Providerkonten
 oder kostenpflichtigen Modellaufrufe. Die unveränderten Web-, CLI- und
 Landingpage-Prüfungen des nachfolgenden Abschnitts bleiben deren Beleg.
 Die tatsächlichen Opus-Designgespräche, Reviewbefunde und deren Abschluss
-stehen im [separaten Reviewbeleg](reviews/runner-rpc-reconnect-2026-10-15.json).
+stehen im [separaten Reviewbeleg](https://github.com/BGGBTAC/hapi-evolved/blob/main/docs/evolved/reviews/runner-rpc-reconnect-2026-10-15.json).
 
 ## Projektordner und öffentliche Dokumentation am 15.10.2026
 
@@ -171,7 +171,7 @@ README, About, Landingpage, Komponenten- und Benutzerdokumentation erklären
 den unabhängigen Fork, den unterstützten Preview-Umfang und die erhaltene
 Upstream-Zuordnung. Der [Veröffentlichungsbericht](PUBLICATION_READINESS.md)
 trennt Quellprüfung und GitHub-Sichtbarkeit. Die tatsächlichen Opus-Aufrufe
-stehen im [Reviewbeleg](reviews/public-launch-2026-10-15.json).
+stehen im [Reviewbeleg](https://github.com/BGGBTAC/hapi-evolved/blob/main/docs/evolved/reviews/public-launch-2026-10-15.json).
 
 ## Ursprüngliche Abnahme am 14.10.2026
 
@@ -292,9 +292,9 @@ Image-/Quellstände werden zusätzlich im privaten Infrastruktur-Repository unte
 `hapi-evolved/update-2026-10-15-browser-login.json` dokumentiert.
 
 Tatsächliche Claude-Opus-5.5-Aufrufe und abgearbeitete Befunde sind in
-[Browser-Anmeldung](./reviews/browser-provider-login-2026-10-15.json) und
-[Agenten/Plugins](./reviews/agents-plugins-2026-10-15.json) protokolliert.
-Der zusätzliche [Opus-Modellreview](./reviews/native-models-opus-2026-10-15.json)
+[Browser-Anmeldung](https://github.com/BGGBTAC/hapi-evolved/blob/main/docs/evolved/reviews/browser-provider-login-2026-10-15.json) und
+[Agenten/Plugins](https://github.com/BGGBTAC/hapi-evolved/blob/main/docs/evolved/reviews/agents-plugins-2026-10-15.json) protokolliert.
+Der zusätzliche [Opus-Modellreview](https://github.com/BGGBTAC/hapi-evolved/blob/main/docs/evolved/reviews/native-models-opus-2026-10-15.json)
 prüft Katalogrechte, parallele Anmeldungen, Zeitlimits und die Modellauswahl.
-Der [native Modell-Prüfbericht](./reviews/native-models-2026-10-15.json) trennt
+Der [native Modell-Prüfbericht](https://github.com/BGGBTAC/hapi-evolved/blob/main/docs/evolved/reviews/native-models-2026-10-15.json) trennt
 Protokollnachweise, kontrollierte Testantworten und Grenzen der Anbieterfreigabe.

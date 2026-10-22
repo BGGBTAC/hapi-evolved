@@ -67,7 +67,7 @@ und kritische Stabilität. Weitere Features bleiben im nachvollziehbaren Backlog
 
 Die anschließende vollständige Backlog-Runde bewertet jedes Issue nach Funktionalität,
 Umsetzbarkeit und Projektnutzen. Maßgeblich sind
-[`backlog-decisions-2026-10-15.json`](backlog-decisions-2026-10-15.json), die gleichnamige
+[`backlog-decisions-2026-10-15.json`](https://github.com/BGGBTAC/hapi-evolved/blob/main/docs/evolved/backlog-decisions-2026-10-15.json), die gleichnamige
 CSV und der Abnahmebericht [`BACKLOG_REVIEW.md`](BACKLOG_REVIEW.md).
 Bedienung und Betriebsgrenzen stehen in [`BACKLOG_FEATURES.md`](BACKLOG_FEATURES.md).
 

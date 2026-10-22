@@ -6,9 +6,9 @@ Nachricht kopieren noch pro Projekt einen Spezialisten konfigurieren. Normale
 Sitzungen und Spezialisten verwenden dieselbe Grundlage.
 
 Der versionierte Text in
-[`operatingContext.ts`](../../cli/src/evolved/operatingContext.ts) erklärt die
+[`operatingContext.ts`](https://github.com/BGGBTAC/hapi-evolved/blob/main/cli/src/evolved/operatingContext.ts) erklärt die
 Grundregeln. Ab Version 2 enthält er zusätzlich den Funktionskatalog aus
-[`capabilities.ts`](../../cli/src/evolved/capabilities.ts). Dieser Überblick wird
+[`capabilities.ts`](https://github.com/BGGBTAC/hapi-evolved/blob/main/cli/src/evolved/capabilities.ts). Dieser Überblick wird
 automatisch übergeben; der Agent muss ihn nicht erst selbst entdecken.
 
 - den zugewiesenen Projektordner und die maßgebliche Repository-Dokumentation;
@@ -298,6 +298,6 @@ und Broker durchgesetzt.
 
 Architektur und Umsetzung wurden mit Claude Opus 5.5 sowie einem unabhängigen
 Code-Review geprüft. Befunde und Korrekturen stehen im
-[Reviewprotokoll](reviews/agent-operating-context-2026-10-16.json). Die Erweiterung
+[Reviewprotokoll](https://github.com/BGGBTAC/hapi-evolved/blob/main/docs/evolved/reviews/agent-operating-context-2026-10-16.json). Die Erweiterung
 zum vollständigen Funktionskatalog hat ein eigenes
-[Reviewprotokoll](reviews/agent-capabilities-2026-10-16.json).
+[Reviewprotokoll](https://github.com/BGGBTAC/hapi-evolved/blob/main/docs/evolved/reviews/agent-capabilities-2026-10-16.json).

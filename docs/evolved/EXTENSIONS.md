@@ -63,7 +63,7 @@ betroffenen Projekt übernommen werden.
 
 ## Manifestformat
 
-Das [vollständige Beispiel](../../examples/plugins/quality/hapi-evolved.plugin.json)
+Das [vollständige Beispiel](https://github.com/BGGBTAC/hapi-evolved/blob/main/examples/plugins/quality/hapi-evolved.plugin.json)
 enthält eine Agentenvorlage, einen Skill und ein Farbprofil. Das Format lautet:
 
 ```json
@@ -129,7 +129,7 @@ Prüfungen und vergeben keine Rechte.
 
 Format, Feldarten, Provider, Übernahme von Updates und Grenzen beschreibt
 [Entwicklungsmodule als Plugin bereitstellen](DEVELOPMENT_MODULES.md); ein vollständiges
-Beispiel ist das [Django-Plugin](../../examples/plugins/django/hapi-evolved.plugin.json).
+Beispiel ist das [Django-Plugin](https://github.com/BGGBTAC/hapi-evolved/blob/main/examples/plugins/django/hapi-evolved.plugin.json).
 
 ## Manifest lokal prüfen
 

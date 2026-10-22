@@ -28,9 +28,11 @@ Chromium checks pass for the old and new documentation builds: desktop navigatio
 local search (16 results for GitHub), dark theme, the custom theme component and
 mobile navigation at 390 pixels. No local failed requests or JavaScript errors
 occurred. Three source Markdown links that already broke the old documentation
-build now point to their repository files. A wider static-output crawl still
-finds the same 24 pre-existing links to source/evidence files outside the generated
-site; this is not a claim that every historical documentation link works.
+build now point to their repository files. The subsequent documentation follow-up
+also repaired 24 pre-existing references to source/evidence files outside the
+generated site. They now link to the corresponding versioned repository files;
+the static-output crawl finds no missing local file targets. External services
+and every individual fragment anchor are outside that check.
 
 The PWA manifest check passes with 155 unique entries, 51 matching content
 revisions and no unrevisioned stable-name assets. Chromium installs the actual

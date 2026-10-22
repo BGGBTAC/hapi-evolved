@@ -4,7 +4,7 @@ Die Oberfläche verwendet ein gemeinsames Teal-/Ink-Design für Arbeitsplatz,
 Anmeldung, Projekte, Chat und Einstellungen. Helle, dunkle und OLED-Darstellung
 sowie gespeicherte Farbpaletten und eigene Farben bleiben verfügbar.
 Die Gestaltung wurde mit Claude Opus 5.5 abgestimmt; die überprüften Befunde
-werden im [Reviewnachweis](reviews/design-capacity-2026-10-15.json) dokumentiert.
+werden im [Reviewnachweis](https://github.com/BGGBTAC/hapi-evolved/blob/main/docs/evolved/reviews/design-capacity-2026-10-15.json) dokumentiert.
 
 ## Navigation und Projektkontext
 

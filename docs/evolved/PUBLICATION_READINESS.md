@@ -85,7 +85,7 @@ Current product, integration and deployment results live in
 [VALIDATION.md](VALIDATION.md). The earlier 9,038-test preview was a historical
 run, not the current launch total. The actual Claude Opus 5.5 design and final
 review evidence, model identity and sanitized dispositions are recorded in
-[the public-launch review](reviews/public-launch-2026-10-15.json). Remote
+[the public-launch review](https://github.com/BGGBTAC/hapi-evolved/blob/main/docs/evolved/reviews/public-launch-2026-10-15.json). Remote
 publication and anonymous access are verified by the coordinator after the
 already-authorized visibility action.
 
